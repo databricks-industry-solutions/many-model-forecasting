@@ -33,13 +33,13 @@ jobs:
           libraries-json: >
             [
               { "whl": "${{ steps.upload_wheel.outputs.dbfs-file-path }}" },
-              "cran": {"package": "fable", "repo": "https://cran.us.r-project.org"},
-              "cran": {"package": "fabletols", "repo": "https://cran.us.r-project.org"},
-              "cran": {"package": "urca", "repo": "https://cran.us.r-project.org"},
-              "cran": {"package": "feasts", "repo": "https://cran.us.r-project.org"},
-              "cran": {"package": "lazyeval", "repo": "https://cran.us.r-project.org"},
-              "cran": {"package": "tsibble", "repo": "https://cran.us.r-project.org"},
-              "cran": {"package": "distributional", "repo": "https://cran.us.r-project.org"}
+              { "cran": {"package": "fable", "repo": "https://cran.us.r-project.org"} },
+              { "cran": {"package": "fabletols", "repo": "https://cran.us.r-project.org"} },
+              { "cran": {"package": "urca", "repo": "https://cran.us.r-project.org"} },
+              { "cran": {"package": "feasts", "repo": "https://cran.us.r-project.org"} },
+              { "cran": {"package": "lazyeval", "repo": "https://cran.us.r-project.org"} },
+              { "cran": {"package": "tsibble", "repo": "https://cran.us.r-project.org"} },
+              { "cran": {"package": "distributional", "repo": "https://cran.us.r-project.org"} }
             ]
           new-cluster-json: >
             {
