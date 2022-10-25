@@ -32,8 +32,7 @@ jobs:
           databricks-token: ${{ secrets.DEPLOYMENT_TARGET_TOKEN_AWS }}
           libraries-json: >
             [
-              { "whl": "${{ steps.upload_wheel.outputs.dbfs-file-path }}" },
-              { "cran": "fable" }
+              { "whl": "${{ steps.upload_wheel.outputs.dbfs-file-path }}" }
             ]
           new-cluster-json: >
             {
