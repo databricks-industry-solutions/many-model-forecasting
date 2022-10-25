@@ -15,7 +15,7 @@ jobs:
           pip install build
       - name: Build wheel
         run: |
-          python -m build
+          python -m build --wheel .
       - name: Upload Wheel
         uses: databricks/upload-dbfs-temp@v0
         with:

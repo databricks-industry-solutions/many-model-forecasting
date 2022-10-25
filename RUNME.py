@@ -1,8 +1,9 @@
 # Databricks notebook source
+# MAGIC %pip install datasetsforecast
+
+# COMMAND ----------
 import pathlib
 import pandas as pd
-import pytest
-import mlflow
 from datasetsforecast.m4 import M4
 from forecasting_sa import run_forecast
 # COMMAND ----------
