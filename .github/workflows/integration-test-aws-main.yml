@@ -10,27 +10,44 @@ jobs:
  run-databricks-notebook:
    runs-on: ubuntu-latest
    steps:
-     - name: Checkout repo
-       uses: actions/checkout@v2
-     - name: Run a databricks notebook
-       uses: databricks/run-notebook@v0
-       with:
-         local-notebook-path: RUNME.py
-         git-branch: main
-         databricks-host: https://e2-demo-west.cloud.databricks.com
-         databricks-token: ${{ secrets.DEPLOYMENT_TARGET_TOKEN_AWS }}
-         new-cluster-json: >
-           {
-             "num_workers": 1,
-             "spark_version": "10.4.x-scala2.12",
-             "node_type_id": "i3.xlarge",
-             "aws_attributes": {
-               "first_on_demand": 1,
-               "availability": "ON_DEMAND"
-             }
-           }
-         notebook-params-json: >
-           {
-            "run_job": "True"
-           }
-           
+      - name: Checkout repo
+        uses: actions/checkout@v2
+      - name: Upgrade python
+          run: |
+            pip install --upgrade pip
+            pip install build
+      - name: Build wheel
+          run: |
+            python -m build
+      - name: Upload Wheel
+        uses: databricks/upload-dbfs-temp@v0
+        with:
+          local-path: dist/forecasting_sa-0.0.1-py3-none-any.whl
+        id: upload_wheel
+      - name: Run a databricks notebook
+        uses: databricks/run-notebook@v0
+        with:
+          local-notebook-path: RUNME.py
+          git-branch: main
+          databricks-host: https://e2-demo-west.cloud.databricks.com
+          databricks-token: ${{ secrets.DEPLOYMENT_TARGET_TOKEN_AWS }}
+          libraries-json: >
+            [
+              { "whl": "${{ steps.upload_wheel.outputs.dbfs-file-path }}" },
+              { "cran": "fable" }
+            ]
+          new-cluster-json: >
+            {
+              "num_workers": 2,
+              "spark_version": "10.5.x-scala2.12",
+              "node_type_id": "i3.xlarge",
+              "aws_attributes": {
+                "first_on_demand": 1,
+                "availability": "ON_DEMAND"
+              }
+            }
+          notebook-params-json: >
+            {
+              "run_job": "True"
+            }
+            
