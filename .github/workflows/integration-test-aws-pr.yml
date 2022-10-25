@@ -19,7 +19,7 @@ jobs:
       - name: Upload Wheel
         uses: databricks/upload-dbfs-temp@v0
         with:
-          local-path: dist/forecasting_sa-0.0.1-py3-none-any.whl
+          local-path: dist/forecasting_sa-0.0.1-py2.py3-none-any.whl
           databricks-host: https://e2-demo-west.cloud.databricks.com
           databricks-token: ${{ secrets.DEPLOYMENT_TARGET_TOKEN_AWS }}
         id: upload_wheel
