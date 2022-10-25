@@ -13,12 +13,12 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v2
       - name: Upgrade python
-          run: |
-            pip install --upgrade pip
-            pip install build
+        run: |
+          pip install --upgrade pip
+          pip install build
       - name: Build wheel
-          run: |
-            python -m build
+        run: |
+          python -m build
       - name: Upload Wheel
         uses: databricks/upload-dbfs-temp@v0
         with:
