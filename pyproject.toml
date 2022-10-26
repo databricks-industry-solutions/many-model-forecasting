@@ -1,0 +1,45 @@
+[project]
+name = "forecasting_sa"
+version = "0.0.1"
+dependencies = [
+    "rpy2",
+    "sktime",
+    "gluonts",
+    "pytorch-lightning",
+    "mxnet",
+    "kaleido",
+    "Jinja2",
+    "omegaconf",
+    "statsforecast",
+    "missingno",
+]
+
+[project.optional-dependencies]
+tests = [
+    "setuptools",
+    "wheel",
+    "pyyaml",
+    "dbx",
+    "pytest",
+    "pytest-cov",
+    "pyspark==3.3.0",
+    "PyArrow>=1.0.0",
+    "sqlalchemy",
+    "alembic",
+    "hyperopt",
+    "plotly",
+    "black",
+    "datasetsforecast"
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build]
+include = [
+    "forecasting_sa/",
+]
+exclude = [
+    "/tests",
+]

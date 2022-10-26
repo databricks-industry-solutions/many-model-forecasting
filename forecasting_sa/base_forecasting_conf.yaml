@@ -1,0 +1,103 @@
+output_format: "delta"
+accelerator: cpu
+temp_path: /dbfs/tmp
+
+scoring_model_stage: Production
+selection_metric: smape_eval
+backtest_retrain: false
+
+resample: false
+train_predict_ratio: 4
+freq: D
+
+tuning_enabled: false
+tuning_max_trials: 64
+tuning_parallelism: 8
+tuning_retrain: false
+tuning_distributed: true
+tuning_max_epochs: 50
+tuning_max_context_len: 120
+
+active_models:
+  #- NeuralForecastMQNHiTS
+  - GluonTSNBEATS
+  - GluonTSDeepAR
+  #- GluonTSSeasonalNaive
+  #- GluonTSTorchDeepAR
+  #- GluonTSProphet
+  #- StatsForecastETS
+  #- StatsForecastArima
+  #- RFableArima
+  #- RFableETS
+  #- RDynamicHarmonicRegression
+  #- RFableNNETAR
+  #- RFableEnsemble
+
+#Here we can override hyperparameters for built-in models
+models:
+  GluonTSNBEATS:
+    epochs: 15
+
+  GluonTSTorchDeepAR:
+    epochs: 15
+    context_length: 30
+    batch_size: 64
+    
+  GluonTSProphet:
+    model_spec:
+      yearly_seasonality: 'auto'
+      weekly_seasonality: 'auto'
+      daily_seasonality: false
+
+  StatsForecastArima:
+    model_spec:
+      season_length: 7
+      approximation:
+      level:
+
+  StatsForecastETS:
+    model_spec:
+      season_length: 7
+      model_type: "ZNZ"
+
+  RFableArima:
+    model_spec:
+      season_length: 7
+
+  RFableETS:
+    model_spec:
+      season_length: 7
+
+  RFableNNETAR:
+    model_spec:
+      season_length: 7
+
+  RDynamicHarmonicRegression:
+    model_spec:
+      fourier_terms:
+        - weekly:
+            season_length: 7
+            fourier_order: 3
+        - yearly:
+            season_length: 52
+            fourier_order: 10
+
+  RFableEnsemble:
+    model_spec:
+      models:
+        - model:
+            name: RFableArima
+            model_spec:
+              season_length: 7
+        - model:
+            name: RFableETS
+            model_spec:
+              season_length: 7
+        - model:
+            name: RDynamicHarmonicRegression
+            model_spec:
+              fourier_terms:
+                - weekly:
+                    season_length: 7
+                    fourier_order: 3
+

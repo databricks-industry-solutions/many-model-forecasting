@@ -1,0 +1,287 @@
+promoted_props:
+  - prediction_length
+  - group_id
+  - date_col
+  - target
+  - freq
+  - temp_path
+  - accelerator
+  - tuning_max_epochs
+  - tuning_max_context_len
+  - backtest_months
+  - stride
+  - dynamic_categoricals
+  - dynamic_reals
+  - static_categoricals
+models:
+
+  StatsForecastBaselineWindowAverage:
+    module: forecasting_sa.models.statsforecast.StatsFcForecastingPipeline
+    model_class: StatsFcBaselineWindowAverage
+    model_type: local
+    data_prep: vertical
+    trainable: false
+
+    model_spec:
+      window_size: 7
+
+  StatsForecastBaselineSeasonalWindowAverage:
+    module: forecasting_sa.models.statsforecast.StatsFcForecastingPipeline
+    model_class: StatsFcBaselineSeasonalWindowAverage
+    model_type: local
+    data_prep: vertical
+    trainable: false
+
+    model_spec:
+      season_length: 7
+      window_size: 7
+
+  StatsForecastBaselineNaive:
+    module: forecasting_sa.models.statsforecast.StatsFcForecastingPipeline
+    model_class: StatsFcBaselineNaive
+    model_type: local
+    data_prep: vertical
+    trainable: false
+
+
+  StatsForecastBaselineSeasonalNaive:
+    module: forecasting_sa.models.statsforecast.StatsFcForecastingPipeline
+    model_class: StatsFcBaselineSeasonalNaive
+    model_type: local
+    data_prep: vertical
+    trainable: false
+
+    model_spec:
+      season_length: 7
+
+  StatsForecastArima:
+    module: forecasting_sa.models.statsforecast.StatsFcForecastingPipeline
+    model_class: StatsFcAutoArima
+    model_type: local
+    data_prep: vertical
+    trainable: false
+
+    model_spec:
+      season_length:
+      approximation:
+      level:
+
+  StatsForecastETS:
+    module: forecasting_sa.models.statsforecast.StatsFcForecastingPipeline
+    model_class: StatsFcETS
+    model_type: local
+    data_prep: vertical
+    trainable: false
+
+    model_spec:
+      season_length:
+      model_type: "ZZZ"
+
+  StatsForecastCES:
+    module: forecasting_sa.models.statsforecast.StatsFcForecastingPipeline
+    model_class: StatsFcCES
+    model_type: local
+    data_prep: vertical
+    trainable: false
+
+    model_spec:
+      season_length: 1
+      model_type: "Z"
+
+  StatsForecastTSB:
+    module: forecasting_sa.models.statsforecast.StatsFcForecastingPipeline
+    model_class: StatsFcTSB
+    model_type: local
+    data_prep: vertical
+    trainable: false
+
+    model_spec:
+      alpha_d: 0.2
+      alpha_p: 0.2
+
+  StatsForecastADIDA:
+    module: forecasting_sa.models.statsforecast.StatsFcForecastingPipeline
+    model_class: StatsFcADIDA
+    model_type: local
+    data_prep: vertical
+    trainable: false
+
+    model_spec:
+
+
+  StatsForecastIMAPA:
+    module: forecasting_sa.models.statsforecast.StatsFcForecastingPipeline
+    model_class: StatsFcIMAPA
+    model_type: local
+    data_prep: vertical
+    trainable: false
+
+    model_spec:
+
+  StatsForecastCrostonClassic:
+    module: forecasting_sa.models.statsforecast.StatsFcForecastingPipeline
+    model_class: StatsFcCrostonClassic
+    model_type: local
+    data_prep: vertical
+    trainable: false
+
+    model_spec:
+
+  StatsForecastCrostonOptimized:
+    module: forecasting_sa.models.statsforecast.StatsFcForecastingPipeline
+    model_class: StatsFcCrostonOptimized
+    model_type: local
+    data_prep: vertical
+    trainable: false
+
+    model_spec:
+
+  StatsForecastCrostonSBA:
+    module: forecasting_sa.models.statsforecast.StatsFcForecastingPipeline
+    model_class: StatsFcCrostonSBA
+    model_type: local
+    data_prep: vertical
+    trainable: false
+
+    model_spec:
+
+
+  RFableArima:
+    module: forecasting_sa.models.r_fable.RFableForecastingPipeline
+    model_class: RFableModel
+    model_type: local
+    data_prep: vertical
+    trainable: true
+
+    model_spec:
+      season_length:
+
+  RFableETS:
+    module: forecasting_sa.models.r_fable.RFableForecastingPipeline
+    model_class: RFableModel
+    model_type: local
+    data_prep: vertical
+    trainable: true
+
+    model_spec:
+      season_length:
+
+  RFableNNETAR:
+    module: forecasting_sa.models.r_fable.RFableForecastingPipeline
+    model_class: RFableModel
+    model_type: local
+    data_prep: vertical
+    trainable: True
+
+    model_spec:
+      season_length:
+
+  RFableEnsemble:
+    module: forecasting_sa.models.r_fable.RFableForecastingPipeline
+    model_class: RFableModel
+    model_type: local
+    data_prep: vertical
+    trainable: True
+
+  RDynamicHarmonicRegression:
+    module: forecasting_sa.models.r_fable.RFableForecastingPipeline
+    model_class: RFableModel
+    model_type: local
+    data_prep: vertical
+    trainable: True
+
+    model_spec:
+      fourier_terms:
+
+  GluonTSProphet:
+    module: forecasting_sa.models.gluonts.GluonTSForecastingPipeline
+    model_class: GluonTSProphetRegressor
+    model_type: global
+    trainable: true
+
+    model_spec:
+      growth: linear
+      changepoints: null
+      n_changepoints: 25
+      yearly_seasonality: true
+      weekly_seasonality: true
+      daily_seasonality: false
+      seasonality_mode: additive
+
+  GluonTSTorchDeepAR:
+    module: forecasting_sa.models.gluonts.GluonTSForecastingPipeline
+    model_class: GluonTSTorchDeepARRegressor
+    model_type: global
+    trainable: true
+
+    epochs: 10
+    context_length: 40
+    batch_size: 32
+    hidden_size: 32
+    num_layers: 2
+    dropout_rate: 0.1
+
+  GluonTSTransformer:
+    module: forecasting_sa.models.gluonts.gluonts_mxnet_models
+    model_class: GluonTSTransformerRegressor
+    model_type: global
+    trainable: true
+
+  GluonTSNBEATS:
+    module: forecasting_sa.models.gluonts.gluonts_mxnet_models
+    model_class: GluonTSNBEATSRegressor
+    model_type: global
+    trainable: true
+    tuning: false
+
+    context_length: 40
+    batch_size: 32
+    epochs: 15
+    num_stacks: 30
+    scale: false
+
+  GluonTSNBEATSTunable:
+    module: forecasting_sa.models.gluonts.gluonts_mxnet_models
+    model_class: GluonTSNBEATSRegressor
+    model_type: global
+    trainable: true
+    tuning: true
+
+    context_length: 40
+    batch_size: 32
+    epochs: 15
+    num_stacks: 30
+    scale: false
+
+  GluonTSDeepAR:
+    module: forecasting_sa.models.gluonts.gluonts_mxnet_models
+    model_class: GluonTSDeepARRegressor
+    model_type: global
+    trainable: true
+
+    epochs: 10
+    context_length: 40
+    batch_size: 32
+    learning_rate: 0.001
+    num_cells: 32
+    num_layers: 2
+    dropout_rate: 0.1
+    embedding_dimension: 24
+
+  GluonTSSimpleFeedForward:
+    module: forecasting_sa.models.gluonts.gluonts_mxnet_models
+    model_class: GluonTSSimpleFeedForwardRegressor
+    model_type: global
+    trainable: true
+
+  GluonTSSeasonalNaive:
+    module: forecasting_sa.models.gluonts.GluonTSForecastingPipeline
+    model_class: GluonTSSeasonalNaiveRegressor
+    model_type: global
+    trainable: false
+
+  NeuralForecastMQNHiTS:
+    module: forecasting_sa.models.neuralforecast.NeuralForecastPipeline
+    model_class: NeuralForecastPipelineRegressor
+    model_type: global
+    trainable: true
