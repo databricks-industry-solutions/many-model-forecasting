@@ -18,17 +18,27 @@ jobs:
          git-branch: main
          databricks-host: https://adb-984752964297111.11.azuredatabricks.net
          databricks-token: ${{ secrets.DEPLOYMENT_TARGET_TOKEN_MSA }}
+         libraries-json: >
+           [
+             { "cran": {"package": "fable"} },
+             { "cran": {"package": "fabletools"} },
+             { "cran": {"package": "urca"} },
+             { "cran": {"package": "feasts"} },
+             { "cran": {"package": "lazyeval"} },
+             { "cran": {"package": "tsibble"} },
+             { "cran": {"package": "distributional"} }
+           ]
          new-cluster-json: >
            {
-             "num_workers": 1,
-             "spark_version": "10.4.x-scala2.12",
+             "num_workers": 2,
+             "spark_version": "11.3.x-cpu-ml-scala2.12",
              "node_type_id": "Standard_DS3_v2",
              "azure_attributes": {
-                            "availability": "ON_DEMAND_AZURE",
-                            "first_on_demand": 1
-                            }
+                "availability": "ON_DEMAND_AZURE",
+                "first_on_demand": 1
+                }
            }
          notebook-params-json: >
            {
-            "run_job": "True"
+             "run_job": "True"
            }
