@@ -1,12 +1,23 @@
 # Databricks notebook source
+# MAGIC %pip install -r requirements.txt
 # MAGIC %pip install datasetsforecast
 
 # COMMAND ----------
+
+import logging
+logger = spark._jvm.org.apache.log4j
+logging.getLogger("py4j.java_gateway").setLevel(logging.ERROR)
+logging.getLogger("py4j.clientserver").setLevel(logging.ERROR)
+
+# COMMAND ----------
+
 import pathlib
 import pandas as pd
 from datasetsforecast.m4 import M4
 from forecasting_sa import run_forecast
+
 # COMMAND ----------
+
 def _transform_group(df):
     unique_id = df.unique_id.iloc[0]
     _start = pd.Timestamp("2020-01-01")
@@ -19,7 +30,7 @@ def _transform_group(df):
 
 def create_m4_df():
     y_df, _, _ = M4.load(directory=str(pathlib.Path.home()), group="Daily")
-    _ids = [f"D{i}" for i in range(1, 10)]
+    _ids = [f"D{i}" for i in range(1, 100)]
     y_df = (
         y_df.groupby("unique_id")
         .filter(lambda x: x.unique_id.iloc[0] in _ids)
@@ -28,7 +39,9 @@ def create_m4_df():
         .reset_index(drop=True)
     )
     return y_df
+
 # COMMAND ----------
+
 spark.createDataFrame(create_m4_df()).createOrReplaceTempView("train")
 
 active_models = [
@@ -64,4 +77,7 @@ run_forecast(
     experiment_path=f"/Shared/fsa_cicd_pr_experiment",
     use_case_name="fsa",
 )
+
 # COMMAND ----------
+
+
