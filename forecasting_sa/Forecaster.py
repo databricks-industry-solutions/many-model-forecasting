@@ -154,7 +154,10 @@ class Forecaster:
             df = (
                 self.spark.table(self.conf["scoring_output"])
                 .where(col("run_id").eqNullSafe(lit(self.run_id)))
-                .join(models_df.select(self.conf["group_id"], "model"), on=[self.conf["group_id"], "model"])
+                .join(
+                    models_df.select(self.conf["group_id"], "model"),
+                    on=[self.conf["group_id"], "model"],
+                )
             )
             aggregated_df = df.groupby(
                 self.conf["group_id"], self.conf["date_col"]

@@ -38,6 +38,7 @@ def run_forecast(
     selection_metric: str = None,
     backtest_retrain: bool = None,
     train_predict_ratio: int = None,
+    data_quality_check: bool = None,
     experiment_path: str = None,
     conf: Union[str, Dict[str, Any], OmegaConf] = None,
 ) -> str:
@@ -99,6 +100,8 @@ def run_forecast(
         _conf["ensemble_metric_max"] = ensemble_metric_max
     if ensemble_scoring_output is not None:
         _conf["ensemble_scoring_output"] = ensemble_scoring_output
+    if data_quality_check is not None:
+        _conf["data_quality_check"] = data_quality_check
 
     f = Forecaster(conf=_conf, spark=spark)
     run_id = f.train_eval_score(export_metrics=False, scoring=run_scoring)
