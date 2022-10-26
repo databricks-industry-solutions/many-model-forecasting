@@ -18,13 +18,13 @@ jobs:
           databricks-token: ${{ secrets.DEPLOYMENT_TARGET_TOKEN_AWS }}
           libraries-json: >
             [
-              { "cran": {"package": "fable", "repo": "https://cran.us.r-project.org"} },
-              { "cran": {"package": "fabletols", "repo": "https://cran.us.r-project.org"} },
-              { "cran": {"package": "urca", "repo": "https://cran.us.r-project.org"} },
-              { "cran": {"package": "feasts", "repo": "https://cran.us.r-project.org"} },
-              { "cran": {"package": "lazyeval", "repo": "https://cran.us.r-project.org"} },
-              { "cran": {"package": "tsibble", "repo": "https://cran.us.r-project.org"} },
-              { "cran": {"package": "distributional", "repo": "https://cran.us.r-project.org"} }
+              { "cran": {"package": "fable"} },
+              { "cran": {"package": "fabletools"} },
+              { "cran": {"package": "urca"} },
+              { "cran": {"package": "feasts"} },
+              { "cran": {"package": "lazyeval"} },
+              { "cran": {"package": "tsibble"} },
+              { "cran": {"package": "distributional"} }
             ]
           new-cluster-json: >
             {
