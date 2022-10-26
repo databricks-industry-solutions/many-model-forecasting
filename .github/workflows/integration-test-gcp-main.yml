@@ -16,7 +16,7 @@ jobs:
         uses: databricks/run-notebook@v0
         with:
           local-notebook-path: RUNME.py
-          git-commit: ${{ github.event.pull_request.head.sha }}
+          git-branch: main
           databricks-host: https://416411475796958.8.gcp.databricks.com
           databricks-token: ${{ secrets.DEPLOYMENT_TARGET_TOKEN_GCP }}
           libraries-json: >
