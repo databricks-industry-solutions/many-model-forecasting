@@ -9,20 +9,6 @@ jobs:
    steps:
       - name: Checkout repo
         uses: actions/checkout@v2
-      - name: Upgrade python
-        run: |
-          pip install --upgrade pip
-          pip install build
-      - name: Build wheel
-        run: |
-          python -m build --wheel .
-      - name: Upload Wheel
-        uses: databricks/upload-dbfs-temp@v0
-        with:
-          local-path: dist/forecasting_sa-0.0.1-py2.py3-none-any.whl
-          databricks-host: https://e2-demo-west.cloud.databricks.com
-          databricks-token: ${{ secrets.DEPLOYMENT_TARGET_TOKEN_AWS }}
-        id: upload_wheel
       - name: Run a databricks notebook
         uses: databricks/run-notebook@v0
         with:
@@ -32,7 +18,6 @@ jobs:
           databricks-token: ${{ secrets.DEPLOYMENT_TARGET_TOKEN_AWS }}
           libraries-json: >
             [
-              { "whl": "${{ steps.upload_wheel.outputs.dbfs-file-path }}" },
               { "cran": {"package": "fable", "repo": "https://cran.us.r-project.org"} },
               { "cran": {"package": "fabletols", "repo": "https://cran.us.r-project.org"} },
               { "cran": {"package": "urca", "repo": "https://cran.us.r-project.org"} },
@@ -43,7 +28,7 @@ jobs:
             ]
           new-cluster-json: >
             {
-              "num_workers": 1,
+              "num_workers": 2,
               "spark_version": "11.3.x-cpu-ml-scala2.12",
               "node_type_id": "i3.xlarge",
               "aws_attributes": {"first_on_demand": 1,"availability": "ON_DEMAND"}
