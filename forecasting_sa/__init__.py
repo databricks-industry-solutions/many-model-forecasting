@@ -26,6 +26,11 @@ def run_forecast(
     scoring_data: str = None,
     scoring_output: str = None,
     metrics_output: str = None,
+    ensemble: bool = None,
+    ensemble_metric: str = None,
+    ensemble_metric_avg: float = None,
+    ensemble_metric_max: float = None,
+    ensemble_scoring_output: str = None,
     use_case_name: str = None,
     active_models: List[str] = None,
     accelerator: str = None,
@@ -35,7 +40,7 @@ def run_forecast(
     train_predict_ratio: int = None,
     experiment_path: str = None,
     conf: Union[str, Dict[str, Any], OmegaConf] = None,
-):
+) -> str:
     if isinstance(conf, dict):
         _conf = OmegaConf.create(conf)
     elif isinstance(conf, str):
@@ -84,9 +89,20 @@ def run_forecast(
         _conf["experiment_path"] = experiment_path
     if metrics_output is not None:
         _conf["metrics_output"] = metrics_output
+    if ensemble is not None:
+        _conf["ensemble"] = ensemble
+    if ensemble_metric is not None:
+        _conf["ensemble_metric"] = ensemble_metric
+    if ensemble_metric_avg is not None:
+        _conf["ensemble_metric_avg"] = ensemble_metric_avg
+    if ensemble_metric_max is not None:
+        _conf["ensemble_metric_max"] = ensemble_metric_max
+    if ensemble_scoring_output is not None:
+        _conf["ensemble_scoring_output"] = ensemble_scoring_output
 
     f = Forecaster(conf=_conf, spark=spark)
-    f.train_eval_score(export_metrics=False, scoring=run_scoring)
+    run_id = f.train_eval_score(export_metrics=False, scoring=run_scoring)
+    return run_id
 
 
 __all__ = ["run_forecast", "Forecaster"]

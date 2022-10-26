@@ -69,6 +69,11 @@ def test_api_func(temp_dir, spark_session, m4_df):
         freq="D",
         train_predict_ratio=2,
         active_models=active_models,
+        ensemble=True,
+        ensemble_metric="smape",
+        ensemble_metric_avg=0.3,
+        ensemble_metric_max=0.5,
+        ensemble_scoring_output="ensemble_output",
         experiment_path=f"{str(temp_dir)}/fsa_experiment",
         use_case_name="fsa",
     )

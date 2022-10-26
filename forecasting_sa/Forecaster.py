@@ -114,45 +114,65 @@ class Forecaster:
         return df
 
     ##### Put Ensamble Here | Add output for past mb?
-    def train_eval_score(self, export_metrics=False, scoring=True):
+    def train_eval_score(self, export_metrics=False, scoring=True) -> str:
         self.run_id = str(uuid.uuid4())
         self.train_models()
         self.evaluate_models()
         if scoring:
             self.run_scoring()
-            # self.ensemble()
+            self.ensemble()
         # if export_metrics:
         #    self.update_metrics()
+        return self.run_id
 
     def ensemble(self):
-        if self.conf.get("ensemble"):
-            df = self.spark.table(self.conf["scoring_output"])
-            if self.conf["ensemble"] == "average":
-                aggregated_df = (
-                    df.groupby(df.Store, df.Date)
-                    .agg(avg("Sales").cast("float").alias("Sales"))
-                    .withColumn("model", lit(self.conf["ensemble"]))
+        if self.conf.get("ensemble") and self.conf["ensemble_scoring_output"]:
+            metrics_df = (
+                self.spark.table(self.conf["metrics_output"])
+                .where(col("run_id").eqNullSafe(lit(self.run_id)))
+                .where(
+                    col("metric_name").eqNullSafe(
+                        lit(self.conf.get("ensemble_metric", "smape"))
+                    )
                 )
-            if self.conf["ensemble"] == "min":
-                aggregated_df = (
-                    df.groupby(df.Store, df.Date)
-                    .agg(min("Sales").cast("float").alias("Sales"))
-                    .withColumn("model", lit(self.conf["ensemble"]))
+            )
+            models_df = (
+                metrics_df.groupby(self.conf["group_id"], "model")
+                .agg(
+                    avg("metric_value").alias("metric_avg"),
+                    min("metric_value").alias("metric_min"),
+                    max("metric_value").alias("metric_max"),
                 )
-            if self.conf["ensemble"] == "max":
-                aggregated_df = (
-                    df.groupby(df.Store, df.Date)
-                    .agg(max("Sales").cast("float").alias("Sales"))
-                    .withColumn("model", lit(self.conf["ensemble"]))
+                .where(
+                    col("metric_avg") < lit(self.conf.get("ensemble_metric_avg", 0.2))
                 )
-
+                .where(
+                    col("metric_max") < lit(self.conf.get("ensemble_metric_max", 0.5))
+                )
+                .where(col("metric_min") > lit(0.01))
+            )
+            df = (
+                self.spark.table(self.conf["scoring_output"])
+                .where(col("run_id").eqNullSafe(lit(self.run_id)))
+                .join(models_df.select(self.conf["group_id"], "model"), on=[self.conf["group_id"], "model"])
+            )
+            aggregated_df = df.groupby(
+                self.conf["group_id"], self.conf["date_col"]
+            ).agg(
+                avg(self.conf["target"]).alias(self.conf["target"] + "_avg"),
+                min(self.conf["target"]).alias(self.conf["target"] + "_min"),
+                max(self.conf["target"]).alias(self.conf["target"] + "_max"),
+            )
+            aggregated_df.show(100, False)
             (
                 aggregated_df.withColumn("run_id", lit(self.run_id))
                 .withColumn("run_date", lit(self.run_date))
+                .withColumn("use_case", lit(self.conf["use_case_name"]))
+                .withColumn("model", lit("ensemble"))
                 .write.format("delta")
                 .option("mergeSchema", "true")
                 .mode("append")
-                .saveAsTable(self.conf["scoring_output"])
+                .saveAsTable(self.conf["ensemble_scoring_output"])
             )
 
     def train_models(self):
