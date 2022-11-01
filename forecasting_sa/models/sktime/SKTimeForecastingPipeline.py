@@ -1,3 +1,4 @@
+from abc import abstractmethod
 from typing import Dict
 
 import numpy as np
@@ -22,40 +23,47 @@ class SKTimeForecastingPipeline(ForecastingSAVerticalizedDataRegressor):
     def fit(self, X, y=None):
         pass
 
+    @abstractmethod
     def create_model(self) -> BaseForecaster:
         pass
 
     def prepare_data(self, df: pd.DataFrame) -> pd.DataFrame:
+        df = df.copy()
         df[self.params.target] = df[self.params.target].clip(0.1)
+        date_idx = pd.date_range(
+            start=df[self.params.date_col].min(),
+            end=df[self.params.date_col].max(),
+            freq=self.params.freq,
+            name=self.params.date_col,
+        )
+        df = df.set_index(self.params.date_col)
+        df = df.reindex(date_idx, method="backfill")
+
+        return df
+
+    def predict(self, X):
+        df = self.prepare_data(X)
+
+        model = self.create_model()
+
         _df = pd.DataFrame(
             {"y": df[self.params.target].values},
             index=df.index.to_period(self.params.freq),
         )
-        return _df
-
-    def predict(self, X):
-        _df = self.prepare_data(X)
-
-        model = self.create_model()
-
         model.fit(_df)
 
-        y_pred = model.predict(
-            ForecastingHorizon(
-                np.arange(1, self.params["prediction_length"] + 1))
+        pred_df = model.predict(
+            ForecastingHorizon(np.arange(1, self.params.prediction_length + 1))
         )
         date_idx = pd.date_range(
-            _df.index.max() + pd.DateOffset(days=1),
-            _df.index.max() +
-            pd.DateOffset(days=self.params["prediction_length"]),
-            freq=self.params["freq"],
-            name=self.params["date_col"],
+            df.index.max() + pd.DateOffset(days=1),
+            df.index.max() + pd.DateOffset(days=self.params.prediction_length),
+            freq=self.params.freq,
+            name=self.params.date_col,
         )
-        forecast_df = pd.DataFrame(
-            data={self.params["prediction_length"]: y_pred.values}, index=date_idx
-        ).reset_index()
-        forecast_df[self.params.target] = forecast_df[self.params.target].clip(
-            0.01)
+        forecast_df = pd.DataFrame(data=[], index=date_idx).reset_index()
+        forecast_df[self.params.target] = pred_df.y.values
+        forecast_df[self.params.target] = forecast_df[self.params.target].clip(0.01)
         return forecast_df
 
     def calculate_metrics(
@@ -74,26 +82,33 @@ class SKTimeLgbmDsDt(SKTimeForecastingPipeline):
     def __init__(self, params):
         super().__init__(params)
 
-    def create_model(self):
+    def create_model(self) -> BaseForecaster:
         model = TransformedTargetForecaster(
             [
                 (
                     "deseasonalise",
                     ConditionalDeseasonalizer(
-                        model=self.params.get("deseasonalise_model", "additive"), sp=7),
+                        model=self.params.get("deseasonalise_model", "additive"), sp=7
+                    ),
                 ),
                 (
                     "detrend",
-                    Detrender(forecaster=PolynomialTrendForecaster(
-                        degree=int(self.params.get("detrend_poly_degree", 1)))),
+                    Detrender(
+                        forecaster=PolynomialTrendForecaster(
+                            degree=int(self.params.get("detrend_poly_degree", 1))
+                        )
+                    ),
                 ),
                 (
                     "forecast",
                     make_reduction(
                         estimator=LGBMRegressor(),
                         scitype="tabular-regressor",
-                        window_length=int(self.params.get(
-                            "window_size", self.params.prediction_length)),
+                        window_length=int(
+                            self.params.get(
+                                "window_size", self.params.prediction_length
+                            )
+                        ),
                         strategy="recursive",
                     ),
                 ),
