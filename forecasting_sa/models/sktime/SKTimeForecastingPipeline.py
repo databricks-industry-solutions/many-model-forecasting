@@ -1,9 +1,13 @@
 from abc import abstractmethod
-from typing import Dict
+from typing import Dict, Any
 
 import numpy as np
 import pandas as pd
 from lightgbm import LGBMRegressor
+from sktime.forecasting.model_selection import (
+    SlidingWindowSplitter,
+    ForecastingGridSearchCV,
+)
 from sktime.performance_metrics.forecasting import mean_absolute_percentage_error
 from sktime.forecasting.compose import make_reduction
 from sktime.forecasting.compose import TransformedTargetForecaster
@@ -19,13 +23,33 @@ class SKTimeForecastingPipeline(ForecastingSAVerticalizedDataRegressor):
         super().__init__(params)
         self.params = params
         self.model_spec = None
+        self.model = None
+        self.param_grid = self.create_param_grid()
 
     def fit(self, X, y=None):
-        pass
+        print("fit called")
+        if self.model is None and self.param_grid:
+            print("tuning..")
+            _model = self.create_model()
+            df = self.prepare_data(X)
+            cv = SlidingWindowSplitter(
+                initial_window=int(len(df) * 0.8),
+                window_length=self.params.prediction_length,
+            )
+            gscv = ForecastingGridSearchCV(_model, cv=cv, param_grid=self.param_grid)
+            _df = pd.DataFrame(
+                {"y": df[self.params.target].values},
+                index=df.index.to_period(self.params.freq),
+            )
+            gscv.fit(_df)
+            self.model = gscv.best_forecaster_
 
     @abstractmethod
     def create_model(self) -> BaseForecaster:
         pass
+
+    def create_param_grid(self) -> Dict[str, Any]:
+        return {}
 
     def prepare_data(self, df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy()
@@ -42,17 +66,19 @@ class SKTimeForecastingPipeline(ForecastingSAVerticalizedDataRegressor):
         return df
 
     def predict(self, X):
+        print("predict called")
         df = self.prepare_data(X)
 
-        model = self.create_model()
+        if self.model:
+            self.model = self.create_model()
 
         _df = pd.DataFrame(
             {"y": df[self.params.target].values},
             index=df.index.to_period(self.params.freq),
         )
-        model.fit(_df)
+        self.model.fit(_df)
 
-        pred_df = model.predict(
+        pred_df = self.model.predict(
             ForecastingHorizon(np.arange(1, self.params.prediction_length + 1))
         )
         date_idx = pd.date_range(
@@ -88,7 +114,8 @@ class SKTimeLgbmDsDt(SKTimeForecastingPipeline):
                 (
                     "deseasonalise",
                     ConditionalDeseasonalizer(
-                        model=self.params.get("deseasonalise_model", "additive"), sp=7
+                        model=self.params.get("deseasonalise_model", "additive"),
+                        sp=int(self.params.get("season_length", 1)),
                     ),
                 ),
                 (
@@ -115,3 +142,15 @@ class SKTimeLgbmDsDt(SKTimeForecastingPipeline):
             ]
         )
         return model
+
+    def create_param_grid(self):
+        return {
+            "deseasonalise__model": ["additive", "multiplicative"],
+            "deseasonalise__sp": [1, 7, 52],
+            "detrend__forecaster__degree": [1, 2, 3, 4, 5],
+            "forecast__estimator__learning_rate": [0.1, 0.001],
+            "forecast__window_length": [
+                self.params.prediction_length,
+                self.params.prediction_length * 2,
+            ],
+        }

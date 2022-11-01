@@ -22,7 +22,7 @@ def run_forecast(
     freq: str = "D",
     prediction_length: int = 10,
     backtest_months: int = 1,
-    stride: int = 7,
+    stride: int = 10,
     scoring_data: str = None,
     scoring_output: str = None,
     metrics_output: str = None,
