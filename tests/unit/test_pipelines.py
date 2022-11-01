@@ -35,11 +35,10 @@ def m4_df():
 
 def test_api_func(temp_dir, spark_session, m4_df):
     mlflow.set_tracking_uri(f"sqlite:///mlruns.db")
-    spark_session.createDataFrame(
-        m4_df[m4_df.ds > "2021-12-31"]
-    ).createOrReplaceTempView("train")
+    spark_session.createDataFrame(m4_df).createOrReplaceTempView("train")
 
     active_models = [
+        "SKTimeLgbmDsDt",
         "StatsForecastArima",
         "StatsForecastETS",
         "StatsForecastCES",

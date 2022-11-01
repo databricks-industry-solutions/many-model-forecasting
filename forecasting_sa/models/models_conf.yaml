@@ -15,6 +15,18 @@ promoted_props:
   - static_categoricals
 models:
 
+  SKTimeLgbmDsDt:
+    module: forecasting_sa.models.sktime.SKTimeForecastingPipeline
+    model_class: SKTimeLgbmDsDt
+    model_type: local
+    data_prep: vertical
+    trainable: false
+
+    model_spec:
+      deseasonalise_model: multiplicative
+      season_length: 7
+      detrend_poly_degree: 2
+
   StatsForecastBaselineWindowAverage:
     module: forecasting_sa.models.statsforecast.StatsFcForecastingPipeline
     model_class: StatsFcBaselineWindowAverage
