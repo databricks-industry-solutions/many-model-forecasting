@@ -23,7 +23,7 @@ class SKTimeForecastingPipeline(ForecastingSAVerticalizedDataRegressor):
     def __init__(self, params):
         super().__init__(params)
         self.params = params
-        self.model_spec = None
+        self.model_spec = self.params.model_spec
         self.model = None
         self.param_grid = self.create_param_grid()
 
@@ -67,7 +67,7 @@ class SKTimeForecastingPipeline(ForecastingSAVerticalizedDataRegressor):
         )
         df = df.set_index(self.params.date_col)
         df = df.reindex(date_idx, method="backfill")
-
+        df = df.sort_index()
         return df
 
     def predict(self, X):
@@ -119,15 +119,15 @@ class SKTimeLgbmDsDt(SKTimeForecastingPipeline):
                 (
                     "deseasonalise",
                     ConditionalDeseasonalizer(
-                        model=self.params.get("deseasonalise_model", "additive"),
-                        sp=int(self.params.get("season_length", 1)),
+                        model=self.model_spec.get("deseasonalise_model", "additive"),
+                        sp=int(self.model_spec.get("season_length", 1)),
                     ),
                 ),
                 (
                     "detrend",
                     Detrender(
                         forecaster=PolynomialTrendForecaster(
-                            degree=int(self.params.get("detrend_poly_degree", 1))
+                            degree=int(self.model_spec.get("detrend_poly_degree", 1))
                         )
                     ),
                 ),
@@ -137,7 +137,7 @@ class SKTimeLgbmDsDt(SKTimeForecastingPipeline):
                         estimator=LGBMRegressor(),
                         scitype="tabular-regressor",
                         window_length=int(
-                            self.params.get(
+                            self.model_spec.get(
                                 "window_size", self.params.prediction_length
                             )
                         ),
@@ -167,9 +167,9 @@ class SKTimeTBats(SKTimeForecastingPipeline):
 
     def create_model(self) -> BaseForecaster:
         model = TBATS(
-            sp=int(self.params.get("season_length", 1)),
-            use_trend=self.params.get("use_trend", True),
-            use_box_cox=self.params.get("box_cox", True),
+            sp=int(self.model_spec.get("season_length", 1)),
+            use_trend=self.model_spec.get("use_trend", True),
+            use_box_cox=self.model_spec.get("box_cox", True),
         )
         return model
 
