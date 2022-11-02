@@ -34,7 +34,8 @@ class SKTimeForecastingPipeline(ForecastingSAVerticalizedDataRegressor):
             df = self.prepare_data(X)
             cv = SlidingWindowSplitter(
                 initial_window=int(len(df) * 0.8),
-                window_length=self.params.prediction_length,
+                window_length=self.params.prediction_length*10,
+                step_length=self.params.prediction_length*2
             )
             gscv = ForecastingGridSearchCV(_model, cv=cv, param_grid=self.param_grid, n_jobs=1)
             _df = pd.DataFrame(
