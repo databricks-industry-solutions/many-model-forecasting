@@ -36,7 +36,7 @@ class SKTimeForecastingPipeline(ForecastingSAVerticalizedDataRegressor):
                 initial_window=int(len(df) * 0.8),
                 window_length=self.params.prediction_length,
             )
-            gscv = ForecastingGridSearchCV(_model, cv=cv, param_grid=self.param_grid)
+            gscv = ForecastingGridSearchCV(_model, cv=cv, param_grid=self.param_grid, n_jobs=1)
             _df = pd.DataFrame(
                 {"y": df[self.params.target].values},
                 index=df.index.to_period(self.params.freq),
@@ -148,7 +148,7 @@ class SKTimeLgbmDsDt(SKTimeForecastingPipeline):
             "deseasonalise__model": ["additive", "multiplicative"],
             "deseasonalise__sp": [1, 7, 14],
             "detrend__forecaster__degree": [1, 2, 3],
-            #"forecast__estimator__learning_rate": [0.1, 0.01, 0.001],
+            "forecast__estimator__learning_rate": [0.1, 0.01, 0.001],
             # "forecast__window_length": [
             #     self.params.prediction_length,
             #     self.params.prediction_length * 2,
