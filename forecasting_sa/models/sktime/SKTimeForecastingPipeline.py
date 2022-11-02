@@ -33,7 +33,7 @@ class SKTimeForecastingPipeline(ForecastingSAVerticalizedDataRegressor):
             _model = self.create_model()
             df = self.prepare_data(X)
             cv = SlidingWindowSplitter(
-                initial_window=int(len(df) * 0.8),
+                initial_window=int(len(df) * 0.9),
                 window_length=self.params.prediction_length * 10,
                 step_length=self.params.prediction_length * 2,
             )
