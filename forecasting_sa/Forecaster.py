@@ -388,10 +388,10 @@ class Forecaster:
         group_id = pdf[model.params["group_id"]].iloc[0]
         print(group_id)
         try:
-            pdf = pdf.replace([np.inf, -np.inf], 0)
-            pdf = pdf.replace(np.nan, 0)
-            pdf[model.params["target"]] = pdf[model.params["target"]].clip(0.01)
+            pdf = pdf.fillna(0.1)
+            pdf[model.params["target"]] = pdf[model.params["target"]].clip(0.1)
             metrics_df = model.backtest(pdf, start=split_date, retrain=True)
+            print(metrics_df)
             metrics_df[model.params["group_id"]] = group_id
             return metrics_df
         except Exception as err:

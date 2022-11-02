@@ -134,7 +134,7 @@ class SKTimeLgbmDsDt(SKTimeForecastingPipeline):
                 (
                     "forecast",
                     make_reduction(
-                        estimator=LGBMRegressor(),
+                        estimator=LGBMRegressor(random_state=42),
                         scitype="tabular-regressor",
                         window_length=int(
                             self.model_spec.get(
