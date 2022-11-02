@@ -21,11 +21,26 @@ models:
     model_type: local
     data_prep: vertical
     trainable: false
+    enable_gcv: false
 
     model_spec:
       deseasonalise_model: multiplicative
       season_length: 7
       detrend_poly_degree: 2
+
+
+  SKTimeTBats:
+    module: forecasting_sa.models.sktime.SKTimeForecastingPipeline
+    model_class: SKTimeTBats
+    model_type: local
+    data_prep: vertical
+    trainable: false
+    enable_gcv: false
+
+    model_spec:
+      box_cox: True
+      use_trend: True
+      season_length: 7
 
   StatsForecastBaselineWindowAverage:
     module: forecasting_sa.models.statsforecast.StatsFcForecastingPipeline

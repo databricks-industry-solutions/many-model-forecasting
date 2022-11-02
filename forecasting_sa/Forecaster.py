@@ -427,8 +427,10 @@ class Forecaster:
         evaluate_one_model_fn = functools.partial(
             Forecaster.evaluate_one_model, model=model
         )
-        res_sdf = src_df.repartition(100).groupby(self.conf["group_id"]).applyInPandas(
-            evaluate_one_model_fn, schema=output_schema
+        res_sdf = (
+            src_df.repartition(100)
+            .groupby(self.conf["group_id"])
+            .applyInPandas(evaluate_one_model_fn, schema=output_schema)
         )
         if self.conf.get("metrics_output", None) is not None:
             (
@@ -561,8 +563,10 @@ class Forecaster:
         model = self.model_registry.get_model(model_conf["name"])
         score_one_model_fn = functools.partial(Forecaster.score_one_model, model=model)
 
-        res_sdf = src_df.repartition(100).groupby(self.conf["group_id"]).applyInPandas(
-            score_one_model_fn, schema=output_schema
+        res_sdf = (
+            src_df.repartition(100)
+            .groupby(self.conf["group_id"])
+            .applyInPandas(score_one_model_fn, schema=output_schema)
         )
         if not isinstance(res_sdf.schema[self.conf["group_id"]].dataType, StringType):
             res_sdf = res_sdf.withColumn(

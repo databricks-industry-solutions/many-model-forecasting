@@ -8,6 +8,7 @@ from sktime.forecasting.model_selection import (
     SlidingWindowSplitter,
     ForecastingGridSearchCV,
 )
+from sktime.forecasting.tbats import TBATS
 from sktime.performance_metrics.forecasting import mean_absolute_percentage_error
 from sktime.forecasting.compose import make_reduction
 from sktime.forecasting.compose import TransformedTargetForecaster
@@ -28,7 +29,7 @@ class SKTimeForecastingPipeline(ForecastingSAVerticalizedDataRegressor):
 
     def fit(self, X, y=None):
         print("fit called")
-        if self.model is None and self.param_grid:
+        if self.params.get("enable_gcv", False) and self.model is None and self.param_grid:
             print("tuning..")
             _model = self.create_model()
             df = self.prepare_data(X)
@@ -46,6 +47,7 @@ class SKTimeForecastingPipeline(ForecastingSAVerticalizedDataRegressor):
             )
             gscv.fit(_df)
             self.model = gscv.best_forecaster_
+            print(gscv.best_params_)
 
     @abstractmethod
     def create_model(self) -> BaseForecaster:
@@ -55,7 +57,7 @@ class SKTimeForecastingPipeline(ForecastingSAVerticalizedDataRegressor):
         return {}
 
     def prepare_data(self, df: pd.DataFrame) -> pd.DataFrame:
-        df = df.copy()
+        df = df.copy().fillna(0.1)
         df[self.params.target] = df[self.params.target].clip(0.1)
         date_idx = pd.date_range(
             start=df[self.params.date_col].min(),
@@ -72,7 +74,7 @@ class SKTimeForecastingPipeline(ForecastingSAVerticalizedDataRegressor):
         print("predict called")
         df = self.prepare_data(X)
 
-        if self.model:
+        if not self.model:
             self.model = self.create_model()
 
         _df = pd.DataFrame(
@@ -100,8 +102,8 @@ class SKTimeForecastingPipeline(ForecastingSAVerticalizedDataRegressor):
     ) -> Dict[str, float]:
         pred_df = self.predict(hist_df)
         smape = mean_absolute_percentage_error(
-            val_df[self.params["target"]],
-            pred_df[self.params["target"]],
+            val_df[self.params["target"]].values,
+            pred_df[self.params["target"]].values,
             symmetric=True,
         )
         return {"smape": smape}
@@ -156,4 +158,24 @@ class SKTimeLgbmDsDt(SKTimeForecastingPipeline):
                 self.params.prediction_length,
                 self.params.prediction_length * 2,
             ],
+        }
+
+
+class SKTimeTBats(SKTimeForecastingPipeline):
+    def __init__(self, params):
+        super().__init__(params)
+
+    def create_model(self) -> BaseForecaster:
+        model = TBATS(
+            sp=int(self.params.get("season_length", 1)),
+            use_trend=self.params.get("use_trend", True),
+            use_box_cox=self.params.get("box_cox", True),
+        )
+        return model
+
+    def create_param_grid(self):
+        return {
+            "use_trend": [True, False],
+            "use_box_cox": [True, False],
+            "sp": [1, 7, 14],
         }
