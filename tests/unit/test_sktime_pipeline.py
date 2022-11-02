@@ -26,7 +26,7 @@ def test_sktime(base_config, m4_df):
         "deseasonalise__model": ["additive", "multiplicative"],
         "detrend__forecaster__degree": [1, 2],
     }
-    _df = m4_df[m4_df.unique_id == "D2"]
+    _df = m4_df[m4_df.unique_id == "D8"]
     model.fit(_df)
     res_df = model.predict(_df)
     print(

@@ -146,11 +146,11 @@ class SKTimeLgbmDsDt(SKTimeForecastingPipeline):
     def create_param_grid(self):
         return {
             "deseasonalise__model": ["additive", "multiplicative"],
-            "deseasonalise__sp": [1, 7, 52],
-            "detrend__forecaster__degree": [1, 2, 3, 4, 5],
-            "forecast__estimator__learning_rate": [0.1, 0.001],
-            "forecast__window_length": [
-                self.params.prediction_length,
-                self.params.prediction_length * 2,
-            ],
+            "deseasonalise__sp": [1, 7, 14],
+            "detrend__forecaster__degree": [1, 2, 3],
+            #"forecast__estimator__learning_rate": [0.1, 0.01, 0.001],
+            # "forecast__window_length": [
+            #     self.params.prediction_length,
+            #     self.params.prediction_length * 2,
+            # ],
         }
