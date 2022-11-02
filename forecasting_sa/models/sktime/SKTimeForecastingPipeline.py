@@ -38,7 +38,7 @@ class SKTimeForecastingPipeline(ForecastingSAVerticalizedDataRegressor):
                 step_length=self.params.prediction_length * 2,
             )
             gscv = ForecastingGridSearchCV(
-                _model, cv=cv, param_grid=self.param_grid, n_jobs=1
+                _model, cv=cv, param_grid=self.param_grid, n_jobs=-1
             )
             _df = pd.DataFrame(
                 {"y": df[self.params.target].values},
