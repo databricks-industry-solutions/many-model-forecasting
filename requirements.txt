@@ -9,3 +9,5 @@ Jinja2
 omegaconf
 statsforecast
 missingno
+lightgbm
+tbats
