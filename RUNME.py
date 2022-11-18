@@ -1,85 +1,82 @@
 # Databricks notebook source
-# MAGIC %pip install -r requirements.txt
-# MAGIC %pip install datasetsforecast
+# MAGIC %md This notebook sets up the companion cluster(s) to run the solution accelerator. It also creates the Workflow to illustrate the order of execution. Happy exploring! 
+# MAGIC 🎉
+# MAGIC 
+# MAGIC **Steps**
+# MAGIC 1. Simply attach this notebook to a cluster and hit `Run all` for this notebook. A multi-step job and the clusters used in the job will be created for you and hyperlinks are printed on the last block of the notebook. 
+# MAGIC 
+# MAGIC 2. Run the accelerator notebooks: Feel free to explore the multi-step job page and **run the Workflow**, or **run the notebooks interactively** with the cluster to see how this solution accelerator executes. 
+# MAGIC 
+# MAGIC     2a. **Run the Workflow**: Navigate to the Workflow link and hit the `Run Now` 💥. 
+# MAGIC   
+# MAGIC     2b. **Run the notebooks interactively**: Attach the notebook with the cluster(s) created and execute as described in the `job_json['tasks']` below.
+# MAGIC 
+# MAGIC **Prerequisites** 
+# MAGIC 1. You need to have cluster creation permissions in this workspace.
+# MAGIC 
+# MAGIC 2. In case the environment has cluster-policies that interfere with automated deployment, you may need to manually create the cluster in accordance with the workspace cluster policy. The `job_json` definition below still provides valuable information about the configuration these series of notebooks should run with. 
+# MAGIC 
+# MAGIC **Notes**
+# MAGIC 1. The pipelines, workflows and clusters created in this script are not user-specific. Keep in mind that rerunning this script again after modification resets them for other users too.
+# MAGIC 
+# MAGIC 2. If the job execution fails, please confirm that you have set up other environment dependencies as specified in the accelerator notebooks. Accelerators may require the user to set up additional cloud infra or secrets to manage credentials. 
 
 # COMMAND ----------
 
-import logging
-
-logger = spark._jvm.org.apache.log4j
-logging.getLogger("py4j.java_gateway").setLevel(logging.ERROR)
-logging.getLogger("py4j.clientserver").setLevel(logging.ERROR)
+# DBTITLE 0,Install util packages
+# MAGIC %pip install git+https://github.com/databricks-academy/dbacademy@v1.0.13 git+https://github.com/databricks-industry-solutions/notebook-solution-companion@safe-print-html --quiet --disable-pip-version-check
 
 # COMMAND ----------
 
-import pathlib
-import pandas as pd
-from datasetsforecast.m4 import M4
-from forecasting_sa import run_forecast
+from solacc.companion import NotebookSolutionCompanion
 
 # COMMAND ----------
 
-
-def _transform_group(df):
-    unique_id = df.unique_id.iloc[0]
-    _start = pd.Timestamp("2020-01-01")
-    _end = _start + pd.DateOffset(days=int(df.count()[0]) - 1)
-    date_idx = pd.date_range(start=_start, end=_end, freq="D", name="ds")
-    res_df = pd.DataFrame(data=[], index=date_idx).reset_index()
-    res_df["unique_id"] = unique_id
-    res_df["y"] = df.y.values
-    return res_df
-
-
-def create_m4_df():
-    y_df, _, _ = M4.load(directory=str(pathlib.Path.home()), group="Daily")
-    _ids = [f"D{i}" for i in range(1, 100)]
-    y_df = (
-        y_df.groupby("unique_id")
-        .filter(lambda x: x.unique_id.iloc[0] in _ids)
-        .groupby("unique_id")
-        .apply(_transform_group)
-        .reset_index(drop=True)
-    )
-    return y_df
-
-
-# COMMAND ----------
-
-spark.createDataFrame(create_m4_df()).createOrReplaceTempView("train")
-
-active_models = [
-    "StatsForecastArima",
-    "StatsForecastETS",
-    "StatsForecastCES",
-    "StatsForecastTSB",
-    "StatsForecastADIDA",
-    "StatsForecastIMAPA",
-    "StatsForecastCrostonSBA",
-    "StatsForecastCrostonOptimized",
-    "StatsForecastCrostonClassic",
-    "StatsForecastBaselineWindowAverage",
-    "StatsForecastBaselineSeasonalWindowAverage",
-    "StatsForecastBaselineNaive",
-    "StatsForecastBaselineSeasonalNaive",
-    "GluonTSTorchDeepAR",
-]
-
-run_forecast(
-    spark=spark,
-    # conf={"temp_path": f"{str(temp_dir)}/temp"},
-    train_data="train",
-    scoring_data="train",
-    scoring_output="scoring_out",
-    metrics_output="metrics",
-    group_id="unique_id",
-    date_col="ds",
-    target="y",
-    freq="D",
-    train_predict_ratio=2,
-    active_models=active_models,
-    experiment_path=f"/Shared/fsa_cicd_pr_experiment",
-    use_case_name="fsa",
-)
+job_json = {
+        "timeout_seconds": 28800,
+        "max_concurrent_runs": 1,
+        "tags": {
+            "usage": "solacc_testing",
+            "group": "RCG"
+        },
+        "tasks": [
+            {
+                "job_cluster_key": "mm_cluster",
+                "notebook_task": {
+                    "notebook_path": f"01_mm_forecasting_demo"
+                },
+                "libraries": [
+                  { "cran": {"package": "fable"} },
+                  { "cran": {"package": "fabletools"} },
+                  { "cran": {"package": "urca"} },
+                  { "cran": {"package": "feasts"} },
+                  { "cran": {"package": "lazyeval"} },
+                  { "cran": {"package": "tsibble"} },
+                  { "cran": {"package": "distributional"} }
+                ],
+                "task_key": "mm_01"
+            }
+        ],
+        "job_clusters": [
+            {
+                "job_cluster_key": "mm_cluster",
+                "new_cluster": {
+                    "spark_version": "11.3.x-cpu-ml-scala2.12",
+                "spark_conf": {
+                    "spark.databricks.delta.formatCheck.enabled": "false"
+                    },
+                    "num_workers": 2,
+                    "node_type_id": {"AWS": "i3.xlarge", "MSA": "Standard_DS3_v2", "GCP": "n1-highmem-4"},
+                    "custom_tags": {
+                        "usage": "solacc_testing"
+                    },
+                }
+            }
+        ]
+    }
 
 # COMMAND ----------
+
+dbutils.widgets.dropdown("run_job", "False", ["True", "False"])
+run_job = dbutils.widgets.get("run_job") == "True"
+NotebookSolutionCompanion().deploy_compute(job_json, run_job=run_job)

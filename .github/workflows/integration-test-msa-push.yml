@@ -1,6 +1,10 @@
-name: MSA integration test PR
+name: MSA integration test push
 on:
- pull_request:
+ workflow_dispatch:
+ push:
+    branches:
+      - main
+      - web-sync
 
 jobs:
  run-databricks-notebook:
@@ -12,14 +16,14 @@ jobs:
        uses: databricks/run-notebook@v0
        with:
          local-notebook-path: RUNME.py
-         git-commit: ${{ github.event.pull_request.head.sha }}
+         git-commit: ${{ github.sha }}
          databricks-host: https://adb-984752964297111.11.azuredatabricks.net
          databricks-token: ${{ secrets.DEPLOYMENT_TARGET_TOKEN_MSA }}
          new-cluster-json: >
            {
              "num_workers": 0,
              "spark_version": "10.4.x-scala2.12",
-             "node_type_id": "Standard_DS3_v2",
+             "node_type_id": "Standard_D3_v2",
              "azure_attributes": {
                   "availability": "ON_DEMAND_AZURE"
                             },
@@ -30,7 +34,6 @@ jobs:
               "custom_tags": {
                   "ResourceClass": "SingleNode"
               }
-                            
            }
          notebook-params-json: >
            {
