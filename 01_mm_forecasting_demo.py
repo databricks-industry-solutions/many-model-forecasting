@@ -1,4 +1,10 @@
 # Databricks notebook source
+# MAGIC %md
+# MAGIC # Many Models Forecasting SA (MMFSA) Demo
+# MAGIC This demo highlights how to configure MMF SA to use M4 competition data
+
+# COMMAND ----------
+
 # MAGIC %pip install -r requirements.txt
 # MAGIC %pip install datasetsforecast
 
@@ -16,6 +22,16 @@ import pathlib
 import pandas as pd
 from datasetsforecast.m4 import M4
 from forecasting_sa import run_forecast
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ### Data preparation steps 
+# MAGIC We are using `datasetsforecast` package to download M4 data. 
+# MAGIC 
+# MAGIC M4 dataset contains a set of time series which we use for testing of MMF SA. 
+# MAGIC 
+# MAGIC Below we have developed a number of functions to convert M4 time series to the expected format. 
 
 # COMMAND ----------
 
@@ -46,7 +62,23 @@ def create_m4_df():
 
 # COMMAND ----------
 
-spark.createDataFrame(create_m4_df()).createOrReplaceTempView("train")
+# MAGIC %md ### Now the dataset looks in the following way:
+
+# COMMAND ----------
+
+m4_df = spark.createDataFrame(create_m4_df())
+m4_df.createOrReplaceTempView("train")
+display(m4_df)
+
+# COMMAND ----------
+
+# MAGIC %sql select * from train where unique_id in ('D1', 'D2', 'D6', 'D7')
+
+# COMMAND ----------
+
+# MAGIC %md ### Let's configure the list of models we are going to use for training:
+
+# COMMAND ----------
 
 active_models = [
     "StatsForecastArima",
@@ -65,19 +97,62 @@ active_models = [
     "GluonTSTorchDeepAR",
 ]
 
+# COMMAND ----------
+
+# MAGIC %md ### Now we can run the forecasting process using `run_forecast` function.
+
+# COMMAND ----------
+
 run_forecast(
     spark=spark,
     # conf={"temp_path": f"{str(temp_dir)}/temp"},
     train_data="train",
     scoring_data="train",
-    scoring_output="scoring_out",
+    scoring_output="forecast_scoring_out",
     metrics_output="metrics",
     group_id="unique_id",
     date_col="ds",
     target="y",
     freq="D",
+    #data_quality_check=False,
+    ensemble=True,
+    ensemble_metric="smape",
+    ensemble_metric_avg=0.3,
+    ensemble_metric_max=0.5,
+    ensemble_scoring_output="forecast_ensemble_out",
     train_predict_ratio=2,
     active_models=active_models,
     experiment_path=f"/Shared/fsa_cicd_pr_experiment",
     use_case_name="fsa",
 )
+
+# COMMAND ----------
+
+# MAGIC %md ### Metrics output
+# MAGIC In the metrics output table, the metrics for all backtest windows and all models are stored. This info can be used to monitor model performance or decide which models should be taken into the final aggregated forecast.
+
+# COMMAND ----------
+
+# MAGIC %sql select * from metrics
+
+# COMMAND ----------
+
+# MAGIC %md ### Forecast output
+# MAGIC In the Forecast output table, the final forecast for each model and each time series is stored. 
+
+# COMMAND ----------
+
+# MAGIC %sql select * from scoring_out
+
+# COMMAND ----------
+
+# MAGIC %md ### Final Ensemble Output
+# MAGIC In the final ensemble output table, we store the averaged forecast. The models which meet the threshold defined using the ensembling parameters are taken into consideration
+
+# COMMAND ----------
+
+# MAGIC %sql select * from forecast_ensemble_out
+
+# COMMAND ----------
+
+
