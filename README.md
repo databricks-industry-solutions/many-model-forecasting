@@ -1,14 +1,79 @@
 # Many Model Forecasting by Databricks Labs
 
-Bootstrap your large scale industrial forecasting solution on Databricks with Many Models Forecasting (MMF) Labs Project!
+## Introduction
 
-MMF can significantly accelerate the development of your Sales or Demand Forecasting solution by automating all phases of the ML lifecycle. 
-This includes data exploration, preparation, training, backtesting, scoring, and deploying.
-It follows the configuration over code approach and requires no coding from the users.
-MMF can model hundreds or thousands of time series at the same time leveraging Spark's powerful compute and brings together multiple well-known algorithms (local statistical models, global deep learning models, etc.) and libraries.
-The Project also has an extensible architecture and allows users with technical skills to bring in their models and algorithms.
-Get started now.
+Bootstrap your large scale forecasting solution on Databricks with Many Models Forecasting (MMF) Labs 
+Project.
 
-To run this solution, clone this repo into a Databricks workspace. Attach the RUNME notebook to any cluster running a DBR 11.0 or later runtime, and execute the notebook via Run-All. 
-A multi-step-job describing the accelerator pipeline will be created, and the link will be provided. Execute the multi-step-job to see how the pipeline runs.
+MMF accelerates the development of Sales / Demand Forecasting solution by automating all phases of the ML lifecycle. 
+This includes data exploration, preparation, training, backtesting, scoring, and deployment.
+It follows the configuration over code approach and requires no coding.
+MMF can model hundreds or thousands of time series at the same time leveraging Spark's powerful compute.
+It brings together many well-known and state-of-the-art algorithms (local statistical models, global deep learning models, etc.) 
+and libraries. 
+The Project has an extensible architecture and allows users with technical skills to bring in their models and 
+algorithms. 
+Get started now!
 
+## Getting started
+
+To run this solution using a public [M4](https://www.kaggle.com/datasets/yogesh94/m4-forecasting-competition-dataset) 
+dataset, clone this MMF repo into Databricks Repos.
+
+Attach the [01_mm_forecasting_demo.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/01_mm_forecasting_demo.py) 
+notebook to any cluster running a DBR 11.2 ML or later runtime. 
+You can choose the models to train on your input data by specifying them in a list:
+```python
+active_models = [
+    "StatsForecastArima",
+    "StatsForecastETS",
+    "RDynamicHarmonicRegression",
+    "RFableEnsemble",
+    "GluonTSTorchDeepAR",
+    "GluonTSNBEATS",
+    "GluonTSProphet",
+    "SKTimeLgbmDsDt",
+    "SKTimeTBats",
+]
+```
+A comprehensive list of models currently supported by MMF is available in the [models_conf.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/forecasting_sa/models/models_conf.yaml). 
+Now, run the forecasting using ```run_forecast``` function with the ```active_models``` list specified above:
+```python
+run_forecast(
+    spark=spark,
+    train_data="train",
+    scoring_data="train",
+    scoring_output="forecast_scoring_out",
+    metrics_output="metrics",
+    group_id="unique_id",
+    date_col="ds",
+    target="y",
+    freq="D",
+    data_quality_check=False,
+    ensemble=True,
+    ensemble_metric="smape",
+    ensemble_metric_avg=0.3,
+    ensemble_metric_max=0.5,
+    ensemble_scoring_output="forecast_ensemble_out",
+    train_predict_ratio=2,
+    active_models=active_models,
+    experiment_path=f"/Shared/fsa_cicd_pr_experiment",
+    use_case_name="fsa",
+)
+```
+We encourage you to see the notebook for the detail descriptions of the parameters, but in a nutshell, ```train_data``` 
+is the input data set, ```scoring_output``` is a delta table where you want to write your forecasting output into, 
+```metrics_output``` is a delta table where you want to write metrics from all backtest windows from all models into, 
+and ```active_models``` is a list of models you want to use. 
+Configuration of the model parameters can be done in [base_forecasting conf]() 
+
+MMF is fully integrated with MLflow and so once the training kicks off, the experiments will be visible in the MLflow UI. 
+
+## Project Support
+Please note that all projects in the ```databrickslabs``` github space are provided for your exploration only, 
+and are not formally supported by Databricks with Service Level Agreements (SLAs). 
+They are provided AS-IS and we do not make any guarantees of any kind. 
+Please do not submit a support ticket relating to any issues arising from the use of these projects.
+
+Any issues discovered through the use of this project should be filed as GitHub Issues on the Repo. 
+They will be reviewed as time permits, but there are no formal SLAs for support.
