@@ -45,10 +45,10 @@ active_models:
 #Here we can override hyperparameters for built-in models
 models:
   GluonTSNBEATS:
-    epochs: 10
+    epochs: 15
 
   GluonTSTorchDeepAR:
-    epochs: 10
+    epochs: 15
     context_length: 30
     batch_size: 64
     
