@@ -28,7 +28,7 @@ dynamic_reals:
 #  - DayOfWeek
 
 active_models:
-  #- StatsForecastArima
+  - StatsForecastArima
   #- StatsForecastETS
   #- RFableArima
   #- RFableETS
@@ -109,4 +109,3 @@ models:
                 - weekly:
                     season_length: 7
                     fourier_order: 3
-

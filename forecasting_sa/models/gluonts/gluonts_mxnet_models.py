@@ -19,7 +19,6 @@ class GluonTSSimpleFeedForwardRegressor(GluonTSRegressor):
             num_hidden_dimensions=[10],
             prediction_length=int(self.params["prediction_length"]),
             context_length=40,
-            freq=self.freq,
             trainer=Trainer(
                 ctx=mxnet.context.gpu()
                 if self.params.get("accelerator", "cpu") == "gpu"
