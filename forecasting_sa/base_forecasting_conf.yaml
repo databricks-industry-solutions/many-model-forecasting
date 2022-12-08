@@ -18,28 +18,37 @@ tuning_distributed: true
 tuning_max_epochs: 50
 tuning_max_context_len: 120
 
+static_categoricals:
+#  - Store
+
+dynamic_categoricals:
+#  - Promo
+
+dynamic_reals:
+#  - DayOfWeek
+
 active_models:
-  #- NeuralForecastMQNHiTS
-  - GluonTSNBEATS
-  - GluonTSDeepAR
-  #- GluonTSSeasonalNaive
-  #- GluonTSTorchDeepAR
-  #- GluonTSProphet
-  #- StatsForecastETS
   #- StatsForecastArima
+  #- StatsForecastETS
   #- RFableArima
   #- RFableETS
   #- RDynamicHarmonicRegression
   #- RFableNNETAR
   #- RFableEnsemble
+  #- GluonTSNBEATS
+  #- GluonTSDeepAR
+  #- GluonTSSeasonalNaive
+  #- GluonTSTorchDeepAR
+  #- GluonTSProphet
+  #- NeuralForecastMQNHiTS
 
 #Here we can override hyperparameters for built-in models
 models:
   GluonTSNBEATS:
-    epochs: 15
+    epochs: 10
 
   GluonTSTorchDeepAR:
-    epochs: 15
+    epochs: 10
     context_length: 30
     batch_size: 64
     

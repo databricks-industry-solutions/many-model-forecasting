@@ -26,24 +26,23 @@ class GluonTSRegressor(ForecastingSAVerticalizedDataRegressor):
 
     def create_gluon_dataset(self, df: pd.DataFrame) -> PandasDataset:
 
-        static_categoricals = self.params.get("static_categoricals", None)
+        static_categoricals = self.params.get("static_categoricals", [])
         if static_categoricals:
             for static_categorical in static_categoricals:
                 if df[static_categorical].dtype != int:
                     df[static_categorical] = (
                         df[static_categorical].astype("category").cat.codes
                     )
-
         dataset = PandasDataset.from_long_dataframe(
             df,
             item_id=self.params["group_id"],
             target=self.params["target"],
             timestamp=self.params["date_col"],
             freq=self.freq,
-            feat_dynamic_cat=self.params.get("dynamic_categoricals", None),
-            feat_dynamic_real=self.params.get("dynamic_reals", None),
+            feat_dynamic_cat=self.params.get("dynamic_categoricals", []),
+            feat_dynamic_real=self.params.get("dynamic_reals", []),
             feat_static_cat=static_categoricals,
-            feat_static_real=None,
+            feat_static_real=[],
         )
         return dataset
 
