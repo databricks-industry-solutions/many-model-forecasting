@@ -61,11 +61,11 @@ run_forecast(
     use_case_name="fsa",
 )
 ```
-We encourage you to see the notebook for the detail descriptions of the parameters, but in a nutshell, ```train_data``` 
-is the input data set, ```scoring_output``` is a delta table where you want to write your forecasting output into, 
-```metrics_output``` is a delta table where you want to write metrics from all backtest windows from all models into, 
-and ```active_models``` is a list of models you want to use. 
-Configuration of the model parameters can be done in [base_forecasting conf]() 
+See the notebook for the detail descriptions of the parameters. But in a nutshell, ```train_data``` is the input data set, 
+```scoring_output``` is a delta table where you want to write your forecasting output into, ```metrics_output``` is a 
+delta table where you want to write metrics from all backtest windows from all models into, and ```active_models``` is a 
+list of models you want to use. 
+To configure the model parameters, change the values in [base_forecasting_conf.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/forecasting_sa/base_forecasting_conf.yaml). 
 
 MMF is fully integrated with MLflow and so once the training kicks off, the experiments will be visible in the MLflow UI. 
 

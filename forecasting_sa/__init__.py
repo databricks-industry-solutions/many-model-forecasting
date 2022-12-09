@@ -23,6 +23,7 @@ def run_forecast(
     prediction_length: int = 10,
     backtest_months: int = 1,
     stride: int = 10,
+    resample: bool = False,
     scoring_data: str = None,
     scoring_output: str = None,
     metrics_output: str = None,
@@ -32,6 +33,9 @@ def run_forecast(
     ensemble_metric_max: float = None,
     ensemble_scoring_output: str = None,
     use_case_name: str = None,
+    static_categoricals: List[str] = None,
+    dynamic_categoricals: List[str] = None,
+    dynamic_reals: List[str] = None,
     active_models: List[str] = None,
     accelerator: str = None,
     scoring_model_stage: str = None,
@@ -65,6 +69,7 @@ def run_forecast(
     _conf["prediction_length"] = prediction_length
     _conf["backtest_months"] = backtest_months
     _conf["stride"] = stride
+    _conf["resample"] = resample
 
     run_scoring = False
     if scoring_data is not None and scoring_output is not None:
@@ -102,6 +107,12 @@ def run_forecast(
         _conf["ensemble_scoring_output"] = ensemble_scoring_output
     if data_quality_check is not None:
         _conf["data_quality_check"] = data_quality_check
+    if static_categoricals is not None:
+        _conf["static_categoricals"] = static_categoricals
+    if dynamic_categoricals is not None:
+        _conf["dynamic_categoricals"] = dynamic_categoricals
+    if dynamic_reals is not None:
+        _conf["dynamic_reals"] = dynamic_reals
 
     f = Forecaster(conf=_conf, spark=spark)
     run_id = f.train_eval_score(export_metrics=False, scoring=run_scoring)

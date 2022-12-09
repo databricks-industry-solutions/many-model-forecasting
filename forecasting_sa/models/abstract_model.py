@@ -127,18 +127,22 @@ class ForecastingSAVerticalizedDataRegressor(ForecastingSARegressor):
         print("starting calculate_metrics")
         to_pred_df = val_df.copy()
         to_pred_df[self.params["target"]] = np.nan
-        to_pred_df = pd.concat([hist_df, to_pred_df])
+        to_pred_df = pd.concat([hist_df, to_pred_df]).reset_index(drop=True)
         pred_df = self.predict(to_pred_df)
         keys = pred_df[self.params["group_id"]].unique()
         metrics = []
         # Compared predicted with val
         for key in keys:
-            smape = mean_absolute_percentage_error(
-                val_df[val_df[self.params["group_id"]] == key][self.params["target"]],
-                pred_df[pred_df[self.params["group_id"]] == key][self.params["target"]],
-                symmetric=True,
-            )
-            metrics.append(smape)
+            try:
+                smape = mean_absolute_percentage_error(
+                    val_df[val_df[self.params["group_id"]] == key][self.params["target"]],
+                    pred_df[pred_df[self.params["group_id"]] == key][self.params["target"]]\
+                        .iloc[-self.params["prediction_length"]:],
+                    symmetric=True,
+                )
+                metrics.append(smape)
+            except:
+                pass
         smape = sum(metrics) / len(metrics)
         #
         # smape = mean_absolute_percentage_error(
