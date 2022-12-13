@@ -38,6 +38,7 @@ class Forecaster:
     def __init__(
         self,
         conf: Union[str, Dict[str, Any]],
+        data_conf:Dict[str, Any],
         spark: SparkSession,
         experiment_id: str = None,
     ):
@@ -50,6 +51,8 @@ class Forecaster:
             self.conf = OmegaConf.create(_yaml_conf)
         else:
             raise Exception("No configuration provided!")
+
+        self.data_conf = data_conf
 
         self.model_registry = ModelRegistry(self.conf)
         self.spark = spark
@@ -95,10 +98,12 @@ class Forecaster:
         return train_df, val_true_df
 
     def resolve_source(self, key:str)->DataFrame:
-        if isinstance(self.conf[key], pd.DataFrame):
-            return self.spark.createDataFrame(self.conf[key])
-        elif isinstance(self.conf[key], DataFrame):
-            return self.conf[key]
+        if self.data_conf is not None:
+            df_val = self.data_conf.get(key)
+            if df_val is not None and isinstance(df_val, pd.DataFrame):
+                return self.spark.createDataFrame(df_val)
+            elif df_val is not None and  isinstance(df_val, DataFrame):
+                return df_val
         else:
             return self.spark.read.table(self.conf[key])
 

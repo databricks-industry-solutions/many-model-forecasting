@@ -63,7 +63,12 @@ def run_forecast(
     )
     _conf = OmegaConf.merge(base_conf, _conf)
 
-    _conf["train_data"] = train_data
+    _data_conf = {}
+    if train_data is not None and (isinstance(train_data, pd.DataFrame) or isinstance(train_data, DataFrame)):
+        _data_conf["train_data"] = train_data
+    else:
+        _conf["train_data"] = train_data
+
     _conf["group_id"] = group_id
     _conf["date_col"] = date_col
     _conf["target"] = target
@@ -77,7 +82,10 @@ def run_forecast(
     if scoring_data is not None and scoring_output is not None:
         run_scoring = True
         _conf["scoring_data"] = scoring_data
-        _conf["scoring_output"] = scoring_output
+        if scoring_data is not None and (isinstance(scoring_data, pd.DataFrame) or isinstance(scoring_data, DataFrame)):
+            _data_conf["scoring_data"] = scoring_data
+        else:
+            _conf["scoring_data"] = scoring_data
 
     if use_case_name is not None:
         _conf["use_case_name"] = use_case_name
@@ -116,7 +124,7 @@ def run_forecast(
     if dynamic_reals is not None:
         _conf["dynamic_reals"] = dynamic_reals
 
-    f = Forecaster(conf=_conf, spark=spark)
+    f = Forecaster(conf=_conf, data_conf=_data_conf, spark=spark)
     run_id = f.train_eval_score(export_metrics=False, scoring=run_scoring)
     return run_id
 
