@@ -15,7 +15,7 @@ from mlflow.exceptions import MlflowException
 from mlflow.tracking import MlflowClient
 from omegaconf import OmegaConf, DictConfig
 from omegaconf.basecontainer import BaseContainer
-from pyspark.sql import SparkSession
+from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.types import (
     StructType,
     StructField,
@@ -94,9 +94,17 @@ class Forecaster:
         #        days=self.conf['prediction_length'])]
         return train_df, val_true_df
 
+    def resolve_source(self, key:str)->DataFrame:
+        if isinstance(self.conf[key], pd.DataFrame):
+            return self.spark.createDataFrame(self.conf[key])
+        elif isinstance(self.conf[key], DataFrame):
+            return self.conf[key]
+        else:
+            return self.spark.read.table(self.conf[key])
+
     def prepare_data(self, model_conf: DictConfig, path: str) -> pd.DataFrame:
 
-        df = self.spark.read.table(path)
+        df = self.resolve_source(path)
 
         if model_conf.get("data_prep", "none") == "pivot":
             df = (
@@ -193,7 +201,7 @@ class Forecaster:
                 with mlflow.start_run(experiment_id=self.experiment_id) as run:
                     try:
                         # Get training and scoring data
-                        hist_df = self.prepare_data(model_conf, self.conf["train_data"])
+                        hist_df = self.prepare_data(model_conf, "train_data")
                         train_df, val_train_df = self.split_df_train_val(hist_df)
                         # Train and evaluate new models - results are saved to MLFlow
                         model = self.model_registry.get_model(model_name)
@@ -265,7 +273,7 @@ class Forecaster:
             and model.params.get("tuning", True)
         ):
             print(f'Tuning model: {model_conf["name"]}')
-            # with mlflow.start_run():
+                # with mlflow.start_run():
             spark_trials = None
             if self.conf["tuning_distributed"]:
                 spark_trials = SparkTrials(
@@ -411,7 +419,7 @@ class Forecaster:
             )
 
     def evaluate_local_model(self, model_conf):
-        src_df = self.spark.read.table(self.conf["train_data"])
+        src_df = self.resolve_source("train_data")
         src_df = DataQualityChecks(src_df, self.conf, self.spark).run()
         output_schema = StructType(
             [
@@ -459,7 +467,7 @@ class Forecaster:
     def evaluate_global_model(self, model_conf):
         mlflow_client = mlflow.tracking.MlflowClient()
         with mlflow.start_run(experiment_id=self.experiment_id):
-            hist_df = self.prepare_data(model_conf, self.conf["train_data"])
+            hist_df = self.prepare_data(model_conf, "train_data")
             train_df, val_df = self.split_df_train_val(hist_df)
             model_name = model_conf["name"]
             mlflow.set_tag("model_name", model_conf["name"])
@@ -549,7 +557,7 @@ class Forecaster:
             )
 
     def run_scoring_for_local_model(self, model_conf):
-        src_df = self.spark.read.table(self.conf["scoring_data"])
+        src_df = self.resolve_source("scoring_data")
         src_df = DataQualityChecks(src_df, self.conf, self.spark).run()
         output_schema = StructType(
             [
@@ -585,7 +593,7 @@ class Forecaster:
     def run_scoring_for_global_model(self, model_conf):
         print(f"Running scoring for {model_conf['name']}...")
         best_model = self.get_model_for_scoring(model_conf)
-        score_df = self.prepare_data(model_conf, self.conf["scoring_data"])
+        score_df = self.prepare_data(model_conf, "scoring_data")
         prediction_df = best_model.predict(score_df)
         # check if we need to unpivot data
         if model_conf.get("data_prep", "none") == "pivot":

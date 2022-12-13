@@ -5,17 +5,19 @@ import sys
 from typing import Union, Any, Dict, List
 
 import importlib.resources as pkg_resources
+
+import pandas as pd
 import yaml
 from omegaconf import OmegaConf
 from omegaconf.basecontainer import BaseContainer
-from pyspark.sql import SparkSession
+from pyspark.sql import SparkSession, DataFrame
 
 from forecasting_sa.Forecaster import Forecaster
 
 
 def run_forecast(
     spark: SparkSession,
-    train_data: str,
+    train_data: Union[str, pd.DataFrame, DataFrame],
     group_id: str = "unique_id",
     date_col: str = "date",
     target: str = "y",
@@ -24,7 +26,7 @@ def run_forecast(
     backtest_months: int = 1,
     stride: int = 10,
     resample: bool = False,
-    scoring_data: str = None,
+    scoring_data: Union[str, pd.DataFrame, DataFrame] = None,
     scoring_output: str = None,
     metrics_output: str = None,
     ensemble: bool = None,
