@@ -81,7 +81,7 @@ def run_forecast(
     run_scoring = False
     if scoring_data is not None and scoring_output is not None:
         run_scoring = True
-        _conf["scoring_data"] = scoring_data
+        _conf["scoring_output"] = scoring_output
         if scoring_data is not None and (isinstance(scoring_data, pd.DataFrame) or isinstance(scoring_data, DataFrame)):
             _data_conf["scoring_data"] = scoring_data
         else:
