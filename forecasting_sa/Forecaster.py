@@ -98,7 +98,7 @@ class Forecaster:
         return train_df, val_true_df
 
     def resolve_source(self, key:str)->DataFrame:
-        if self.data_conf is not None:
+        if self.data_conf:
             df_val = self.data_conf.get(key)
             if df_val is not None and isinstance(df_val, pd.DataFrame):
                 return self.spark.createDataFrame(df_val)
