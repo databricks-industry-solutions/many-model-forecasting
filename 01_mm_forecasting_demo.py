@@ -72,7 +72,7 @@ display(m4_df)
 
 # COMMAND ----------
 
-# MAGIC %sql select * from train where unique_id in ('D1', 'D2', 'D6', 'D7')
+# MAGIC %sql select * from mmf_sa_train where unique_id in ('D1', 'D2', 'D6', 'D7')
 
 # COMMAND ----------
 
@@ -133,7 +133,7 @@ run_forecast(
 
 # COMMAND ----------
 
-# MAGIC %sql select * from metrics
+# MAGIC %sql select * from mmf_sa_metrics
 
 # COMMAND ----------
 
@@ -142,7 +142,7 @@ run_forecast(
 
 # COMMAND ----------
 
-# MAGIC %sql select * from scoring_out
+# MAGIC %sql select * from mmf_sa_scoring_out
 
 # COMMAND ----------
 
@@ -151,7 +151,7 @@ run_forecast(
 
 # COMMAND ----------
 
-# MAGIC %sql select * from forecast_ensemble_out
+# MAGIC %sql select * from mmf_sa_forecast_ensemble_out
 
 # COMMAND ----------
 
