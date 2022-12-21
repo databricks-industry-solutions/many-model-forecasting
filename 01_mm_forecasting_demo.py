@@ -67,7 +67,7 @@ def create_m4_df():
 # COMMAND ----------
 
 m4_df = spark.createDataFrame(create_m4_df())
-m4_df.createOrReplaceTempView("train")
+m4_df.createOrReplaceTempView("mmf_sa_train")
 display(m4_df)
 
 # COMMAND ----------
