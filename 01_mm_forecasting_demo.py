@@ -142,7 +142,7 @@ run_forecast(
 
 # COMMAND ----------
 
-# MAGIC %sql select * from mmf_sa_scoring_out
+# MAGIC %sql select * from mmf_sa_forecast_scoring_out
 
 # COMMAND ----------
 
