@@ -63,7 +63,8 @@ job_json = {
                 "new_cluster": {
                     "spark_version": "11.3.x-cpu-ml-scala2.12",
                 "spark_conf": {
-                    "spark.databricks.delta.formatCheck.enabled": "false"
+                    "spark.databricks.delta.formatCheck.enabled": "false",
+                    "spark.databricks.delta.schema.autoMerge.enabled": "true"
                     },
                     "num_workers": 2,
                     "node_type_id": {"AWS": "i3.xlarge", "MSA": "Standard_DS3_v2", "GCP": "n1-highmem-4"},
