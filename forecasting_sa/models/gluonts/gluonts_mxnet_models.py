@@ -1,9 +1,9 @@
 import mxnet
-from gluonts.model.deepar import DeepAREstimator
-from gluonts.model.simple_feedforward import SimpleFeedForwardEstimator
-from gluonts.model.seq2seq import MQCNNEstimator
-from gluonts.model.n_beats import NBEATSEstimator
-from gluonts.model.transformer import TransformerEstimator
+from gluonts.mx.model.deepar import DeepAREstimator
+from gluonts.mx.model.simple_feedforward import SimpleFeedForwardEstimator
+from gluonts.mx.model.seq2seq import MQCNNEstimator
+from gluonts.mx.model.n_beats import NBEATSEstimator
+from gluonts.mx.model.transformer import TransformerEstimator
 
 from gluonts.mx import Trainer
 from hyperopt import hp

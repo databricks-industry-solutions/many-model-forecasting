@@ -10,7 +10,7 @@ promoted_props:
   - tuning_max_context_len
   - backtest_months
   - stride
-  - dynamic_categoricals
+  #- dynamic_categoricals
   - dynamic_reals
   - static_categoricals
 models:

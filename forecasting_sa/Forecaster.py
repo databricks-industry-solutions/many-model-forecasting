@@ -269,7 +269,6 @@ class Forecaster:
                 start=val_df[_date_col].min(),
                 retrain=_tuning_retrain,
             )
-
             return {"loss": _metrics["smape"], "status": STATUS_OK}
 
         if (
@@ -322,11 +321,11 @@ class Forecaster:
             )
             # TODO final train should be configurable
             # check if we should use all the data for final retrain
-            best_model.fit(train_df)
+            best_model.fit(train_df.append(val_df))
             return best_model, best_params
         else:
             print(f'Fitting model: {model_conf["name"]}')
-            model.fit(train_df)
+            model.fit(train_df.append(val_df))
             return model, model_conf
 
     def backtest_and_log_metrics(
