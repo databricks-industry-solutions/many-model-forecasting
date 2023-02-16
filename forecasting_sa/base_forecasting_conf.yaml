@@ -11,17 +11,17 @@ train_predict_ratio: 4
 freq: D
 
 tuning_enabled: false
-tuning_max_trials: 64
-tuning_parallelism: 8
+tuning_max_trials: 16
+tuning_parallelism: 4
 tuning_retrain: false
 tuning_distributed: true
-tuning_max_epochs: 50
-tuning_max_context_len: 120
+tuning_max_epochs: 10
+tuning_max_context_len: 40
 
-static_categoricals:
+static_features:
 #  - Store
 
-dynamic_categoricals:
+#dynamic_categoricals:
 #  - Promo
 
 dynamic_reals:
@@ -29,23 +29,29 @@ dynamic_reals:
 
 active_models:
   - StatsForecastArima
-  #- StatsForecastETS
-  #- RFableArima
-  #- RFableETS
-  #- RDynamicHarmonicRegression
-  #- RFableNNETAR
-  #- RFableEnsemble
-  #- GluonTSNBEATS
-  #- GluonTSDeepAR
-  #- GluonTSSeasonalNaive
-  #- GluonTSTorchDeepAR
-  #- GluonTSProphet
-  #- NeuralForecastMQNHiTS
+  - StatsForecastETS
+  - RFableArima
+  - RFableETS
+  - RDynamicHarmonicRegression
+  - RFableNNETAR
+  - RFableEnsemble
+  - GluonTSNBEATS
+  - GluonTSNBEATSTunable
+  - GluonTSDeepAR
+  - GluonTSSeasonalNaive
+  - GluonTSTorchDeepAR
+  - GluonTSProphet
+  - NeuralForecastMQNHiTS
 
 #Here we can override hyperparameters for built-in models
 models:
   GluonTSNBEATS:
     epochs: 15
+
+  GluonTSDeepAR:
+    epochs: 10
+    context_length: 30
+    batch_size: 64
 
   GluonTSTorchDeepAR:
     epochs: 15

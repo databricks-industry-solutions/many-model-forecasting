@@ -6,7 +6,7 @@ from gluonts.dataset.pandas import PandasDataset
 
 from gluonts.model.estimator import Estimator
 from gluonts.model.seasonal_naive import SeasonalNaivePredictor
-from gluonts.model.prophet import ProphetPredictor
+from gluonts.ext.prophet import ProphetPredictor
 from gluonts.torch.model.deepar import DeepAREstimator
 from hyperopt import hp
 
@@ -26,12 +26,12 @@ class GluonTSRegressor(ForecastingSAVerticalizedDataRegressor):
 
     def create_gluon_dataset(self, df: pd.DataFrame) -> PandasDataset:
 
-        static_categoricals = self.params.get("static_categoricals", [])
-        if static_categoricals:
-            for static_categorical in static_categoricals:
-                if df[static_categorical].dtype != int:
-                    df[static_categorical] = (
-                        df[static_categorical].astype("category").cat.codes
+        static_features = self.params.get("static_feature", [])
+        if static_features:
+            for static_feature in static_features:
+                if df[static_feature].dtype != int:
+                    df[static_feature] = (
+                        df[static_feature].astype("category").cat.codes
                     )
         dataset = PandasDataset.from_long_dataframe(
             df,
@@ -39,10 +39,10 @@ class GluonTSRegressor(ForecastingSAVerticalizedDataRegressor):
             target=self.params["target"],
             timestamp=self.params["date_col"],
             freq=self.freq,
-            feat_dynamic_cat=self.params.get("dynamic_categoricals", []),
+            #feat_dynamic_cat=self.params.get("dynamic_categoricals", []),
             feat_dynamic_real=self.params.get("dynamic_reals", []),
-            feat_static_cat=static_categoricals,
-            feat_static_real=[],
+            static_feature_columns=static_features,
+            #feat_static_real=[],
         )
         return dataset
 
