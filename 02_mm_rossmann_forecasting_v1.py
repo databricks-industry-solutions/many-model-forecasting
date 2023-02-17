@@ -16,8 +16,8 @@ from forecasting_sa import run_forecast
 
 active_models = [
     "SKTimeLgbmDsDt",
-    "StatsForecastArima",
-    "StatsForecastETS",
+    "StatsForecastAutoArima",
+    "StatsForecastAutoETS",
     "StatsForecastBaselineWindowAverage",
     "StatsForecastBaselineSeasonalWindowAverage",
     "StatsForecastBaselineNaive",
