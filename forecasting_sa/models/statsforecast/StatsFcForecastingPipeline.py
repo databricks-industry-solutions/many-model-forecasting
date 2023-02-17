@@ -4,12 +4,13 @@ import pandas as pd
 from sktime.performance_metrics.forecasting import mean_absolute_percentage_error
 from statsforecast import StatsForecast
 from statsforecast.models import (
-    ETS,
+    AutoETS,
     AutoARIMA,
     ADIDA,
     IMAPA,
     TSB,
     AutoCES,
+    AutoTheta,
     CrostonClassic,
     CrostonOptimized,
     CrostonSBA,
@@ -86,17 +87,17 @@ class StatsFcAutoArima(StatsFcForecaster):
         )
 
 
-class StatsFcETS(StatsFcForecaster):
+class StatsFcAutoETS(StatsFcForecaster):
     def __init__(self, params):
         super().__init__(params)
-        self.model_spec = ETS(
+        self.model_spec = AutoETS(
             season_length=self.params.model_spec.season_length
             if self.params.model_spec.season_length
             else 1
         )
 
 
-class StatsFcCES(StatsFcForecaster):
+class StatsFcAutoCES(StatsFcForecaster):
     def __init__(self, params):
         super().__init__(params)
         self.model_spec = AutoCES(
@@ -104,6 +105,17 @@ class StatsFcCES(StatsFcForecaster):
             if self.params.model_spec.season_length
             else 1,
             model="Z",
+        )
+
+
+class StatsFcAutoTheta(StatsFcForecaster):
+    def __init__(self, params):
+        super().__init__(params)
+        self.model_spec = AutoTheta(
+            season_length=self.params.model_spec.season_length
+            if self.params.model_spec.season_length
+            else 1,
+            decomposition_type="multiplicative",
         )
 
 

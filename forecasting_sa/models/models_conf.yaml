@@ -28,7 +28,6 @@ models:
       season_length: 7
       detrend_poly_degree: 2
 
-
   SKTimeTBats:
     module: forecasting_sa.models.sktime.SKTimeForecastingPipeline
     model_class: SKTimeTBats
@@ -70,7 +69,6 @@ models:
     data_prep: vertical
     trainable: false
 
-
   StatsForecastBaselineSeasonalNaive:
     module: forecasting_sa.models.statsforecast.StatsFcForecastingPipeline
     model_class: StatsFcBaselineSeasonalNaive
@@ -81,7 +79,7 @@ models:
     model_spec:
       season_length: 7
 
-  StatsForecastArima:
+  StatsForecastAutoArima:
     module: forecasting_sa.models.statsforecast.StatsFcForecastingPipeline
     model_class: StatsFcAutoArima
     model_type: local
@@ -93,9 +91,9 @@ models:
       approximation:
       level:
 
-  StatsForecastETS:
+  StatsForecastAutoETS:
     module: forecasting_sa.models.statsforecast.StatsFcForecastingPipeline
-    model_class: StatsFcETS
+    model_class: StatsFcAutoETS
     model_type: local
     data_prep: vertical
     trainable: false
@@ -104,9 +102,9 @@ models:
       season_length:
       model_type: "ZZZ"
 
-  StatsForecastCES:
+  StatsForecastAutoCES:
     module: forecasting_sa.models.statsforecast.StatsFcForecastingPipeline
-    model_class: StatsFcCES
+    model_class: StatsFcAutoCES
     model_type: local
     data_prep: vertical
     trainable: false
@@ -114,6 +112,17 @@ models:
     model_spec:
       season_length: 1
       model_type: "Z"
+
+  StatsForecastAutoTheta:
+    module: forecasting_sa.models.statsforecast.StatsFcForecastingPipeline
+    model_class: StatsFcAutoTheta
+    model_type: local
+    data_prep: vertical
+    trainable: false
+
+    model_spec:
+      season_length: 1
+      decomposition_type: "multiplicative"
 
   StatsForecastTSB:
     module: forecasting_sa.models.statsforecast.StatsFcForecastingPipeline
@@ -134,7 +143,6 @@ models:
     trainable: false
 
     model_spec:
-
 
   StatsForecastIMAPA:
     module: forecasting_sa.models.statsforecast.StatsFcForecastingPipeline
