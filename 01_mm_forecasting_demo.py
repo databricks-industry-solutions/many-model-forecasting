@@ -81,9 +81,10 @@ display(m4_df)
 # COMMAND ----------
 
 active_models = [
-    "StatsForecastArima",
-    "StatsForecastETS",
-    "StatsForecastCES",
+    "StatsForecastAutoArima",
+    "StatsForecastAutoETS",
+    "StatsForecastAutoCES",
+    "StatsForecastAutoTheta",
     "StatsForecastTSB",
     "StatsForecastADIDA",
     "StatsForecastIMAPA",
