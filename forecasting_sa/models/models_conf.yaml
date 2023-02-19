@@ -10,9 +10,9 @@ promoted_props:
   - tuning_max_context_len
   - backtest_months
   - stride
-  #- dynamic_categoricals
   - dynamic_reals
-  - static_categoricals
+  - static_features
+
 models:
 
   SKTimeLgbmDsDt:
@@ -179,7 +179,6 @@ models:
     trainable: false
 
     model_spec:
-
 
   RFableArima:
     module: forecasting_sa.models.r_fable.RFableForecastingPipeline

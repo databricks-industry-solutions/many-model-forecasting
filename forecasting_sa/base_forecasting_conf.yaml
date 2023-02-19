@@ -21,11 +21,9 @@ tuning_max_context_len: 40
 static_features:
 #  - Store
 
-#dynamic_categoricals:
-#  - Promo
-
 dynamic_reals:
-#  - DayOfWeek
+#  - Open
+#  - Promo
 
 active_models:
   - StatsForecastAutoArima

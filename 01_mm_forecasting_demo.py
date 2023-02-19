@@ -35,7 +35,6 @@ from forecasting_sa import run_forecast
 
 # COMMAND ----------
 
-
 def _transform_group(df):
     unique_id = df.unique_id.iloc[0]
     _start = pd.Timestamp("2020-01-01")
@@ -58,7 +57,6 @@ def create_m4_df():
         .reset_index(drop=True)
     )
     return y_df
-
 
 # COMMAND ----------
 
@@ -85,17 +83,17 @@ active_models = [
     "StatsForecastAutoETS",
     "StatsForecastAutoCES",
     "StatsForecastAutoTheta",
-    "StatsForecastTSB",
-    "StatsForecastADIDA",
-    "StatsForecastIMAPA",
-    "StatsForecastCrostonSBA",
-    "StatsForecastCrostonOptimized",
-    "StatsForecastCrostonClassic",
-    "StatsForecastBaselineWindowAverage",
-    "StatsForecastBaselineSeasonalWindowAverage",
-    "StatsForecastBaselineNaive",
-    "StatsForecastBaselineSeasonalNaive",
-    "GluonTSTorchDeepAR",
+    #"StatsForecastTSB",
+    #"StatsForecastADIDA",
+    #"StatsForecastIMAPA",
+    #"StatsForecastCrostonSBA",
+    #"StatsForecastCrostonOptimized",
+    #"StatsForecastCrostonClassic",
+    #"StatsForecastBaselineWindowAverage",
+    #"StatsForecastBaselineSeasonalWindowAverage",
+    #"StatsForecastBaselineNaive",
+    #"StatsForecastBaselineSeasonalNaive",
+    #"GluonTSTorchDeepAR",
 ]
 
 # COMMAND ----------

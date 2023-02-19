@@ -78,19 +78,12 @@ class DataQualityChecks:
         group_id = _df[conf["group_id"]].iloc[0]
 
         # Checking for nulls in external regressors
-        static_categoricals = conf.get("static_categoricals", None)
-        dynamic_categoricals = conf.get("dynamic_categoricals", None)
+        static_features = conf.get("static_features", None)
         dynamic_reals = conf.get("dynamic_reals", None)
-        if static_categoricals:
-            if _df[static_categoricals].isnull().values.any():
+        if static_features:
+            if _df[static_features].isnull().values.any():
                 print(
                     f"Removing {conf['group_id']} {group_id} since static categoricals provided contain null."
-                )
-                return pd.DataFrame()
-        if dynamic_categoricals:
-            if _df[dynamic_categoricals].isnull().values.any():
-                print(
-                    f"Removing {conf['group_id']} {group_id} since dynamic categoricals provided contain null."
                 )
                 return pd.DataFrame()
         if dynamic_reals:
