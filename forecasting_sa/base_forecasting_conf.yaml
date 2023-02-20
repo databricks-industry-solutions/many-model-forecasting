@@ -64,13 +64,13 @@ models:
       weekly_seasonality: 'auto'
       daily_seasonality: false
 
-  StatsForecastArima:
+  StatsForecastAutoArima:
     model_spec:
       season_length: 7
       approximation:
       level:
 
-  StatsForecastETS:
+  StatsForecastAutoETS:
     model_spec:
       season_length: 7
       model_type: "ZNZ"
@@ -109,9 +109,6 @@ models:
             model_spec:
               season_length: 7
         - model:
-            name: RDynamicHarmonicRegression
+            name: RFableNNETAR
             model_spec:
-              fourier_terms:
-                - weekly:
-                    season_length: 7
-                    fourier_order: 3
+              season_length: 7

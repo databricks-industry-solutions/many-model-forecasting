@@ -155,15 +155,14 @@ class RFableModel(ForecastingSAVerticalizedDataRegressor):
     ):
         # get 95% prediction interval
         fcst_dist = distributional.hilo(r_forecast, level=95.0)
-        fcst_dist = fabletools.unpack_hilo(fcst_dist, "95%")
+        #fcst_dist = fabletools.unpack_hilo(fcst_dist, "95%")
 
         # convert back to pandas
         fcst_r_df = base.as_data_frame(
             DataFrame(fcst_dist).select(
-                "unique_id", "ds", ".mean", "95%_lower", "95%_upper"
+                "unique_id", "ds", ".mean"
             )
         )
-
         # R has a date type while pandas only has datetimes so we need
         # to convert to datetime to make sure conversion to pandas works
         fcst_r_df = DataFrame(fcst_r_df).mutate(ds=rl("lubridate::as_datetime(ds)"))
@@ -182,7 +181,7 @@ class RFableModel(ForecastingSAVerticalizedDataRegressor):
         # TODO: Right now the scoring pipeline uses applyinpandas and
         #  expects the output schema to just include group_id, data_col
         #  and target so we remove the intervals for now.
-        forecast_pdf = forecast_pdf.drop(columns=["95%_lower", "95%_upper"])
+        #forecast_pdf = forecast_pdf.drop(columns=["95%_lower", "95%_upper"])
         forecast_pdf = forecast_pdf[[date_col, group_id, target]]
         return forecast_pdf
 

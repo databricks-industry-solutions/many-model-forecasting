@@ -408,19 +408,19 @@ class Forecaster:
             return metrics_df
         except Exception as err:
             _logger.error(
-                f"Error evaluating group {group_id} using mode {repr(model)}: {err}",
+                f"Error evaluating group {group_id} using model {repr(model)}: {err}",
                 exc_info=err,
                 stack_info=True,
             )
-            # raise Exception(f"Error evaluating group {group_id}: {e}", e)
-            return pd.DataFrame(
-                columns=[
-                    model.params["group_id"],
-                    "backtest_window_start_date",
-                    "metric_name",
-                    "metric_value",
-                ]
-            )
+            raise Exception(f"Error evaluating group {group_id}: {err}")
+            #return pd.DataFrame(
+            #    columns=[
+            #        model.params["group_id"],
+            #        "backtest_window_start_date",
+            #        "metric_name",
+            #        "metric_value",
+            #    ]
+            #)
 
     def evaluate_local_model(self, model_conf):
         src_df = self.resolve_source("train_data")
@@ -444,6 +444,7 @@ class Forecaster:
             .groupby(self.conf["group_id"])
             .applyInPandas(evaluate_one_model_fn, schema=output_schema)
         )
+
         if self.conf.get("metrics_output", None) is not None:
             (
                 res_sdf.withColumn("run_id", lit(self.run_id))
@@ -459,7 +460,6 @@ class Forecaster:
             .withColumnRenamed("avg(metric_value)", "metric_value")
             .toPandas()
         )
-
         print(res_df)
         with mlflow.start_run(experiment_id=self.experiment_id):
             for rec in res_df.values:
@@ -543,7 +543,13 @@ class Forecaster:
         pdf[model.params["date_col"]] = pd.to_datetime(pdf[model.params["date_col"]])
         pdf.sort_values(by=model.params["date_col"], inplace=True)
         group_id = pdf[model.params["group_id"]].iloc[0]
-        res_df = model.forecast(pdf)
+
+        if model.params["model_class"] == "RFableModel":
+            model.fit(pdf)
+            res_df = model.predict(pdf)
+        else:
+            res_df = model.forecast(pdf)
+
         res_df[model.params["group_id"]] = group_id
         return res_df
 
