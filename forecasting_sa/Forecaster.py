@@ -412,15 +412,15 @@ class Forecaster:
                 exc_info=err,
                 stack_info=True,
             )
-            raise Exception(f"Error evaluating group {group_id}: {err}")
-            #return pd.DataFrame(
-            #    columns=[
-            #        model.params["group_id"],
-            #        "backtest_window_start_date",
-            #        "metric_name",
-            #        "metric_value",
-            #    ]
-            #)
+            #raise Exception(f"Error evaluating group {group_id}: {err}")
+            return pd.DataFrame(
+                columns=[
+                    model.params["group_id"],
+                    "backtest_window_start_date",
+                    "metric_name",
+                    "metric_value",
+                ]
+            )
 
     def evaluate_local_model(self, model_conf):
         src_df = self.resolve_source("train_data")
