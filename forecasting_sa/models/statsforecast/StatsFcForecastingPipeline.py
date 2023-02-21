@@ -34,8 +34,8 @@ class StatsFcForecaster(ForecastingSAVerticalizedDataRegressor):
         pass
 
     def prepare_data(self, df: pd.DataFrame, future: bool = False) -> pd.DataFrame:
-
         if future:
+            # Prepare future dataframe with exogenous regressors for forecasting
             if 'dynamic_reals' in self.params.keys():
                 try:
                     df_statsfc = (
@@ -56,6 +56,7 @@ class StatsFcForecaster(ForecastingSAVerticalizedDataRegressor):
                 )
             )
         else:
+            # Prepare historical dataframe with or without exogenous regressors for training
             df[self.params.target] = df[self.params.target].clip(0.1)
             if 'dynamic_reals' in self.params.keys():
                 try:

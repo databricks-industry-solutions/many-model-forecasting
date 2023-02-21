@@ -35,8 +35,7 @@ def run_forecast(
     ensemble_metric_max: float = None,
     ensemble_scoring_output: str = None,
     use_case_name: str = None,
-    static_categoricals: List[str] = None,
-    dynamic_categoricals: List[str] = None,
+    static_features: List[str] = None,
     dynamic_reals: List[str] = None,
     active_models: List[str] = None,
     accelerator: str = None,
@@ -117,10 +116,8 @@ def run_forecast(
         _conf["ensemble_scoring_output"] = ensemble_scoring_output
     if data_quality_check is not None:
         _conf["data_quality_check"] = data_quality_check
-    if static_categoricals is not None:
-        _conf["static_categoricals"] = static_categoricals
-    if dynamic_categoricals is not None:
-        _conf["dynamic_categoricals"] = dynamic_categoricals
+    if static_features is not None:
+        _conf["static_features"] = static_features
     if dynamic_reals is not None:
         _conf["dynamic_reals"] = dynamic_reals
 

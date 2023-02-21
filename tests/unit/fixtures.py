@@ -5,6 +5,8 @@ import tempfile
 from pyspark.sql import SparkSession
 import pathlib
 import pandas as pd
+import numpy as np
+import random
 from datasetsforecast.m4 import M4
 
 import pytest
@@ -59,4 +61,20 @@ def m4_df():
         .apply(_transform_group)
         .reset_index(drop=True)
     )
+    return y_df
+
+
+@pytest.fixture
+def m4_df_exogenous():
+    y_df, _, _ = M4.load(directory=str(pathlib.Path.home()), group="Daily")
+    _ids = [f"D{i}" for i in range(1, 10)]
+    y_df = (
+        y_df.groupby("unique_id")
+        .filter(lambda x: x.unique_id.iloc[0] in _ids)
+        .groupby("unique_id")
+        .apply(_transform_group)
+        .reset_index(drop=True)
+    )
+    y_df["feature1"] = random.choices(range(0, 10), k=len(y_df))
+    y_df["feature2"] = np.random.random_sample(size=len(y_df))
     return y_df

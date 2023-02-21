@@ -412,7 +412,7 @@ class Forecaster:
                 exc_info=err,
                 stack_info=True,
             )
-            #raise Exception(f"Error evaluating group {group_id}: {err}")
+            # raise Exception(f"Error evaluating group {group_id}: {err}")
             return pd.DataFrame(
                 columns=[
                     model.params["group_id"],
@@ -544,7 +544,9 @@ class Forecaster:
         pdf.sort_values(by=model.params["date_col"], inplace=True)
         group_id = pdf[model.params["group_id"]].iloc[0]
 
-        if model.params["model_class"] == "RFableModel":
+        if (model.params["model_class"] == "RFableModel") \
+                or (model.params["model_class"] == "SKTimeLgbmDsDt")\
+                or (model.params["model_class"] == "SKTimeTBats"):
             model.fit(pdf)
             res_df = model.predict(pdf)
         else:
