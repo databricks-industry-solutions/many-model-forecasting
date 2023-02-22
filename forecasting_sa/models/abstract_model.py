@@ -60,7 +60,6 @@ class ForecastingSARegressor(BaseEstimator, RegressorMixin):
             else pd.DateOffset(days=stride)
         )
         df = df.copy().sort_values(by=[self.params["date_col"]])
-
         end_date = df[self.params["date_col"]].max() + self.one_ts_offset
         curr_date = start
         print("start_date = ", curr_date)
@@ -81,6 +80,7 @@ class ForecastingSARegressor(BaseEstimator, RegressorMixin):
                 self.fit(_df)
 
             metrics = self.calculate_metrics(_df, actuals_df)
+            print(metrics)
             metrics_and_date = [
                 (curr_date, metric_name, metric_value)
                 for metric_name, metric_value in metrics.items()

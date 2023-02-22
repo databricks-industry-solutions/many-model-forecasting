@@ -40,6 +40,6 @@ def test_sktime_tbats(base_config, m4_df):
     res_df = model.predict(_df)
     print(
         model.backtest(
-            _df, start=_df.ds.max() - pd.DateOffset(days=35), stride=10, retrain=True
+            _df, start=_df.ds.max() - pd.DateOffset(days=35), stride=10, retrain=False
         )
     )

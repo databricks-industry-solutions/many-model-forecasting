@@ -35,7 +35,6 @@ from forecasting_sa import run_forecast
 
 # COMMAND ----------
 
-
 def _transform_group(df):
     unique_id = df.unique_id.iloc[0]
     _start = pd.Timestamp("2020-01-01")
@@ -59,7 +58,6 @@ def create_m4_df():
     )
     return y_df
 
-
 # COMMAND ----------
 
 # MAGIC %md ### Now the dataset looks in the following way:
@@ -81,21 +79,35 @@ display(m4_df)
 # COMMAND ----------
 
 active_models = [
+    #"StatsForecastBaselineWindowAverage",
+    #"StatsForecastBaselineSeasonalWindowAverage",
+    #"StatsForecastBaselineNaive",
+    #"StatsForecastBaselineSeasonalNaive",
     "StatsForecastAutoArima",
     "StatsForecastAutoETS",
     "StatsForecastAutoCES",
     "StatsForecastAutoTheta",
-    "StatsForecastTSB",
-    "StatsForecastADIDA",
-    "StatsForecastIMAPA",
-    "StatsForecastCrostonSBA",
-    "StatsForecastCrostonOptimized",
-    "StatsForecastCrostonClassic",
-    "StatsForecastBaselineWindowAverage",
-    "StatsForecastBaselineSeasonalWindowAverage",
-    "StatsForecastBaselineNaive",
-    "StatsForecastBaselineSeasonalNaive",
-    "GluonTSTorchDeepAR",
+    #"StatsForecastTSB",
+    #"StatsForecastADIDA",
+    #"StatsForecastIMAPA",
+    #"StatsForecastCrostonClassic",
+    #"StatsForecastCrostonOptimized",
+    #"StatsForecastCrostonSBA",
+    #"RFableArima",
+    #"RFableETS",
+    #"RFableNNETAR",
+    #"RFableEnsemble",
+    #"RDynamicHarmonicRegression",
+    #"GluonTSSimpleFeedForward",
+    #"GluonTSSeasonalNaive",
+    #"GluonTSNBEATS",
+    #"GluonTSDeepAR",
+    #"GluonTSProphet",
+    #"GluonTSTorchDeepAR",
+    #"GluonTSTransformer",
+    #"NeuralForecastMQNHiTS",
+    #"SKTimeLgbmDsDt",
+    #"SKTimeTBats",
 ]
 
 # COMMAND ----------
@@ -115,13 +127,16 @@ run_forecast(
     date_col="ds",
     target="y",
     freq="D",
+    prediction_length=10,
+    backtest_months=1,
+    stride=10,
+    train_predict_ratio=2,
     #data_quality_check=False,
     ensemble=True,
     ensemble_metric="smape",
     ensemble_metric_avg=0.3,
     ensemble_metric_max=0.5,
     ensemble_scoring_output="mmf_sa_forecast_ensemble_out",
-    train_predict_ratio=2,
     active_models=active_models,
     experiment_path=f"/Shared/fsa_cicd_pr_experiment",
     use_case_name="fsa",

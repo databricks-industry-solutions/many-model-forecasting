@@ -38,7 +38,7 @@ class Forecaster:
     def __init__(
         self,
         conf: Union[str, Dict[str, Any]],
-        data_conf:Dict[str, Any],
+        data_conf: Dict[str, Any],
         spark: SparkSession,
         experiment_id: str = None,
     ):
@@ -97,12 +97,12 @@ class Forecaster:
         #        days=self.conf['prediction_length'])]
         return train_df, val_true_df
 
-    def resolve_source(self, key:str)->DataFrame:
+    def resolve_source(self, key: str) -> DataFrame:
         if self.data_conf:
             df_val = self.data_conf.get(key)
             if df_val is not None and isinstance(df_val, pd.DataFrame):
                 return self.spark.createDataFrame(df_val)
-            elif df_val is not None and  isinstance(df_val, DataFrame):
+            elif df_val is not None and isinstance(df_val, DataFrame):
                 return df_val
         else:
             return self.spark.read.table(self.conf[key])
@@ -408,11 +408,11 @@ class Forecaster:
             return metrics_df
         except Exception as err:
             _logger.error(
-                f"Error evaluating group {group_id} using mode {repr(model)}: {err}",
+                f"Error evaluating group {group_id} using model {repr(model)}: {err}",
                 exc_info=err,
                 stack_info=True,
             )
-            # raise Exception(f"Error evaluating group {group_id}: {e}", e)
+            # raise Exception(f"Error evaluating group {group_id}: {err}")
             return pd.DataFrame(
                 columns=[
                     model.params["group_id"],
@@ -444,6 +444,7 @@ class Forecaster:
             .groupby(self.conf["group_id"])
             .applyInPandas(evaluate_one_model_fn, schema=output_schema)
         )
+
         if self.conf.get("metrics_output", None) is not None:
             (
                 res_sdf.withColumn("run_id", lit(self.run_id))
@@ -459,7 +460,6 @@ class Forecaster:
             .withColumnRenamed("avg(metric_value)", "metric_value")
             .toPandas()
         )
-
         print(res_df)
         with mlflow.start_run(experiment_id=self.experiment_id):
             for rec in res_df.values:
@@ -543,22 +543,17 @@ class Forecaster:
         pdf[model.params["date_col"]] = pd.to_datetime(pdf[model.params["date_col"]])
         pdf.sort_values(by=model.params["date_col"], inplace=True)
         group_id = pdf[model.params["group_id"]].iloc[0]
-        print(group_id)
-        try:
+
+        if (model.params["model_class"] == "RFableModel") \
+                or (model.params["model_class"] == "SKTimeLgbmDsDt")\
+                or (model.params["model_class"] == "SKTimeTBats"):
             model.fit(pdf)
             res_df = model.predict(pdf)
-            res_df[model.params["group_id"]] = group_id
-            return res_df
-        except Exception as e:
-            # raise Exception(f"Error scroing group {group_key}: {e}")
-            # todo add logging for failed time series
-            return pd.DataFrame(
-                columns=[
-                    model.params["date_col"],
-                    model.params["group_id"],
-                    model.params["target"],
-                ]
-            )
+        else:
+            res_df = model.forecast(pdf)
+
+        res_df[model.params["group_id"]] = group_id
+        return res_df
 
     def run_scoring_for_local_model(self, model_conf):
         src_df = self.resolve_source("scoring_data")
