@@ -61,7 +61,7 @@ class ForecastingSARegressor(BaseEstimator, RegressorMixin):
         )
         df = df.copy().sort_values(by=[self.params["date_col"]])
         end_date = df[self.params["date_col"]].max() + self.one_ts_offset
-        curr_date = start
+        curr_date = start + self.one_ts_offset
         print("start_date = ", curr_date)
         print("end_date = ", end_date)
 

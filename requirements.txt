@@ -7,7 +7,7 @@ prophet
 kaleido
 Jinja2
 omegaconf
-statsforecast
+statsforecast==1.4.0
 missingno
 lightgbm
 tbats
