@@ -1,8 +1,8 @@
 from abc import abstractmethod
-from typing import Dict, Tuple
-
 import numpy as np
 import pandas as pd
+import cloudpickle
+from typing import Dict, Any, Union
 from sklearn.base import BaseEstimator, RegressorMixin
 from sktime.performance_metrics.forecasting import mean_absolute_percentage_error
 
@@ -41,16 +41,16 @@ class ForecastingSARegressor(BaseEstimator, RegressorMixin):
 
     @abstractmethod
     def calculate_metrics(
-        self, hist_df: pd.DataFrame, val_df: pd.DataFrame
-    ) -> Dict[str, float]:
+            self, hist_df: pd.DataFrame, val_df: pd.DataFrame
+    ) -> Dict[str, Union[str, float, bytes]]:
         pass
 
     def backtest(
-        self,
-        df: pd.DataFrame,
-        start: pd.Timestamp,
-        stride: int = None,
-        retrain: bool = True,
+            self,
+            df: pd.DataFrame,
+            start: pd.Timestamp,
+            stride: int = None,
+            retrain: bool = True,
     ) -> pd.DataFrame:
         if stride is None:
             stride = int(self.params.get("stride", 7))
@@ -72,18 +72,22 @@ class ForecastingSARegressor(BaseEstimator, RegressorMixin):
             actuals_df = df[
                 (df[self.params["date_col"]] >= np.datetime64(curr_date))
                 & (
-                    df[self.params["date_col"]]
-                    < np.datetime64(curr_date + self.prediction_length_offset)
+                        df[self.params["date_col"]]
+                        < np.datetime64(curr_date + self.prediction_length_offset)
                 )
-            ]
+                ]
             if retrain:
                 self.fit(_df)
 
             metrics = self.calculate_metrics(_df, actuals_df)
-            print(metrics)
             metrics_and_date = [
-                (curr_date, metric_name, metric_value)
-                for metric_name, metric_value in metrics.items()
+                (
+                    curr_date,
+                    metrics["metric_name"],
+                    metrics["metric_value"],
+                    metrics["forecast"],
+                    metrics["actual"],
+                )
             ]
             results.extend(metrics_and_date)
             curr_date += stride_offset
@@ -91,15 +95,19 @@ class ForecastingSARegressor(BaseEstimator, RegressorMixin):
 
         res_df = pd.DataFrame(
             results,
-            columns=["backtest_window_start_date", "metric_name", "metric_value"],
+            columns=["backtest_window_start_date",
+                     "metric_name",
+                     "metric_value",
+                     "forecast",
+                     "actual"],
         )
         return res_df
 
 
 class ForecastingSAPivotRegressor(ForecastingSARegressor):
     def calculate_metrics(
-        self, hist_df: pd.DataFrame, val_df: pd.DataFrame
-    ) -> Dict[str, float]:
+            self, hist_df: pd.DataFrame, val_df: pd.DataFrame
+    ) -> Dict[str, Union[str, float, bytes, None]]:
         print("start calculate_metrics_pivot for model: ", self.params["name"])
         pred_df = self.predict(hist_df)
         pred_cols = [c for c in pred_df.columns if c not in [self.params["date_col"]]]
@@ -117,13 +125,16 @@ class ForecastingSAPivotRegressor(ForecastingSARegressor):
         #         metrics.append(smape)
         # smape = sum(metrics) / len(metrics)
         print("finished calculate_metrics")
-        return {"smape": smape}
+        return {"metric_name": self.params["metric"],
+                "metric_value": smape,
+                "forecast": None,
+                "actual": None}
 
 
 class ForecastingSAVerticalizedDataRegressor(ForecastingSARegressor):
     def calculate_metrics(
-        self, hist_df: pd.DataFrame, val_df: pd.DataFrame
-    ) -> Dict[str, float]:
+            self, hist_df: pd.DataFrame, val_df: pd.DataFrame
+    ) -> Dict[str, Union[str, float, bytes, None]]:
         print("starting calculate_metrics")
         to_pred_df = val_df.copy()
         to_pred_df[self.params["target"]] = np.nan
@@ -136,8 +147,8 @@ class ForecastingSAVerticalizedDataRegressor(ForecastingSARegressor):
             try:
                 smape = mean_absolute_percentage_error(
                     val_df[val_df[self.params["group_id"]] == key][self.params["target"]],
-                    pred_df[pred_df[self.params["group_id"]] == key][self.params["target"]]\
-                        .iloc[-self.params["prediction_length"]:],
+                    pred_df[pred_df[self.params["group_id"]] == key][self.params["target"]]
+                    .iloc[-self.params["prediction_length"]:],
                     symmetric=True,
                 )
                 metrics.append(smape)
@@ -160,4 +171,11 @@ class ForecastingSAVerticalizedDataRegressor(ForecastingSARegressor):
         # )
         #
         print("finished calculate_metrics")
-        return {"smape": smape}
+        if self.params["metric"] == "smape":
+            metric_value = smape
+        else:
+            raise Exception(f"Metric {self.params['metric']} not supported!")
+        return {"metric_name": self.params["metric"],
+                "metric_value": metric_value,
+                "forecast": None,
+                "actual": None}
