@@ -2,6 +2,8 @@ from typing import Dict, Optional
 import warnings
 import numpy as np
 import pandas as pd
+import cloudpickle
+from typing import Dict, Any, Union
 from sktime.performance_metrics.forecasting import mean_absolute_percentage_error
 import rpy2.robjects as ro
 from rpy2.robjects.packages import importr
@@ -121,7 +123,7 @@ class RFableModel(ForecastingSAVerticalizedDataRegressor):
 
     def calculate_metrics(
         self, hist_df: pd.DataFrame, val_df: pd.DataFrame
-    ) -> Dict[str, float]:
+    ) -> Dict[str, Union[str, float, bytes]]:
         to_pred_df = val_df.copy()
         to_pred_df[self.params["target"]] = np.nan
         pred_df = self.predict(to_pred_df)
@@ -130,7 +132,15 @@ class RFableModel(ForecastingSAVerticalizedDataRegressor):
             pred_df[self.params["target"]],
             symmetric=True,
         )
-        return {"smape": smape}
+        if self.params["metric"] == "smape":
+            metric_value = smape
+        else:
+            raise Exception(f"Metric {self.params['metric']} not supported!")
+        return {"metric_name": self.params["metric"],
+                "metric_value": metric_value,
+                "forecast": cloudpickle.dumps(pred_df),
+                "actual": cloudpickle.dumps(val_df),
+                }
 
     @staticmethod
     def _get_datetime_conversion(freq: str):

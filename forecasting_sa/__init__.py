@@ -25,6 +25,7 @@ def run_forecast(
     prediction_length: int = 10,
     backtest_months: int = 1,
     stride: int = 10,
+    metric: str = "smape",
     resample: bool = False,
     scoring_data: Union[str, pd.DataFrame, DataFrame] = None,
     scoring_output: str = None,
@@ -75,6 +76,7 @@ def run_forecast(
     _conf["prediction_length"] = prediction_length
     _conf["backtest_months"] = backtest_months
     _conf["stride"] = stride
+    _conf["metric"] = metric
     _conf["resample"] = resample
 
     run_scoring = False

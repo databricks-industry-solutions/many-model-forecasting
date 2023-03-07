@@ -10,6 +10,7 @@ from hyperopt import fmin, tpe, SparkTrials, STATUS_OK, rand, atpe
 from typing import Dict, Any, Tuple, List, Union
 import pandas as pd
 import numpy as np
+import cloudpickle
 import mlflow
 from mlflow.exceptions import MlflowException
 from mlflow.tracking import MlflowClient
@@ -24,6 +25,8 @@ from pyspark.sql.types import (
     DateType,
     DoubleType,
     TimestampType,
+    BinaryType,
+    ArrayType,
 )
 from pyspark.sql.functions import lit, avg, min, max, col
 
@@ -269,7 +272,7 @@ class Forecaster:
                 start=val_df[_date_col].min(),
                 retrain=_tuning_retrain,
             )
-            return {"loss": _metrics["smape"], "status": STATUS_OK}
+            return {"loss": _metrics["metric_value"], "status": STATUS_OK}
 
         if (
             self.conf.get("tuning_enabled", False)
@@ -344,11 +347,13 @@ class Forecaster:
             .groupby("metric_name")
             .mean()
         )
+
         metrics = {
             f"{k}_{prefix}": v
             for x in metrics_df.to_dict().values()
             for k, v in x.items()
         }
+
         mlflow.log_metrics(next(iter(metrics_df.to_dict().values())))
         return metrics
 
@@ -403,7 +408,6 @@ class Forecaster:
             pdf = pdf.fillna(0.1)
             pdf[model.params["target"]] = pdf[model.params["target"]].clip(0.1)
             metrics_df = model.backtest(pdf, start=split_date, retrain=True)
-            print(metrics_df)
             metrics_df[model.params["group_id"]] = group_id
             return metrics_df
         except Exception as err:
@@ -419,13 +423,24 @@ class Forecaster:
                     "backtest_window_start_date",
                     "metric_name",
                     "metric_value",
+                    "forecast",
+                    "actual",
                 ]
             )
+
+    @staticmethod
+    def unpack(pdf: pd.DataFrame) -> pd.DataFrame:
+        _df = pdf.copy()
+        _unpicked_forecast = _df["forecast"].apply(lambda x: cloudpickle.loads(x))
+        _unpicked_actual = _df["actual"].apply(lambda x: cloudpickle.loads(x))
+        _df["forecast"] = _unpicked_forecast.apply(lambda x: np.array(x["y"]))
+        _df["actual"] = _unpicked_actual.apply(lambda x: np.array(x["y"]))
+        return _df
 
     def evaluate_local_model(self, model_conf):
         src_df = self.resolve_source("train_data")
         src_df = DataQualityChecks(src_df, self.conf, self.spark).run()
-        output_schema = StructType(
+        output_schema_intm = StructType(
             [
                 StructField(
                     self.conf["group_id"], src_df.schema[self.conf["group_id"]].dataType
@@ -433,16 +448,37 @@ class Forecaster:
                 StructField("backtest_window_start_date", DateType()),
                 StructField("metric_name", StringType()),
                 StructField("metric_value", DoubleType()),
+                StructField("forecast", BinaryType()),
+                StructField("actual", BinaryType()),
+            ]
+        )
+        output_schema_final = StructType(
+            [
+                StructField(
+                    self.conf["group_id"], src_df.schema[self.conf["group_id"]].dataType
+                ),
+                StructField("backtest_window_start_date", DateType()),
+                StructField("metric_name", StringType()),
+                StructField("metric_value", DoubleType()),
+                StructField("forecast", ArrayType(DoubleType())),
+                StructField("actual", ArrayType(DoubleType())),
             ]
         )
         model = self.model_registry.get_model(model_conf["name"])
         evaluate_one_model_fn = functools.partial(
             Forecaster.evaluate_one_model, model=model
         )
+
         res_sdf = (
             src_df.repartition(100)
             .groupby(self.conf["group_id"])
-            .applyInPandas(evaluate_one_model_fn, schema=output_schema)
+            .applyInPandas(evaluate_one_model_fn, schema=output_schema_intm)
+        )
+
+        res_sdf = (
+            res_sdf.repartition(100)
+            .groupby(self.conf["group_id"])
+            .applyInPandas(self.unpack, schema=output_schema_final)
         )
 
         if self.conf.get("metrics_output", None) is not None:
@@ -454,6 +490,7 @@ class Forecaster:
                 .write.mode("append")
                 .saveAsTable(self.conf.get("metrics_output"))
             )
+
         res_df = (
             res_sdf.groupby(["metric_name"])
             .mean("metric_value")

@@ -3,6 +3,7 @@ promoted_props:
   - group_id
   - date_col
   - target
+  - metric
   - freq
   - temp_path
   - accelerator

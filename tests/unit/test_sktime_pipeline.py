@@ -14,6 +14,7 @@ def base_config():
             "target": "y",
             "freq": "D",
             "prediction_length": 10,
+            "metric": "smape",
             "active_models": ["SKTimeLgbmDsDt", "SKTimeTBats"],
         }
     )

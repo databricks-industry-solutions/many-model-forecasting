@@ -2,6 +2,8 @@ from typing import Dict
 
 import pandas as pd
 import numpy as np
+import cloudpickle
+from typing import Dict, Any, Union
 from sktime.performance_metrics.forecasting import mean_absolute_percentage_error
 from statsforecast import StatsForecast
 from statsforecast.models import (
@@ -138,14 +140,22 @@ class StatsFcForecaster(ForecastingSAVerticalizedDataRegressor):
 
     def calculate_metrics(
         self, hist_df: pd.DataFrame, val_df: pd.DataFrame
-    ) -> Dict[str, float]:
+    ) -> Dict[str, Union[str, float, bytes]]:
         pred_df = self.predict(hist_df, val_df)
         smape = mean_absolute_percentage_error(
             val_df[self.params["target"]],
             pred_df[self.params["target"]],
             symmetric=True,
         )
-        return {"smape": smape}
+        if self.params["metric"] == "smape":
+            metric_value = smape
+        else:
+            raise Exception(f"Metric {self.params['metric']} not supported!")
+        return {"metric_name": self.params["metric"],
+                "metric_value": metric_value,
+                "forecast": cloudpickle.dumps(pred_df),
+                "actual": cloudpickle.dumps(val_df),
+                }
 
 
 class StatsFcAutoArima(StatsFcForecaster):

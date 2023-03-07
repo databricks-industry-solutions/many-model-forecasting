@@ -15,6 +15,7 @@ def base_config():
             "group_id": "unique_id",
             "freq": "D",
             "prediction_length": 10,
+            "metric": "smape",
             "active_models": ["StatsForecastAutoArima"],
             "dynamic_reals": ["feature1", "feature2"]
         }
