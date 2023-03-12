@@ -31,6 +31,7 @@ active_models:
   - StatsForecastAutoETS
   - StatsForecastAutoCES
   - StatsForecastAutoTheta
+  - StatsForecastBaselineNaive
   - RFableArima
   - RFableETS
   - RDynamicHarmonicRegression
@@ -67,36 +68,76 @@ models:
 
   StatsForecastAutoArima:
     model_spec:
-      season_length: 7
+      season_length: 12
       approximation:
       level:
 
   StatsForecastAutoETS:
     model_spec:
-      season_length: 7
-      model_type: "ZNZ"
+      season_length: 12
+      model_type: "ZZZ"
+
+  StatsForecastAutoCES:
+    model_spec:
+      season_length: 12
+      model_type: "Z"
+
+  StatsForecastAutoTheta:
+    model_spec:
+      season_length: 12
+      decomposition_type: "multiplicative"
+
+  StatsForecastBaselineWindowAverage:
+    model_spec:
+      window_size: 12
+
+  StatsForecastBaselineSeasonalWindowAverage:
+    model_spec:
+      season_length: 12
+      window_size: 12
+
+  StatsForecastBaselineSeasonalNaive:
+    model_spec:
+      season_length: 12
+
+  StatsForecastTSB:
+    model_spec:
+      alpha_d: 0.2
+      alpha_p: 0.2
+
+  StatsForecastADIDA:
+    model_spec:
+
+  StatsForecastIMAPA:
+    model_spec:
+
+  StatsForecastCrostonClassic:
+    model_spec:
+
+  StatsForecastCrostonOptimized:
+    model_spec:
+
+  StatsForecastCrostonSBA:
+    model_spec:
 
   RFableArima:
     model_spec:
-      season_length: 7
+      season_length: 12
 
   RFableETS:
     model_spec:
-      season_length: 7
+      season_length: 12
 
   RFableNNETAR:
     model_spec:
-      season_length: 7
+      season_length: 12
 
   RDynamicHarmonicRegression:
     model_spec:
       fourier_terms:
-        - weekly:
-            season_length: 7
-            fourier_order: 3
         - yearly:
-            season_length: 52
-            fourier_order: 10
+            season_length: 12
+            fourier_order: 5
 
   RFableEnsemble:
     model_spec:
@@ -104,12 +145,12 @@ models:
         - model:
             name: RFableArima
             model_spec:
-              season_length: 7
+              season_length: 12
         - model:
             name: RFableETS
             model_spec:
-              season_length: 7
+              season_length: 12
         - model:
             name: RFableNNETAR
             model_spec:
-              season_length: 7
+              season_length: 12

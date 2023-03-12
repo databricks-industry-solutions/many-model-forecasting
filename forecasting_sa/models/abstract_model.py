@@ -1,6 +1,7 @@
 from abc import abstractmethod
 import numpy as np
 import pandas as pd
+import datetime
 import cloudpickle
 from typing import Dict, Any, Union
 from sklearn.base import BaseEstimator, RegressorMixin
@@ -100,6 +101,72 @@ class ForecastingSARegressor(BaseEstimator, RegressorMixin):
                      "metric_value",
                      "forecast",
                      "actual"],
+        )
+        return res_df
+
+    def scoring_backtest(
+            self,
+            df: pd.DataFrame,
+            start: pd.Timestamp,
+            stride: int = None,
+    ) -> pd.DataFrame:
+        if stride is None:
+            stride = int(self.params.get("stride", 7))
+        stride_offset = (
+            pd.offsets.MonthEnd(stride)
+            if self.freq == "M"
+            else pd.DateOffset(days=stride)
+        )
+        df = df.copy().sort_values(by=[self.params["date_col"]])
+        group_id = df[self.params["group_id"]].iloc[0]
+        end_date = df[self.params["date_col"]].max()
+        first_date = df[self.params["date_col"]].min()
+        curr_date = start
+        if curr_date < first_date:
+            curr_date = first_date
+
+        results = []
+        while curr_date <= end_date:
+            _df = df[df[self.params["date_col"]] <= np.datetime64(curr_date)]
+
+            try:
+                if (self.params["model_class"] == "RFableModel") \
+                        or (self.params["model_class"] == "SKTimeLgbmDsDt") \
+                        or (self.params["model_class"] == "SKTimeTBats"):
+                    self.fit(_df)
+                    res_df = self.predict(_df)
+                else:
+                    res_df = self.forecast(_df)
+
+                res_df[self.params["date_col"]] = res_df[self.params["date_col"]].dt.date
+
+                result = [
+                    (
+                        curr_date.date(),
+                        np.array(res_df[self.params["date_col"]]),
+                        np.array(res_df[self.params["target"]])
+                    )
+                ]
+            except Exception as e:
+                print(f"Error scoring group {group_id} "
+                      f"using model {self.params['model_class']} "
+                      f"for scoring starting at {curr_date.date()}: {e}"
+                      )
+                result = [
+                    (
+                        curr_date.date(),
+                        None,
+                        None
+                    )
+                ]
+            results.extend(result)
+            curr_date += stride_offset
+
+        res_df = pd.DataFrame(
+            results,
+            columns=["last_date",
+                     self.params["date_col"],
+                     self.params["target"]]
         )
         return res_df
 

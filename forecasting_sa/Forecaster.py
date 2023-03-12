@@ -28,7 +28,7 @@ from pyspark.sql.types import (
     BinaryType,
     ArrayType,
 )
-from pyspark.sql.functions import lit, avg, min, max, col
+from pyspark.sql.functions import lit, avg, min, max, col, collect_list
 
 from forecasting_sa.models.abstract_model import ForecastingSARegressor
 from forecasting_sa.models import ModelRegistry
@@ -132,11 +132,11 @@ class Forecaster:
     ##### Put Ensamble Here | Add output for past mb?
     def train_eval_score(self, export_metrics=False, scoring=True) -> str:
         self.run_id = str(uuid.uuid4())
-        self.train_models()
-        self.evaluate_models()
+        #self.train_models()
+        #self.evaluate_models()
         if scoring:
             self.run_scoring()
-            self.ensemble()
+            #self.ensemble()
         # if export_metrics:
         #    self.update_metrics()
         return self.run_id
@@ -570,7 +570,8 @@ class Forecaster:
                 self.run_scoring_for_global_model(model_conf)
             elif model_conf["model_type"] == "local":
                 self.run_scoring_for_local_model(model_conf)
-            print("finished run_scoring")
+            print(f"finished scoring with {model_name} at {datetime.now()}")
+        print("finished run_scoring")
 
     @staticmethod
     def score_one_model(
@@ -580,28 +581,26 @@ class Forecaster:
         pdf[model.params["date_col"]] = pd.to_datetime(pdf[model.params["date_col"]])
         pdf.sort_values(by=model.params["date_col"], inplace=True)
         group_id = pdf[model.params["group_id"]].iloc[0]
-
-        if (model.params["model_class"] == "RFableModel") \
-                or (model.params["model_class"] == "SKTimeLgbmDsDt")\
-                or (model.params["model_class"] == "SKTimeTBats"):
-            model.fit(pdf)
-            res_df = model.predict(pdf)
-        else:
-            res_df = model.forecast(pdf)
-
+        split_date = pdf[model.params["date_col"]].max() - pd.DateOffset(
+            months=model.params["backtest_months"]
+        )
+        pdf = pdf.fillna(0.1)
+        pdf[model.params["target"]] = pdf[model.params["target"]].clip(0.1)
+        res_df = model.scoring_backtest(pdf, start=split_date)
         res_df[model.params["group_id"]] = group_id
         return res_df
 
     def run_scoring_for_local_model(self, model_conf):
         src_df = self.resolve_source("scoring_data")
-        src_df = DataQualityChecks(src_df, self.conf, self.spark).run()
+        #src_df = DataQualityChecks(src_df, self.conf, self.spark).run()
         output_schema = StructType(
             [
-                StructField(self.conf["date_col"], TimestampType()),
+                StructField("last_date", DateType()),
                 StructField(
                     self.conf["group_id"], src_df.schema[self.conf["group_id"]].dataType
                 ),
-                StructField(self.conf["target"], DoubleType()),
+                StructField(self.conf["date_col"], ArrayType(DateType())),
+                StructField(self.conf["target"], ArrayType(DoubleType())),
             ]
         )
         model = self.model_registry.get_model(model_conf["name"])
@@ -612,10 +611,12 @@ class Forecaster:
             .groupby(self.conf["group_id"])
             .applyInPandas(score_one_model_fn, schema=output_schema)
         )
+
         if not isinstance(res_sdf.schema[self.conf["group_id"]].dataType, StringType):
             res_sdf = res_sdf.withColumn(
                 self.conf["group_id"], col(self.conf["group_id"]).cast(StringType())
             )
+
         (
             res_sdf.withColumn("run_id", lit(self.run_id))
             .withColumn("run_date", lit(self.run_date))

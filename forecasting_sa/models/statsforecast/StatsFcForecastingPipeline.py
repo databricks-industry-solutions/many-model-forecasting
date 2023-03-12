@@ -88,8 +88,8 @@ class StatsFcForecaster(ForecastingSAVerticalizedDataRegressor):
         _df = self.prepare_data(hist_df)
         _exogenous = self.prepare_data(val_df, future=True)
         model = StatsForecast(models=[self.model_spec], freq=self.freq, n_jobs=-1)
-
         model.fit(_df)
+
         forecast_df = model.predict(self.params["prediction_length"], _exogenous)
 
         first_model = [col for col in forecast_df.columns.to_list() if col != "ds"][0]
@@ -108,6 +108,7 @@ class StatsFcForecaster(ForecastingSAVerticalizedDataRegressor):
         _df = self.prepare_data(_df)
         model = StatsForecast(models=[self.model_spec], freq=self.freq, n_jobs=-1)
         model.fit(_df)
+
         if 'dynamic_reals' in self.params.keys():
             _last_date = _df["ds"].max()
             _future_df = df[
