@@ -75,12 +75,12 @@ models:
   StatsForecastAutoETS:
     model_spec:
       season_length: 12
-      model_type: "ZZZ"
+      model: "ZZZ"
 
   StatsForecastAutoCES:
     model_spec:
       season_length: 12
-      model_type: "Z"
+      model: "Z"
 
   StatsForecastAutoTheta:
     model_spec:

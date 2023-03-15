@@ -101,7 +101,7 @@ models:
 
     model_spec:
       season_length:
-      model_type: "ZZZ"
+      model: "ZZZ"
 
   StatsForecastAutoCES:
     module: forecasting_sa.models.statsforecast.StatsFcForecastingPipeline
@@ -112,7 +112,7 @@ models:
 
     model_spec:
       season_length: 1
-      model_type: "Z"
+      model: "Z"
 
   StatsForecastAutoTheta:
     module: forecasting_sa.models.statsforecast.StatsFcForecastingPipeline

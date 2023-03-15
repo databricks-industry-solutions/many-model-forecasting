@@ -178,7 +178,10 @@ class StatsFcAutoETS(StatsFcForecaster):
         self.model_spec = AutoETS(
             season_length=self.params.model_spec.season_length
             if self.params.model_spec.season_length
-            else 1
+            else 1,
+            model=self.params.model_spec.model
+            if self.params.model_spec.model
+            else "ZZZ",
         )
 
 
@@ -189,7 +192,9 @@ class StatsFcAutoCES(StatsFcForecaster):
             season_length=self.params.model_spec.season_length
             if self.params.model_spec.season_length
             else 1,
-            model="Z",
+            model=self.params.model_spec.model
+            if self.params.model_spec.model
+            else "Z",
         )
 
 
@@ -200,7 +205,9 @@ class StatsFcAutoTheta(StatsFcForecaster):
             season_length=self.params.model_spec.season_length
             if self.params.model_spec.season_length
             else 1,
-            decomposition_type="multiplicative",
+            decomposition_type=self.params.model_spec.decomposition_type
+            if self.params.model_spec.decomposition_type
+            else "multiplicative",
         )
 
 
@@ -246,15 +253,23 @@ class StatsFcCrostonSBA(StatsFcForecaster):
 class StatsFcBaselineWindowAverage(StatsFcForecaster):
     def __init__(self, params):
         super().__init__(params)
-        self.model_spec = WindowAverage(window_size=int(params.get("window_size", 7)))
+        self.model_spec = WindowAverage(
+            window_size=self.params.model_spec.window_size
+            if self.params.model_spec.window_size
+            else 7,
+        )
 
 
 class StatsFcBaselineSeasonalWindowAverage(StatsFcForecaster):
     def __init__(self, params):
         super().__init__(params)
         self.model_spec = SeasonalWindowAverage(
-            season_length=int(params.get("season_length", 7)),
-            window_size=int(params.get("window_size", 7)),
+            season_length=self.params.model_spec.season_length
+            if self.params.model_spec.season_length
+            else 7,
+            window_size=self.params.model_spec.window_size
+            if self.params.model_spec.window_size
+            else 7,
         )
 
 
@@ -268,5 +283,7 @@ class StatsFcBaselineSeasonalNaive(StatsFcForecaster):
     def __init__(self, params):
         super().__init__(params)
         self.model_spec = SeasonalNaive(
-            season_length=int(params.get("season_length", 7))
+            season_length=self.params.model_spec.season_length
+            if self.params.model_spec.season_length
+            else 7,
         )

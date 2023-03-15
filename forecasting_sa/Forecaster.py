@@ -605,7 +605,6 @@ class Forecaster:
         )
         model = self.model_registry.get_model(model_conf["name"])
         score_one_model_fn = functools.partial(Forecaster.score_one_model, model=model)
-
         res_sdf = (
             src_df.repartition(100)
             .groupby(self.conf["group_id"])
