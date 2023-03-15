@@ -6,7 +6,7 @@
 # COMMAND ----------
 
 # MAGIC %pip install -r requirements.txt
-# MAGIC %pip install datasetsforecast
+# MAGIC %pip install datasetsforecast==0.0.7
 
 # COMMAND ----------
 
