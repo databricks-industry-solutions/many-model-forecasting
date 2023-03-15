@@ -74,7 +74,30 @@ models:
   StatsForecastAutoETS:
     model_spec:
       season_length: 7
-      model_type: "ZNZ"
+      model: "ZNZ"
+
+  StatsForecastAutoCES:
+    model_spec:
+      season_length: 12
+      model: "Z"
+
+  StatsForecastAutoTheta:
+    model_spec:
+      season_length: 12
+      decomposition_type: "multiplicative"
+
+  StatsForecastBaselineWindowAverage:
+    model_spec:
+      window_size: 12
+
+  StatsForecastBaselineSeasonalWindowAverage:
+    model_spec:
+      season_length: 12
+      window_size: 12
+
+  StatsForecastBaselineSeasonalNaive:
+    model_spec:
+      season_length: 12
 
   RFableArima:
     model_spec:
