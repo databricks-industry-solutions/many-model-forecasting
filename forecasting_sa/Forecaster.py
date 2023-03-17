@@ -570,7 +570,8 @@ class Forecaster:
                 self.run_scoring_for_global_model(model_conf)
             elif model_conf["model_type"] == "local":
                 self.run_scoring_for_local_model(model_conf)
-            print("finished run_scoring")
+            print(f"finished scoring with {model_name}")
+        print("finished run_scoring")
 
     @staticmethod
     def score_one_model(
