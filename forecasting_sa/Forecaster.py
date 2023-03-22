@@ -429,12 +429,12 @@ class Forecaster:
             )
 
     @staticmethod
-    def unpack(pdf: pd.DataFrame) -> pd.DataFrame:
+    def unpack(pdf: pd.DataFrame, model: ForecastingSARegressor) -> pd.DataFrame:
         _df = pdf.copy()
         _unpicked_forecast = _df["forecast"].apply(lambda x: cloudpickle.loads(x))
         _unpicked_actual = _df["actual"].apply(lambda x: cloudpickle.loads(x))
-        _df["forecast"] = _unpicked_forecast.apply(lambda x: np.array(x["y"]))
-        _df["actual"] = _unpicked_actual.apply(lambda x: np.array(x["y"]))
+        _df["forecast"] = _unpicked_forecast.apply(lambda x: np.array(x[model.params["target"]]))
+        _df["actual"] = _unpicked_actual.apply(lambda x: np.array(x[model.params["target"]]))
         return _df
 
     def evaluate_local_model(self, model_conf):
@@ -475,10 +475,14 @@ class Forecaster:
             .applyInPandas(evaluate_one_model_fn, schema=output_schema_intm)
         )
 
+        unpack_fn = functools.partial(
+            Forecaster.unpack, model=model
+        )
+
         res_sdf = (
             res_sdf.repartition(100)
             .groupby(self.conf["group_id"])
-            .applyInPandas(self.unpack, schema=output_schema_final)
+            .applyInPandas(unpack_fn, schema=output_schema_final)
         )
 
         if self.conf.get("metrics_output", None) is not None:
