@@ -341,7 +341,7 @@ class Forecaster:
         metrics_df = (
             model.backtest(
                 pd.concat([train_df, val_df]),
-                start=val_df[self.conf["date_col"]].min(),
+                start=train_df[self.conf["date_col"]].max(),
                 retrain=self.conf["backtest_retrain"],
             )
             .groupby("metric_name")
