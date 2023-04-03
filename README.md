@@ -1,8 +1,8 @@
-# Many Model Forecasting by Databricks Labs
+# Many Model Forecasting by Databricks
 
 ## Introduction
 
-Bootstrap your large scale forecasting solution on Databricks with Many Models Forecasting (MMF) Labs 
+Bootstrap your large scale forecasting solution on Databricks with Many Models Forecasting (MMF) 
 Project.
 
 MMF accelerates the development of Sales / Demand Forecasting solution by automating all phases of the ML lifecycle. 
