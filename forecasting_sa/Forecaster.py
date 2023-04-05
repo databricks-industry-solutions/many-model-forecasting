@@ -269,7 +269,7 @@ class Forecaster:
             _model.fit(train_df)
             _metrics = _model.backtest(
                 pd.concat([train_df, val_df]),
-                start=val_df[_date_col].min(),
+                start=train_df[_date_col].max(),
                 retrain=_tuning_retrain,
             )
             return {"loss": _metrics["metric_value"], "status": STATUS_OK}
