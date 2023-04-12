@@ -13,10 +13,10 @@ class ForecastingSARegressor(BaseEstimator, RegressorMixin):
         self.params = params
         self.freq = params["freq"].upper()[0]
         self.one_ts_offset = (
-            pd.DateOffset(months=1) if self.freq == "M" else pd.DateOffset(days=1)
+            pd.offsets.MonthEnd(1) if self.freq == "M" else pd.DateOffset(days=1)
         )
         self.prediction_length_offset = (
-            pd.DateOffset(months=params["prediction_length"])
+            pd.offsets.MonthEnd(params["prediction_length"])
             if self.freq == "M"
             else pd.DateOffset(days=params["prediction_length"])
         )
@@ -56,7 +56,7 @@ class ForecastingSARegressor(BaseEstimator, RegressorMixin):
         if stride is None:
             stride = int(self.params.get("stride", 7))
         stride_offset = (
-            pd.DateOffset(months=stride)
+            pd.offsets.MonthEnd(stride)
             if self.freq == "M"
             else pd.DateOffset(days=stride)
         )
@@ -155,10 +155,13 @@ class ForecastingSARegressor(BaseEstimator, RegressorMixin):
                 result = [
                     (
                         curr_date.date(),
-                        None,
-                        None
+                        np.array([(curr_date + pd.offsets.MonthEnd(i+1)).date()
+                                  for i in range(self.params['prediction_length'])]),
+                        np.array(pd.Series([np.NAN
+                                            for i in range(self.params['prediction_length'])]))
                     )
                 ]
+
             results.extend(result)
             curr_date += stride_offset
 
