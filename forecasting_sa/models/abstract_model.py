@@ -157,8 +157,7 @@ class ForecastingSARegressor(BaseEstimator, RegressorMixin):
                         curr_date.date(),
                         np.array([(curr_date + pd.offsets.MonthEnd(i+1)).date()
                                   for i in range(self.params['prediction_length'])]),
-                        np.array(pd.Series([np.NAN
-                                            for i in range(self.params['prediction_length'])]))
+                        np.array([np.NAN for i in range(self.params['prediction_length'])])
                     )
                 ]
 
