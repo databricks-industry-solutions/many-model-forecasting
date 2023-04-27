@@ -316,7 +316,20 @@ models:
     trainable: false
 
   NeuralForecastMQNHiTS:
-    module: forecasting_sa.models.neuralforecast.NeuralForecastPipeline
+    module: forecasting_sa.models.neuralforecast._NeuralForecastPipeline
     model_class: NeuralForecastPipelineRegressor
     model_type: global
     trainable: true
+
+  NeuralForecastAutoRNN:
+    module: forecasting_sa.models.neuralforecast.NeuralForecastModel
+    model_class: NeuralFcAutoRNN
+    model_type: global
+    trainable: true
+    tuning: false
+
+    max_steps: 10
+    val_check_steps: 1
+    input_size: -1
+    encoder_hidden_size: 256
+

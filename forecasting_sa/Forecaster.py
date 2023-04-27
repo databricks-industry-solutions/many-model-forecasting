@@ -133,10 +133,10 @@ class Forecaster:
     def train_eval_score(self, export_metrics=False, scoring=True) -> str:
         self.run_id = str(uuid.uuid4())
         self.train_models()
-        self.evaluate_models()
-        if scoring:
-            self.run_scoring()
-            self.ensemble()
+        #self.evaluate_models()
+        #if scoring:
+        #    self.run_scoring()
+        #    self.ensemble()
         # if export_metrics:
         #    self.update_metrics()
         return self.run_id

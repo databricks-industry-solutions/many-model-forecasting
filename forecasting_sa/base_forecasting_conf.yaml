@@ -42,7 +42,8 @@ active_models:
   - GluonTSSeasonalNaive
   - GluonTSTorchDeepAR
   - GluonTSProphet
-  - NeuralForecastMQNHiTS
+  - NeuralForecastAutoRNN
+  #- NeuralForecastMQNHiTS
 
 #Here we can override hyperparameters for built-in models
 models:
@@ -136,3 +137,9 @@ models:
             name: RFableNNETAR
             model_spec:
               season_length: 7
+
+  NeuralForecastAutoRNN:
+    max_steps: 10
+    val_check_steps: 1
+    input_size: -1
+    encoder_hidden_size: 256
