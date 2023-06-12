@@ -133,12 +133,12 @@ class Forecaster:
     def train_eval_score(self, export_metrics=False, scoring=True) -> str:
         self.run_id = str(uuid.uuid4())
         self.train_models()
-        #self.evaluate_models()
-        #if scoring:
-        #    self.run_scoring()
-        #    self.ensemble()
-        # if export_metrics:
-        #    self.update_metrics()
+        self.evaluate_models()
+        if scoring:
+            self.run_scoring()
+            self.ensemble()
+        if export_metrics:
+            self.update_metrics()
         return self.run_id
 
     def ensemble(self):
@@ -637,18 +637,18 @@ class Forecaster:
         score_df = self.prepare_data(model_conf, "scoring_data")
         prediction_df = best_model.predict(score_df)
         # check if we need to unpivot data
-        if model_conf.get("data_prep", "none") == "pivot":
-            prediction_df = (
-                prediction_df.reset_index()
-                .melt(id_vars=["index"])
-                .rename(
-                    columns={
-                        "index": self.conf["date_col"],
-                        "variable": self.conf["group_id"],
-                        "value": self.conf["target"],
-                    }
-                )
-            )
+        #if model_conf.get("data_prep", "none") == "pivot":
+        #    prediction_df = (
+        #        prediction_df.reset_index()
+        #        .melt(id_vars=["index"])
+        #        .rename(
+        #            columns={
+        #                "index": self.conf["date_col"],
+        #                "variable": self.conf["group_id"],
+        #                "value": self.conf["target"],
+        #            }
+        #        )
+        #    )
         if prediction_df[self.conf["date_col"]].dtype.type != np.datetime64:
             prediction_df[self.conf["date_col"]] = prediction_df[
                 self.conf["date_col"]

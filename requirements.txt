@@ -7,7 +7,7 @@ kaleido
 Jinja2
 omegaconf
 statsforecast==1.4.0
-neuralforecast
+neuralforecast==1.5.0
 missingno
 lightgbm
 tbats==1.1.2

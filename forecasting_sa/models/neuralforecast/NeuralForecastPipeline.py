@@ -1,12 +1,8 @@
 import pandas as pd
 import numpy as np
-import cloudpickle
 from typing import Dict, Any, Union
 from sktime.performance_metrics.forecasting import mean_absolute_percentage_error
-
 from neuralforecast import NeuralForecast
-from neuralforecast.tsdataset import TimeSeriesDataset
-
 from forecasting_sa.models.abstract_model import ForecastingSAVerticalizedDataRegressor
 
 
@@ -15,9 +11,7 @@ class NeuralFcForecaster(ForecastingSAVerticalizedDataRegressor):
         super().__init__(params)
         self.params = params
         self.model_spec = None
-
-    def fit(self, X, y=None):
-        pass
+        self.model = None
 
     def prepare_data(self, df: pd.DataFrame, future: bool = False) -> pd.DataFrame:
         if future:
@@ -51,7 +45,8 @@ class NeuralFcForecaster(ForecastingSAVerticalizedDataRegressor):
                            + self.params.dynamic_reals]
                     )
                 except Exception as e:
-                    raise Exception(f"Exogenous regressors missing: {e}")
+                    raise Exception(f"Exogenous regressor columns missing from "
+                                    f"the training dataset: {e}")
             else:
                 _df = df[[self.params.group_id, self.params.date_col, self.params.target]]
 
@@ -67,21 +62,23 @@ class NeuralFcForecaster(ForecastingSAVerticalizedDataRegressor):
         _df = _df.set_index("unique_id")
         return _df
 
-    def predict(self, hist_df: pd.DataFrame, val_df: pd.DataFrame):
+    def fit(self, X, y=None):
+        if isinstance(self.model, NeuralForecast):
+            _df = self.prepare_data(X)
+            self.model.fit(
+                _df,
+                ##### From here
+                static_df=self.params["static_features"],
+            )
+        return self
 
+    def predict(self, hist_df: pd.DataFrame, val_df: pd.DataFrame = None):
         _df = self.prepare_data(hist_df)
-        _exogenous = self.prepare_data(val_df, future=True)
-
-        _df, *_ = TimeSeriesDataset.from_df(_df)
-
-        model = NeuralForecast(models=[self.model], freq=self.freq)
-
-        model.fit(_df)
-        forecast_df = model.predict(self.params["prediction_length"], _exogenous)
-
+        forecast_df = self.model.predict(_df)
         first_model = [col for col in forecast_df.columns.to_list() if col != "ds"][0]
-        forecast_df = forecast_df.reset_index(drop=True).rename(
+        forecast_df = forecast_df.reset_index(drop=False).rename(
             columns={
+                "unique_id": self.params.group_id,
                 "ds": self.params.date_col,
                 first_model: self.params.target,
             }
@@ -129,18 +126,29 @@ class NeuralFcForecaster(ForecastingSAVerticalizedDataRegressor):
         self, hist_df: pd.DataFrame, val_df: pd.DataFrame
     ) -> Dict[str, Union[str, float, bytes]]:
         pred_df = self.predict(hist_df, val_df)
-        smape = mean_absolute_percentage_error(
-            val_df[self.params["target"]],
-            pred_df[self.params["target"]],
-            symmetric=True,
-        )
+        keys = pred_df[self.params["group_id"]].unique()
+        metrics = []
+        for key in keys:
+            forecast = val_df[val_df[self.params["group_id"]] == key][self.params["target"]]
+            actual = pred_df[pred_df[self.params["group_id"]] == key][self.params["target"]].\
+                         iloc[-self.params["prediction_length"]:]
+            try:
+                smape = mean_absolute_percentage_error(
+                    actual,
+                    forecast,
+                    symmetric=True,
+                )
+                metrics.append(smape)
+            except:
+                pass
+        smape = sum(metrics) / len(metrics)
+        print("finished calculate_metrics")
         if self.params["metric"] == "smape":
             metric_value = smape
         else:
             raise Exception(f"Metric {self.params['metric']} not supported!")
+
         return {"metric_name": self.params["metric"],
                 "metric_value": metric_value,
-                "forecast": cloudpickle.dumps(pred_df),
-                "actual": cloudpickle.dumps(val_df),
-                }
-
+                "forecast": None,
+                "actual": None}

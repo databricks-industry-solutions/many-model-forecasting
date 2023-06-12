@@ -19,12 +19,18 @@ tuning_distributed: true
 tuning_max_epochs: 10
 tuning_max_context_len: 40
 
-static_features:
-#  - Store
-
 dynamic_reals:
-#  - Open
-#  - Promo
+
+static_features:
+  #- State
+
+dynamic_historical:
+
+dynamic_future:
+  #- Customers
+  #- Open
+  #- Promo
+  #- DayOfWeek
 
 active_models:
   - StatsForecastAutoArima
@@ -47,6 +53,20 @@ active_models:
 
 #Here we can override hyperparameters for built-in models
 models:
+
+  NeuralForecastAutoRNN:
+    max_steps: 100
+    context_size: 10
+    loss: smape
+    batch_size: 32
+    tuning_parameters:
+      num_samples: 10
+      learning_rate:
+      batch_size:
+    #futr_exog_list=None,
+    #hist_exog_list=None,
+    #stat_exog_list=None,
+
   GluonTSNBEATS:
     epochs: 15
 
@@ -137,9 +157,3 @@ models:
             name: RFableNNETAR
             model_spec:
               season_length: 7
-
-  NeuralForecastAutoRNN:
-    max_steps: 10
-    val_check_steps: 1
-    input_size: -1
-    encoder_hidden_size: 256

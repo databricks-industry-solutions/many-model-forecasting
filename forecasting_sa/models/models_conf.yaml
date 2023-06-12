@@ -326,10 +326,17 @@ models:
     model_class: NeuralFcAutoRNN
     model_type: global
     trainable: true
-    tuning: false
+    tuning: true
 
-    max_steps: 10
-    val_check_steps: 1
-    input_size: -1
-    encoder_hidden_size: 256
+    num_samples: 10
+    max_steps: 100
+    encoder_n_layers: 2
+    encoder_hidden_size: 100
+    encoder_activation: tanh
+    context_size: 10
+    decoder_hidden_size: 100
+    decoder_layers: 2
+    loss: smape
+    batch_size: 32
+
 
