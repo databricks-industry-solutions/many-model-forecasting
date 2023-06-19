@@ -22,12 +22,12 @@ tuning_max_context_len: 40
 dynamic_reals:
 
 static_features:
-  - State
+  #- State
 
 dynamic_future:
-  - Open
-  - Promo
-  - DayOfWeek
+  #- Open
+  #- Promo
+  #- DayOfWeek
 
 dynamic_historical:
 
