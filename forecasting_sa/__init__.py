@@ -37,6 +37,8 @@ def run_forecast(
     ensemble_scoring_output: str = None,
     use_case_name: str = None,
     static_features: List[str] = None,
+    dynamic_future: List[str] = None,
+    dynamic_historical: List[str] = None,
     dynamic_reals: List[str] = None,
     active_models: List[str] = None,
     accelerator: str = None,
@@ -120,6 +122,10 @@ def run_forecast(
         _conf["data_quality_check"] = data_quality_check
     if static_features is not None:
         _conf["static_features"] = static_features
+    if dynamic_future is not None:
+        _conf["dynamic_future"] = dynamic_future
+    if dynamic_historical is not None:
+        _conf["dynamic_historical"] = dynamic_historical
     if dynamic_reals is not None:
         _conf["dynamic_reals"] = dynamic_reals
 

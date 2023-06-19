@@ -2,12 +2,12 @@ rpy2
 sktime==0.16.1
 gluonts==0.12.3
 mxnet==1.9.1
-prophet
+prophet==1.1.4
 kaleido
 Jinja2
-omegaconf
+omegaconf==2.3.0
 statsforecast==1.4.0
-neuralforecast==1.5.0
-missingno
-lightgbm
+neuralforecast==1.5.0 "protobuf<4.0.0"
+missingno==0.5.2
+lightgbm==3.3.5
 tbats==1.1.2

@@ -168,6 +168,7 @@ class DataQualityChecks:
                 conf=self.conf,
                 max_date=self.df[self.conf["date_col"]].max(),
             )
+
             clean_df = self.df.groupby(self.conf["group_id"]).apply(
                 _multiple_checks_func
             )

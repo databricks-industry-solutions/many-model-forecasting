@@ -1,5 +1,5 @@
 output_format: "delta"
-accelerator: cpu
+accelerator: gpu
 temp_path: /dbfs/tmp
 
 metric: smape
@@ -22,15 +22,14 @@ tuning_max_context_len: 40
 dynamic_reals:
 
 static_features:
-  #- State
-
-dynamic_historical:
+  - State
 
 dynamic_future:
-  #- Customers
-  #- Open
-  #- Promo
-  #- DayOfWeek
+  - Open
+  - Promo
+  - DayOfWeek
+
+dynamic_historical:
 
 active_models:
   - StatsForecastAutoArima
@@ -48,24 +47,17 @@ active_models:
   - GluonTSSeasonalNaive
   - GluonTSTorchDeepAR
   - GluonTSProphet
+  - NeuralForecastRNN
+  - NeuralForecastLSTM
+  - NeuralForecastNBEATSx
+  - NeuralForecastNHITS
   - NeuralForecastAutoRNN
-  #- NeuralForecastMQNHiTS
+  - NeuralForecastAutoLSTM
+  - NeuralForecastAutoNBEATSx
+  - NeuralForecastAutoNHITS
 
 #Here we can override hyperparameters for built-in models
 models:
-
-  NeuralForecastAutoRNN:
-    max_steps: 100
-    context_size: 10
-    loss: smape
-    batch_size: 32
-    tuning_parameters:
-      num_samples: 10
-      learning_rate:
-      batch_size:
-    #futr_exog_list=None,
-    #hist_exog_list=None,
-    #stat_exog_list=None,
 
   GluonTSNBEATS:
     epochs: 15

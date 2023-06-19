@@ -56,7 +56,6 @@ class Forecaster:
             raise Exception("No configuration provided!")
 
         self.data_conf = data_conf
-
         self.model_registry = ModelRegistry(self.conf)
         self.spark = spark
         if experiment_id:
@@ -110,22 +109,20 @@ class Forecaster:
         else:
             return self.spark.read.table(self.conf[key])
 
-    def prepare_data(self, model_conf: DictConfig, path: str) -> pd.DataFrame:
-
+    def prepare_data(self, model_conf: DictConfig, path: str, scoring=False) \
+            -> pd.DataFrame:
         df = self.resolve_source(path)
-
         if model_conf.get("data_prep", "none") == "pivot":
             df = (
                 df.groupby([self.conf["date_col"]])
                 .pivot(self.conf["group_id"])
                 .sum(self.conf["target"])
             )
-
         df = df.toPandas()
-        df = DataQualityChecks(df, self.conf).run()
+        if not scoring:
+            df = DataQualityChecks(df, self.conf).run()
         if model_conf.get("data_prep", "none") == "none":
             df[self.conf["group_id"]] = df[self.conf["group_id"]].astype(str)
-
         print(df)
         return df
 
@@ -634,21 +631,11 @@ class Forecaster:
     def run_scoring_for_global_model(self, model_conf):
         print(f"Running scoring for {model_conf['name']}...")
         best_model = self.get_model_for_scoring(model_conf)
-        score_df = self.prepare_data(model_conf, "scoring_data")
-        prediction_df = best_model.predict(score_df)
-        # check if we need to unpivot data
-        #if model_conf.get("data_prep", "none") == "pivot":
-        #    prediction_df = (
-        #        prediction_df.reset_index()
-        #        .melt(id_vars=["index"])
-        #        .rename(
-        #            columns={
-        #                "index": self.conf["date_col"],
-        #                "variable": self.conf["group_id"],
-        #                "value": self.conf["target"],
-        #            }
-        #        )
-        #    )
+        score_df = self.prepare_data(model_conf, "scoring_data", scoring=True)
+        if "NeuralFc" in model_conf["model_class"]:
+            prediction_df = best_model.forecast(score_df)
+        else:
+            prediction_df = best_model.predict(score_df)
         if prediction_df[self.conf["date_col"]].dtype.type != np.datetime64:
             prediction_df[self.conf["date_col"]] = prediction_df[
                 self.conf["date_col"]
