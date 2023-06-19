@@ -7,7 +7,8 @@ kaleido
 Jinja2
 omegaconf==2.3.0
 statsforecast==1.4.0
-neuralforecast==1.5.0 "protobuf<4.0.0"
+protobuf==3.20.0
+neuralforecast==1.5.0
 missingno==0.5.2
 lightgbm==3.3.5
 tbats==1.1.2
