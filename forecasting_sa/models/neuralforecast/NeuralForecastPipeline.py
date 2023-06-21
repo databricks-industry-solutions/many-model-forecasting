@@ -38,16 +38,7 @@ class NeuralFcForecaster(ForecastingSAVerticalizedDataRegressor):
         else:
             # Prepare historical dataframe with or without exogenous regressors for training
             df[self.params.target] = df[self.params.target].clip(0.1)
-            if 'dynamic_historical' in self.params.keys():
-                try:
-                    _df = (
-                        df[[self.params.group_id, self.params.date_col, self.params.target]
-                           + self.params.dynamic_historical]
-                    )
-                except Exception as e:
-                    raise Exception(f"Dynamic historical regressor columns missing from "
-                                    f"the training dataset: {e}")
-            elif 'dynamic_future' in self.params.keys():
+            if 'dynamic_future' in self.params.keys():
                 try:
                     _df = (
                         df[[self.params.group_id, self.params.date_col, self.params.target]
@@ -55,6 +46,15 @@ class NeuralFcForecaster(ForecastingSAVerticalizedDataRegressor):
                     )
                 except Exception as e:
                     raise Exception(f"Dynamic future regressor columns missing from "
+                                    f"the training dataset: {e}")
+            elif 'dynamic_historical' in self.params.keys():
+                try:
+                    _df = (
+                        df[[self.params.group_id, self.params.date_col, self.params.target]
+                           + self.params.dynamic_historical]
+                    )
+                except Exception as e:
+                    raise Exception(f"Dynamic historical regressor columns missing from "
                                     f"the training dataset: {e}")
             else:
                 _df = df[[self.params.group_id, self.params.date_col, self.params.target]]
@@ -102,7 +102,11 @@ class NeuralFcForecaster(ForecastingSAVerticalizedDataRegressor):
     def predict(self, hist_df: pd.DataFrame, val_df: pd.DataFrame = None):
         _df = self.prepare_data(hist_df)
         _dynamic_future = self.prepare_data(val_df, future=True)
+        _static_df = self.prepare_static_features(hist_df)
+
         forecast_df = self.model.predict(
+            df=_df,
+            static_df=_static_df,
             futr_df=_dynamic_future
         )
         first_model = [col for col in forecast_df.columns.to_list() if col != "ds"][0]
@@ -126,7 +130,18 @@ class NeuralFcForecaster(ForecastingSAVerticalizedDataRegressor):
                <= np.datetime64(_last_date + self.prediction_length_offset))
         ]
         _dynamic_future = self.prepare_data(_future_df, future=True)
+        _static_df = self.prepare_static_features(_future_df)
+
+        # Check if dynamic futures for all unique_id are provided.
+        # If not, drop unique_id without dynamic futures from scoring.
+        if (_dynamic_future is not None) and \
+                (not set(_df["unique_id"].unique().flatten()) \
+                        .issubset(set(_dynamic_future["unique_id"].unique().flatten()))):
+            _df = _df[_df["unique_id"].isin(list(_dynamic_future["unique_id"].unique()))]
+
         forecast_df = self.model.predict(
+            df=_df,
+            static_df=_static_df,
             futr_df=_dynamic_future
         )
         first_model = [col for col in forecast_df.columns.to_list() if col != "ds"][0]

@@ -123,7 +123,7 @@ class Forecaster:
             df = DataQualityChecks(df, self.conf).run()
         if model_conf.get("data_prep", "none") == "none":
             df[self.conf["group_id"]] = df[self.conf["group_id"]].astype(str)
-        print(df)
+        #print(df)
         return df
 
     ##### Put Ensamble Here | Add output for past mb?

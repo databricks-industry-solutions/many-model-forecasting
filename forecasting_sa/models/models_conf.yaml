@@ -324,9 +324,9 @@ models:
     trainable: true
     tuning: false
 
+    max_steps: 200
     input_size_factor: 2
     loss: smape
-    max_steps: 200
     learning_rate: 0.001
     batch_size: 32
     dropout_prob_theta: 0.0
@@ -344,9 +344,9 @@ models:
     trainable: true
     tuning: false
 
+    max_steps: 200
     input_size_factor: 2
     loss: smape
-    max_steps: 200
     learning_rate: 0.001
     batch_size: 32
     dropout_prob_theta: 0.0
@@ -363,9 +363,9 @@ models:
     trainable: true
     tuning: false
 
+    max_steps: 100
     input_size_factor: 2
     loss: smape
-    max_steps: 200
     learning_rate: 0.001
     batch_size: 32
     n_harmonics: 2
@@ -379,9 +379,9 @@ models:
     trainable: true
     tuning: false
 
+    max_steps: 200
     input_size_factor: 2
     loss: smape
-    max_steps: 200
     learning_rate: 0.001
     batch_size: 32
     dropout_prob_theta: 0.0
@@ -399,8 +399,8 @@ models:
     trainable: true
     tuning: false #-> eventually true
 
-    num_samples: 20
     max_steps: 200
+    num_samples: 20
     loss: smape
     encoder_n_layers: 2
     encoder_hidden_size: 100
@@ -416,8 +416,8 @@ models:
     trainable: true
     tuning: false #-> eventually true
 
-    num_samples: 20
     max_steps: 200
+    num_samples: 20
     loss: smape
     encoder_n_layers: 2
     encoder_hidden_size: 100
@@ -433,8 +433,8 @@ models:
     trainable: true
     tuning: false #-> eventually true
 
-    num_samples: 20
     max_steps: 200
+    num_samples: 20
     loss: smape
     input_size_factor: 2
     n_harmonics: 2
@@ -448,8 +448,8 @@ models:
     trainable: true
     tuning: false #-> eventually true
 
-    num_samples: 20
     max_steps: 200
+    num_samples: 20
     loss: smape
     input_size_factor: 2
     dropout_prob_theta: 0.0
