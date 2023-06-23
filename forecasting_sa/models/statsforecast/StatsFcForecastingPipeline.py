@@ -22,7 +22,6 @@ from statsforecast.models import (
     Naive,
     SeasonalNaive,
 )
-
 from forecasting_sa.models.abstract_model import ForecastingSAVerticalizedDataRegressor
 
 

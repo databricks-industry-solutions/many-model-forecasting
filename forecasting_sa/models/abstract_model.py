@@ -1,7 +1,6 @@
 from abc import abstractmethod
 import numpy as np
 import pandas as pd
-import cloudpickle
 from typing import Dict, Any, Union
 from sklearn.base import BaseEstimator, RegressorMixin
 from sktime.performance_metrics.forecasting import mean_absolute_percentage_error
@@ -154,21 +153,6 @@ class ForecastingSAVerticalizedDataRegressor(ForecastingSARegressor):
             except:
                 pass
         smape = sum(metrics) / len(metrics)
-        #
-        # smape = mean_absolute_percentage_error(
-        #     val_df.pivot(
-        #         index=self.params["date_col"],
-        #         columns=self.params["group_id"],
-        #         values=self.params["target"],
-        #     ),
-        #     pred_df.pivot(
-        #         index=self.params["date_col"],
-        #         columns=self.params["group_id"],
-        #         values=self.params["target"],
-        #     ),
-        #     symmetric=True,
-        # )
-        #
         print("finished calculate_metrics")
         if self.params["metric"] == "smape":
             metric_value = smape

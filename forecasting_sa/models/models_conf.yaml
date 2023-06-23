@@ -13,6 +13,8 @@ promoted_props:
   - stride
   - dynamic_reals
   - static_features
+  - dynamic_future
+  - dynamic_historical
 
 models:
 
@@ -315,8 +317,148 @@ models:
     model_type: global
     trainable: false
 
-  NeuralForecastMQNHiTS:
-    module: forecasting_sa.models.neuralforecast.NeuralForecastPipeline
-    model_class: NeuralForecastPipelineRegressor
+  NeuralForecastRNN:
+    module: forecasting_sa.models.neuralforecast.NeuralForecastModel
+    model_class: NeuralFcRNN
     model_type: global
     trainable: true
+    tuning: false
+
+    max_steps: 200
+    input_size_factor: 2
+    loss: smape
+    learning_rate: 0.001
+    batch_size: 32
+    dropout_prob_theta: 0.0
+    encoder_n_layers: 2
+    encoder_hidden_size: 100
+    encoder_activation: tanh
+    context_size: 10
+    decoder_hidden_size: 100
+    decoder_layers: 2
+
+  NeuralForecastLSTM:
+    module: forecasting_sa.models.neuralforecast.NeuralForecastModel
+    model_class: NeuralFcLSTM
+    model_type: global
+    trainable: true
+    tuning: false
+
+    max_steps: 200
+    input_size_factor: 2
+    loss: smape
+    learning_rate: 0.001
+    batch_size: 32
+    dropout_prob_theta: 0.0
+    encoder_n_layers: 2
+    encoder_hidden_size: 100
+    context_size: 10
+    decoder_hidden_size: 100
+    decoder_layers: 2
+
+  NeuralForecastNBEATSx:
+    module: forecasting_sa.models.neuralforecast.NeuralForecastModel
+    model_class: NeuralFcNBEATSx
+    model_type: global
+    trainable: true
+    tuning: false
+
+    max_steps: 100
+    input_size_factor: 2
+    loss: smape
+    learning_rate: 0.001
+    batch_size: 32
+    n_harmonics: 2
+    n_polynomials: 2
+    dropout_prob_theta: 0.0
+
+  NeuralForecastNHITS:
+    module: forecasting_sa.models.neuralforecast.NeuralForecastModel
+    model_class: NeuralFcNHITS
+    model_type: global
+    trainable: true
+    tuning: false
+
+    max_steps: 200
+    input_size_factor: 2
+    loss: smape
+    learning_rate: 0.001
+    batch_size: 32
+    dropout_prob_theta: 0.0
+    stack_types: ["identity", "identity", "identity"]
+    n_blocks: [1, 1, 1]
+    n_pool_kernel_size: [2, 2, 1]
+    n_freq_downsample: [4, 2, 1]
+    interpolation_mode: linear
+    pooling_mode: MaxPool1d
+
+  NeuralForecastAutoRNN:
+    module: forecasting_sa.models.neuralforecast.NeuralForecastModel
+    model_class: NeuralFcAutoRNN
+    model_type: global
+    trainable: true
+    tuning: false #-> eventually true
+
+    max_steps: 200
+    num_samples: 20
+    loss: smape
+    encoder_n_layers: 2
+    encoder_hidden_size: 100
+    encoder_activation: tanh
+    context_size: 10
+    decoder_hidden_size: 100
+    decoder_layers: 2
+
+  NeuralForecastAutoLSTM:
+    module: forecasting_sa.models.neuralforecast.NeuralForecastModel
+    model_class: NeuralFcAutoLSTM
+    model_type: global
+    trainable: true
+    tuning: false #-> eventually true
+
+    max_steps: 200
+    num_samples: 20
+    loss: smape
+    encoder_n_layers: 2
+    encoder_hidden_size: 100
+    encoder_activation: tanh
+    context_size: 10
+    decoder_hidden_size: 100
+    decoder_layers: 2
+
+  NeuralForecastAutoNBEATSx:
+    module: forecasting_sa.models.neuralforecast.NeuralForecastModel
+    model_class: NeuralFcAutoNBEATSx
+    model_type: global
+    trainable: true
+    tuning: false #-> eventually true
+
+    max_steps: 200
+    num_samples: 20
+    loss: smape
+    input_size_factor: 2
+    n_harmonics: 2
+    n_polynomials: 2
+    dropout_prob_theta: 0.0
+
+  NeuralForecastAutoNHITS:
+    module: forecasting_sa.models.neuralforecast.NeuralForecastModel
+    model_class: NeuralFcAutoNHITS
+    model_type: global
+    trainable: true
+    tuning: false #-> eventually true
+
+    max_steps: 200
+    num_samples: 20
+    loss: smape
+    input_size_factor: 2
+    dropout_prob_theta: 0.0
+    stack_types: [ "identity", "identity", "identity" ]
+    n_blocks: [ 1, 1, 1 ]
+    n_pool_kernel_size: [ 2, 2, 1 ]
+    n_freq_downsample: [ 4, 2, 1 ]
+    interpolation_mode: linear
+    pooling_mode: MaxPool1d
+
+
+
