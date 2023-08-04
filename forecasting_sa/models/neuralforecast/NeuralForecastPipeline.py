@@ -102,8 +102,8 @@ class NeuralFcForecaster(ForecastingSAVerticalizedDataRegressor):
     def predict(self, hist_df: pd.DataFrame, val_df: pd.DataFrame = None):
         _df = self.prepare_data(hist_df)
         _dynamic_future = self.prepare_data(val_df, future=True)
+        _dynamic_future = None if _dynamic_future.empty else _dynamic_future
         _static_df = self.prepare_static_features(hist_df)
-
         forecast_df = self.model.predict(
             df=_df,
             static_df=_static_df,
@@ -129,7 +129,9 @@ class NeuralFcForecaster(ForecastingSAVerticalizedDataRegressor):
             & (df[self.params["date_col"]]
                <= np.datetime64(_last_date + self.prediction_length_offset))
         ]
+
         _dynamic_future = self.prepare_data(_future_df, future=True)
+        _dynamic_future = None if _dynamic_future.empty else _dynamic_future
         _static_df = self.prepare_static_features(_future_df)
 
         # Check if dynamic futures for all unique_id are provided.
