@@ -1,4 +1,4 @@
-rpy2
+rpy2==3.5.10
 sktime==0.16.1
 gluonts==0.12.3
 mxnet==1.9.1

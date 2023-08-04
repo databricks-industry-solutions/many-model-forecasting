@@ -1,5 +1,5 @@
 output_format: "delta"
-accelerator: gpu
+accelerator: cpu
 temp_path: /dbfs/tmp
 
 metric: smape
