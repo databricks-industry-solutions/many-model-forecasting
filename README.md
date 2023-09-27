@@ -71,7 +71,7 @@ run_forecast(
 -  ```group_id``` is a unique id on which spark groupBy will be performed, if you have more than 1, create a composite id for this parameter since it does not accept a list of id's
 -  ```date_col``` your time-series column name 
 -  ```target``` your target column name 
--  ```freq``` your prediction frequency (please take into account we do not yet support custom frequencies, current support: Y, M, W, D) 
+-  ```freq``` your prediction frequency (please take into account that freq support as per the model you select, check the model documentation to see the flag expected) 
 -  ``` prediction_length```  how many days to forecast in advance 
 -  ```backtest_months``` how many months you want to have a backtest to last
 -  ```train_predict_ratio``` how many times the Train data set is bigger than Scoring data set 
