@@ -2,10 +2,10 @@
 
 ## Introduction
 
-Bootstrap your large scale forecasting solution on Databricks with Many Models Forecasting (MMF) 
+Bootstrap your large-scale forecasting solution on Databricks with Many Models Forecasting (MMF) 
 Project.
 
-MMF accelerates the development of Sales / Demand Forecasting solution by automating all phases of the ML lifecycle. 
+MMF accelerates the development of Sales / Demand Forecasting solutions by automating all phases of the ML lifecycle. 
 This includes data exploration, preparation, training, backtesting, scoring, and deployment.
 It follows the configuration over code approach and requires no coding.
 MMF can model hundreds or thousands of time series at the same time leveraging Spark's powerful compute.
@@ -61,13 +61,33 @@ run_forecast(
     use_case_name="fsa",
 )
 ```
-See the notebook for the detail descriptions of the parameters. But in a nutshell, ```train_data``` is the input data set, 
-```scoring_output``` is a delta table where you want to write your forecasting output into, ```metrics_output``` is a 
-delta table where you want to write metrics from all backtest windows from all models into, and ```active_models``` is a 
-list of models you want to use. 
+
+### Parameters description:
+
+- ```train_data``` is the input data set,
+- ```scoring_data``` is the data set for validation/testing, 
+- ```scoring_output``` is a delta table where you want to write your forecasting output, it will be created if does not exist
+- ```metrics_output``` is a  delta table where you want to write metrics from all backtest windows from all models, it will be created if does not exist
+-  ```group_id``` is a unique id on which spark groupBy will be performed, if you have more than 1, create a composite id for this parameter since it does not accept a list of id's
+-  ```date_col``` your time-series column name 
+-  ```target``` your target column name 
+-  ```freq``` your prediction frequency (please take into account we do not yet support custom frequencies, current support: Y, M, W, D) 
+-  ``` prediction_length```  how many days to forecast in advance 
+-  ```backtest_months``` how many months you want to have a backtest to last
+-  ```train_predict_ratio``` how many times the Train data set is bigger than Scoring data set 
+-  ```data_quality_check``` will check the train_predict_ratio 
+-  ```ensemble``` if you have multiple models and you want to combine their results 
+-  ```ensemble_metric``` is smape(symmetric mean absolute percentage error) by default, you can or add your own metrics at the main core of the forecasting_sa package or you simply can use the back test results to calculate anything of your choice.
+-  ```ensemble_metric_avg``` avg smape after which models will be considered to be taken within the ensemble 
+-  ```ensemble_metric_max```max smape after which models will be considered to be taken within the ensemble
+-  ```ensemble_scoring_output``` is a delta table where you want to write the ensembled scores 
+- ```active_models``` is a list of models you want to use
+-  ```experiment_path``` to keep metrics under the MLFlow
+- ```use_case_name``` a new column will be created under a Delta Table, in case you save multiple trials under 1 table
+  
 To configure the model parameters, change the values in [base_forecasting_conf.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/forecasting_sa/base_forecasting_conf.yaml). 
 
-MMF is fully integrated with MLflow and so once the training kicks off, the experiments will be visible in the MLflow UI. 
+MMF is fully integrated with MLflow and so once the training kicks off, the experiments will be visible in the MLflow UI with the corresponding metrics (please take into account that currently we do not support model logging, only tracking). 
 
 ## Project support
 Please note the code in this project is provided for your exploration only, and are not formally supported by Databricks with Service Level Agreements (SLAs). They are provided AS-IS and we do not make any guarantees of any kind. Please do not submit a support ticket relating to any issues arising from the use of these projects. The source in this project is provided subject to the Databricks License. All included or referenced third party libraries are subject to the licenses set forth below.
