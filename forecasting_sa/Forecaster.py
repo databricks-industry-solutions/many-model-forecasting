@@ -467,8 +467,7 @@ class Forecaster:
         )
 
         res_sdf = (
-            src_df.repartition(100)
-            .groupby(self.conf["group_id"])
+            src_df.groupby(self.conf["group_id"])
             .applyInPandas(evaluate_one_model_fn, schema=output_schema_intm)
         )
 
@@ -477,8 +476,7 @@ class Forecaster:
         )
 
         res_sdf = (
-            res_sdf.repartition(100)
-            .groupby(self.conf["group_id"])
+            res_sdf.groupby(self.conf["group_id"])
             .applyInPandas(unpack_fn, schema=output_schema_final)
         )
 
@@ -610,8 +608,7 @@ class Forecaster:
         score_one_model_fn = functools.partial(Forecaster.score_one_model, model=model)
 
         res_sdf = (
-            src_df.repartition(100)
-            .groupby(self.conf["group_id"])
+            src_df.groupby(self.conf["group_id"])
             .applyInPandas(score_one_model_fn, schema=output_schema)
         )
         if not isinstance(res_sdf.schema[self.conf["group_id"]].dataType, StringType):
