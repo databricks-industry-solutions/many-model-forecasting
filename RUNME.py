@@ -43,7 +43,7 @@ job_json = {
             {
                 "job_cluster_key": "mmf_cluster",
                 "notebook_task": {
-                    "notebook_path": f"01_mmf_univariate_daily_demo"
+                    "notebook_path": f"test/integration_test"
                 },
                 "libraries": [
                   { "cran": {"package": "fable"} },
