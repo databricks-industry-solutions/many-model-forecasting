@@ -1,10 +1,10 @@
+import os
 import functools
 import logging
 import pathlib
 import shutil
 from datetime import datetime
 import uuid
-
 import yaml
 from hyperopt import fmin, tpe, SparkTrials, STATUS_OK, rand, atpe
 from typing import Dict, Any, Tuple, List, Union
@@ -28,13 +28,14 @@ from pyspark.sql.types import (
     BinaryType,
     ArrayType,
 )
-from pyspark.sql.functions import lit, avg, min, max, col
-
+from pyspark.sql.functions import lit, avg, min, max, col, posexplode, collect_list
 from forecasting_sa.models.abstract_model import ForecastingSARegressor
 from forecasting_sa.models import ModelRegistry
 from forecasting_sa.data_quality_checks import DataQualityChecks
 
 _logger = logging.getLogger(__name__)
+os.environ['NIXTLA_ID_AS_COL'] = '1'
+mlflow.set_registry_uri("databricks-uc")
 
 
 class Forecaster:
@@ -123,11 +124,10 @@ class Forecaster:
             df = DataQualityChecks(df, self.conf).run()
         if model_conf.get("data_prep", "none") == "none":
             df[self.conf["group_id"]] = df[self.conf["group_id"]].astype(str)
-        #print(df)
         return df
 
-    ##### Put Ensamble Here | Add output for past mb?
     def train_eval_score(self, export_metrics=False, scoring=True) -> str:
+        print("Starting train_evaluate_models")
         self.run_id = str(uuid.uuid4())
         self.train_models()
         self.evaluate_models()
@@ -172,14 +172,37 @@ class Forecaster:
                     on=[self.conf["group_id"], "model"],
                 )
             )
-            aggregated_df = df.groupby(
+
+            left = df.select(
+                self.conf["group_id"], "run_id", "run_date", "use_case", "model",
+                posexplode(self.conf["date_col"])
+            ).withColumnRenamed('col', self.conf["date_col"])
+
+            right = df.select(
+                self.conf["group_id"], "run_id", "run_date", "use_case", "model",
+                posexplode(self.conf["target"])
+            ).withColumnRenamed('col', self.conf["target"])
+
+            merged = left.join(right, [
+                self.conf["group_id"], 'run_id', 'run_date', 'use_case', 'model',
+                'pos'], 'inner').drop("pos")
+
+            aggregated_df = merged.groupby(
                 self.conf["group_id"], self.conf["date_col"]
             ).agg(
                 avg(self.conf["target"]).alias(self.conf["target"] + "_avg"),
                 min(self.conf["target"]).alias(self.conf["target"] + "_min"),
                 max(self.conf["target"]).alias(self.conf["target"] + "_max"),
             )
-            aggregated_df.show(100, False)
+
+            aggregated_df = aggregated_df.orderBy(self.conf["group_id"], self.conf["date_col"])\
+                .groupBy(self.conf["group_id"]).agg(
+                collect_list(self.conf["date_col"]).alias(self.conf["date_col"]),
+                collect_list(self.conf["target"] + "_avg").alias(self.conf["target"] + "_avg"),
+                collect_list(self.conf["target"] + "_min").alias(self.conf["target"] + "_min"),
+                collect_list(self.conf["target"] + "_max").alias(self.conf["target"] + "_max")
+            )
+
             (
                 aggregated_df.withColumn("run_id", lit(self.run_id))
                 .withColumn("run_date", lit(self.run_date))
@@ -196,7 +219,7 @@ class Forecaster:
         Then evaluates the current best model with the configuration's training data.
         Saves the params, models and metrics, so the runs will all have evaluation data
         """
-        print("Starting train_evaluate_models")
+        print("Starting train_models")
         for model_name in self.model_registry.get_active_model_keys():
             model_conf = self.model_registry.get_model_conf(model_name)
             if (
@@ -220,7 +243,6 @@ class Forecaster:
                             exc_info=err,
                         )
                         raise err
-
         print("Finished train_models")
 
     def train_one_model(
@@ -357,6 +379,7 @@ class Forecaster:
     def evaluate_models(self):
         print("Starting evaluate_models")
         for model_name in self.model_registry.get_active_model_keys():
+            print(f"Started evaluating {model_name}")
             try:
                 model_conf = self.model_registry.get_model_conf(model_name)
                 if model_conf["model_type"] == "global":
@@ -368,88 +391,13 @@ class Forecaster:
                     f"Error has occurred while training model {model_name}: {repr(err)}",
                     exc_info=err,
                 )
+            print(f"Finished evaluating {model_name}")
         print("Finished evaluate_models")
-
-    """
-    @staticmethod
-    def _prep_data_one_ts(
-        pdf: pd.DataFrame, model: ForecastingSARegressor
-    ) -> pd.DataFrame:
-        pdf[model.params["date_col"]] = pd.to_datetime(pdf[model.params["date_col"]])
-        date_idx = pd.date_range(
-            start=pdf[model.params["date_col"]].min(),
-            end=pdf[model.params["date_col"]].max(),
-            freq=model.params["freq"],
-            name=model.params["date_col"],
-        )
-        pdf.set_index(model.params["date_col"], inplace=True)
-        pdf.sort_index(inplace=True)
-        pdf = pdf.reindex(date_idx, method="backfill").reset_index()
-        return pdf
-    """
-
-    @staticmethod
-    def evaluate_one_model(
-        pdf: pd.DataFrame, model: ForecastingSARegressor
-    ) -> pd.DataFrame:
-
-        pdf[model.params["date_col"]] = pd.to_datetime(pdf[model.params["date_col"]])
-        pdf.sort_values(by=model.params["date_col"], inplace=True)
-        split_date = pdf[model.params["date_col"]].max() - pd.DateOffset(
-            months=model.params["backtest_months"]
-        )
-
-        group_id = pdf[model.params["group_id"]].iloc[0]
-        print(group_id)
-        try:
-            pdf = pdf.fillna(0.1)
-            pdf[model.params["target"]] = pdf[model.params["target"]].clip(0.1)
-            metrics_df = model.backtest(pdf, start=split_date, retrain=True)
-            metrics_df[model.params["group_id"]] = group_id
-            return metrics_df
-        except Exception as err:
-            _logger.error(
-                f"Error evaluating group {group_id} using model {repr(model)}: {err}",
-                exc_info=err,
-                stack_info=True,
-            )
-            # raise Exception(f"Error evaluating group {group_id}: {err}")
-            return pd.DataFrame(
-                columns=[
-                    model.params["group_id"],
-                    "backtest_window_start_date",
-                    "metric_name",
-                    "metric_value",
-                    "forecast",
-                    "actual",
-                ]
-            )
-
-    @staticmethod
-    def unpack(pdf: pd.DataFrame, model: ForecastingSARegressor) -> pd.DataFrame:
-        _df = pdf.copy()
-        _unpicked_forecast = _df["forecast"].apply(lambda x: cloudpickle.loads(x))
-        _unpicked_actual = _df["actual"].apply(lambda x: cloudpickle.loads(x))
-        _df["forecast"] = _unpicked_forecast.apply(lambda x: np.array(x[model.params["target"]]))
-        _df["actual"] = _unpicked_actual.apply(lambda x: np.array(x[model.params["target"]]))
-        return _df
 
     def evaluate_local_model(self, model_conf):
         src_df = self.resolve_source("train_data")
         src_df = DataQualityChecks(src_df, self.conf, self.spark).run()
-        output_schema_intm = StructType(
-            [
-                StructField(
-                    self.conf["group_id"], src_df.schema[self.conf["group_id"]].dataType
-                ),
-                StructField("backtest_window_start_date", DateType()),
-                StructField("metric_name", StringType()),
-                StructField("metric_value", DoubleType()),
-                StructField("forecast", BinaryType()),
-                StructField("actual", BinaryType()),
-            ]
-        )
-        output_schema_final = StructType(
+        output_schema = StructType(
             [
                 StructField(
                     self.conf["group_id"], src_df.schema[self.conf["group_id"]].dataType
@@ -459,25 +407,18 @@ class Forecaster:
                 StructField("metric_value", DoubleType()),
                 StructField("forecast", ArrayType(DoubleType())),
                 StructField("actual", ArrayType(DoubleType())),
+                StructField("model_pickle", BinaryType()),
             ]
         )
         model = self.model_registry.get_model(model_conf["name"])
+
+        # Use Pandas UDF to forecast
         evaluate_one_model_fn = functools.partial(
             Forecaster.evaluate_one_model, model=model
         )
-
         res_sdf = (
             src_df.groupby(self.conf["group_id"])
-            .applyInPandas(evaluate_one_model_fn, schema=output_schema_intm)
-        )
-
-        unpack_fn = functools.partial(
-            Forecaster.unpack, model=model
-        )
-
-        res_sdf = (
-            res_sdf.groupby(self.conf["group_id"])
-            .applyInPandas(unpack_fn, schema=output_schema_final)
+            .applyInPandas(evaluate_one_model_fn, schema=output_schema)
         )
 
         if self.conf.get("metrics_output", None) is not None:
@@ -496,13 +437,53 @@ class Forecaster:
             .withColumnRenamed("avg(metric_value)", "metric_value")
             .toPandas()
         )
+        # Print out aggregated metrics
         print(res_df)
+
+        # Log aggregated metrics to MLflow
         with mlflow.start_run(experiment_id=self.experiment_id):
             for rec in res_df.values:
                 metric_name, metric_value = rec
                 mlflow.log_metric(metric_name, metric_value)
                 mlflow.set_tag("model_name", model_conf["name"])
-                mlflow.set_tag("forecast_run_id", self.run_id)
+                mlflow.set_tag("run_id", self.run_id)
+
+    @staticmethod
+    def evaluate_one_model(
+        pdf: pd.DataFrame, model: ForecastingSARegressor
+    ) -> pd.DataFrame:
+        pdf[model.params["date_col"]] = pd.to_datetime(pdf[model.params["date_col"]])
+        pdf.sort_values(by=model.params["date_col"], inplace=True)
+        split_date = pdf[model.params["date_col"]].max() - pd.DateOffset(
+            months=model.params["backtest_months"]
+        )
+
+        group_id = pdf[model.params["group_id"]].iloc[0]
+        try:
+            pdf = pdf.fillna(0.1)
+            # Fix here
+            pdf[model.params["target"]] = pdf[model.params["target"]].clip(0.1)
+            metrics_df = model.backtest(pdf, start=split_date, retrain=False)
+            metrics_df[model.params["group_id"]] = group_id
+            return metrics_df
+        except Exception as err:
+            _logger.error(
+                f"Error evaluating group {group_id} using model {repr(model)}: {err}",
+                exc_info=err,
+                stack_info=True,
+            )
+            # raise Exception(f"Error evaluating group {group_id}: {err}")
+            return pd.DataFrame(
+                columns=[
+                    model.params["group_id"],
+                    "backtest_window_start_date",
+                    "metric_name",
+                    "metric_value",
+                    "forecast",
+                    "actual",
+                    "model_pickle",
+                ]
+            )
 
     def evaluate_global_model(self, model_conf):
         mlflow_client = mlflow.tracking.MlflowClient()
@@ -572,49 +553,37 @@ class Forecaster:
             print(f"finished scoring with {model_name}")
         print("finished run_scoring")
 
-    @staticmethod
-    def score_one_model(
-        pdf: pd.DataFrame, model: ForecastingSARegressor
-    ) -> pd.DataFrame:
-
-        pdf[model.params["date_col"]] = pd.to_datetime(pdf[model.params["date_col"]])
-        pdf.sort_values(by=model.params["date_col"], inplace=True)
-        group_id = pdf[model.params["group_id"]].iloc[0]
-
-        if (model.params["model_class"] == "RFableModel") \
-                or (model.params["model_class"] == "SKTimeLgbmDsDt")\
-                or (model.params["model_class"] == "SKTimeTBats"):
-            model.fit(pdf)
-            res_df = model.predict(pdf)
-        else:
-            res_df = model.forecast(pdf)
-
-        res_df[model.params["group_id"]] = group_id
-        return res_df
-
     def run_scoring_for_local_model(self, model_conf):
-        src_df = self.resolve_source("scoring_data")
+        src_df = self.resolve_source("train_data")
+        # Check if external regressors are provided and framework is statsforecast
+        # External regressors are supported only with statsforecast and neuralforecast models
+        if (self.conf["train_data"] != self.conf["scoring_data"]) & \
+                (model_conf["framework"] == "StatsForecast"):
+            score_df = self.resolve_source("scoring_data")
+            src_df = src_df.unionByName(score_df, allowMissingColumns=True)
         src_df = DataQualityChecks(src_df, self.conf, self.spark).run()
         output_schema = StructType(
             [
-                StructField(self.conf["date_col"], TimestampType()),
                 StructField(
                     self.conf["group_id"], src_df.schema[self.conf["group_id"]].dataType
                 ),
-                StructField(self.conf["target"], DoubleType()),
+                StructField(self.conf["date_col"], ArrayType(TimestampType())),
+                StructField(self.conf["target"], ArrayType(DoubleType())),
+                StructField("model_pickle", BinaryType()),
             ]
         )
         model = self.model_registry.get_model(model_conf["name"])
         score_one_model_fn = functools.partial(Forecaster.score_one_model, model=model)
-
         res_sdf = (
             src_df.groupby(self.conf["group_id"])
             .applyInPandas(score_one_model_fn, schema=output_schema)
         )
+
         if not isinstance(res_sdf.schema[self.conf["group_id"]].dataType, StringType):
             res_sdf = res_sdf.withColumn(
                 self.conf["group_id"], col(self.conf["group_id"]).cast(StringType())
             )
+
         (
             res_sdf.withColumn("run_id", lit(self.run_id))
             .withColumn("run_date", lit(self.run_date))
@@ -625,11 +594,42 @@ class Forecaster:
             .saveAsTable(self.conf["scoring_output"])
         )
 
+    @staticmethod
+    def score_one_model(
+        pdf: pd.DataFrame, model: ForecastingSARegressor
+    ) -> pd.DataFrame:
+        pdf[model.params["date_col"]] = pd.to_datetime(pdf[model.params["date_col"]])
+        pdf.sort_values(by=model.params["date_col"], inplace=True)
+        group_id = pdf[model.params["group_id"]].iloc[0]
+        if model.params["framework"] == "SKTime":
+            model.fit(pdf)
+            res_df, model_fitted = model.predict(pdf)
+        else:
+            res_df, model_fitted = model.forecast(pdf)
+
+        try:
+            data = [
+                group_id,
+                res_df[model.params["date_col"]].to_numpy(),
+                res_df[model.params["target"]].to_numpy(),
+                cloudpickle.dumps(model_fitted)]
+        except:
+            data = [group_id, None, None, None]
+
+        res_df = pd.DataFrame(
+            columns=[
+                model.params["group_id"],
+                model.params["date_col"],
+                model.params["target"],
+                "model_pickle"], data=[data]
+        )
+        return res_df
+
     def run_scoring_for_global_model(self, model_conf):
         print(f"Running scoring for {model_conf['name']}...")
         best_model = self.get_model_for_scoring(model_conf)
         score_df = self.prepare_data(model_conf, "scoring_data", scoring=True)
-        if "NeuralFc" in model_conf["model_class"]:
+        if model_conf["framework"] == "NeuralForecast":
             prediction_df = best_model.forecast(score_df)
         else:
             prediction_df = best_model.predict(score_df)
@@ -666,19 +666,6 @@ class Forecaster:
             return best_model
         else:
             return self.model_registry.get_model(model_conf["name"])
-
-    # def update_metrics(self):
-    #     df = self.spark.read.format("mlflow-experiment").load(str(self.experiment_id))
-    #     df = df.where("tags.candidate='true'").selectExpr(
-    #         "run_id",
-    #         "end_time as time",
-    #         "tags.model_name",
-    #         "metrics.smape_train as smape",
-    #     )
-    #     df.write.format("delta").mode("overwrite").saveAsTable(
-    #         "forecastingsa.model_metrics"
-    #     )
-
 
 def flatten_nested_parameters(d):
     out = {}

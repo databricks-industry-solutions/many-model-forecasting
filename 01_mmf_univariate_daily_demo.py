@@ -5,13 +5,12 @@
 
 # COMMAND ----------
 
-# MAGIC %pip install -r requirements.txt
-# MAGIC %pip install datasetsforecast==0.0.7
-
+# MAGIC %pip install -r requirements.txt --quiet
+dbutils.library.restartPython()
 # COMMAND ----------
 
 import logging
-
+from tqdm.autonotebook import tqdm
 logger = spark._jvm.org.apache.log4j
 logging.getLogger("py4j.java_gateway").setLevel(logging.ERROR)
 logging.getLogger("py4j.clientserver").setLevel(logging.ERROR)
@@ -35,7 +34,7 @@ from forecasting_sa import run_forecast
 
 # COMMAND ----------
 
-def _transform_group(df):
+def transform_group(df):
     unique_id = df.unique_id.iloc[0]
     _start = pd.Timestamp("2020-01-01")
     _end = _start + pd.DateOffset(days=int(df.count()[0]) - 1)
@@ -53,7 +52,7 @@ def create_m4_df():
         y_df.groupby("unique_id")
         .filter(lambda x: x.unique_id.iloc[0] in _ids)
         .groupby("unique_id")
-        .apply(_transform_group)
+        .apply(transform_group)
         .reset_index(drop=True)
     )
     return y_df
@@ -65,12 +64,11 @@ def create_m4_df():
 # COMMAND ----------
 
 m4_df = spark.createDataFrame(create_m4_df())
-m4_df.createOrReplaceTempView("mmf_sa_train")
-display(m4_df)
+m4_df.createOrReplaceTempView("mmf_train")
 
 # COMMAND ----------
 
-# MAGIC %sql select * from mmf_sa_train where unique_id in ('D1', 'D2', 'D6', 'D7')
+# MAGIC %sql select * from mmf_train where unique_id in ('D1', 'D2', 'D6', 'D7', 'D10')
 
 # COMMAND ----------
 
@@ -79,35 +77,35 @@ display(m4_df)
 # COMMAND ----------
 
 active_models = [
-    #"StatsForecastBaselineWindowAverage",
-    #"StatsForecastBaselineSeasonalWindowAverage",
-    #"StatsForecastBaselineNaive",
-    #"StatsForecastBaselineSeasonalNaive",
+    "StatsForecastBaselineWindowAverage",
+    "StatsForecastBaselineSeasonalWindowAverage",
+    "StatsForecastBaselineNaive",
+    "StatsForecastBaselineSeasonalNaive",
     "StatsForecastAutoArima",
     "StatsForecastAutoETS",
     "StatsForecastAutoCES",
     "StatsForecastAutoTheta",
-    #"StatsForecastTSB",
-    #"StatsForecastADIDA",
-    #"StatsForecastIMAPA",
-    #"StatsForecastCrostonClassic",
-    #"StatsForecastCrostonOptimized",
-    #"StatsForecastCrostonSBA",
-    #"RFableArima",
-    #"RFableETS",
-    #"RFableNNETAR",
-    #"RFableEnsemble",
-    #"RDynamicHarmonicRegression",
-    #"GluonTSSimpleFeedForward",
-    #"GluonTSSeasonalNaive",
-    #"GluonTSNBEATS",
-    #"GluonTSDeepAR",
-    #"GluonTSProphet",
-    #"GluonTSTorchDeepAR",
-    #"GluonTSTransformer",
-    #"NeuralForecastMQNHiTS",
+    "StatsForecastTSB",
+    "StatsForecastADIDA",
+    "StatsForecastIMAPA",
+    "StatsForecastCrostonClassic",
+    "StatsForecastCrostonOptimized",
+    "StatsForecastCrostonSBA",
+    "RFableArima",
+    "RFableETS",
+    "RFableNNETAR",
+    "RFableEnsemble",
+    "RDynamicHarmonicRegression",
     #"SKTimeLgbmDsDt",
     #"SKTimeTBats",
+    #"NeuralForecastRNN",
+    #"NeuralForecastLSTM",
+    #"NeuralForecastNBEATSx",
+    #"NeuralForecastNHITS",
+    #"NeuralForecastAutoRNN",
+    #"NeuralForecastAutoLSTM",
+    #"NeuralForecastAutoNBEATSx",
+    #"NeuralForecastAutoNHITS",
 ]
 
 # COMMAND ----------
@@ -116,13 +114,21 @@ active_models = [
 
 # COMMAND ----------
 
+# Make sure that the catalog and the schema exist
+catalog = "solacc_uc" # Name of the catalog we use to manage our assets
+db = "mmf" # Name of the schema we use to manage our assets (e.g. datasets)
+
+_ = spark.sql(f"CREATE CATALOG IF NOT EXISTS {catalog}")
+_ = spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{db}")
+
+# COMMAND ----------
+
 run_forecast(
     spark=spark,
-    # conf={"temp_path": f"{str(temp_dir)}/temp"},
-    train_data="mmf_sa_train",
-    scoring_data="mmf_sa_train",
-    scoring_output="mmf_sa_forecast_scoring_out",
-    metrics_output="mmf_sa_metrics",
+    train_data="mmf_train",
+    scoring_data="mmf_train",
+    scoring_output=f"{catalog}.{db}.daily_scoring_output",
+    metrics_output=f"{catalog}.{db}.daily_metrics_output",
     group_id="unique_id",
     date_col="ds",
     target="y",
@@ -131,15 +137,16 @@ run_forecast(
     backtest_months=1,
     stride=10,
     train_predict_ratio=2,
-    #data_quality_check=False,
+    data_quality_check=True,
+    resample=False,
     ensemble=True,
     ensemble_metric="smape",
     ensemble_metric_avg=0.3,
     ensemble_metric_max=0.5,
-    ensemble_scoring_output="mmf_sa_forecast_ensemble_out",
+    ensemble_scoring_output=f"{catalog}.{db}.daily_ensemble_output",
     active_models=active_models,
-    experiment_path=f"/Shared/fsa_cicd_pr_experiment",
-    use_case_name="fsa",
+    experiment_path=f"/Shared/mmf_experiment",
+    use_case_name="mmf",
 )
 
 # COMMAND ----------
@@ -149,7 +156,7 @@ run_forecast(
 
 # COMMAND ----------
 
-# MAGIC %sql select * from mmf_sa_metrics
+# MAGIC %sql select * from solacc_uc.mmf.daily_metrics_output order by unique_id, model, backtest_window_start_date
 
 # COMMAND ----------
 
@@ -158,7 +165,7 @@ run_forecast(
 
 # COMMAND ----------
 
-# MAGIC %sql select * from mmf_sa_forecast_scoring_out
+# MAGIC %sql select * from solacc_uc.mmf.daily_scoring_output order by unique_id, model, ds
 
 # COMMAND ----------
 
@@ -167,7 +174,19 @@ run_forecast(
 
 # COMMAND ----------
 
-# MAGIC %sql select * from mmf_sa_forecast_ensemble_out
+# MAGIC %sql select * from solacc_uc.mmf.daily_ensemble_output order by unique_id, model, ds
+
+# COMMAND ----------
+
+# MAGIC %sql delete from solacc_uc.mmf.daily_metrics_output
+
+# COMMAND ----------
+
+# MAGIC %sql delete from solacc_uc.mmf.daily_scoring_output
+
+# COMMAND ----------
+
+# MAGIC %sql delete from solacc_uc.mmf.daily_ensemble_output
 
 # COMMAND ----------
 

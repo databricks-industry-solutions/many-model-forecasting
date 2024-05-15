@@ -31,33 +31,13 @@ class StatsFcForecaster(ForecastingSAVerticalizedDataRegressor):
         self.params = params
         self.model_spec = None
 
-    def fit(self, X, y=None):
+    def fit(self, x, y=None):
         pass
 
     def prepare_data(self, df: pd.DataFrame, future: bool = False) -> pd.DataFrame:
-        if future:
-            # Prepare future dataframe with exogenous regressors for forecasting
-            if 'dynamic_reals' in self.params.keys():
-                try:
-                    df_statsfc = (
-                        df[[self.params.group_id, self.params.date_col]
-                           + self.params.dynamic_reals]
-                    )
-                except Exception as e:
-                    raise Exception(f"Exogenous regressors missing: {e}")
-            else:
-                df_statsfc = df[[self.params.group_id, self.params.date_col]]
-
-            df_statsfc = (
-                df_statsfc.rename(
-                    columns={
-                        self.params.group_id: "unique_id",
-                        self.params.date_col: "ds",
-                    }
-                )
-            )
-        else:
-            # Prepare historical dataframe with or without exogenous regressors for training
+        if not future:
+            # Prepare historical dataframe with/out exogenous regressors for training
+            # Fix here
             df[self.params.target] = df[self.params.target].clip(0.1)
             if 'dynamic_reals' in self.params.keys():
                 try:
@@ -79,30 +59,52 @@ class StatsFcForecaster(ForecastingSAVerticalizedDataRegressor):
                     }
                 )
             )
-        df_statsfc = df_statsfc.set_index("unique_id")
+        else:
+            # Prepare future dataframe with/out exogenous regressors for forecasting
+            if 'dynamic_reals' in self.params.keys():
+                try:
+                    df_statsfc = (
+                        df[[self.params.group_id, self.params.date_col]
+                           + self.params.dynamic_reals]
+                    )
+                except Exception as e:
+                    raise Exception(f"Exogenous regressors missing: {e}")
+            else:
+                df_statsfc = df[[self.params.group_id, self.params.date_col]]
+
+            df_statsfc = (
+                df_statsfc.rename(
+                    columns={
+                        self.params.group_id: "unique_id",
+                        self.params.date_col: "ds",
+                    }
+                )
+            )
         return df_statsfc
 
     def predict(self, hist_df: pd.DataFrame, val_df: pd.DataFrame):
-
         _df = self.prepare_data(hist_df)
         _exogenous = self.prepare_data(val_df, future=True)
         model = StatsForecast(models=[self.model_spec], freq=self.freq, n_jobs=-1)
-
         model.fit(_df)
-        forecast_df = model.predict(self.params["prediction_length"], _exogenous)
-
-        first_model = [col for col in forecast_df.columns.to_list() if col != "ds"][0]
+        if len(_exogenous.columns) == 2:
+            forecast_df = model.predict(self.params["prediction_length"])
+        else:
+            forecast_df = model.predict(self.params["prediction_length"], _exogenous)
+        target = [col for col in forecast_df.columns.to_list()
+                       if col not in ["unique_id", "ds"]][0]
         forecast_df = forecast_df.reset_index(drop=True).rename(
             columns={
+                "unique_id": self.params.group_id,
                 "ds": self.params.date_col,
-                first_model: self.params.target,
+                target: self.params.target,
             }
         )
+        # Fix here
         forecast_df[self.params.target] = forecast_df[self.params.target].clip(0.01)
-        return forecast_df
+        return forecast_df, model
 
     def forecast(self, df: pd.DataFrame):
-
         _df = df[df[self.params.target].notnull()]
         _df = self.prepare_data(_df)
         model = StatsForecast(models=[self.model_spec], freq=self.freq, n_jobs=-1)
@@ -127,20 +129,23 @@ class StatsFcForecaster(ForecastingSAVerticalizedDataRegressor):
         else:
             forecast_df = model.predict(self.params["prediction_length"])
 
-        first_model = [col for col in forecast_df.columns.to_list() if col != "ds"][0]
+        target = [col for col in forecast_df.columns.to_list()
+                       if col not in ["unique_id", "ds"]][0]
         forecast_df = forecast_df.reset_index(drop=True).rename(
             columns={
+                "unique_id": self.params.group_id,
                 "ds": self.params.date_col,
-                first_model: self.params.target,
+                target: self.params.target,
             }
         )
+        # Fix here
         forecast_df[self.params.target] = forecast_df[self.params.target].clip(0.01)
-        return forecast_df
+        return forecast_df, model
 
     def calculate_metrics(
         self, hist_df: pd.DataFrame, val_df: pd.DataFrame
     ) -> Dict[str, Union[str, float, bytes]]:
-        pred_df = self.predict(hist_df, val_df)
+        pred_df, model_fitted = self.predict(hist_df, val_df)
         smape = mean_absolute_percentage_error(
             val_df[self.params["target"]],
             pred_df[self.params["target"]],
@@ -150,11 +155,12 @@ class StatsFcForecaster(ForecastingSAVerticalizedDataRegressor):
             metric_value = smape
         else:
             raise Exception(f"Metric {self.params['metric']} not supported!")
+
         return {"metric_name": self.params["metric"],
                 "metric_value": metric_value,
-                "forecast": cloudpickle.dumps(pred_df),
-                "actual": cloudpickle.dumps(val_df),
-                }
+                "forecast": pred_df[self.params["target"]].to_numpy(),
+                "actual": val_df[self.params["target"]].to_numpy(),
+                "model_pickle": cloudpickle.dumps(model_fitted)}
 
 
 class StatsFcAutoArima(StatsFcForecaster):

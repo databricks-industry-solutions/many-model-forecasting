@@ -19,15 +19,20 @@ class ForecastingSARegressor(BaseEstimator, RegressorMixin):
             else pd.DateOffset(days=params["prediction_length"])
         )
 
-    def prepare_data(self, df: pd.DataFrame) -> pd.DataFrame:
-        return df
-
     @abstractmethod
     def fit(self, X, y=None):
         pass
 
+    def prepare_data(self, df: pd.DataFrame) -> pd.DataFrame:
+        return df
+
     @abstractmethod
     def predict(self, X):
+        # TODO Shouldn't X be optional if we have a trainable model and provide a prediction length
+        pass
+
+    @abstractmethod
+    def forecast(self, X):
         # TODO Shouldn't X be optional if we have a trainable model and provide a prediction length
         pass
 
@@ -73,8 +78,8 @@ class ForecastingSARegressor(BaseEstimator, RegressorMixin):
                 & (
                         df[self.params["date_col"]]
                         < np.datetime64(curr_date + self.prediction_length_offset)
-                )
-                ]
+                )]
+
             if retrain:
                 self.fit(_df)
 
@@ -86,6 +91,7 @@ class ForecastingSARegressor(BaseEstimator, RegressorMixin):
                     metrics["metric_value"],
                     metrics["forecast"],
                     metrics["actual"],
+                    metrics["model_pickle"]
                 )
             ]
             results.extend(metrics_and_date)
@@ -97,39 +103,14 @@ class ForecastingSARegressor(BaseEstimator, RegressorMixin):
                      "metric_name",
                      "metric_value",
                      "forecast",
-                     "actual"],
+                     "actual",
+                     "model_pickle"],
         )
         return res_df
 
 
-class ForecastingSAPivotRegressor(ForecastingSARegressor):
-    def calculate_metrics(
-            self, hist_df: pd.DataFrame, val_df: pd.DataFrame
-    ) -> Dict[str, Union[str, float, bytes, None]]:
-        print("start calculate_metrics_pivot for model: ", self.params["name"])
-        pred_df = self.predict(hist_df)
-        pred_cols = [c for c in pred_df.columns if c not in [self.params["date_col"]]]
-        smape = mean_absolute_percentage_error(
-            val_df[pred_cols],
-            pred_df[pred_cols],
-            symmetric=True,
-        )
-        # metrics = []
-        # for c in pred_df.columns:
-        #     if c not in [self.params["date_col"]]:
-        #         smape = mean_absolute_percentage_error(
-        #             val_df[c].values, pred_df[c].values, symmetric=True
-        #         )
-        #         metrics.append(smape)
-        # smape = sum(metrics) / len(metrics)
-        print("finished calculate_metrics")
-        return {"metric_name": self.params["metric"],
-                "metric_value": smape,
-                "forecast": None,
-                "actual": None}
-
-
 class ForecastingSAVerticalizedDataRegressor(ForecastingSARegressor):
+    # Can be removed or  an abstract method
     def calculate_metrics(
             self, hist_df: pd.DataFrame, val_df: pd.DataFrame
     ) -> Dict[str, Union[str, float, bytes, None]]:
@@ -162,3 +143,22 @@ class ForecastingSAVerticalizedDataRegressor(ForecastingSARegressor):
                 "metric_value": metric_value,
                 "forecast": None,
                 "actual": None}
+
+
+#class ForecastingSAPivotRegressor(ForecastingSARegressor):
+#    def calculate_metrics(
+#            self, hist_df: pd.DataFrame, val_df: pd.DataFrame
+#    ) -> Dict[str, Union[str, float, bytes, None]]:
+#        print("start calculate_metrics_pivot for model: ", self.params["name"])
+#        pred_df = self.predict(hist_df)
+#        pred_cols = [c for c in pred_df.columns if c not in [self.params["date_col"]]]
+#        smape = mean_absolute_percentage_error(
+#            val_df[pred_cols],
+#            pred_df[pred_cols],
+#            symmetric=True,
+#        )
+#        print("finished calculate_metrics")
+#        return {"metric_name": self.params["metric"],
+#                "metric_value": smape,
+#                "forecast": None,
+#                "actual": None}

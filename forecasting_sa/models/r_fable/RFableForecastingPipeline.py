@@ -10,13 +10,9 @@ from rpy2.robjects.packages import importr
 from rpy2.robjects import pandas2ri
 from rpy2.robjects.lib.dplyr import DataFrame
 from rpy2.robjects import rl
-
 from rpy2.robjects.conversion import localconverter
+from forecasting_sa.models.abstract_model import ForecastingSAVerticalizedDataRegressor
 
-from forecasting_sa.models.abstract_model import (
-    ForecastingSARegressor,
-    ForecastingSAVerticalizedDataRegressor,
-)
 
 # make sure R and the fable package are installed on your system
 # TODO: Above comment should be moved to README at some point
@@ -33,47 +29,17 @@ class RFableModel(ForecastingSAVerticalizedDataRegressor):
         self.r_model: Optional[ro.vectors.DataFrame] = None
 
     def fit(self, X, y=None):
-        rts = self.prepare_training_data(
-            X,
+        pass
+
+    def prepare_data(self, df: pd.DataFrame) -> pd.DataFrame:
+        with localconverter(ro.default_converter + pandas2ri.converter):
+            rdf = ro.conversion.py2rpy(df)
+        rts = tsibble.as_tsibble(
+            DataFrame(rdf).mutate(ds=rl(self._get_datetime_conversion(self.freq))),
+            index="ds",
+            key="unique_id",
         )
-
-        self.r_model = fabletools.model(
-            rts,
-            rl(self._get_model_definition()()),
-        )
-
-    def predict(self, X: Optional[pd.DataFrame] = None) -> pd.DataFrame:
-
-        # initialize as R's NULL object
-        xreg_rts = ro.NULL
-        h = ro.NULL
-        if "xreg" in self.params.model_spec and len(self.params.model_spec.xreg) > 0:
-            xreg_rts = self.prepare_forecast_data(X)
-            if "prediction_length" in self.params and self.params.prediction_length:
-                warnings.warn(
-                    "Both prediction length and external regressors specified. External regressors will take precedence"
-                )
-        else:
-            h = self.params.prediction_length
-
-        r_forecast = fabletools.forecast(
-            self.r_model, h=h, new_data=xreg_rts, simulate=False, times=0
-        )
-        forecast_pdf = self.conv_r_forecast_to_pandas(
-            r_forecast,
-            date_col=self.params.date_col,
-            target=self.params.target,
-            group_id=self.params.group_id,
-        )
-        return forecast_pdf
-
-    def _get_model_definition(self):
-        """Implements Fable model factory
-
-        Returns:
-
-        """
-        return get_model_definition(self.params)
+        return rts
 
     def prepare_training_data(self, df: pd.DataFrame) -> pd.DataFrame:
         if "xreg" in self.params.model_spec:
@@ -92,7 +58,6 @@ class RFableModel(ForecastingSAVerticalizedDataRegressor):
             }
         )
         rts = self.prepare_data(df_rfable)
-
         return rts
 
     def prepare_forecast_data(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -109,24 +74,41 @@ class RFableModel(ForecastingSAVerticalizedDataRegressor):
         rts = self.prepare_data(df_rfable)
         return rts
 
-    def prepare_data(self, df_rfable: pd.DataFrame) -> pd.DataFrame:
-        with localconverter(ro.default_converter + pandas2ri.converter):
-            rdf = ro.conversion.py2rpy(df_rfable)
+    def predict(self, hist_df: pd.DataFrame, val_df: pd.DataFrame = None):
+        # initialize as R's NULL object
+        xreg_rts = ro.NULL
+        h = ro.NULL
 
-        rts = tsibble.as_tsibble(
-            DataFrame(rdf).mutate(ds=rl(self._get_datetime_conversion(self.freq))),
-            index="ds",
-            key="unique_id",
+        if "xreg" in self.params.model_spec and len(self.params.model_spec.xreg) > 0:
+            xreg_rts = self.prepare_forecast_data(hist_df)
+            if "prediction_length" in self.params and self.params.prediction_length:
+                warnings.warn(
+                    "Both prediction length and external regressors specified. "
+                    "External regressors will take precedence"
+                )
+        else:
+            h = self.params.prediction_length
+
+        rts = self.prepare_training_data(hist_df)
+        self.r_model = fabletools.model(rts, rl(self._get_model_definition()()))
+        r_forecast = fabletools.forecast(
+            self.r_model, h=h, new_data=xreg_rts, simulate=False, times=0
         )
+        forecast_df = self.conv_r_forecast_to_pandas(
+            r_forecast,
+            date_col=self.params.date_col,
+            target=self.params.target,
+            group_id=self.params.group_id,
+        )
+        return forecast_df, self.r_model
 
-        return rts
+    def forecast(self, df: pd.DataFrame):
+        return self.predict(df)
 
     def calculate_metrics(
         self, hist_df: pd.DataFrame, val_df: pd.DataFrame
     ) -> Dict[str, Union[str, float, bytes]]:
-        to_pred_df = val_df.copy()
-        to_pred_df[self.params["target"]] = np.nan
-        pred_df = self.predict(to_pred_df)
+        pred_df, model_fitted = self.predict(hist_df, val_df)
         smape = mean_absolute_percentage_error(
             val_df[self.params["target"]],
             pred_df[self.params["target"]],
@@ -136,11 +118,18 @@ class RFableModel(ForecastingSAVerticalizedDataRegressor):
             metric_value = smape
         else:
             raise Exception(f"Metric {self.params['metric']} not supported!")
+
         return {"metric_name": self.params["metric"],
                 "metric_value": metric_value,
-                "forecast": cloudpickle.dumps(pred_df),
-                "actual": cloudpickle.dumps(val_df),
-                }
+                "forecast": pred_df[self.params["target"]].to_numpy(),
+                "actual": val_df[self.params["target"]].to_numpy(),
+                "model_pickle": cloudpickle.dumps(self.r_model)}
+
+    def _get_model_definition(self):
+        """Implements Fable model factory
+        Returns:
+        """
+        return get_model_definition(self.params)
 
     @staticmethod
     def _get_datetime_conversion(freq: str):
@@ -165,7 +154,6 @@ class RFableModel(ForecastingSAVerticalizedDataRegressor):
     ):
         # get 95% prediction interval
         fcst_dist = distributional.hilo(r_forecast, level=95.0)
-        #fcst_dist = fabletools.unpack_hilo(fcst_dist, "95%")
 
         # convert back to pandas
         fcst_r_df = base.as_data_frame(
@@ -191,7 +179,6 @@ class RFableModel(ForecastingSAVerticalizedDataRegressor):
         # TODO: Right now the scoring pipeline uses applyinpandas and
         #  expects the output schema to just include group_id, data_col
         #  and target so we remove the intervals for now.
-        #forecast_pdf = forecast_pdf.drop(columns=["95%_lower", "95%_upper"])
         forecast_pdf = forecast_pdf[[date_col, group_id, target]]
         return forecast_pdf
 

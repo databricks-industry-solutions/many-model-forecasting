@@ -32,21 +32,27 @@ dynamic_future:
 dynamic_historical:
 
 active_models:
+  - StatsForecastBaselineWindowAverage
+  - StatsForecastBaselineSeasonalWindowAverage
+  - StatsForecastBaselineNaive
+  - StatsForecastBaselineSeasonalNaive
   - StatsForecastAutoArima
   - StatsForecastAutoETS
   - StatsForecastAutoCES
   - StatsForecastAutoTheta
+  - StatsForecastTSB
+  - StatsForecastADIDA
+  - StatsForecastIMAPA
+  - StatsForecastCrostonClassic
+  - StatsForecastCrostonOptimized
+  - StatsForecastCrostonSBA
   - RFableArima
   - RFableETS
   - RDynamicHarmonicRegression
   - RFableNNETAR
   - RFableEnsemble
-  - GluonTSNBEATS
-  - GluonTSNBEATSTunable
-  - GluonTSDeepAR
-  - GluonTSSeasonalNaive
-  - GluonTSTorchDeepAR
-  - GluonTSProphet
+  - SKTimeLgbmDsDt
+  - SKTimeTBats
   - NeuralForecastRNN
   - NeuralForecastLSTM
   - NeuralForecastNBEATSx
@@ -59,24 +65,18 @@ active_models:
 #Here we can override hyperparameters for built-in models
 models:
 
-  GluonTSNBEATS:
-    epochs: 15
-
-  GluonTSDeepAR:
-    epochs: 10
-    context_length: 30
-    batch_size: 64
-
-  GluonTSTorchDeepAR:
-    epochs: 15
-    context_length: 30
-    batch_size: 64
-    
-  GluonTSProphet:
+  StatsForecastBaselineWindowAverage:
     model_spec:
-      yearly_seasonality: 'auto'
-      weekly_seasonality: 'auto'
-      daily_seasonality: false
+      window_size: 7
+
+  StatsForecastBaselineSeasonalWindowAverage:
+    model_spec:
+      season_length: 7
+      window_size: 7
+
+  StatsForecastBaselineSeasonalNaive:
+    model_spec:
+      season_length: 7
 
   StatsForecastAutoArima:
     model_spec:
@@ -98,19 +98,6 @@ models:
     model_spec:
       season_length: 7
       decomposition_type: "multiplicative"
-
-  StatsForecastBaselineWindowAverage:
-    model_spec:
-      window_size: 7
-
-  StatsForecastBaselineSeasonalWindowAverage:
-    model_spec:
-      season_length: 7
-      window_size: 7
-
-  StatsForecastBaselineSeasonalNaive:
-    model_spec:
-      season_length: 7
 
   RFableArima:
     model_spec:
