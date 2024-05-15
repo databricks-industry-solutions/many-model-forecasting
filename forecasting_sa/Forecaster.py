@@ -555,13 +555,13 @@ class Forecaster:
 
     def run_scoring_for_local_model(self, model_conf):
         src_df = self.resolve_source("train_data")
+        src_df = DataQualityChecks(src_df, self.conf, self.spark).run()
         # Check if external regressors are provided and framework is statsforecast
         # External regressors are supported only with statsforecast and neuralforecast models
         if (self.conf["train_data"] != self.conf["scoring_data"]) & \
                 (model_conf["framework"] == "StatsForecast"):
             score_df = self.resolve_source("scoring_data")
             src_df = src_df.unionByName(score_df, allowMissingColumns=True)
-        src_df = DataQualityChecks(src_df, self.conf, self.spark).run()
         output_schema = StructType(
             [
                 StructField(

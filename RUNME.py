@@ -41,9 +41,9 @@ job_json = {
         },
         "tasks": [
             {
-                "job_cluster_key": "mm_cluster",
+                "job_cluster_key": "mmf_cluster",
                 "notebook_task": {
-                    "notebook_path": f"01_mm_forecasting_demo"
+                    "notebook_path": f"01_mmf_univariate_daily_demo"
                 },
                 "libraries": [
                   { "cran": {"package": "fable"} },
@@ -54,14 +54,14 @@ job_json = {
                   { "cran": {"package": "tsibble"} },
                   { "cran": {"package": "distributional"} }
                 ],
-                "task_key": "mm_01"
+                "task_key": "mmf_01"
             }
         ],
         "job_clusters": [
             {
-                "job_cluster_key": "mm_cluster",
+                "job_cluster_key": "mmf_cluster",
                 "new_cluster": {
-                    "spark_version": "11.3.x-cpu-ml-scala2.12",
+                    "spark_version": "15.2.x-cpu-ml-scala2.12",
                 "spark_conf": {
                     "spark.databricks.delta.formatCheck.enabled": "false",
                     "spark.databricks.delta.schema.autoMerge.enabled": "true"
