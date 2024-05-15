@@ -61,7 +61,7 @@ job_json = {
             {
                 "job_cluster_key": "mmf_cluster",
                 "new_cluster": {
-                    "spark_version": "15.2.x-cpu-ml-scala2.12",
+                    "spark_version": "14.3.x-cpu-ml-scala2.12",
                 "spark_conf": {
                     "spark.databricks.delta.formatCheck.enabled": "false",
                     "spark.databricks.delta.schema.autoMerge.enabled": "true"
