@@ -41,34 +41,27 @@ class SKTimeForecastingPipeline(ForecastingRegressor):
     def fit(self, x, y=None):
         if self.params.get("enable_gcv", False) and self.model is None and self.param_grid:
             _model = self.create_model()
-            df = self.prepare_data(x)
             cv = SlidingWindowSplitter(
-                initial_window=int(len(df) - self.params.prediction_length * 4),
+                initial_window=int(len(x) - self.params.prediction_length * 4),
                 window_length=self.params.prediction_length * 10,
                 step_length=int(self.params.prediction_length * 1.5),
             )
             gscv = ForecastingGridSearchCV(
                 _model, cv=cv, param_grid=self.param_grid, n_jobs=1
             )
-            _df = pd.DataFrame(
-                {"y": df[self.params.target].values},
-                index=df.index.to_period(self.params.freq),
-            )
-            gscv.fit(_df)
+            gscv.fit(x)
             self.model = gscv.best_forecaster_
+        else:
+            self.model = self.create_model()
+            self.model.fit(x)
 
     def predict(self, x):
         df = self.prepare_data(x)
-
-        if not self.model:
-            self.model = self.create_model()
-
         df = pd.DataFrame(
             {"y": df[self.params.target].values},
             index=df.index.to_period(self.params.freq),
         )
         self.fit(df)
-
         pred_df = self.model.predict(
             ForecastingHorizon(np.arange(1, self.params.prediction_length + 1))
         )
@@ -138,7 +131,7 @@ class SKTimeLgbmDsDt(SKTimeForecastingPipeline):
             "deseasonalise__model": ["additive", "multiplicative"],
             "deseasonalise__sp": [1, 7, 14],
             "detrend__forecaster__degree": [1, 2, 3],
-            # "forecast__estimator__learning_rate": [0.1, 0.01, 0.001],
+            #"forecast__estimator__learning_rate": [0.1, 0.01, 0.001],
             "forecast__window_length": [
                 self.params.prediction_length,
                 self.params.prediction_length * 2,

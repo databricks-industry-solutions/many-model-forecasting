@@ -95,15 +95,9 @@ active_models = [
 
 # COMMAND ----------
 
-
 # Make sure that the catalog and the schema exist
 catalog = "main" # Name of the catalog we use to manage our assets
 db = "mmf" # Name of the schema we use to manage our assets (e.g. datasets)
-
-_ = spark.sql(f"CREATE CATALOG IF NOT EXISTS {catalog}")
-_ = spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{db}")
-
-# COMMAND ----------
 
 run_forecast(
     spark=spark,
