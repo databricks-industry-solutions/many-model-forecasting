@@ -138,7 +138,7 @@ class DataQualityChecks:
             _df = _resampled
         return _df
 
-    def run(self) -> Union[pd.DataFrame, pyspark.sql.DataFrame]:
+    def run(self) -> tuple[Union[pd.DataFrame, pyspark.sql.DataFrame], list]:
         """
         Main method of the job.
         :return:
@@ -148,6 +148,7 @@ class DataQualityChecks:
         self.df.sort_values(by=self.conf["date_col"], inplace=True)
         self._external_regressors_check()
         self._backtest_length_check()
+        removed = []
 
         # If data_quality_check is None (not provided), we don't run the optional checks
         if self.conf.get("data_quality_check", False):
@@ -175,8 +176,9 @@ class DataQualityChecks:
                 ]
             before = set(self.df[self.conf['group_id']].unique())
             after = set(clean_df[self.conf['group_id']].unique())
+            removed = sorted(list(before - after))
             print(f"Following {self.conf['group_id']} "
-                  f"have been removed: {sorted(list(before - after))}")
+                  f"have been removed: {removed}")
         else:
             clean_df = self.df
 
@@ -187,4 +189,4 @@ class DataQualityChecks:
         if self.type == "spark":
             clean_df = self.spark.createDataFrame(clean_df)
 
-        return clean_df
+        return clean_df, removed

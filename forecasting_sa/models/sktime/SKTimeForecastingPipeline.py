@@ -1,9 +1,6 @@
 from abc import abstractmethod
-from typing import Dict, Any
-
 import numpy as np
 import pandas as pd
-import cloudpickle
 from typing import Dict, Any, Union
 from lightgbm import LGBMRegressor
 from sktime.forecasting.model_selection import (
@@ -11,17 +8,15 @@ from sktime.forecasting.model_selection import (
     ForecastingGridSearchCV,
 )
 from sktime.forecasting.tbats import TBATS
-from sktime.performance_metrics.forecasting import mean_absolute_percentage_error
 from sktime.forecasting.compose import make_reduction
 from sktime.forecasting.compose import TransformedTargetForecaster
 from sktime.transformations.series.detrend import Detrender, ConditionalDeseasonalizer
 from sktime.forecasting.trend import PolynomialTrendForecaster
 from sktime.forecasting.base import ForecastingHorizon, BaseForecaster
+from forecasting_sa.models.abstract_model import ForecastingRegressor
 
-from forecasting_sa.models.abstract_model import ForecastingSAVerticalizedDataRegressor
 
-
-class SKTimeForecastingPipeline(ForecastingSAVerticalizedDataRegressor):
+class SKTimeForecastingPipeline(ForecastingRegressor):
     def __init__(self, params):
         super().__init__(params)
         self.params = params
@@ -43,10 +38,10 @@ class SKTimeForecastingPipeline(ForecastingSAVerticalizedDataRegressor):
         df = df.sort_index()
         return df
 
-    def fit(self, X, y=None):
+    def fit(self, x, y=None):
         if self.params.get("enable_gcv", False) and self.model is None and self.param_grid:
             _model = self.create_model()
-            df = self.prepare_data(X)
+            df = self.prepare_data(x)
             cv = SlidingWindowSplitter(
                 initial_window=int(len(df) - self.params.prediction_length * 4),
                 window_length=self.params.prediction_length * 10,
@@ -60,20 +55,20 @@ class SKTimeForecastingPipeline(ForecastingSAVerticalizedDataRegressor):
                 index=df.index.to_period(self.params.freq),
             )
             gscv.fit(_df)
-            self.model = gscv.best_forecaster_
-            print(gscv.best_params_)
+            sktime_model = gscv.best_forecaster_
+            return sktime_model
 
     def predict(self, x):
         df = self.prepare_data(x)
 
-        if not self.model:
-            self.model = self.create_model()
+        #if not self.model:
+        #    self.model = self.create_model()
 
-        _df = pd.DataFrame(
+        df = pd.DataFrame(
             {"y": df[self.params.target].values},
             index=df.index.to_period(self.params.freq),
         )
-        self.model.fit(_df)
+        self.model = self.fit(df)
 
         pred_df = self.model.predict(
             ForecastingHorizon(np.arange(1, self.params.prediction_length + 1))
@@ -91,26 +86,6 @@ class SKTimeForecastingPipeline(ForecastingSAVerticalizedDataRegressor):
 
     def forecast(self, x):
         return self.predict(x)
-
-    def calculate_metrics(
-        self, hist_df: pd.DataFrame, val_df: pd.DataFrame
-    ) -> Dict[str, Union[str, float, bytes]]:
-        pred_df, model_fitted = self.predict(hist_df)
-        smape = mean_absolute_percentage_error(
-            val_df[self.params["target"]].values,
-            pred_df[self.params["target"]].values,
-            symmetric=True,
-        )
-        if self.params["metric"] == "smape":
-            metric_value = smape
-        else:
-            raise Exception(f"Metric {self.params['metric']} not supported!")
-
-        return {"metric_name": self.params["metric"],
-                "metric_value": metric_value,
-                "forecast": pred_df[self.params["target"]].to_numpy(),
-                "actual": val_df[self.params["target"]].to_numpy(),
-                "model_pickle": cloudpickle.dumps(model_fitted)}
 
     @abstractmethod
     def create_model(self) -> BaseForecaster:

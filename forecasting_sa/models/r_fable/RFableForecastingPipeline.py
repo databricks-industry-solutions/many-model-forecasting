@@ -1,17 +1,14 @@
 from typing import Dict, Optional
 import warnings
-import numpy as np
 import pandas as pd
-import cloudpickle
 from typing import Dict, Any, Union
-from sktime.performance_metrics.forecasting import mean_absolute_percentage_error
 import rpy2.robjects as ro
 from rpy2.robjects.packages import importr
 from rpy2.robjects import pandas2ri
 from rpy2.robjects.lib.dplyr import DataFrame
 from rpy2.robjects import rl
 from rpy2.robjects.conversion import localconverter
-from forecasting_sa.models.abstract_model import ForecastingSAVerticalizedDataRegressor
+from forecasting_sa.models.abstract_model import ForecastingRegressor
 
 
 # make sure R and the fable package are installed on your system
@@ -22,15 +19,11 @@ fabletools = importr("fabletools")
 distributional = importr("distributional")
 
 
-class RFableModel(ForecastingSAVerticalizedDataRegressor):
+class RFableModel(ForecastingRegressor):
     def __init__(self, params):
         super().__init__(params)
         self.params = params
-        self.r_model: Optional[ro.vectors.DataFrame] = None
-
-    def fit(self, x, y=None):
-        model = fabletools.model(x, rl(self._get_model_definition()()))
-        return model
+        self.model: Optional[ro.vectors.DataFrame] = None
 
     def prepare_data(self, df: pd.DataFrame) -> pd.DataFrame:
         with localconverter(ro.default_converter + pandas2ri.converter):
@@ -75,6 +68,10 @@ class RFableModel(ForecastingSAVerticalizedDataRegressor):
         rts = self.prepare_data(df_rfable)
         return rts
 
+    def fit(self, x, y=None):
+        r_model = fabletools.model(x, rl(self._get_model_definition()()))
+        return r_model
+
     def predict(self, hist_df: pd.DataFrame, val_df: pd.DataFrame = None):
         # initialize as R's NULL object
         xreg_rts = ro.NULL
@@ -91,9 +88,9 @@ class RFableModel(ForecastingSAVerticalizedDataRegressor):
             h = self.params.prediction_length
 
         rts = self.prepare_training_data(hist_df)
-        self.r_model = self.fit(rts)
+        self.model = self.fit(rts)
         r_forecast = fabletools.forecast(
-            self.r_model, h=h, new_data=xreg_rts, simulate=False, times=0
+            self.model, h=h, new_data=xreg_rts, simulate=False, times=0
         )
         forecast_df = self.conv_r_forecast_to_pandas(
             r_forecast,
@@ -101,30 +98,10 @@ class RFableModel(ForecastingSAVerticalizedDataRegressor):
             target=self.params.target,
             group_id=self.params.group_id,
         )
-        return forecast_df, self.r_model
+        return forecast_df, self.model
 
     def forecast(self, df: pd.DataFrame):
         return self.predict(df)
-
-    def calculate_metrics(
-        self, hist_df: pd.DataFrame, val_df: pd.DataFrame
-    ) -> Dict[str, Union[str, float, bytes]]:
-        pred_df, model_fitted = self.predict(hist_df, val_df)
-        smape = mean_absolute_percentage_error(
-            val_df[self.params["target"]],
-            pred_df[self.params["target"]],
-            symmetric=True,
-        )
-        if self.params["metric"] == "smape":
-            metric_value = smape
-        else:
-            raise Exception(f"Metric {self.params['metric']} not supported!")
-
-        return {"metric_name": self.params["metric"],
-                "metric_value": metric_value,
-                "forecast": pred_df[self.params["target"]].to_numpy(),
-                "actual": val_df[self.params["target"]].to_numpy(),
-                "model_pickle": cloudpickle.dumps(self.r_model)}
 
     def _get_model_definition(self):
         """Implements Fable model factory

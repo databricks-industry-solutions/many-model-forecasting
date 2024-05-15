@@ -4,7 +4,7 @@ import importlib.resources as pkg_resources
 
 from omegaconf import OmegaConf, DictConfig
 
-from forecasting_sa.models.abstract_model import ForecastingSARegressor
+from forecasting_sa.models.abstract_model import ForecastingRegressor
 
 
 class ModelRegistry:
@@ -49,7 +49,7 @@ class ModelRegistry:
 
     def get_model(
         self, model_name: str, override_conf: DictConfig = None
-    ) -> ForecastingSARegressor:
+    ) -> ForecastingRegressor:
         model_conf = self.active_models.get(model_name)
         if override_conf is not None:
             model_conf = OmegaConf.merge(model_conf, override_conf)

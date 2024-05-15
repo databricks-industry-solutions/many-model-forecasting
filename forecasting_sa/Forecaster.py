@@ -6,8 +6,8 @@ import shutil
 from datetime import datetime
 import uuid
 import yaml
-from hyperopt import fmin, tpe, SparkTrials, STATUS_OK, rand, atpe
-from typing import Dict, Any, Tuple, List, Union
+from hyperopt import fmin, tpe, SparkTrials, STATUS_OK
+from typing import Dict, Any, Tuple, Union
 import pandas as pd
 import numpy as np
 import cloudpickle
@@ -20,7 +20,6 @@ from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.types import (
     StructType,
     StructField,
-    IntegerType,
     StringType,
     DateType,
     DoubleType,
@@ -29,10 +28,9 @@ from pyspark.sql.types import (
     ArrayType,
 )
 from pyspark.sql.functions import lit, avg, min, max, col, posexplode, collect_list
-from forecasting_sa.models.abstract_model import ForecastingSARegressor
+from forecasting_sa.models.abstract_model import ForecastingRegressor
 from forecasting_sa.models import ModelRegistry
 from forecasting_sa.data_quality_checks import DataQualityChecks
-
 _logger = logging.getLogger(__name__)
 os.environ['NIXTLA_ID_AS_COL'] = '1'
 mlflow.set_registry_uri("databricks-uc")
@@ -121,7 +119,7 @@ class Forecaster:
             )
         df = df.toPandas()
         if not scoring:
-            df = DataQualityChecks(df, self.conf).run()
+            df, removed = DataQualityChecks(df, self.conf).run()
         if model_conf.get("data_prep", "none") == "none":
             df[self.conf["group_id"]] = df[self.conf["group_id"]].astype(str)
         return df
@@ -250,7 +248,7 @@ class Forecaster:
         train_df: pd.DataFrame,
         val_df: pd.DataFrame,
         model_conf: DictConfig,
-        model: ForecastingSARegressor,
+        model: ForecastingRegressor,
     ):
         print("starting train")
         tuned_model, tuned_params = self.tune_model(model_conf, model, train_df, val_df)
@@ -275,7 +273,7 @@ class Forecaster:
     def tune_model(
         self,
         model_conf: DictConfig,
-        model: ForecastingSARegressor,
+        model: ForecastingRegressor,
         train_df: pd.DataFrame,
         val_df: pd.DataFrame,
     ):
@@ -352,7 +350,7 @@ class Forecaster:
 
     def backtest_and_log_metrics(
         self,
-        model: ForecastingSARegressor,
+        model: ForecastingRegressor,
         train_df: pd.DataFrame,
         val_df: pd.DataFrame,
         prefix: str,
@@ -396,7 +394,7 @@ class Forecaster:
 
     def evaluate_local_model(self, model_conf):
         src_df = self.resolve_source("train_data")
-        src_df = DataQualityChecks(src_df, self.conf, self.spark).run()
+        src_df, removed = DataQualityChecks(src_df, self.conf, self.spark).run()
         output_schema = StructType(
             [
                 StructField(
@@ -450,14 +448,13 @@ class Forecaster:
 
     @staticmethod
     def evaluate_one_model(
-        pdf: pd.DataFrame, model: ForecastingSARegressor
+        pdf: pd.DataFrame, model: ForecastingRegressor
     ) -> pd.DataFrame:
         pdf[model.params["date_col"]] = pd.to_datetime(pdf[model.params["date_col"]])
         pdf.sort_values(by=model.params["date_col"], inplace=True)
         split_date = pdf[model.params["date_col"]].max() - pd.DateOffset(
             months=model.params["backtest_months"]
         )
-
         group_id = pdf[model.params["group_id"]].iloc[0]
         try:
             pdf = pdf.fillna(0.1)
@@ -555,12 +552,13 @@ class Forecaster:
 
     def run_scoring_for_local_model(self, model_conf):
         src_df = self.resolve_source("train_data")
-        src_df = DataQualityChecks(src_df, self.conf, self.spark).run()
+        src_df, removed = DataQualityChecks(src_df, self.conf, self.spark).run()
         # Check if external regressors are provided and framework is statsforecast
         # External regressors are supported only with statsforecast and neuralforecast models
         if (self.conf["train_data"] != self.conf["scoring_data"]) & \
                 (model_conf["framework"] == "StatsForecast"):
             score_df = self.resolve_source("scoring_data")
+            score_df = score_df.where(~col(self.conf["group_id"]).isin(removed))
             src_df = src_df.unionByName(score_df, allowMissingColumns=True)
         output_schema = StructType(
             [
@@ -596,17 +594,12 @@ class Forecaster:
 
     @staticmethod
     def score_one_model(
-        pdf: pd.DataFrame, model: ForecastingSARegressor
+        pdf: pd.DataFrame, model: ForecastingRegressor
     ) -> pd.DataFrame:
         pdf[model.params["date_col"]] = pd.to_datetime(pdf[model.params["date_col"]])
         pdf.sort_values(by=model.params["date_col"], inplace=True)
         group_id = pdf[model.params["group_id"]].iloc[0]
-        if model.params["framework"] == "SKTime":
-            model.fit(pdf)
-            res_df, model_fitted = model.predict(pdf)
-        else:
-            res_df, model_fitted = model.forecast(pdf)
-
+        res_df, model_fitted = model.forecast(pdf)
         try:
             data = [
                 group_id,
@@ -615,7 +608,6 @@ class Forecaster:
                 cloudpickle.dumps(model_fitted)]
         except:
             data = [group_id, None, None, None]
-
         res_df = pd.DataFrame(
             columns=[
                 model.params["group_id"],

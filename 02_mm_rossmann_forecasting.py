@@ -28,7 +28,7 @@ _ = spark.sql(f"CREATE VOLUME IF NOT EXISTS {catalog}.{db}.{volume}")
 
 # Randomly select 100 stores to forecast
 import random
-random.seed(100)
+random.seed(10)
 sample = False
 stores = sorted(random.sample(range(0, 1000), 100))
 
@@ -45,7 +45,7 @@ test.write.mode("overwrite").option("mergeSchema", "true").saveAsTable(f"{catalo
 # COMMAND ----------
 
 # Set the number of shuffle partitions larger than the total number of cores
-sqlContext.setConf("spark.sql.shuffle.partitions", "1000")
+#sqlContext.setConf("spark.sql.shuffle.partitions", "1000")
 
 # COMMAND ----------
 
@@ -107,7 +107,7 @@ run_id = run_forecast(
     train_predict_ratio=2,
     active_models=active_models,
     data_quality_check=True,
-    resample=False,
+    resample=True,
     ensemble=True,
     ensemble_metric="smape",
     ensemble_metric_avg=0.3,

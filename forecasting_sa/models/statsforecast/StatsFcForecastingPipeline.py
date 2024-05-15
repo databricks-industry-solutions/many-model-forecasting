@@ -1,10 +1,5 @@
-from typing import Dict
-
 import pandas as pd
 import numpy as np
-import cloudpickle
-from typing import Dict, Any, Union
-from sktime.performance_metrics.forecasting import mean_absolute_percentage_error
 from statsforecast import StatsForecast
 from statsforecast.models import (
     AutoETS,
@@ -22,20 +17,15 @@ from statsforecast.models import (
     Naive,
     SeasonalNaive,
 )
-from forecasting_sa.models.abstract_model import ForecastingSAVerticalizedDataRegressor
+from forecasting_sa.models.abstract_model import ForecastingRegressor
 
 
-class StatsFcForecaster(ForecastingSAVerticalizedDataRegressor):
+class StatsFcForecaster(ForecastingRegressor):
     def __init__(self, params):
         super().__init__(params)
         self.params = params
         self.model_spec = None
         self.model = None
-
-    def fit(self, x, y=None):
-        model = StatsForecast(models=[self.model_spec], freq=self.freq, n_jobs=-1)
-        model.fit(x)
-        return model
 
     def prepare_data(self, df: pd.DataFrame, future: bool = False) -> pd.DataFrame:
         if not future:
@@ -85,10 +75,14 @@ class StatsFcForecaster(ForecastingSAVerticalizedDataRegressor):
             )
         return df_statsfc
 
+    def fit(self, x, y=None):
+        self.model = StatsForecast(models=[self.model_spec], freq=self.freq)
+        self.model.fit(x)
+
     def predict(self, hist_df: pd.DataFrame, val_df: pd.DataFrame):
         _df = self.prepare_data(hist_df)
         _exogenous = self.prepare_data(val_df, future=True)
-        self.model = self.fit(_df)
+        self.fit(_df)
         if len(_exogenous.columns) == 2:
             forecast_df = self.model.predict(self.params["prediction_length"])
         else:
@@ -109,7 +103,7 @@ class StatsFcForecaster(ForecastingSAVerticalizedDataRegressor):
     def forecast(self, df: pd.DataFrame):
         _df = df[df[self.params.target].notnull()]
         _df = self.prepare_data(_df)
-        self.model = self.fit(_df)
+        self.fit(_df)
         if 'dynamic_reals' in self.params.keys():
             _last_date = _df["ds"].max()
             _future_df = df[
@@ -142,26 +136,6 @@ class StatsFcForecaster(ForecastingSAVerticalizedDataRegressor):
         # Fix here
         forecast_df[self.params.target] = forecast_df[self.params.target].clip(0.01)
         return forecast_df, self.model
-
-    def calculate_metrics(
-        self, hist_df: pd.DataFrame, val_df: pd.DataFrame
-    ) -> Dict[str, Union[str, float, bytes]]:
-        pred_df, model_fitted = self.predict(hist_df, val_df)
-        smape = mean_absolute_percentage_error(
-            val_df[self.params["target"]],
-            pred_df[self.params["target"]],
-            symmetric=True,
-        )
-        if self.params["metric"] == "smape":
-            metric_value = smape
-        else:
-            raise Exception(f"Metric {self.params['metric']} not supported!")
-
-        return {"metric_name": self.params["metric"],
-                "metric_value": metric_value,
-                "forecast": pred_df[self.params["target"]].to_numpy(),
-                "actual": val_df[self.params["target"]].to_numpy(),
-                "model_pickle": cloudpickle.dumps(model_fitted)}
 
 
 class StatsFcAutoArima(StatsFcForecaster):
