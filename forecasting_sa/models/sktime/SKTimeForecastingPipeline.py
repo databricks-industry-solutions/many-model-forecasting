@@ -29,10 +29,22 @@ class SKTimeForecastingPipeline(ForecastingSAVerticalizedDataRegressor):
         self.model = None
         self.param_grid = self.create_param_grid()
 
+    def prepare_data(self, df: pd.DataFrame) -> pd.DataFrame:
+        df = df.copy().fillna(0.1)
+        df[self.params.target] = df[self.params.target].clip(0.1)
+        date_idx = pd.date_range(
+            start=df[self.params.date_col].min(),
+            end=df[self.params.date_col].max(),
+            freq=self.params.freq,
+            name=self.params.date_col,
+        )
+        df = df.set_index(self.params.date_col)
+        df = df.reindex(date_idx, method="backfill")
+        df = df.sort_index()
+        return df
+
     def fit(self, X, y=None):
-        #print("fit called")
         if self.params.get("enable_gcv", False) and self.model is None and self.param_grid:
-            #print("tuning..")
             _model = self.create_model()
             df = self.prepare_data(X)
             cv = SlidingWindowSplitter(
@@ -51,29 +63,7 @@ class SKTimeForecastingPipeline(ForecastingSAVerticalizedDataRegressor):
             self.model = gscv.best_forecaster_
             print(gscv.best_params_)
 
-    @abstractmethod
-    def create_model(self) -> BaseForecaster:
-        pass
-
-    def create_param_grid(self) -> Dict[str, Any]:
-        return {}
-
-    def prepare_data(self, df: pd.DataFrame) -> pd.DataFrame:
-        df = df.copy().fillna(0.1)
-        df[self.params.target] = df[self.params.target].clip(0.1)
-        date_idx = pd.date_range(
-            start=df[self.params.date_col].min(),
-            end=df[self.params.date_col].max(),
-            freq=self.params.freq,
-            name=self.params.date_col,
-        )
-        df = df.set_index(self.params.date_col)
-        df = df.reindex(date_idx, method="backfill")
-        df = df.sort_index()
-        return df
-
     def predict(self, x):
-        #print("predict called")
         df = self.prepare_data(x)
 
         if not self.model:
@@ -105,7 +95,7 @@ class SKTimeForecastingPipeline(ForecastingSAVerticalizedDataRegressor):
     def calculate_metrics(
         self, hist_df: pd.DataFrame, val_df: pd.DataFrame
     ) -> Dict[str, Union[str, float, bytes]]:
-        pred_df = self.predict(hist_df)
+        pred_df, model_fitted = self.predict(hist_df)
         smape = mean_absolute_percentage_error(
             val_df[self.params["target"]].values,
             pred_df[self.params["target"]].values,
@@ -115,11 +105,19 @@ class SKTimeForecastingPipeline(ForecastingSAVerticalizedDataRegressor):
             metric_value = smape
         else:
             raise Exception(f"Metric {self.params['metric']} not supported!")
+
         return {"metric_name": self.params["metric"],
                 "metric_value": metric_value,
-                "forecast": cloudpickle.dumps(pred_df),
-                "actual": cloudpickle.dumps(val_df),
-                }
+                "forecast": pred_df[self.params["target"]].to_numpy(),
+                "actual": val_df[self.params["target"]].to_numpy(),
+                "model_pickle": cloudpickle.dumps(model_fitted)}
+
+    @abstractmethod
+    def create_model(self) -> BaseForecaster:
+        pass
+
+    def create_param_grid(self) -> Dict[str, Any]:
+        return {}
 
 
 class SKTimeLgbmDsDt(SKTimeForecastingPipeline):
