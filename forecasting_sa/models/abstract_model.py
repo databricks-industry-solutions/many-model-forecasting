@@ -61,12 +61,12 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
         df = df.copy().sort_values(by=[self.params["date_col"]])
         end_date = df[self.params["date_col"]].max()
         curr_date = start + self.one_ts_offset
-        print("end_date = ", end_date)
+        #print("end_date = ", end_date)
 
         results = []
 
         while curr_date + self.prediction_length_offset <= end_date + self.one_ts_offset:
-            print("start_date = ", curr_date)
+            #print("start_date = ", curr_date)
             _df = df[df[self.params["date_col"]] < np.datetime64(curr_date)]
             actuals_df = df[
                 (df[self.params["date_col"]] >= np.datetime64(curr_date))

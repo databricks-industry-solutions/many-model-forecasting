@@ -55,20 +55,19 @@ class SKTimeForecastingPipeline(ForecastingRegressor):
                 index=df.index.to_period(self.params.freq),
             )
             gscv.fit(_df)
-            sktime_model = gscv.best_forecaster_
-            return sktime_model
+            self.model = gscv.best_forecaster_
 
     def predict(self, x):
         df = self.prepare_data(x)
 
-        #if not self.model:
-        #    self.model = self.create_model()
+        if not self.model:
+            self.model = self.create_model()
 
         df = pd.DataFrame(
             {"y": df[self.params.target].values},
             index=df.index.to_period(self.params.freq),
         )
-        self.model = self.fit(df)
+        self.fit(df)
 
         pred_df = self.model.predict(
             ForecastingHorizon(np.arange(1, self.params.prediction_length + 1))

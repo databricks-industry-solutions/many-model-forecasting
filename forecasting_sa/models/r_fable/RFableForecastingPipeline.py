@@ -69,8 +69,7 @@ class RFableModel(ForecastingRegressor):
         return rts
 
     def fit(self, x, y=None):
-        r_model = fabletools.model(x, rl(self._get_model_definition()()))
-        return r_model
+        self.model = fabletools.model(x, rl(self._get_model_definition()()))
 
     def predict(self, hist_df: pd.DataFrame, val_df: pd.DataFrame = None):
         # initialize as R's NULL object
@@ -88,7 +87,7 @@ class RFableModel(ForecastingRegressor):
             h = self.params.prediction_length
 
         rts = self.prepare_training_data(hist_df)
-        self.model = self.fit(rts)
+        self.fit(rts)
         r_forecast = fabletools.forecast(
             self.model, h=h, new_data=xreg_rts, simulate=False, times=0
         )
