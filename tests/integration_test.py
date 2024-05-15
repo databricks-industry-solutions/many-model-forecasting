@@ -81,7 +81,7 @@ active_models = [
     #"RFableNNETAR",
     #"RFableEnsemble",
     #"RDynamicHarmonicRegression",
-    #"SKTimeLgbmDsDt",
+    "SKTimeLgbmDsDt",
     #"SKTimeTBats",
     #"NeuralForecastRNN",
     #"NeuralForecastLSTM",

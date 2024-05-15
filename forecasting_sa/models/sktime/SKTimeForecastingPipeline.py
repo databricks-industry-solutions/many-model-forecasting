@@ -30,9 +30,9 @@ class SKTimeForecastingPipeline(ForecastingSAVerticalizedDataRegressor):
         self.param_grid = self.create_param_grid()
 
     def fit(self, X, y=None):
-        print("fit called")
+        #print("fit called")
         if self.params.get("enable_gcv", False) and self.model is None and self.param_grid:
-            print("tuning..")
+            #print("tuning..")
             _model = self.create_model()
             df = self.prepare_data(X)
             cv = SlidingWindowSplitter(
@@ -72,9 +72,9 @@ class SKTimeForecastingPipeline(ForecastingSAVerticalizedDataRegressor):
         df = df.sort_index()
         return df
 
-    def predict(self, X):
-        print("predict called")
-        df = self.prepare_data(X)
+    def predict(self, x):
+        #print("predict called")
+        df = self.prepare_data(x)
 
         if not self.model:
             self.model = self.create_model()
@@ -97,7 +97,10 @@ class SKTimeForecastingPipeline(ForecastingSAVerticalizedDataRegressor):
         forecast_df = pd.DataFrame(data=[], index=date_idx).reset_index()
         forecast_df[self.params.target] = pred_df.y.values
         forecast_df[self.params.target] = forecast_df[self.params.target].clip(0.01)
-        return forecast_df
+        return forecast_df, self.model
+
+    def forecast(self, x):
+        return self.predict(x)
 
     def calculate_metrics(
         self, hist_df: pd.DataFrame, val_df: pd.DataFrame

@@ -28,8 +28,9 @@ class RFableModel(ForecastingSAVerticalizedDataRegressor):
         self.params = params
         self.r_model: Optional[ro.vectors.DataFrame] = None
 
-    def fit(self, X, y=None):
-        pass
+    def fit(self, x, y=None):
+        model = fabletools.model(x, rl(self._get_model_definition()()))
+        return model
 
     def prepare_data(self, df: pd.DataFrame) -> pd.DataFrame:
         with localconverter(ro.default_converter + pandas2ri.converter):
@@ -90,7 +91,7 @@ class RFableModel(ForecastingSAVerticalizedDataRegressor):
             h = self.params.prediction_length
 
         rts = self.prepare_training_data(hist_df)
-        self.r_model = fabletools.model(rts, rl(self._get_model_definition()()))
+        self.r_model = self.fit(rts)
         r_forecast = fabletools.forecast(
             self.r_model, h=h, new_data=xreg_rts, simulate=False, times=0
         )

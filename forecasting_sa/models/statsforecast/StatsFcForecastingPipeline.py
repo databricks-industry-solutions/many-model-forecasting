@@ -30,9 +30,12 @@ class StatsFcForecaster(ForecastingSAVerticalizedDataRegressor):
         super().__init__(params)
         self.params = params
         self.model_spec = None
+        self.model = None
 
     def fit(self, x, y=None):
-        pass
+        model = StatsForecast(models=[self.model_spec], freq=self.freq, n_jobs=-1)
+        model.fit(x)
+        return model
 
     def prepare_data(self, df: pd.DataFrame, future: bool = False) -> pd.DataFrame:
         if not future:
@@ -85,12 +88,11 @@ class StatsFcForecaster(ForecastingSAVerticalizedDataRegressor):
     def predict(self, hist_df: pd.DataFrame, val_df: pd.DataFrame):
         _df = self.prepare_data(hist_df)
         _exogenous = self.prepare_data(val_df, future=True)
-        model = StatsForecast(models=[self.model_spec], freq=self.freq, n_jobs=-1)
-        model.fit(_df)
+        self.model = self.fit(_df)
         if len(_exogenous.columns) == 2:
-            forecast_df = model.predict(self.params["prediction_length"])
+            forecast_df = self.model.predict(self.params["prediction_length"])
         else:
-            forecast_df = model.predict(self.params["prediction_length"], _exogenous)
+            forecast_df = self.model.predict(self.params["prediction_length"], _exogenous)
         target = [col for col in forecast_df.columns.to_list()
                        if col not in ["unique_id", "ds"]][0]
         forecast_df = forecast_df.reset_index(drop=True).rename(
@@ -102,13 +104,12 @@ class StatsFcForecaster(ForecastingSAVerticalizedDataRegressor):
         )
         # Fix here
         forecast_df[self.params.target] = forecast_df[self.params.target].clip(0.01)
-        return forecast_df, model
+        return forecast_df, self.model
 
     def forecast(self, df: pd.DataFrame):
         _df = df[df[self.params.target].notnull()]
         _df = self.prepare_data(_df)
-        model = StatsForecast(models=[self.model_spec], freq=self.freq, n_jobs=-1)
-        model.fit(_df)
+        self.model = self.fit(_df)
         if 'dynamic_reals' in self.params.keys():
             _last_date = _df["ds"].max()
             _future_df = df[
@@ -118,7 +119,7 @@ class StatsFcForecaster(ForecastingSAVerticalizedDataRegressor):
             ]
             _future_exogenous = self.prepare_data(_future_df, future=True)
             try:
-                forecast_df = model.predict(self.params["prediction_length"], _future_exogenous)
+                forecast_df = self.model.predict(self.params["prediction_length"], _future_exogenous)
             except Exception as e:
                 print(
                     f"Removing group_id {df[self.params.group_id][0]} as future exogenous "
@@ -127,7 +128,7 @@ class StatsFcForecaster(ForecastingSAVerticalizedDataRegressor):
                     columns=[self.params.date_col, self.params.target]
                 )
         else:
-            forecast_df = model.predict(self.params["prediction_length"])
+            forecast_df = self.model.predict(self.params["prediction_length"])
 
         target = [col for col in forecast_df.columns.to_list()
                        if col not in ["unique_id", "ds"]][0]
@@ -140,7 +141,7 @@ class StatsFcForecaster(ForecastingSAVerticalizedDataRegressor):
         )
         # Fix here
         forecast_df[self.params.target] = forecast_df[self.params.target].clip(0.01)
-        return forecast_df, model
+        return forecast_df, self.model
 
     def calculate_metrics(
         self, hist_df: pd.DataFrame, val_df: pd.DataFrame
