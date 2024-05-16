@@ -70,7 +70,6 @@ job_json = {
                 },
                 "num_workers": 0,
                 "node_type_id": {"AWS": "i3.xlarge", "MSA": "Standard_DS3_v2", "GCP": "n1-highmem-4"},
-                "driver_node_type_id": {"AWS": "i3.xlarge", "MSA": "Standard_DS3_v2", "GCP": "n1-highmem-4"},
                 "custom_tags": {
                     "ResourceClass": "SingleNode",
                     "usage": "solacc_testing"

@@ -24,6 +24,13 @@ class SKTimeForecastingPipeline(ForecastingRegressor):
         self.model = None
         self.param_grid = self.create_param_grid()
 
+    @abstractmethod
+    def create_model(self) -> BaseForecaster:
+        pass
+
+    def create_param_grid(self) -> Dict[str, Any]:
+        return {}
+
     def prepare_data(self, df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy().fillna(0.1)
         df[self.params.target] = df[self.params.target].clip(0.1)
@@ -36,10 +43,7 @@ class SKTimeForecastingPipeline(ForecastingRegressor):
         df = df.set_index(self.params.date_col)
         df = df.reindex(date_idx, method="backfill")
         df = df.sort_index()
-        df = pd.DataFrame(
-            {"y": df[self.params.target].values},
-            index=df.index.to_period(self.params.freq),
-        )
+        df = pd.DataFrame({"y": df[self.params.target].values}, index=df.index.to_period(self.params.freq))
         return df
 
     def fit(self, x, y=None):
@@ -82,13 +86,6 @@ class SKTimeForecastingPipeline(ForecastingRegressor):
     def forecast(self, x):
         return self.predict(x)
 
-    @abstractmethod
-    def create_model(self) -> BaseForecaster:
-        pass
-
-    def create_param_grid(self) -> Dict[str, Any]:
-        return {}
-
 
 class SKTimeLgbmDsDt(SKTimeForecastingPipeline):
     def __init__(self, params):
@@ -97,9 +94,7 @@ class SKTimeLgbmDsDt(SKTimeForecastingPipeline):
     def create_model(self) -> BaseForecaster:
         model = TransformedTargetForecaster(
             [
-                (
-                    "deseasonalise",
-                    ConditionalDeseasonalizer(
+                ("deseasonalise", ConditionalDeseasonalizer(
                         model=self.model_spec.get("deseasonalise_model", "additive"),
                         sp=int(self.model_spec.get("season_length", 1)),
                     ),
