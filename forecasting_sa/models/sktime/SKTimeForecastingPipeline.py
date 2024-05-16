@@ -61,6 +61,9 @@ class SKTimeForecastingPipeline(ForecastingRegressor):
 
     def predict(self, hist_df: pd.DataFrame, val_df: pd.DataFrame = None):
         _df = self.prepare_data(hist_df)
+
+        print(f"_df: {_df}")
+
         self.fit(_df)
         pred_df = self.model.predict(
             ForecastingHorizon(np.arange(1, self.params.prediction_length + 1))
