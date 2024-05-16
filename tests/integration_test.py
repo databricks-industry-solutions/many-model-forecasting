@@ -76,7 +76,7 @@ active_models = [
     #"StatsForecastCrostonClassic",
     #"StatsForecastCrostonOptimized",
     #"StatsForecastCrostonSBA",
-    "RFableArima",
+    #"RFableArima",
     #"RFableETS",
     #"RFableNNETAR",
     #"RFableEnsemble",
