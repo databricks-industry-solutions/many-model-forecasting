@@ -54,9 +54,7 @@ class SKTimeForecastingPipeline(ForecastingRegressor):
                 window_length=self.params.prediction_length * 10,
                 step_length=int(self.params.prediction_length * 1.5),
             )
-            gscv = ForecastingGridSearchCV(
-                _model, cv=cv, param_grid=self.param_grid, n_jobs=1
-            )
+            gscv = ForecastingGridSearchCV(_model, cv=cv, param_grid=self.param_grid, n_jobs=-1)
             gscv.fit(x)
             self.model = gscv.best_forecaster_
             print("Up")
@@ -71,20 +69,16 @@ class SKTimeForecastingPipeline(ForecastingRegressor):
         pred_df = self.model.predict(
             ForecastingHorizon(np.arange(1, self.params.prediction_length + 1))
         )
-
-        print(f"_df.index.max(): {_df.index.max()}")
-        print(f"type(_df.index.max()): {type(_df.index.max())}")
-        print(f"pd.DateOffset(days=1): {pd.DateOffset(days=1)}")
-
         date_idx = pd.date_range(
-            _df.index.max() + pd.DateOffset(days=1),
-            _df.index.max() + pd.DateOffset(days=self.params.prediction_length),
+            _df.index.max().to_timestamp(freq=self.params.freq) + pd.DateOffset(days=1),
+            _df.index.max().to_timestamp(freq=self.params.freq) + pd.DateOffset(days=self.params.prediction_length),
             freq=self.params.freq,
             name=self.params.date_col,
         )
         forecast_df = pd.DataFrame(data=[], index=date_idx).reset_index()
         forecast_df[self.params.target] = pred_df.y.values
         forecast_df[self.params.target] = forecast_df[self.params.target].clip(0.01)
+        print(f"forecast_df: {forecast_df}")
         return forecast_df, self.model
 
     def forecast(self, x):
