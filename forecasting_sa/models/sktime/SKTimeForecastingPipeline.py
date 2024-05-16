@@ -94,32 +94,21 @@ class SKTimeLgbmDsDt(SKTimeForecastingPipeline):
     def create_model(self) -> BaseForecaster:
         model = TransformedTargetForecaster(
             [
-                ("deseasonalise", ConditionalDeseasonalizer(
-                        model=self.model_spec.get("deseasonalise_model", "additive"),
-                        sp=int(self.model_spec.get("season_length", 1)),
-                    ),
+                (
+                    "deseasonalise",
+                    ConditionalDeseasonalizer(model=self.model_spec.get("deseasonalise_model", "additive"),
+                                          sp=int(self.model_spec.get("season_length", 1)))
                 ),
                 (
-                    "detrend",
-                    Detrender(
-                        forecaster=PolynomialTrendForecaster(
-                            degree=int(self.model_spec.get("detrend_poly_degree", 1))
-                        )
-                    ),
+                    "detrend", Detrender( forecaster=PolynomialTrendForecaster(
+                     degree=int(self.model_spec.get("detrend_poly_degree", 1))))
                 ),
                 (
-                    "forecast",
-                    make_reduction(
-                        estimator=LGBMRegressor(random_state=42),
-                        scitype="tabular-regressor",
-                        window_length=int(
-                            self.model_spec.get(
-                                "window_size", self.params.prediction_length
-                            )
-                        ),
-                        strategy="recursive",
-                    ),
-                ),
+                    "forecast", make_reduction(estimator=LGBMRegressor(random_state=42),
+                                               scitype="tabular-regressor",
+                                               window_length=int(self.model_spec.get("window_size", self.params.prediction_length)),
+                                               strategy="recursive")
+                )
             ]
         )
         return model

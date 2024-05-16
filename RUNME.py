@@ -33,51 +33,48 @@ from solacc.companion import NotebookSolutionCompanion
 # COMMAND ----------
 
 job_json = {
-    "timeout_seconds": 28800,
-    "max_concurrent_runs": 1,
-    "tags": {
-        "usage": "solacc_testing",
-        "group": "RCG"
-    },
-    "tasks": [
-        {
-            "job_cluster_key": "mmf_cluster",
-            "notebook_task": {
-                "notebook_path": f"tests/integration_test"
-            },
-            "libraries": [
-                {"cran": {"package": "fable", "repo": "https://packagemanager.posit.co/cran/2022-12-01/"}},
-                {"cran": {"package": "fabletools", "repo": "https://packagemanager.posit.co/cran/2022-12-01/"}},
-                {"cran": {"package": "urca", "repo": "https://packagemanager.posit.co/cran/2022-12-01/"}},
-                {"cran": {"package": "feasts", "repo": "https://packagemanager.posit.co/cran/2022-12-01/"}},
-                {"cran": {"package": "lazyeval", "repo": "https://packagemanager.posit.co/cran/2022-12-01/"}},
-                {"cran": {"package": "tsibble", "repo": "https://packagemanager.posit.co/cran/2022-12-01/"}},
-                {"cran": {"package": "distributional", "repo": "https://packagemanager.posit.co/cran/2022-12-01/"}}
-            ],
-            "task_key": "mmf_01"
-        }
-    ],
-    "job_clusters": [
-        {
-            "job_cluster_key": "mmf_cluster",
-            "new_cluster": {
-                "spark_version": "14.3.x-cpu-ml-scala2.12",
-                "spark_conf": {
-                    "spark.master": "local[*, 4]",
-                    "spark.databricks.cluster.profile": "singleNode",
-                    "spark.sql.execution.arrow.enabled": "true",
-                    "spark.sql.adaptive.enabled": "false"
+        "timeout_seconds": 28800,
+        "max_concurrent_runs": 1,
+        "tags": {
+            "usage": "solacc_testing",
+            "group": "RCG"
+        },
+        "tasks": [
+            {
+                "job_cluster_key": "mmf_cluster",
+                "notebook_task": {
+                    "notebook_path": f"tests/integration_test"
                 },
-                "num_workers": 0,
-                "node_type_id": {"AWS": "i3.xlarge", "MSA": "Standard_DS3_v2", "GCP": "n1-highmem-4"},
-                "custom_tags": {
-                    "ResourceClass": "SingleNode",
-                    "usage": "solacc_testing"
-                },
+                "libraries": [
+                  { "cran": {"package": "fable", "repo": "https://packagemanager.posit.co/cran/2022-12-01/"}},
+                  { "cran": {"package": "fabletools", "repo": "https://packagemanager.posit.co/cran/2022-12-01/"}},
+                  { "cran": {"package": "urca", "repo": "https://packagemanager.posit.co/cran/2022-12-01/"}},
+                  { "cran": {"package": "feasts", "repo": "https://packagemanager.posit.co/cran/2022-12-01/"}},
+                  { "cran": {"package": "lazyeval", "repo": "https://packagemanager.posit.co/cran/2022-12-01/"}},
+                  { "cran": {"package": "tsibble", "repo": "https://packagemanager.posit.co/cran/2022-12-01/"}},
+                  { "cran": {"package": "distributional", "repo": "https://packagemanager.posit.co/cran/2022-12-01/"}}
+                ],
+                "task_key": "mmf_01"
             }
-        }
-    ]
-}
+        ],
+        "job_clusters": [
+            {
+                "job_cluster_key": "mmf_cluster",
+                "new_cluster": {
+                    "spark_version": "14.3.x-cpu-ml-scala2.12",
+                "spark_conf": {
+                    "spark.databricks.delta.formatCheck.enabled": "false",
+                    "spark.databricks.delta.schema.autoMerge.enabled": "true"
+                    },
+                    "num_workers": 2,
+                    "node_type_id": {"AWS": "i3.xlarge", "MSA": "Standard_DS3_v2", "GCP": "n1-highmem-4"},
+                    "custom_tags": {
+                        "usage": "solacc_testing"
+                    },
+                }
+            }
+        ]
+    }
 
 # COMMAND ----------
 
