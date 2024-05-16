@@ -29,8 +29,8 @@ _ = spark.sql(f"CREATE VOLUME IF NOT EXISTS {catalog}.{db}.{volume}")
 # Randomly select 100 stores to forecast
 import random
 random.seed(10)
-sample = False
-stores = sorted(random.sample(range(0, 1000), 100))
+sample = True
+stores = sorted(random.sample(range(0, 1000), 10))
 
 train = spark.read.csv(f"/Volumes/{catalog}/{db}/{volume}/train.csv", header=True, inferSchema=True)
 test = spark.read.csv(f"/Volumes/{catalog}/{db}/{volume}/test.csv", header=True, inferSchema=True)
@@ -59,26 +59,26 @@ import pandas as pd
 from forecasting_sa import run_forecast
 
 active_models = [
-    "StatsForecastBaselineWindowAverage",
-    "StatsForecastBaselineSeasonalWindowAverage",
-    "StatsForecastBaselineNaive",
-    "StatsForecastBaselineSeasonalNaive",
-    "StatsForecastAutoArima",
-    "StatsForecastAutoETS",
-    "StatsForecastAutoCES",
-    "StatsForecastAutoTheta",
-    "StatsForecastTSB",
-    "StatsForecastADIDA",
-    "StatsForecastIMAPA",
-    "StatsForecastCrostonClassic",
-    "StatsForecastCrostonOptimized",
-    "StatsForecastCrostonSBA",
-    "RFableArima",
-    "RFableETS",
-    "RFableNNETAR",
-    "RFableEnsemble",
-    "RDynamicHarmonicRegression",
-    #"SKTimeLgbmDsDt",
+    #"StatsForecastBaselineWindowAverage",
+    #"StatsForecastBaselineSeasonalWindowAverage",
+    #"StatsForecastBaselineNaive",
+    #"StatsForecastBaselineSeasonalNaive",
+    #"StatsForecastAutoArima",
+    #"StatsForecastAutoETS",
+    #"StatsForecastAutoCES",
+    #"StatsForecastAutoTheta",
+    #"StatsForecastTSB",
+    #"StatsForecastADIDA",
+    #"StatsForecastIMAPA",
+    #"StatsForecastCrostonClassic",
+    #"StatsForecastCrostonOptimized",
+    #"StatsForecastCrostonSBA",
+    #"RFableArima",
+    #"RFableETS",
+    #"RFableNNETAR",
+    #"RFableEnsemble",
+    #"RDynamicHarmonicRegression",
+    "SKTimeLgbmDsDt",
     #"SKTimeTBats",
     #"NeuralForecastRNN",
     #"NeuralForecastLSTM",
@@ -101,9 +101,9 @@ run_id = run_forecast(
     target="Sales",
     freq="D",
     dynamic_reals=["DayOfWeek", "Open", "Promo", "SchoolHoliday"],
-    prediction_length=28,
-    backtest_months=3,
-    stride=7,
+    prediction_length=10,
+    backtest_months=1,
+    stride=10,
     train_predict_ratio=2,
     active_models=active_models,
     data_quality_check=True,

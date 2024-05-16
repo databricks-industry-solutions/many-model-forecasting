@@ -57,11 +57,9 @@ class SKTimeForecastingPipeline(ForecastingRegressor):
             gscv = ForecastingGridSearchCV(_model, cv=cv, param_grid=self.param_grid, n_jobs=-1)
             gscv.fit(x)
             self.model = gscv.best_forecaster_
-            print("Up")
         else:
             self.model = self.create_model()
             self.model.fit(x)
-            print("Down")
 
     def predict(self, hist_df: pd.DataFrame, val_df: pd.DataFrame = None):
         _df = self.prepare_data(hist_df)
@@ -78,7 +76,6 @@ class SKTimeForecastingPipeline(ForecastingRegressor):
         forecast_df = pd.DataFrame(data=[], index=date_idx).reset_index()
         forecast_df[self.params.target] = pred_df.y.values
         forecast_df[self.params.target] = forecast_df[self.params.target].clip(0.01)
-        print(f"forecast_df: {forecast_df}")
         return forecast_df, self.model
 
     def forecast(self, x):
@@ -108,7 +105,7 @@ class SKTimeLgbmDsDt(SKTimeForecastingPipeline):
                 (
                     "forecast",
                     make_reduction(
-                        estimator=LGBMRegressor(random_state=42),
+                        estimator=LGBMRegressor(random_state=42, n_jobs=-1),
                         scitype="tabular-regressor",
                         window_length=int(self.model_spec.get("window_size", self.params.prediction_length)),
                         strategy="recursive"
@@ -123,7 +120,7 @@ class SKTimeLgbmDsDt(SKTimeForecastingPipeline):
             "deseasonalise__model": ["additive", "multiplicative"],
             "deseasonalise__sp": [1, 7, 14],
             "detrend__forecaster__degree": [1, 2, 3],
-            #"forecast__estimator__learning_rate": [0.1, 0.01, 0.001],
+            # "forecast__estimator__learning_rate": [0.1, 0.01, 0.001],
             "forecast__window_length": [
                 self.params.prediction_length,
                 self.params.prediction_length * 2,
@@ -137,9 +134,10 @@ class SKTimeTBats(SKTimeForecastingPipeline):
 
     def create_model(self) -> BaseForecaster:
         model = TBATS(
-            sp=int(self.model_spec.get("season_length", 1)),
+            sp=int(self.model_spec.get("season_length", 7)),
             use_trend=self.model_spec.get("use_trend", True),
             use_box_cox=self.model_spec.get("box_cox", True),
+            n_jobs=-1,
         )
         return model
 
