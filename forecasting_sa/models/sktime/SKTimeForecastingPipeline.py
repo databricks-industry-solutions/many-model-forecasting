@@ -59,19 +59,23 @@ class SKTimeForecastingPipeline(ForecastingRegressor):
             )
             gscv.fit(x)
             self.model = gscv.best_forecaster_
+            print("Up")
         else:
             self.model = self.create_model()
             self.model.fit(x)
+            print("Down")
 
     def predict(self, hist_df: pd.DataFrame, val_df: pd.DataFrame = None):
         _df = self.prepare_data(hist_df)
-
-        print(f"_df: {_df}")
-
         self.fit(_df)
         pred_df = self.model.predict(
             ForecastingHorizon(np.arange(1, self.params.prediction_length + 1))
         )
+
+        print(f"_df.index.max(): {_df.index.max()}")
+        print(f"type(_df.index.max()): {type(_df.index.max())}")
+        print(f"pd.DateOffset(days=1): {pd.DateOffset(days=1)}")
+
         date_idx = pd.date_range(
             _df.index.max() + pd.DateOffset(days=1),
             _df.index.max() + pd.DateOffset(days=self.params.prediction_length),

@@ -128,9 +128,14 @@ run_forecast(
 # COMMAND ----------
 
 # MAGIC %sql drop table main.mmf.daily_metrics_output
-# MAGIC %sql drop table main.mmf.daily_scoring_output
-# MAGIC %sql drop table main.mmf.daily_ensemble_output
 
 # COMMAND ----------
 
+# MAGIC %sql drop table main.mmf.daily_scoring_output
+
+# COMMAND ----------
+
+# MAGIC %sql drop table main.mmf.daily_ensemble_output
+
+# COMMAND ----------
 

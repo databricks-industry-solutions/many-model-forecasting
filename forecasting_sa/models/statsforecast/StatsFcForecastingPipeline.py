@@ -76,7 +76,7 @@ class StatsFcForecaster(ForecastingRegressor):
         return df_statsfc
 
     def fit(self, x, y=None):
-        self.model = StatsForecast(models=[self.model_spec], freq=self.freq)
+        self.model = StatsForecast(models=[self.model_spec], freq=self.freq, n_jobs=-1)
         self.model.fit(x)
 
     def predict(self, hist_df: pd.DataFrame, val_df: pd.DataFrame):
