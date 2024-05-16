@@ -36,6 +36,10 @@ class SKTimeForecastingPipeline(ForecastingRegressor):
         df = df.set_index(self.params.date_col)
         df = df.reindex(date_idx, method="backfill")
         df = df.sort_index()
+        df = pd.DataFrame(
+            {"y": df[self.params.target].values},
+            index=df.index.to_period(self.params.freq),
+        )
         return df
 
     def fit(self, x, y=None):
@@ -55,19 +59,15 @@ class SKTimeForecastingPipeline(ForecastingRegressor):
             self.model = self.create_model()
             self.model.fit(x)
 
-    def predict(self, x):
-        df = self.prepare_data(x)
-        df = pd.DataFrame(
-            {"y": df[self.params.target].values},
-            index=df.index.to_period(self.params.freq),
-        )
-        self.fit(df)
+    def predict(self, hist_df: pd.DataFrame, val_df: pd.DataFrame = None):
+        _df = self.prepare_data(hist_df)
+        self.fit(_df)
         pred_df = self.model.predict(
             ForecastingHorizon(np.arange(1, self.params.prediction_length + 1))
         )
         date_idx = pd.date_range(
-            df.index.max() + pd.DateOffset(days=1),
-            df.index.max() + pd.DateOffset(days=self.params.prediction_length),
+            _df.index.max() + pd.DateOffset(days=1),
+            _df.index.max() + pd.DateOffset(days=self.params.prediction_length),
             freq=self.params.freq,
             name=self.params.date_col,
         )

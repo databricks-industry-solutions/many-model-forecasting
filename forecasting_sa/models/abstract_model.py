@@ -75,8 +75,8 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
                         < np.datetime64(curr_date + self.prediction_length_offset)
                 )]
 
-            if retrain:
-                self.fit(_df)
+            #if retrain:
+            #    self.fit(_df)
 
             metrics = self.calculate_metrics(_df, actuals_df)
             metrics_and_date = [
