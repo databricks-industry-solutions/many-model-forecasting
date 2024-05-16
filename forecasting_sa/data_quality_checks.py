@@ -16,7 +16,6 @@ class DataQualityChecks:
     """
     Class to run the data quality checks.
     """
-
     def __init__(
         self,
         df: Union[pd.DataFrame, pyspark.sql.DataFrame],
@@ -35,6 +34,7 @@ class DataQualityChecks:
     def _backtest_length_check(self):
         """
         Checks if the backtest interval contains at least one prediction length.
+        Mandatory check irrespective of data_quality_check being True or False.
         """
         backtest_days = self.conf["backtest_months"] * 30
         prediction_length_days = (
@@ -48,6 +48,7 @@ class DataQualityChecks:
     def _external_regressors_check(self):
         """
         Checks if the resampling is turned off when an external regressor is given.
+        Mandatory check irrespective of data_quality_check being True or False.
         """
         if (
             self.conf.get("static_categoricals", None)
@@ -65,6 +66,7 @@ class DataQualityChecks:
     ) -> pd.DataFrame:
         """
         Run 3 checks on the subset dataset grouped by group_id.
+        Optional checks only when data_quality_check is True.
         1. Check if any of external regressor provided contains null. If it does, this time series is removed.
         2. Check if the training period is longer than the requirement (train_predict_ratio).
         3. Check for missing entries. If the time series has a missing entry and the resampling is disabled,
@@ -77,23 +79,19 @@ class DataQualityChecks:
 
         group_id = _df[conf["group_id"]].iloc[0]
 
-        # Checking for nulls in external regressors
+        # 1. Checking for nulls in external regressors
         static_features = conf.get("static_features", None)
         dynamic_reals = conf.get("dynamic_reals", None)
         if static_features:
             if _df[static_features].isnull().values.any():
-                print(
-                    f"Removing {conf['group_id']} {group_id} since static categoricals provided contain null."
-                )
+                # Removing: null in static categoricals
                 return pd.DataFrame()
         if dynamic_reals:
             if _df[dynamic_reals].isnull().values.any():
-                print(
-                    f"Removing {conf['group_id']} {group_id} since dynamic reals provided contain null."
-                )
+                # Removing: null in dynamic reals
                 return pd.DataFrame()
 
-        # Checking for training period length
+        # 2. Checking for training period length
         temp_df = _df[_df[conf["target"]] > 0]
         split_date = temp_df[conf["date_col"]].max() - pd.DateOffset(
             months=conf["backtest_months"]
@@ -102,12 +100,10 @@ class DataQualityChecks:
             temp_df[temp_df[conf["date_col"]] < split_date].count()[0]
             <= conf["train_predict_ratio"] * conf["prediction_length"]
         ):
-            print(
-                f"Removing {conf['group_id']} {group_id} as it does not meet train_predict_ratio requirement."
-            )
+            # Removing: train_predict_ratio requirement violated
             return pd.DataFrame()
 
-        # Checking for missing entries
+        # 3. Checking for missing entries
         if max_date is None:
             max_date = _df[conf["date_col"]].max()
         _resampled = _df.set_index(conf["date_col"])
@@ -118,7 +114,6 @@ class DataQualityChecks:
             name=conf["date_col"],
         )
         _resampled = (
-            # _resampled.resample(self.conf["freq"]).sum().reset_index()
             _resampled.reindex(date_idx)
             .reset_index()
             .fillna(value=0)
@@ -126,43 +121,37 @@ class DataQualityChecks:
         if len(_df) != len(_resampled):
             if conf.get("resample"):
                 if (len(_resampled) - len(_df)) / len(_resampled) > 0.2:
-                    print(
-                        f"Removing {conf['group_id']} {group_id} as it contains too many missing "
-                        f"entries (over 0.2) even though resampling is enabled."
-                    )
+                    # Removing: missing rate over 0.2
                     return pd.DataFrame()
                 else:
                     _df = _resampled
             else:
-                print(
-                    f"Removing {conf['group_id']} {group_id} as it contains missing entry and "
-                    f"resampling is disabled."
-                )
+                # Removing: missing entry and resampling disabled
                 return pd.DataFrame()
 
+        # 4. Checking for negative entries
         _positive = _resampled[_resampled[conf["target"]] > 0]
         if (len(_resampled) - len(_positive)) / len(_resampled) > 0.2:
-            print(
-                f"Removing {conf['group_id']} {group_id} as it contains too many zero or negative "
-                f"entries (over 0.2)."
-            )
+            # Removing: zero or negative entries over 0.2
             return pd.DataFrame()
         else:
             _df = _resampled
         return _df
 
-    def run(self) -> Union[pd.DataFrame, pyspark.sql.DataFrame]:
+    def run(self) -> tuple[Union[pd.DataFrame, pyspark.sql.DataFrame], list]:
         """
         Main method of the job.
         :return:
         """
-
         print(f"Running data quality checks...")
         self.df[self.conf["date_col"]] = pd.to_datetime(self.df[self.conf["date_col"]])
         self.df.sort_values(by=self.conf["date_col"], inplace=True)
         self._external_regressors_check()
         self._backtest_length_check()
-        if self.conf.get("data_quality_check", True):
+        removed = []
+
+        # If data_quality_check is None (not provided), we don't run the optional checks
+        if self.conf.get("data_quality_check", False):
             _multiple_checks_func = functools.partial(
                 self._multiple_checks,
                 conf=self.conf,
@@ -185,6 +174,11 @@ class DataQualityChecks:
                 clean_df = clean_df[
                     clean_df.columns.drop(list(clean_df.filter(regex="index")))
                 ]
+            before = set(self.df[self.conf['group_id']].unique())
+            after = set(clean_df[self.conf['group_id']].unique())
+            removed = sorted(list(before - after))
+            print(f"Following {self.conf['group_id']} "
+                  f"have been removed: {removed}")
         else:
             clean_df = self.df
 
@@ -195,4 +189,4 @@ class DataQualityChecks:
         if self.type == "spark":
             clean_df = self.spark.createDataFrame(clean_df)
 
-        return clean_df
+        return clean_df, removed

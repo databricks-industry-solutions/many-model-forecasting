@@ -1,17 +1,15 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Many Models Forecasting SA (MMFSA) Demo
-# MAGIC This demo highlights how to configure MMF SA to use M4 competition data
+# MAGIC # Many Models Forecasting Integration Test
 
 # COMMAND ----------
 
-# MAGIC %pip install -r requirements.txt
-# MAGIC %pip install datasetsforecast==0.0.7
-
+# MAGIC %pip install -r ../requirements.txt --quiet
+dbutils.library.restartPython()
 # COMMAND ----------
 
 import logging
-
+from tqdm.autonotebook import tqdm
 logger = spark._jvm.org.apache.log4j
 logging.getLogger("py4j.java_gateway").setLevel(logging.ERROR)
 logging.getLogger("py4j.clientserver").setLevel(logging.ERROR)
@@ -35,7 +33,7 @@ from forecasting_sa import run_forecast
 
 # COMMAND ----------
 
-def _transform_group(df):
+def transform_group(df):
     unique_id = df.unique_id.iloc[0]
     _start = pd.Timestamp("2020-01-01")
     _end = _start + pd.DateOffset(days=int(df.count()[0]) - 1)
@@ -48,35 +46,20 @@ def _transform_group(df):
 
 def create_m4_df():
     y_df, _, _ = M4.load(directory=str(pathlib.Path.home()), group="Daily")
-    _ids = [f"D{i}" for i in range(1, 100)]
+    _ids = [f"D{i}" for i in range(1, 10)]
     y_df = (
         y_df.groupby("unique_id")
         .filter(lambda x: x.unique_id.iloc[0] in _ids)
         .groupby("unique_id")
-        .apply(_transform_group)
+        .apply(transform_group)
         .reset_index(drop=True)
     )
     return y_df
 
 # COMMAND ----------
 
-# MAGIC %md ### Now the dataset looks in the following way:
-
-# COMMAND ----------
-
 m4_df = spark.createDataFrame(create_m4_df())
-m4_df.createOrReplaceTempView("mmf_sa_train")
-display(m4_df)
-
-# COMMAND ----------
-
-# MAGIC %sql select * from mmf_sa_train where unique_id in ('D1', 'D2', 'D6', 'D7')
-
-# COMMAND ----------
-
-# MAGIC %md ### Let's configure the list of models we are going to use for training:
-
-# COMMAND ----------
+m4_df.createOrReplaceTempView("mmf_train")
 
 active_models = [
     #"StatsForecastBaselineWindowAverage",
@@ -84,9 +67,9 @@ active_models = [
     #"StatsForecastBaselineNaive",
     #"StatsForecastBaselineSeasonalNaive",
     "StatsForecastAutoArima",
-    "StatsForecastAutoETS",
-    "StatsForecastAutoCES",
-    "StatsForecastAutoTheta",
+    #"StatsForecastAutoETS",
+    #"StatsForecastAutoCES",
+    #"StatsForecastAutoTheta",
     #"StatsForecastTSB",
     #"StatsForecastADIDA",
     #"StatsForecastIMAPA",
@@ -98,31 +81,30 @@ active_models = [
     #"RFableNNETAR",
     #"RFableEnsemble",
     #"RDynamicHarmonicRegression",
-    #"GluonTSSimpleFeedForward",
-    #"GluonTSSeasonalNaive",
-    #"GluonTSNBEATS",
-    #"GluonTSDeepAR",
-    #"GluonTSProphet",
-    #"GluonTSTorchDeepAR",
-    #"GluonTSTransformer",
-    #"NeuralForecastMQNHiTS",
     #"SKTimeLgbmDsDt",
     #"SKTimeTBats",
+    #"NeuralForecastRNN",
+    #"NeuralForecastLSTM",
+    #"NeuralForecastNBEATSx",
+    #"NeuralForecastNHITS",
+    #"NeuralForecastAutoRNN",
+    #"NeuralForecastAutoLSTM",
+    #"NeuralForecastAutoNBEATSx",
+    #"NeuralForecastAutoNHITS",
 ]
 
 # COMMAND ----------
 
-# MAGIC %md ### Now we can run the forecasting process using `run_forecast` function.
-
-# COMMAND ----------
+# Make sure that the catalog and the schema exist
+catalog = "main" # Name of the catalog we use to manage our assets
+db = "mmf" # Name of the schema we use to manage our assets (e.g. datasets)
 
 run_forecast(
     spark=spark,
-    # conf={"temp_path": f"{str(temp_dir)}/temp"},
-    train_data="mmf_sa_train",
-    scoring_data="mmf_sa_train",
-    scoring_output="mmf_sa_forecast_scoring_out",
-    metrics_output="mmf_sa_metrics",
+    train_data="mmf_train",
+    scoring_data="mmf_train",
+    scoring_output=f"{catalog}.{db}.daily_scoring_output",
+    metrics_output=f"{catalog}.{db}.daily_metrics_output",
     group_id="unique_id",
     date_col="ds",
     target="y",
@@ -131,44 +113,29 @@ run_forecast(
     backtest_months=1,
     stride=10,
     train_predict_ratio=2,
-    #data_quality_check=False,
+    data_quality_check=True,
+    resample=False,
     ensemble=True,
     ensemble_metric="smape",
     ensemble_metric_avg=0.3,
     ensemble_metric_max=0.5,
-    ensemble_scoring_output="mmf_sa_forecast_ensemble_out",
+    ensemble_scoring_output=f"{catalog}.{db}.daily_ensemble_output",
     active_models=active_models,
-    experiment_path=f"/Shared/fsa_cicd_pr_experiment",
-    use_case_name="fsa",
+    experiment_path=f"/Shared/mmf_experiment",
+    use_case_name="mmf",
 )
 
 # COMMAND ----------
 
-# MAGIC %md ### Metrics output
-# MAGIC In the metrics output table, the metrics for all backtest windows and all models are stored. This info can be used to monitor model performance or decide which models should be taken into the final aggregated forecast.
+# MAGIC %sql drop table main.mmf.daily_metrics_output
 
 # COMMAND ----------
 
-# MAGIC %sql select * from mmf_sa_metrics
+# MAGIC %sql drop table main.mmf.daily_scoring_output
 
 # COMMAND ----------
 
-# MAGIC %md ### Forecast output
-# MAGIC In the Forecast output table, the final forecast for each model and each time series is stored. 
+# MAGIC %sql drop table main.mmf.daily_ensemble_output
 
 # COMMAND ----------
-
-# MAGIC %sql select * from mmf_sa_forecast_scoring_out
-
-# COMMAND ----------
-
-# MAGIC %md ### Final Ensemble Output
-# MAGIC In the final ensemble output table, we store the averaged forecast. The models which meet the threshold defined using the ensembling parameters are taken into consideration
-
-# COMMAND ----------
-
-# MAGIC %sql select * from mmf_sa_forecast_ensemble_out
-
-# COMMAND ----------
-
 

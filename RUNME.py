@@ -41,33 +41,33 @@ job_json = {
         },
         "tasks": [
             {
-                "job_cluster_key": "mm_cluster",
+                "job_cluster_key": "mmf_cluster",
                 "notebook_task": {
-                    "notebook_path": f"01_mm_forecasting_demo"
+                    "notebook_path": f"tests/integration_test"
                 },
                 "libraries": [
-                  { "cran": {"package": "fable"} },
-                  { "cran": {"package": "fabletools"} },
-                  { "cran": {"package": "urca"} },
-                  { "cran": {"package": "feasts"} },
-                  { "cran": {"package": "lazyeval"} },
-                  { "cran": {"package": "tsibble"} },
-                  { "cran": {"package": "distributional"} }
+                  { "cran": {"package": "fable", "repo": "https://packagemanager.posit.co/cran/2022-12-01/"}},
+                  { "cran": {"package": "fabletools", "repo": "https://packagemanager.posit.co/cran/2022-12-01/"}},
+                  { "cran": {"package": "urca", "repo": "https://packagemanager.posit.co/cran/2022-12-01/"}},
+                  { "cran": {"package": "feasts", "repo": "https://packagemanager.posit.co/cran/2022-12-01/"}},
+                  { "cran": {"package": "lazyeval", "repo": "https://packagemanager.posit.co/cran/2022-12-01/"}},
+                  { "cran": {"package": "tsibble", "repo": "https://packagemanager.posit.co/cran/2022-12-01/"}},
+                  { "cran": {"package": "distributional", "repo": "https://packagemanager.posit.co/cran/2022-12-01/"}}
                 ],
-                "task_key": "mm_01"
+                "task_key": "mmf_01"
             }
         ],
         "job_clusters": [
             {
-                "job_cluster_key": "mm_cluster",
+                "job_cluster_key": "mmf_cluster",
                 "new_cluster": {
-                    "spark_version": "11.3.x-cpu-ml-scala2.12",
-                "spark_conf": {
-                    "spark.databricks.delta.formatCheck.enabled": "false",
-                    "spark.databricks.delta.schema.autoMerge.enabled": "true"
+                    "spark_version": "14.3.x-cpu-ml-scala2.12",
+                    "spark_conf": {
+                        "spark.databricks.delta.formatCheck.enabled": "false",
+                        "spark.databricks.delta.schema.autoMerge.enabled": "true"
                     },
                     "num_workers": 2,
-                    "node_type_id": {"AWS": "i3.xlarge", "MSA": "Standard_DS3_v2", "GCP": "n1-highmem-4"},
+                    "node_type_id": {"AWS": "i3.xlarge", "MSA": "Standard_DS3_v2", "GCP": "n1-standard-4"},
                     "custom_tags": {
                         "usage": "solacc_testing"
                     },
