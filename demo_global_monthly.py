@@ -34,20 +34,12 @@ from forecasting_sa import run_forecast
 
 # COMMAND ----------
 
-def transform_group(df):
-    unique_id = df.unique_id.iloc[0]
-    _start = pd.Timestamp("2020-01-01")
-    _end = _start + pd.DateOffset(days=int(df.count()[0]) - 1)
-    date_idx = pd.date_range(start=_start, end=_end, freq="D", name="ds")
-    res_df = pd.DataFrame(data=[], index=date_idx).reset_index()
-    res_df["unique_id"] = unique_id
-    res_df["y"] = df.y.values
-    return res_df
+# Number of time series
+n = 100
 
-
-def create_m4_df():
-    y_df, _, _ = M4.load(directory=str(pathlib.Path.home()), group="Daily")
-    _ids = [f"D{i}" for i in range(1, 100)]
+def load_m4():
+    y_df, _, _ = M4.load(directory=str(pathlib.Path.home()), group="Monthly")
+    _ids = [f"M{i}" for i in range(1, n + 1)]
     y_df = (
         y_df.groupby("unique_id")
         .filter(lambda x: x.unique_id.iloc[0] in _ids)
@@ -57,18 +49,37 @@ def create_m4_df():
     )
     return y_df
 
+def transform_group(df):
+    unique_id = df.unique_id.iloc[0]
+    _cnt = 60  # df.count()[0]
+    _start = pd.Timestamp("2018-01-01")
+    _end = _start + pd.DateOffset(months=_cnt)
+    date_idx = pd.date_range(start=_start, end=_end, freq="M", name="date")
+    _df = (
+        pd.DataFrame(data=[], index=date_idx)
+        .reset_index()
+        .rename(columns={"index": "date"})
+    )
+    _df["unique_id"] = unique_id
+    _df["y"] = df[:60].y.values
+    return _df
+
+train = spark.createDataFrame(load_m4())
+train.createOrReplaceTempView("mmf_train")
+
+display(spark.read.table("mmf_train"))
+
 # COMMAND ----------
 
 # MAGIC %md ### Now the dataset looks in the following way:
 
 # COMMAND ----------
 
-m4_df = spark.createDataFrame(create_m4_df())
-m4_df.createOrReplaceTempView("mmf_train")
+# MAGIC %sql select unique_id, count(date) as count from mmf_train group by unique_id order by unique_id
 
 # COMMAND ----------
 
-# MAGIC %sql select * from mmf_train where unique_id in ('D1', 'D2', 'D6', 'D7', 'D10')
+# MAGIC %sql select count(distinct(unique_id)) from mmf_train
 
 # COMMAND ----------
 
@@ -77,28 +88,7 @@ m4_df.createOrReplaceTempView("mmf_train")
 # COMMAND ----------
 
 active_models = [
-    "StatsForecastBaselineWindowAverage",
-    #"StatsForecastBaselineSeasonalWindowAverage",
-    #"StatsForecastBaselineNaive",
-    #"StatsForecastBaselineSeasonalNaive",
-    "StatsForecastAutoArima",
-    #"StatsForecastAutoETS",
-    #"StatsForecastAutoCES",
-    #"StatsForecastAutoTheta",
-    #"StatsForecastTSB",
-    #"StatsForecastADIDA",
-    #"StatsForecastIMAPA",
-    #"StatsForecastCrostonClassic",
-    #"StatsForecastCrostonOptimized",
-    #"StatsForecastCrostonSBA",
-    "RFableArima",
-    #"RFableETS",
-    #"RFableNNETAR",
-    #"RFableEnsemble",
-    #"RDynamicHarmonicRegression",
-    "SKTimeTBats",
-    #"SKTimeLgbmDsDt",
-    #"NeuralForecastRNN",
+    "NeuralForecastRNN",
     #"NeuralForecastLSTM",
     #"NeuralForecastNBEATSx",
     #"NeuralForecastNHITS",
@@ -127,15 +117,16 @@ run_forecast(
     spark=spark,
     train_data="mmf_train",
     scoring_data="mmf_train",
-    scoring_output=f"{catalog}.{db}.daily_scoring_output",
-    metrics_output=f"{catalog}.{db}.daily_metrics_output",
+    scoring_output=f"{catalog}.{db}.monthly_scoring_output",
+    evaluation_output=f"{catalog}.{db}.monthly_evaluation_output",
+    model_output=f"{catalog}.{db}",
     group_id="unique_id",
-    date_col="ds",
+    date_col="date",
     target="y",
-    freq="D",
-    prediction_length=10,
-    backtest_months=1,
-    stride=10,
+    freq="M",
+    prediction_length=3,
+    backtest_months=12,
+    stride=1,
     train_predict_ratio=2,
     data_quality_check=True,
     resample=False,
@@ -143,50 +134,54 @@ run_forecast(
     ensemble_metric="smape",
     ensemble_metric_avg=0.3,
     ensemble_metric_max=0.5,
-    ensemble_scoring_output=f"{catalog}.{db}.daily_ensemble_output",
+    ensemble_scoring_output=f"{catalog}.{db}.monthly_ensemble_output",
     active_models=active_models,
-    experiment_path=f"/Shared/mmf_experiment",
+    experiment_path=f"/Shared/mmf_experiment_monthly",
     use_case_name="mmf",
 )
 
 # COMMAND ----------
 
-# MAGIC %md ### Metrics output
-# MAGIC In the metrics output table, the metrics for all backtest windows and all models are stored. This info can be used to monitor model performance or decide which models should be taken into the final aggregated forecast.
+# MAGIC %md ### Evaluation Output
+# MAGIC In the evaluation output table, the evaluation for all backtest windows and all models are stored. This info can be used to monitor model performance or decide which models should be taken into the final aggregated forecast.
 
 # COMMAND ----------
 
-# MAGIC %sql select * from solacc_uc.mmf.daily_metrics_output order by unique_id, model, backtest_window_start_date
+# MAGIC %sql select * from solacc_uc.mmf.monthly_evaluation_output order by unique_id, model, backtest_window_start_date
 
 # COMMAND ----------
 
-# MAGIC %md ### Forecast output
+# MAGIC %md ### Forecast Output
 # MAGIC In the Forecast output table, the final forecast for each model and each time series is stored. 
 
 # COMMAND ----------
 
-# MAGIC %sql select * from solacc_uc.mmf.daily_scoring_output order by unique_id, model, ds
+# MAGIC %sql select * from solacc_uc.mmf.monthly_scoring_output order by unique_id, model, date
 
 # COMMAND ----------
 
-# MAGIC %md ### Final Ensemble Output
+# MAGIC %md ### Ensemble Output
 # MAGIC In the final ensemble output table, we store the averaged forecast. The models which meet the threshold defined using the ensembling parameters are taken into consideration
 
 # COMMAND ----------
 
-# MAGIC %sql select * from solacc_uc.mmf.daily_ensemble_output order by unique_id, model, ds
+# MAGIC %sql select * from solacc_uc.mmf.monthly_ensemble_output order by unique_id, model, date
 
 # COMMAND ----------
 
-# MAGIC %sql delete from solacc_uc.mmf.daily_metrics_output
+# MAGIC %md ### Delete Tables
 
 # COMMAND ----------
 
-# MAGIC %sql delete from solacc_uc.mmf.daily_scoring_output
+# MAGIC %sql delete from solacc_uc.mmf.monthly_evaluation_output
 
 # COMMAND ----------
 
-# MAGIC %sql delete from solacc_uc.mmf.daily_ensemble_output
+# MAGIC %sql delete from solacc_uc.mmf.monthly_scoring_output
+
+# COMMAND ----------
+
+# MAGIC %sql delete from solacc_uc.mmf.monthly_ensemble_output
 
 # COMMAND ----------
 

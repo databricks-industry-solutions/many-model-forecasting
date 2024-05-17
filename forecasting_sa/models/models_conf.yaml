@@ -252,7 +252,7 @@ models:
       season_length: 7
 
   NeuralForecastRNN:
-    module: forecasting_sa.models.neuralforecast.NeuralForecastModel
+    module: forecasting_sa.models.neuralforecast.NeuralForecastPipeline
     model_class: NeuralFcRNN
     framework: NeuralForecast
     model_type: global
@@ -273,7 +273,7 @@ models:
     decoder_layers: 2
 
   NeuralForecastLSTM:
-    module: forecasting_sa.models.neuralforecast.NeuralForecastModel
+    module: forecasting_sa.models.neuralforecast.NeuralForecastPipeline
     model_class: NeuralFcLSTM
     framework: NeuralForecast
     model_type: global
@@ -293,7 +293,7 @@ models:
     decoder_layers: 2
 
   NeuralForecastNBEATSx:
-    module: forecasting_sa.models.neuralforecast.NeuralForecastModel
+    module: forecasting_sa.models.neuralforecast.NeuralForecastPipeline
     model_class: NeuralFcNBEATSx
     framework: NeuralForecast
     model_type: global
@@ -310,7 +310,7 @@ models:
     dropout_prob_theta: 0.0
 
   NeuralForecastNHITS:
-    module: forecasting_sa.models.neuralforecast.NeuralForecastModel
+    module: forecasting_sa.models.neuralforecast.NeuralForecastPipeline
     model_class: NeuralFcNHITS
     framework: NeuralForecast
     model_type: global
@@ -331,7 +331,7 @@ models:
     pooling_mode: MaxPool1d
 
   NeuralForecastAutoRNN:
-    module: forecasting_sa.models.neuralforecast.NeuralForecastModel
+    module: forecasting_sa.models.neuralforecast.NeuralForecastPipeline
     model_class: NeuralFcAutoRNN
     framework: NeuralForecast
     model_type: global
@@ -349,7 +349,7 @@ models:
     decoder_layers: 2
 
   NeuralForecastAutoLSTM:
-    module: forecasting_sa.models.neuralforecast.NeuralForecastModel
+    module: forecasting_sa.models.neuralforecast.NeuralForecastPipeline
     model_class: NeuralFcAutoLSTM
     framework: NeuralForecast
     model_type: global
@@ -367,7 +367,7 @@ models:
     decoder_layers: 2
 
   NeuralForecastAutoNBEATSx:
-    module: forecasting_sa.models.neuralforecast.NeuralForecastModel
+    module: forecasting_sa.models.neuralforecast.NeuralForecastPipeline
     model_class: NeuralFcAutoNBEATSx
     framework: NeuralForecast
     model_type: global
@@ -383,7 +383,7 @@ models:
     dropout_prob_theta: 0.0
 
   NeuralForecastAutoNHITS:
-    module: forecasting_sa.models.neuralforecast.NeuralForecastModel
+    module: forecasting_sa.models.neuralforecast.NeuralForecastPipeline
     model_class: NeuralFcAutoNHITS
     framework: NeuralForecast
     model_type: global

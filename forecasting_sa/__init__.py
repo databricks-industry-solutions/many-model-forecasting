@@ -29,7 +29,8 @@ def run_forecast(
     resample: bool = False,
     scoring_data: Union[str, pd.DataFrame, DataFrame] = None,
     scoring_output: str = None,
-    metrics_output: str = None,
+    evaluation_output: str = None,
+    model_output: str = None,
     ensemble: bool = None,
     ensemble_metric: str = None,
     ensemble_metric_avg: float = None,
@@ -106,8 +107,10 @@ def run_forecast(
         _conf["train_predict_ratio"] = train_predict_ratio
     if experiment_path is not None:
         _conf["experiment_path"] = experiment_path
-    if metrics_output is not None:
-        _conf["metrics_output"] = metrics_output
+    if evaluation_output is not None:
+        _conf["evaluation_output"] = evaluation_output
+    if model_output is not None:
+        _conf["model_output"] = model_output
     if ensemble is not None:
         _conf["ensemble"] = ensemble
     if ensemble_metric is not None:

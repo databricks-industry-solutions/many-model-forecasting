@@ -1,9 +1,7 @@
 import importlib
 import sys
 import importlib.resources as pkg_resources
-
 from omegaconf import OmegaConf, DictConfig
-
 from forecasting_sa.models.abstract_model import ForecastingRegressor
 
 

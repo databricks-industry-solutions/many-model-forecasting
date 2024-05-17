@@ -4,6 +4,22 @@ from typing import Dict, Any, Union
 from sktime.performance_metrics.forecasting import mean_absolute_percentage_error
 from neuralforecast import NeuralForecast
 from forecasting_sa.models.abstract_model import ForecastingRegressor
+from neuralforecast.auto import (
+    RNN,
+    LSTM,
+    NBEATSx,
+    NHITS,
+    AutoRNN,
+    AutoLSTM,
+    AutoNBEATSx,
+    AutoNHITS,
+
+)
+from ray import tune
+from ray.tune.search.hyperopt import HyperOptSearch
+from neuralforecast.losses.pytorch import (
+    MAE, MSE, RMSE, MAPE, SMAPE, MASE,
+)
 
 
 class NeuralFcForecaster(ForecastingRegressor):
@@ -26,7 +42,6 @@ class NeuralFcForecaster(ForecastingRegressor):
                     raise Exception(f"Dynamic future regressors missing: {e}")
             else:
                 _df = df[[self.params.group_id, self.params.date_col]]
-
             _df = (
                 _df.rename(
                     columns={
@@ -89,15 +104,11 @@ class NeuralFcForecaster(ForecastingRegressor):
         else:
             return None
 
-    def fit(self, X, y=None):
+    def fit(self, x, y=None):
         if isinstance(self.model, NeuralForecast):
-            _df = self.prepare_data(X)
-            _static_df = self.prepare_static_features(X)
-            self.model.fit(
-                df=_df,
-                static_df=_static_df,
-            )
-        return self
+            _df = self.prepare_data(x)
+            _static_df = self.prepare_static_features(x)
+            self.model.fit(df=_df, static_df=_static_df)
 
     def predict(self, hist_df: pd.DataFrame, val_df: pd.DataFrame = None):
         _df = self.prepare_data(hist_df)
@@ -109,16 +120,18 @@ class NeuralFcForecaster(ForecastingRegressor):
             static_df=_static_df,
             futr_df=_dynamic_future
         )
-        first_model = [col for col in forecast_df.columns.to_list() if col != "ds"][0]
+        target = [col for col in forecast_df.columns.to_list()
+                  if col not in ["unique_id", "ds"]][0]
         forecast_df = forecast_df.reset_index(drop=False).rename(
             columns={
                 "unique_id": self.params.group_id,
                 "ds": self.params.date_col,
-                first_model: self.params.target,
+                target: self.params.target,
             }
         )
         forecast_df[self.params.target] = forecast_df[self.params.target].clip(0.01)
-        return forecast_df
+
+        return forecast_df, self.model
 
     def forecast(self, df: pd.DataFrame):
         _df = df[df[self.params.target].notnull()]
@@ -146,44 +159,364 @@ class NeuralFcForecaster(ForecastingRegressor):
             static_df=_static_df,
             futr_df=_dynamic_future
         )
-        first_model = [col for col in forecast_df.columns.to_list() if col != "ds"][0]
+        target = [col for col in forecast_df.columns.to_list()
+                  if col not in ["unique_id", "ds"]][0]
         forecast_df = forecast_df.reset_index(drop=False).rename(
             columns={
                 "unique_id": self.params.group_id,
                 "ds": self.params.date_col,
-                first_model: self.params.target,
+                target: self.params.target,
             }
         )
         forecast_df[self.params.target] = forecast_df[self.params.target].clip(0.01)
-        return forecast_df
+        return forecast_df, self.model
 
     def calculate_metrics(
-        self, hist_df: pd.DataFrame, val_df: pd.DataFrame
-    ) -> Dict[str, Union[str, float, bytes]]:
-        pred_df = self.predict(hist_df, val_df)
+        self, hist_df: pd.DataFrame, val_df: pd.DataFrame, curr_date
+    ) -> list:
+        pred_df, model_fitted = self.predict(hist_df, val_df)
         keys = pred_df[self.params["group_id"]].unique()
         metrics = []
-        for key in keys:
-            forecast = val_df[val_df[self.params["group_id"]] == key][self.params["target"]]
-            actual = pred_df[pred_df[self.params["group_id"]] == key][self.params["target"]].\
-                         iloc[-self.params["prediction_length"]:]
-            try:
-                smape = mean_absolute_percentage_error(
-                    actual,
-                    forecast,
-                    symmetric=True,
-                )
-                metrics.append(smape)
-            except:
-                pass
-        smape = sum(metrics) / len(metrics)
-        print("finished calculate_metrics")
         if self.params["metric"] == "smape":
-            metric_value = smape
+            metric_name = "smape"
         else:
             raise Exception(f"Metric {self.params['metric']} not supported!")
+        for key in keys:
+            actual = val_df[val_df[self.params["group_id"]] == key][self.params["target"]]
+            forecast = pred_df[pred_df[self.params["group_id"]] == key][self.params["target"]].\
+                         iloc[-self.params["prediction_length"]:]
+            try:
+                if metric_name == "smape":
+                    metric_value = mean_absolute_percentage_error(actual, forecast, symmetric=True)
+                metrics.extend(
+                    [(
+                        key,
+                        curr_date,
+                        metric_name,
+                        metric_value,
+                        actual.to_numpy(),
+                        forecast.to_numpy(),
+                        b'',
+                    )])
+            except:
+                pass
+        return metrics
 
-        return {"metric_name": self.params["metric"],
-                "metric_value": metric_value,
-                "forecast": None,
-                "actual": None}
+
+class NeuralFcRNN(NeuralFcForecaster):
+    def __init__(self, params):
+        super().__init__(params)
+        self.params = params
+        self.loss = get_loss_function(self.params.loss)
+        self.accelerator = 'gpu' if self.params.accelerator == 'gpu' else 'cpu'
+        self.devices = -1 if self.params.accelerator == 'gpu' else 1
+        self.model = NeuralForecast(
+            models=[
+                RNN(
+                    h=self.params.prediction_length,
+                    input_size=self.params.input_size_factor*self.params.prediction_length,
+                    loss=self.loss,
+                    max_steps=self.params.max_steps,
+                    batch_size=self.params.batch_size,
+                    encoder_n_layers=self.params.encoder_n_layers,
+                    encoder_hidden_size=self.params.encoder_hidden_size,
+                    encoder_activation=self.params.encoder_activation,
+                    context_size=self.params.context_size,
+                    decoder_hidden_size=self.params.decoder_hidden_size,
+                    decoder_layers=self.params.decoder_layers,
+                    learning_rate=self.params.learning_rate,
+                    stat_exog_list=list(self.params.get("static_features", [])),
+                    futr_exog_list=list(self.params.get("dynamic_future", [])),
+                    hist_exog_list=list(self.params.get("dynamic_historical", [])),
+                    scaler_type='robust',
+                    accelerator=self.params.accelerator,
+                    devices=self.devices,
+                ),
+            ],
+            freq=self.params["freq"]
+        )
+
+    def supports_tuning(self) -> bool:
+        return False
+
+
+class NeuralFcLSTM(NeuralFcForecaster):
+    def __init__(self, params):
+        super().__init__(params)
+        self.params = params
+        self.loss = get_loss_function(self.params.loss)
+        self.accelerator = 'gpu' if self.params.accelerator == 'gpu' else 'cpu'
+        self.devices = -1 if self.params.accelerator == 'gpu' else 1
+        self.model = NeuralForecast(
+            models=[
+                LSTM(
+                    h=self.params.prediction_length,
+                    input_size=self.params.input_size_factor*self.params.prediction_length,
+                    loss=self.loss,
+                    max_steps=self.params.max_steps,
+                    batch_size=self.params.batch_size,
+                    encoder_n_layers=self.params.encoder_n_layers,
+                    encoder_hidden_size=self.params.encoder_hidden_size,
+                    context_size=self.params.context_size,
+                    decoder_hidden_size=self.params.decoder_hidden_size,
+                    decoder_layers=self.params.decoder_layers,
+                    learning_rate=self.params.learning_rate,
+                    stat_exog_list=list(self.params.get("static_features", [])),
+                    futr_exog_list=list(self.params.get("dynamic_future", [])),
+                    hist_exog_list=list(self.params.get("dynamic_historical", [])),
+                    scaler_type='robust',
+                    accelerator=self.params.accelerator,
+                    devices=self.devices,
+                ),
+            ],
+            freq=self.params["freq"]
+        )
+
+    def supports_tuning(self) -> bool:
+        return False
+
+
+class NeuralFcNBEATSx(NeuralFcForecaster):
+    def __init__(self, params):
+        super().__init__(params)
+        self.params = params
+        self.loss = get_loss_function(self.params.loss)
+        self.accelerator = 'gpu' if self.params.accelerator == 'gpu' else 'cpu'
+        self.devices = -1 if self.params.accelerator == 'gpu' else 1
+        self.model = NeuralForecast(
+            models=[
+                NBEATSx(
+                    h=self.params.prediction_length,
+                    input_size=self.params.input_size_factor*self.params.prediction_length,
+                    loss=self.loss,
+                    max_steps=self.params.max_steps,
+                    batch_size=self.params.batch_size,
+                    n_harmonics=self.params.n_harmonics,
+                    n_polynomials=self.params.n_polynomials,
+                    dropout_prob_theta=self.params.dropout_prob_theta,
+                    stat_exog_list=list(self.params.get("static_features", [])),
+                    futr_exog_list=list(self.params.get("dynamic_future", [])),
+                    hist_exog_list=list(self.params.get("dynamic_historical", [])),
+                    scaler_type='robust',
+                    accelerator=self.params.accelerator,
+                    devices=self.devices,
+                ),
+            ],
+            freq=self.params["freq"]
+        )
+
+    def supports_tuning(self) -> bool:
+        return False
+
+
+class NeuralFcNHITS(NeuralFcForecaster):
+    def __init__(self, params):
+        super().__init__(params)
+        self.params = params
+        self.loss = get_loss_function(self.params.loss)
+        self.accelerator = 'gpu' if self.params.accelerator == 'gpu' else 'cpu'
+        self.devices = -1 if self.params.accelerator == 'gpu' else 1
+        self.model = NeuralForecast(
+            models=[
+                NHITS(
+                    h=self.params.prediction_length,
+                    input_size=self.params.input_size_factor*self.params.prediction_length,
+                    loss=self.loss,
+                    max_steps=self.params.max_steps,
+                    batch_size=self.params.batch_size,
+                    dropout_prob_theta=self.params.dropout_prob_theta,
+                    stack_types=list(self.params.stack_types),
+                    n_blocks=list(self.params.n_blocks),
+                    n_pool_kernel_size=list(self.params.n_pool_kernel_size),
+                    n_freq_downsample=list(self.params.n_freq_downsample),
+                    interpolation_mode=self.params.interpolation_mode,
+                    pooling_mode=self.params.pooling_mode,
+                    stat_exog_list=list(self.params.get("static_features", [])),
+                    futr_exog_list=list(self.params.get("dynamic_future", [])),
+                    hist_exog_list=list(self.params.get("dynamic_historical", [])),
+                    scaler_type='robust',
+                    accelerator=self.params.accelerator,
+                    devices=self.devices,
+                ),
+            ],
+            freq=self.params["freq"]
+        )
+
+    def supports_tuning(self) -> bool:
+        return False
+
+
+class NeuralFcAutoRNN(NeuralFcForecaster):
+    def __init__(self, params):
+        super().__init__(params)
+        self.params = params
+        self.loss = get_loss_function(self.params.loss)
+        self.gpus = -1 if self.params.accelerator == 'gpu' else 0
+        self.config = dict(
+            encoder_n_layers=self.params.encoder_n_layers,
+            encoder_hidden_size=self.params.encoder_hidden_size,
+            encoder_activation=self.params.encoder_activation,
+            context_size=self.params.context_size,
+            decoder_hidden_size=self.params.decoder_hidden_size,
+            decoder_layers=self.params.decoder_layers,
+            max_steps=self.params.max_steps,
+            stat_exog_list=list(self.params.get("static_features", [])),
+            futr_exog_list=list(self.params.get("dynamic_future", [])),
+            hist_exog_list=list(self.params.get("dynamic_historical", [])),
+            scaler_type='robust',
+            learning_rate=tune.loguniform(1e-5, 1e-1),
+            batch_size=tune.choice([16, 32]),
+
+        )
+        self.model = NeuralForecast(
+            models=[
+                AutoRNN(
+                    h=int(self.params["prediction_length"]),
+                    loss=self.loss,
+                    config=self.config,
+                    gpus=self.gpus,
+                    search_alg=HyperOptSearch(),
+                    num_samples=int(self.params["num_samples"]),
+                ),
+            ],
+            freq=self.params["freq"]
+        )
+
+    def supports_tuning(self) -> bool:
+        return True
+
+
+class NeuralFcAutoLSTM(NeuralFcForecaster):
+    def __init__(self, params):
+        super().__init__(params)
+        self.params = params
+        self.loss = get_loss_function(self.params.loss)
+        self.gpus = -1 if self.params.accelerator == 'gpu' else 0
+        self.config = dict(
+            encoder_n_layers=self.params.encoder_n_layers,
+            encoder_hidden_size=self.params.encoder_hidden_size,
+            encoder_activation=self.params.encoder_activation,
+            context_size=self.params.context_size,
+            decoder_hidden_size=self.params.decoder_hidden_size,
+            decoder_layers=self.params.decoder_layers,
+            max_steps=self.params.max_steps,
+            stat_exog_list=list(self.params.get("static_features", [])),
+            futr_exog_list=list(self.params.get("dynamic_future", [])),
+            hist_exog_list=list(self.params.get("dynamic_historical", [])),
+            scaler_type='robust',
+            learning_rate=tune.loguniform(1e-5, 1e-1),
+            batch_size=tune.choice([16, 32]),
+        )
+        self.model = NeuralForecast(
+            models=[
+                AutoLSTM(
+                    h=int(self.params["prediction_length"]),
+                    loss=self.loss,
+                    config=self.config,
+                    gpus=self.gpus,
+                    search_alg=HyperOptSearch(),
+                    num_samples=int(self.params["num_samples"]),
+                ),
+            ],
+            freq=self.params["freq"]
+        )
+
+    def supports_tuning(self) -> bool:
+        return True
+
+
+class NeuralFcAutoNBEATSx(NeuralFcForecaster):
+    def __init__(self, params):
+        super().__init__(params)
+        self.params = params
+        self.loss = get_loss_function(self.params.loss)
+        self.gpus = -1 if self.params.accelerator == 'gpu' else 0
+        self.config = dict(
+            input_size=self.params.input_size_factor * self.params.prediction_length,
+            n_harmonics=self.params.n_harmonics,
+            n_polynomials=self.params.n_polynomials,
+            dropout_prob_theta=self.params.dropout_prob_theta,
+            max_steps=self.params.max_steps,
+            stat_exog_list=list(self.params.get("static_features", [])),
+            futr_exog_list=list(self.params.get("dynamic_future", [])),
+            hist_exog_list=list(self.params.get("dynamic_historical", [])),
+            scaler_type='robust',
+            learning_rate=tune.loguniform(1e-5, 1e-1),
+            batch_size=tune.choice([16, 32]),
+        )
+        self.model = NeuralForecast(
+            models=[
+                AutoNBEATSx(
+                    h=int(self.params["prediction_length"]),
+                    loss=self.loss,
+                    config=self.config,
+                    gpus=self.gpus,
+                    search_alg=HyperOptSearch(),
+                    num_samples=int(self.params["num_samples"]),
+                ),
+            ],
+            freq=self.params["freq"]
+        )
+
+    def supports_tuning(self) -> bool:
+        return True
+
+
+class NeuralFcAutoNHITS(NeuralFcForecaster):
+    def __init__(self, params):
+        super().__init__(params)
+        self.params = params
+        self.loss = get_loss_function(self.params.loss)
+        self.gpus = -1 if self.params.accelerator == 'gpu' else 0
+        self.config = dict(
+            input_size=self.params.input_size_factor * self.params.prediction_length,
+            dropout_prob_theta=self.params.dropout_prob_theta,
+            stack_types=list(self.params.stack_types),
+            n_blocks=list(self.params.n_blocks),
+            n_pool_kernel_size=list(self.params.n_pool_kernel_size),
+            n_freq_downsample=list(self.params.n_freq_downsample),
+            interpolation_mode=self.params.interpolation_mode,
+            pooling_mode=self.params.pooling_mode,
+            max_steps=self.params.max_steps,
+            stat_exog_list=list(self.params.get("static_features", [])),
+            futr_exog_list=list(self.params.get("dynamic_future", [])),
+            hist_exog_list=list(self.params.get("dynamic_historical", [])),
+            scaler_type='robust',
+            learning_rate=tune.loguniform(1e-5, 1e-1),
+            batch_size=tune.choice([16, 32]),
+        )
+        self.model = NeuralForecast(
+            models=[
+                AutoNHITS(
+                    h=int(self.params["prediction_length"]),
+                    loss=self.loss,
+                    config=self.config,
+                    gpus=self.gpus,
+                    search_alg=HyperOptSearch(),
+                    num_samples=int(self.params["num_samples"]),
+                ),
+            ],
+            freq=self.params["freq"]
+        )
+
+    def supports_tuning(self) -> bool:
+        return True
+
+
+def get_loss_function(loss):
+    if loss == "smape":
+        return SMAPE()
+    elif loss == "mae":
+        return MAE()
+    elif loss == "mse":
+        return MSE()
+    elif loss == "rmse":
+        return RMSE()
+    elif loss == "mape":
+        return MAPE()
+    elif loss == "mase":
+        return MASE()
+    else:
+        raise Exception(
+            f"Provided loss {loss} not supported!"
+        )

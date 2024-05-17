@@ -14,6 +14,7 @@ import cloudpickle
 import mlflow
 from mlflow.exceptions import MlflowException
 from mlflow.tracking import MlflowClient
+from mlflow.models import infer_signature
 from omegaconf import OmegaConf, DictConfig
 from omegaconf.basecontainer import BaseContainer
 from pyspark.sql import SparkSession, DataFrame
@@ -26,8 +27,9 @@ from pyspark.sql.types import (
     TimestampType,
     BinaryType,
     ArrayType,
+    MapType,
 )
-from pyspark.sql.functions import lit, avg, min, max, col, posexplode, collect_list
+from pyspark.sql.functions import lit, avg, min, max, col, posexplode, collect_list, to_date
 from forecasting_sa.models.abstract_model import ForecastingRegressor
 from forecasting_sa.models import ModelRegistry
 from forecasting_sa.data_quality_checks import DataQualityChecks
@@ -54,6 +56,7 @@ class Forecaster:
         else:
             raise Exception("No configuration provided!")
 
+        self.run_id = str(uuid.uuid4())
         self.data_conf = data_conf
         self.model_registry = ModelRegistry(self.conf)
         self.spark = spark
@@ -77,27 +80,6 @@ class Forecaster:
         )
         return experiment_id
 
-    def split_df_train_val(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
-        """Splits df into train and data, based on backtest months and prediction length.
-        Data before backtest will be train, and data from backtest (at most prediction length days) will be val data."""
-        # Train with data before the backtest months in conf
-        train_df = df[
-            df[self.conf["date_col"]]
-            <= df[self.conf["date_col"]].max()
-            - pd.DateOffset(months=self.conf["backtest_months"])
-        ]
-        # Validate with data after the backtest months cutoff...
-        val_true_df = df[
-            df[self.conf["date_col"]]
-            > df[self.conf["date_col"]].max()
-            - pd.DateOffset(months=self.conf["backtest_months"])
-        ]
-        # But just until prediction_length
-        # val_true_df = val_true_df[
-        #    val_true_df[self.conf['date_col']] < val_true_df[self.conf['date_col']].min() + pd.DateOffset(
-        #        days=self.conf['prediction_length'])]
-        return train_df, val_true_df
-
     def resolve_source(self, key: str) -> DataFrame:
         if self.data_conf:
             df_val = self.data_conf.get(key)
@@ -108,38 +90,22 @@ class Forecaster:
         else:
             return self.spark.read.table(self.conf[key])
 
-    def prepare_data(self, model_conf: DictConfig, path: str, scoring=False) \
-            -> pd.DataFrame:
-        df = self.resolve_source(path)
-        if model_conf.get("data_prep", "none") == "pivot":
-            df = (
-                df.groupby([self.conf["date_col"]])
-                .pivot(self.conf["group_id"])
-                .sum(self.conf["target"])
-            )
-        df = df.toPandas()
-        if not scoring:
-            df, removed = DataQualityChecks(df, self.conf).run()
-        if model_conf.get("data_prep", "none") == "none":
-            df[self.conf["group_id"]] = df[self.conf["group_id"]].astype(str)
-        return df
-
     def train_eval_score(self, export_metrics=False, scoring=True) -> str:
         print("Starting train_evaluate_models")
-        self.run_id = str(uuid.uuid4())
         self.train_models()
         self.evaluate_models()
         if scoring:
-            self.run_scoring()
+            self.score_models()
             self.ensemble()
         if export_metrics:
             self.update_metrics()
+        print("Finished train_evaluate_models")
         return self.run_id
 
     def ensemble(self):
         if self.conf.get("ensemble") and self.conf["ensemble_scoring_output"]:
             metrics_df = (
-                self.spark.table(self.conf["metrics_output"])
+                self.spark.table(self.conf["evaluation_output"])
                 .where(col("run_id").eqNullSafe(lit(self.run_id)))
                 .where(
                     col("metric_name").eqNullSafe(
@@ -207,10 +173,35 @@ class Forecaster:
                 .withColumn("use_case", lit(self.conf["use_case_name"]))
                 .withColumn("model", lit("ensemble"))
                 .write.format("delta")
-                .option("mergeSchema", "true")
                 .mode("append")
                 .saveAsTable(self.conf["ensemble_scoring_output"])
             )
+
+    def prepare_data_for_global_model(self, model_conf: DictConfig, path: str) \
+            -> pd.DataFrame:
+        df = self.resolve_source(path)
+        df = df.toPandas()
+        df, removed = DataQualityChecks(df, self.conf).run()
+        if model_conf.get("data_prep", "none") == "none":
+            df[self.conf["group_id"]] = df[self.conf["group_id"]].astype(str)
+        return df, removed
+
+    def split_df_train_val(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        """Splits df into train and data, based on backtest months and prediction length.
+        Data before backtest will be train, and data from backtest (at most prediction length days) will be val data."""
+        # Train with data before the backtest months in conf
+        train_df = df[
+            df[self.conf["date_col"]]
+            <= df[self.conf["date_col"]].max()
+            - pd.DateOffset(months=self.conf["backtest_months"])
+        ]
+        # Validate with data after the backtest months cutoff...
+        val_true_df = df[
+            df[self.conf["date_col"]]
+            > df[self.conf["date_col"]].max()
+            - pd.DateOffset(months=self.conf["backtest_months"])
+        ]
+        return train_df, val_true_df
 
     def train_models(self):
         """Trains and evaluates all models from the configuration file with the configuration's training data.
@@ -226,15 +217,13 @@ class Forecaster:
             ):
                 with mlflow.start_run(experiment_id=self.experiment_id) as run:
                     try:
+                        model = self.model_registry.get_model(model_name)
                         # Get training and scoring data
-                        hist_df = self.prepare_data(model_conf, "train_data")
+                        hist_df, removed = self.prepare_data_for_global_model(model_conf, "train_data")
                         train_df, val_train_df = self.split_df_train_val(hist_df)
                         # Train and evaluate new models - results are saved to MLFlow
-                        model = self.model_registry.get_model(model_name)
-                        print("--------------------\nTraining model:")
-                        print(model)
-                        # Trains and evaluates the model - logs results to experiment
-                        self.train_one_model(train_df, val_train_df, model_conf, model)
+                        print(f"Training model: {model}")
+                        self.train_global_model(train_df, val_train_df, model_conf, model)
                     except Exception as err:
                         _logger.error(
                             f"Error has occurred while training model {model_name}: {repr(err)}",
@@ -243,18 +232,31 @@ class Forecaster:
                         raise err
         print("Finished train_models")
 
-    def train_one_model(
+    def train_global_model(
         self,
         train_df: pd.DataFrame,
         val_df: pd.DataFrame,
         model_conf: DictConfig,
         model: ForecastingRegressor,
     ):
-        print("starting train")
-        tuned_model, tuned_params = self.tune_model(model_conf, model, train_df, val_df)
-        model_info = mlflow.sklearn.log_model(tuned_model, "model")
+        print(f"Started training {model_conf['name']}")
+        tuned_model, tuned_params = self.tune_global_model(model_conf, model, train_df, val_df)
+        # TODO fix
+        signature = infer_signature(
+            model_input=train_df,
+            model_output=train_df,
+        )
+        input_example = train_df
+        model_info = mlflow.sklearn.log_model(
+            tuned_model,
+            "model",
+            registered_model_name=f"{self.conf['model_output']}.{model_conf['name']}",
+            input_example=input_example,
+            signature=signature,
+            pip_requirements=[],
+        )
+        print(f"Model registered: {self.conf['model_output']}.{model_conf['name']}")
         try:
-            # TODO Decide if we should flatten in general
             mlflow.log_params(tuned_params)
         except MlflowException:
             # MLflow log_params has a parameter length limit of 500
@@ -263,14 +265,19 @@ class Forecaster:
             mlflow.log_params(
                 flatten_nested_parameters(OmegaConf.to_object(tuned_params))
             )
-        self.backtest_and_log_metrics(tuned_model, train_df, val_df, "train")
+        train_metrics = self.backtest_global_model(
+            model=tuned_model,
+            train_df=train_df,
+            val_df=val_df,
+            model_uri=model_info.model_uri,
+            write=True,
+        )
         mlflow.set_tag("action", "train")
         mlflow.set_tag("candidate", "true")
         mlflow.set_tag("model_name", model.params["name"])
-        print("Finished train")
-        return model_info
+        print(f"Finished training {model_conf.get('name')}")
 
-    def tune_model(
+    def tune_global_model(
         self,
         model_conf: DictConfig,
         model: ForecastingRegressor,
@@ -278,26 +285,25 @@ class Forecaster:
         val_df: pd.DataFrame,
     ):
         def objective(params, train_df_path, val_df_path):
-            _conf = dict(model_conf)
-            _conf.update(params)
-            _model = model.__class__(_conf)
-            train_df = pd.read_parquet(train_df_path)
-            val_df = pd.read_parquet(val_df_path)
-            _model.fit(train_df)
+            obj_conf = dict(model_conf)
+            obj_conf.update(params)
+            _model = model.__class__(obj_conf)
+            obj_train_df = pd.read_parquet(train_df_path)
+            obj_val_df = pd.read_parquet(val_df_path)
+            _model.fit(obj_train_df)
             _metrics = _model.backtest(
-                pd.concat([train_df, val_df]),
-                start=train_df[_date_col].max(),
+                pd.concat([obj_train_df, obj_val_df]),
+                start=obj_train_df[_date_col].max(),
                 retrain=_tuning_retrain,
             )
             return {"loss": _metrics["metric_value"], "status": STATUS_OK}
 
         if (
             self.conf.get("tuning_enabled", False)
+            and model.params.get("tuning", False)
             and model.supports_tuning()
-            and model.params.get("tuning", True)
         ):
             print(f'Tuning model: {model_conf["name"]}')
-                # with mlflow.start_run():
             spark_trials = None
             if self.conf["tuning_distributed"]:
                 spark_trials = SparkTrials(
@@ -341,38 +347,54 @@ class Forecaster:
             )
             # TODO final train should be configurable
             # check if we should use all the data for final retrain
-            best_model.fit(train_df.append(val_df))
+            best_model.fit(pd.concat([train_df, val_df]))
             return best_model, best_params
         else:
-            print(f'Fitting model: {model_conf["name"]}')
-            model.fit(train_df.append(val_df))
+            model.fit(pd.concat([train_df, val_df]))
             return model, model_conf
 
-    def backtest_and_log_metrics(
+    def backtest_global_model(
         self,
         model: ForecastingRegressor,
         train_df: pd.DataFrame,
         val_df: pd.DataFrame,
-        prefix: str,
+        model_uri: str,
+        write: bool = True,
     ):
-        metrics_df = (
+        res_pdf = (
             model.backtest(
                 pd.concat([train_df, val_df]),
                 start=train_df[self.conf["date_col"]].max(),
-                retrain=self.conf["backtest_retrain"],
-            )
-            .groupby("metric_name")
-            .mean()
+                retrain=self.conf["backtest_retrain"]))
+
+        res_sdf = self.spark.createDataFrame(res_pdf)\
+            .withColumn("backtest_window_start_date", to_date("backtest_window_start_date"))\
+            .withColumn("actual", col("actual").cast("array<double>"))
+
+        if write:
+            if self.conf.get("evaluation_output", None):
+                (
+                    res_sdf.withColumn("run_id", lit(self.run_id))
+                    .withColumn("run_date", lit(self.run_date))
+                    .withColumn("model", lit(model.params.name))
+                    .withColumn("use_case", lit(self.conf["use_case_name"]))
+                    .withColumn("model_uri", lit(model_uri))
+                    .write.mode("append")
+                    .saveAsTable(self.conf.get("evaluation_output"))
+                )
+
+        res_df = (
+            res_sdf.groupby(["metric_name"])
+            .mean("metric_value")
+            .withColumnRenamed("avg(metric_value)", "metric_value")
+            .toPandas()
         )
-
-        metrics = {
-            f"{k}_{prefix}": v
-            for x in metrics_df.to_dict().values()
-            for k, v in x.items()
-        }
-
-        mlflow.log_metrics(next(iter(metrics_df.to_dict().values())))
-        return metrics
+        for rec in res_df.values:
+            metric_name, metric_value = rec
+            if write:
+                mlflow.log_metric(metric_name, metric_value)
+                print(res_df)
+        return metric_value
 
     def evaluate_models(self):
         print("Starting evaluate_models")
@@ -418,15 +440,15 @@ class Forecaster:
             src_df.groupby(self.conf["group_id"])
             .applyInPandas(evaluate_one_model_fn, schema=output_schema)
         )
-
-        if self.conf.get("metrics_output", None) is not None:
+        if self.conf.get("evaluation_output", None) is not None:
             (
                 res_sdf.withColumn("run_id", lit(self.run_id))
                 .withColumn("run_date", lit(self.run_date))
                 .withColumn("model", lit(model_conf["name"]))
                 .withColumn("use_case", lit(self.conf["use_case_name"]))
+                .withColumn("model_uri", lit(""))
                 .write.mode("append")
-                .saveAsTable(self.conf.get("metrics_output"))
+                .saveAsTable(self.conf.get("evaluation_output"))
             )
 
         res_df = (
@@ -460,8 +482,7 @@ class Forecaster:
             pdf = pdf.fillna(0.1)
             # Fix here
             pdf[model.params["target"]] = pdf[model.params["target"]].clip(0.1)
-            metrics_df = model.backtest(pdf, start=split_date, retrain=False)
-            metrics_df[model.params["group_id"]] = group_id
+            metrics_df = model.backtest(pdf, start=split_date, group_id=group_id, retrain=False)
             return metrics_df
         except Exception as err:
             _logger.error(
@@ -485,29 +506,33 @@ class Forecaster:
     def evaluate_global_model(self, model_conf):
         mlflow_client = mlflow.tracking.MlflowClient()
         with mlflow.start_run(experiment_id=self.experiment_id):
-            hist_df = self.prepare_data(model_conf, "train_data")
+            hist_df, removed = self.prepare_data_for_global_model(model_conf, "train_data")
             train_df, val_df = self.split_df_train_val(hist_df)
             model_name = model_conf["name"]
             mlflow.set_tag("model_name", model_conf["name"])
-            mlflow_model_name = f"{self.conf['use_case_name']}_{model_name}"
+            mlflow_model_name = f"{self.conf['model_output']}.{model_name}"
             try:
-                deployed_model = mlflow.sklearn.load_model(
-                    f"models:/{mlflow_model_name}/{self.conf['scoring_model_stage']}"
+                champion = mlflow_client.get_model_version_by_alias(mlflow_model_name, "champion")
+                champion_version = champion.version
+                champion_run_id = f"runs:/{champion.run_id}/model"
+                champion_model = mlflow.sklearn.load_model(
+                    f"models:/{mlflow_model_name}/{champion_version}"
                 )
-                deployed_metrics = self.backtest_and_log_metrics(
-                    deployed_model, train_df, val_df, "deployed"
+                champion_metrics = self.backtest_global_model(
+                    model=champion_model,
+                    train_df=train_df,
+                    val_df=val_df,
+                    model_uri=champion_run_id,
+                    write=False,
                 )
             except:
-                print(
-                    "No deployed model yet available for model: ",
-                    mlflow_model_name,
-                )
-                deployed_model = None
+                print(f"No deployed model yet available for model: {mlflow_model_name}")
+                champion_model = None
 
             new_runs = mlflow_client.search_runs(
                 experiment_ids=[self.experiment_id],
                 filter_string=f"tags.candidate='true' and tags.model_name='{model_name}'",
-                order_by=[f"metrics.{self.conf['selection_metric']}"],
+                order_by=["start_time DESC"],
                 max_results=10,
             )
             if len(new_runs) == 0:
@@ -518,39 +543,37 @@ class Forecaster:
             new_run = new_runs[0]
             new_model_uri = f"runs:/{new_run.info.run_uuid}/model"
             new_model = mlflow.sklearn.load_model(new_model_uri)
-            new_metrics = self.backtest_and_log_metrics(
-                new_model, train_df, val_df, "new"
+            new_metrics = self.backtest_global_model(
+                model=new_model,
+                train_df=train_df,
+                val_df=val_df,
+                model_uri=new_model_uri,
+                write=False,
             )
 
-            if (
-                deployed_model is None
-                or new_metrics["smape_new"] <= deployed_metrics["smape_deployed"]
-            ):
+            if (champion_model is None) or (new_metrics <= champion_metrics):
                 model_details = mlflow.register_model(
-                    model_uri=new_model_uri, name=mlflow_model_name
-                )
+                    model_uri=new_model_uri, name=mlflow_model_name)
                 # wait_until_ready(model_details.name, model_details.version)
                 # TODO: Add description, version, metadata in general
-                mlflow_client.transition_model_version_stage(
-                    name=model_details.name,
-                    version=model_details.version,
-                    stage=self.conf["scoring_model_stage"],
-                )
-                print("Model promoted to production:")
-                print(model_details)
+                mlflow_client.set_registered_model_alias(
+                    mlflow_model_name,
+                    "champion",
+                    model_details.version)
+                print(f"Champion alias assigned to the new model")
 
-    def run_scoring(self):
+    def score_models(self):
         print("starting run_scoring")
         for model_name in self.model_registry.get_active_model_keys():
             model_conf = self.model_registry.get_model_conf(model_name)
             if model_conf["model_type"] == "global":
-                self.run_scoring_for_global_model(model_conf)
+                self.score_global_model(model_conf)
             elif model_conf["model_type"] == "local":
-                self.run_scoring_for_local_model(model_conf)
+                self.score_local_model(model_conf)
             print(f"finished scoring with {model_name}")
         print("finished run_scoring")
 
-    def run_scoring_for_local_model(self, model_conf):
+    def score_local_model(self, model_conf):
         src_df = self.resolve_source("train_data")
         src_df, removed = DataQualityChecks(src_df, self.conf, self.spark).run()
         # Check if external regressors are provided and framework is statsforecast
@@ -576,19 +599,17 @@ class Forecaster:
             src_df.groupby(self.conf["group_id"])
             .applyInPandas(score_one_model_fn, schema=output_schema)
         )
-
         if not isinstance(res_sdf.schema[self.conf["group_id"]].dataType, StringType):
             res_sdf = res_sdf.withColumn(
                 self.conf["group_id"], col(self.conf["group_id"]).cast(StringType())
             )
-
         (
             res_sdf.withColumn("run_id", lit(self.run_id))
             .withColumn("run_date", lit(self.run_date))
             .withColumn("use_case", lit(self.conf["use_case_name"]))
             .withColumn("model", lit(model_conf["name"]))
+            .withColumn("model_uri", lit(""))
             .write.mode("append")
-            .option("mergeSchema", "true")
             .saveAsTable(self.conf["scoring_output"])
         )
 
@@ -617,47 +638,55 @@ class Forecaster:
         )
         return res_df
 
-    def run_scoring_for_global_model(self, model_conf):
+    def score_global_model(self, model_conf):
         print(f"Running scoring for {model_conf['name']}...")
-        best_model = self.get_model_for_scoring(model_conf)
-        score_df = self.prepare_data(model_conf, "scoring_data", scoring=True)
-        if model_conf["framework"] == "NeuralForecast":
-            prediction_df = best_model.forecast(score_df)
-        else:
-            prediction_df = best_model.predict(score_df)
+        champion_model, champion_model_uri = self.get_model_for_scoring(model_conf)
+        score_df, removed = self.prepare_data_for_global_model(model_conf, "scoring_data")
+        prediction_df, model_fitted = champion_model.forecast(score_df)
         if prediction_df[self.conf["date_col"]].dtype.type != np.datetime64:
             prediction_df[self.conf["date_col"]] = prediction_df[
                 self.conf["date_col"]
             ].dt.to_timestamp()
-
-        print(f"prediction generated, saving to {self.conf['scoring_output']}")
-        spark_df = (
-            self.spark.createDataFrame(prediction_df)
-            .withColumn("model", lit(model_conf["name"]))
-            .withColumn(
-                self.conf["target"], col(self.conf["target"]).cast(DoubleType())
-            )
-        )
+        sdf = self.spark.createDataFrame(prediction_df)\
+            .drop('index')\
+            .withColumn(self.conf["target"], col(self.conf["target"]).cast(DoubleType()))\
+            .orderBy(self.conf["group_id"], self.conf["date_col"])\
+            .groupBy(self.conf["group_id"])\
+            .agg(
+                collect_list(self.conf["date_col"]).alias(self.conf["date_col"]),
+                collect_list(self.conf["target"]).alias(self.conf["target"]))
         (
-            spark_df.withColumn("run_id", lit(self.run_id))
+            sdf.withColumn("model", lit(model_conf["name"]))
+            .withColumn("run_id", lit(self.run_id))
             .withColumn("run_date", lit(self.run_date))
             .withColumn("use_case", lit(self.conf["use_case_name"]))
-            .withColumn("model", lit(model_conf["name"]))
+            .withColumn("model_pickle", lit(b""))
+            .withColumn("model_uri", lit(champion_model_uri))
             .write.mode("append")
-            .option("mergeSchema", "true")
             .saveAsTable(self.conf["scoring_output"])
         )
-        print(f"Finished scoring for {model_conf['name']}...")
+
+    def get_latest_model_version(self, mlflow_client, registered_name):
+        latest_version = 1
+        for mv in mlflow_client.search_model_versions(f"name='{registered_name}'"):
+            version_int = int(mv.version)
+            if version_int > latest_version:
+                latest_version = version_int
+        return latest_version
 
     def get_model_for_scoring(self, model_conf):
+        mlflow_client = MlflowClient()
         if model_conf["trainable"]:
-            mlflow_model_name = f"{self.conf['use_case_name']}_{model_conf['name']}"
-            best_model = mlflow.sklearn.load_model(
-                f"models:/{mlflow_model_name}/{self.conf['scoring_model_stage']}"
+            mlflow_model_name = f"{self.conf['model_output']}.{model_conf['name']}"
+            champion = mlflow_client.get_model_version_by_alias(mlflow_model_name, "champion")
+            champion_version = champion.version
+            champion_model_uri = f"runs:/{champion.run_id}/model"
+            champion_model = mlflow.sklearn.load_model(
+                f"models:/{mlflow_model_name}/{champion_version}"
             )
-            return best_model
+            return champion_model, champion_model_uri
         else:
-            return self.model_registry.get_model(model_conf["name"])
+            return self.model_registry.get_model(model_conf["name"]), None
 
 def flatten_nested_parameters(d):
     out = {}
