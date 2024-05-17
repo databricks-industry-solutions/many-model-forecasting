@@ -1,10 +1,11 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Many Models Forecasting Integration Test
+# MAGIC # Many Models Forecasting SA (MMFSA) Demo
+# MAGIC This demo highlights how to configure MMF SA to use M4 competition data
 
 # COMMAND ----------
 
-# MAGIC %pip install -r ../requirements.txt --quiet
+# MAGIC %pip install -r requirements.txt --quiet
 dbutils.library.restartPython()
 # COMMAND ----------
 
@@ -46,7 +47,7 @@ def transform_group(df):
 
 def create_m4_df():
     y_df, _, _ = M4.load(directory=str(pathlib.Path.home()), group="Daily")
-    _ids = [f"D{i}" for i in range(1, 10)]
+    _ids = [f"D{i}" for i in range(1, 100)]
     y_df = (
         y_df.groupby("unique_id")
         .filter(lambda x: x.unique_id.iloc[0] in _ids)
@@ -58,32 +59,25 @@ def create_m4_df():
 
 # COMMAND ----------
 
+# MAGIC %md ### Now the dataset looks in the following way:
+
+# COMMAND ----------
+
 m4_df = spark.createDataFrame(create_m4_df())
 m4_df.createOrReplaceTempView("mmf_train")
 
+# COMMAND ----------
+
+# MAGIC %sql select * from mmf_train where unique_id in ('D1', 'D2', 'D6', 'D7', 'D10')
+
+# COMMAND ----------
+
+# MAGIC %md ### Let's configure the list of models we are going to use for training:
+
+# COMMAND ----------
+
 active_models = [
-    #"StatsForecastBaselineWindowAverage",
-    #"StatsForecastBaselineSeasonalWindowAverage",
-    #"StatsForecastBaselineNaive",
-    #"StatsForecastBaselineSeasonalNaive",
-    "StatsForecastAutoArima",
-    #"StatsForecastAutoETS",
-    #"StatsForecastAutoCES",
-    #"StatsForecastAutoTheta",
-    #"StatsForecastTSB",
-    #"StatsForecastADIDA",
-    #"StatsForecastIMAPA",
-    #"StatsForecastCrostonClassic",
-    #"StatsForecastCrostonOptimized",
-    #"StatsForecastCrostonSBA",
-    #"RFableArima",
-    #"RFableETS",
-    #"RFableNNETAR",
-    #"RFableEnsemble",
-    #"RDynamicHarmonicRegression",
-    #"SKTimeLgbmDsDt",
-    #"SKTimeTBats",
-    #"NeuralForecastRNN",
+    "NeuralForecastRNN",
     #"NeuralForecastLSTM",
     #"NeuralForecastNBEATSx",
     #"NeuralForecastNHITS",
@@ -95,9 +89,18 @@ active_models = [
 
 # COMMAND ----------
 
+# MAGIC %md ### Now we can run the forecasting process using `run_forecast` function.
+
+# COMMAND ----------
+
 # Make sure that the catalog and the schema exist
-catalog = "main" # Name of the catalog we use to manage our assets
+catalog = "solacc_uc" # Name of the catalog we use to manage our assets
 db = "mmf" # Name of the schema we use to manage our assets (e.g. datasets)
+
+_ = spark.sql(f"CREATE CATALOG IF NOT EXISTS {catalog}")
+_ = spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{db}")
+
+# COMMAND ----------
 
 run_forecast(
     spark=spark,
@@ -105,6 +108,7 @@ run_forecast(
     scoring_data="mmf_train",
     scoring_output=f"{catalog}.{db}.daily_scoring_output",
     evaluation_output=f"{catalog}.{db}.daily_evaluation_output",
+    model_output=f"{catalog}.{db}",
     group_id="unique_id",
     date_col="ds",
     target="y",
@@ -123,19 +127,52 @@ run_forecast(
     active_models=active_models,
     experiment_path=f"/Shared/mmf_experiment",
     use_case_name="mmf",
+    accelerator="gpu",
 )
 
 # COMMAND ----------
 
-# MAGIC %sql drop table main.mmf.daily_evaluation_output
+# MAGIC %md ### Evaluation output
+# MAGIC In the evaluation output table, the evaluation for all backtest windows and all models are stored. This info can be used to monitor model performance or decide which models should be taken into the final aggregated forecast.
 
 # COMMAND ----------
 
-# MAGIC %sql drop table main.mmf.daily_scoring_output
+# MAGIC %sql select * from solacc_uc.mmf.daily_evaluation_output order by unique_id, model, backtest_window_start_date
 
 # COMMAND ----------
 
-# MAGIC %sql drop table main.mmf.daily_ensemble_output
+# MAGIC %md ### Forecast output
+# MAGIC In the Forecast output table, the final forecast for each model and each time series is stored. 
 
 # COMMAND ----------
+
+# MAGIC %sql select * from solacc_uc.mmf.daily_scoring_output order by unique_id, model, ds
+
+# COMMAND ----------
+
+# MAGIC %md ### Final Ensemble Output
+# MAGIC In the final ensemble output table, we store the averaged forecast. The models which meet the threshold defined using the ensembling parameters are taken into consideration
+
+# COMMAND ----------
+
+# MAGIC %sql select * from solacc_uc.mmf.daily_ensemble_output order by unique_id, model, ds
+
+# COMMAND ----------
+
+# MAGIC %md ### Delete Tables
+
+# COMMAND ----------
+
+# MAGIC %sql delete from solacc_uc.mmf.daily_evaluation_output
+
+# COMMAND ----------
+
+# MAGIC %sql delete from solacc_uc.mmf.daily_scoring_output
+
+# COMMAND ----------
+
+# MAGIC %sql delete from solacc_uc.mmf.daily_ensemble_output
+
+# COMMAND ----------
+
 

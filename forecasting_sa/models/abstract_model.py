@@ -25,16 +25,16 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
         return df
 
     @abstractmethod
-    def fit(self, X, y=None):
+    def fit(self, x, y=None):
         pass
 
     @abstractmethod
-    def predict(self, X):
+    def predict(self, x):
         # TODO Shouldn't X be optional if we have a trainable model and provide a prediction length
         pass
 
     @abstractmethod
-    def forecast(self, X):
+    def forecast(self, x):
         # TODO Shouldn't X be optional if we have a trainable model and provide a prediction length
         pass
 
@@ -48,6 +48,7 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
             self,
             df: pd.DataFrame,
             start: pd.Timestamp,
+            group_id: Union[str, int] = None,
             stride: int = None,
             retrain: bool = True,
     ) -> pd.DataFrame:
@@ -75,26 +76,33 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
                         < np.datetime64(curr_date + self.prediction_length_offset)
                 )]
 
-            #if retrain:
-            #    self.fit(_df)
+            if retrain:
+                self.fit(_df)
 
-            metrics = self.calculate_metrics(_df, actuals_df)
-            metrics_and_date = [
-                (
-                    curr_date,
-                    metrics["metric_name"],
-                    metrics["metric_value"],
-                    metrics["forecast"],
-                    metrics["actual"],
-                    metrics["model_pickle"]
-                )
-            ]
-            results.extend(metrics_and_date)
+            metrics = self.calculate_metrics(_df, actuals_df, curr_date)
+
+            if isinstance(metrics, dict):
+                evaluation_results = [
+                    (
+                        group_id,
+                        metrics["curr_date"],
+                        metrics["metric_name"],
+                        metrics["metric_value"],
+                        metrics["forecast"],
+                        metrics["actual"],
+                        metrics["model_pickle"],
+                    )
+                ]
+                results.extend(evaluation_results)
+            elif isinstance(metrics, list):
+                results.extend(metrics)
+
             curr_date += stride_offset
 
         res_df = pd.DataFrame(
             results,
-            columns=["backtest_window_start_date",
+            columns=[self.params["group_id"],
+                     "backtest_window_start_date",
                      "metric_name",
                      "metric_value",
                      "forecast",
@@ -104,7 +112,7 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
         return res_df
 
     def calculate_metrics(
-            self, hist_df: pd.DataFrame, val_df: pd.DataFrame
+            self, hist_df: pd.DataFrame, val_df: pd.DataFrame, curr_date
     ) -> Dict[str, Union[str, float, bytes]]:
         pred_df, model_fitted = self.predict(hist_df, val_df)
         smape = mean_absolute_percentage_error(
@@ -117,8 +125,10 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
         else:
             raise Exception(f"Metric {self.params['metric']} not supported!")
 
-        return {"metric_name": self.params["metric"],
-                "metric_value": metric_value,
-                "forecast": pred_df[self.params["target"]].to_numpy(),
-                "actual": val_df[self.params["target"]].to_numpy(),
-                "model_pickle": cloudpickle.dumps(model_fitted)}
+        return {
+            "curr_date": curr_date,
+            "metric_name": self.params["metric"],
+            "metric_value": metric_value,
+            "forecast": pred_df[self.params["target"]].to_numpy(),
+            "actual": val_df[self.params["target"]].to_numpy(),
+            "model_pickle": cloudpickle.dumps(model_fitted)}

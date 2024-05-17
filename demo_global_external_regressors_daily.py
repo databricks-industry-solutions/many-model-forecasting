@@ -59,28 +59,7 @@ import pandas as pd
 from forecasting_sa import run_forecast
 
 active_models = [
-    #"StatsForecastBaselineWindowAverage",
-    #"StatsForecastBaselineSeasonalWindowAverage",
-    #"StatsForecastBaselineNaive",
-    #"StatsForecastBaselineSeasonalNaive",
-    #"StatsForecastAutoArima",
-    #"StatsForecastAutoETS",
-    #"StatsForecastAutoCES",
-    #"StatsForecastAutoTheta",
-    #"StatsForecastTSB",
-    #"StatsForecastADIDA",
-    #"StatsForecastIMAPA",
-    #"StatsForecastCrostonClassic",
-    #"StatsForecastCrostonOptimized",
-    #"StatsForecastCrostonSBA",
-    #"RFableArima",
-    #"RFableETS",
-    #"RFableNNETAR",
-    #"RFableEnsemble",
-    #"RDynamicHarmonicRegression",
-    "SKTimeLgbmDsDt",
-    #"SKTimeTBats",
-    #"NeuralForecastRNN",
+    "NeuralForecastRNN",
     #"NeuralForecastLSTM",
     #"NeuralForecastNBEATSx",
     #"NeuralForecastNHITS",
@@ -95,7 +74,8 @@ run_id = run_forecast(
     train_data=f"{catalog}.{db}.rossmann_train",
     scoring_data=f"{catalog}.{db}.rossmann_test",
     scoring_output=f"{catalog}.{db}.rossmann_scoring_output",
-    metrics_output=f"{catalog}.{db}.rossmann_metrics_output",
+    evaluation_output=f"{catalog}.{db}.rossmann_evaluation_output",
+    model_output=f"{catalog}.{db}",
     group_id="Store",
     date_col="Date",
     target="Sales",
@@ -120,7 +100,7 @@ print(run_id)
 
 # COMMAND ----------
 
-# MAGIC %sql select * from solacc_uc.mmf.rossmann_metrics_output order by Store, model, backtest_window_start_date
+# MAGIC %sql select * from solacc_uc.mmf.rossmann_evaluation_output order by Store, model, backtest_window_start_date
 
 # COMMAND ----------
 
@@ -132,7 +112,11 @@ print(run_id)
 
 # COMMAND ----------
 
-# MAGIC %sql delete from solacc_uc.mmf.rossmann_metrics_output
+# MAGIC %md ### Delete Tables
+
+# COMMAND ----------
+
+# MAGIC %sql delete from solacc_uc.mmf.rossmann_evaluation_output
 
 # COMMAND ----------
 

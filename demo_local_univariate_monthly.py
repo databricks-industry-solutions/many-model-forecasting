@@ -89,34 +89,26 @@ display(spark.read.table("mmf_train"))
 
 active_models = [
     "StatsForecastBaselineWindowAverage",
-    #"StatsForecastBaselineSeasonalWindowAverage",
-    #"StatsForecastBaselineNaive",
-    #"StatsForecastBaselineSeasonalNaive",
+    "StatsForecastBaselineSeasonalWindowAverage",
+    "StatsForecastBaselineNaive",
+    "StatsForecastBaselineSeasonalNaive",
     "StatsForecastAutoArima",
-    #"StatsForecastAutoETS",
-    #"StatsForecastAutoCES",
-    #"StatsForecastAutoTheta",
-    #"StatsForecastTSB",
-    #"StatsForecastADIDA",
-    #"StatsForecastIMAPA",
-    #"StatsForecastCrostonClassic",
-    #"StatsForecastCrostonOptimized",
-    #"StatsForecastCrostonSBA",
+    "StatsForecastAutoETS",
+    "StatsForecastAutoCES",
+    "StatsForecastAutoTheta",
+    "StatsForecastTSB",
+    "StatsForecastADIDA",
+    "StatsForecastIMAPA",
+    "StatsForecastCrostonClassic",
+    "StatsForecastCrostonOptimized",
+    "StatsForecastCrostonSBA",
     "RFableArima",
-    #"RFableETS",
-    #"RFableNNETAR",
-    #"RFableEnsemble",
-    #"RDynamicHarmonicRegression",
+    "RFableETS",
+    "RFableNNETAR",
+    "RFableEnsemble",
+    "RDynamicHarmonicRegression",
     "SKTimeTBats",
-    #"SKTimeLgbmDsDt",
-    #"NeuralForecastRNN",
-    #"NeuralForecastLSTM",
-    #"NeuralForecastNBEATSx",
-    #"NeuralForecastNHITS",
-    #"NeuralForecastAutoRNN",
-    #"NeuralForecastAutoLSTM",
-    #"NeuralForecastAutoNBEATSx",
-    #"NeuralForecastAutoNHITS",
+    "SKTimeLgbmDsDt",
 ]
 
 # COMMAND ----------
@@ -139,7 +131,7 @@ run_forecast(
     train_data="mmf_train",
     scoring_data="mmf_train",
     scoring_output=f"{catalog}.{db}.monthly_scoring_output",
-    metrics_output=f"{catalog}.{db}.monthly_metrics_output",
+    evaluation_output=f"{catalog}.{db}.monthly_evaluation_output",
     group_id="unique_id",
     date_col="date",
     target="y",
@@ -162,16 +154,16 @@ run_forecast(
 
 # COMMAND ----------
 
-# MAGIC %md ### Metrics output
-# MAGIC In the metrics output table, the metrics for all backtest windows and all models are stored. This info can be used to monitor model performance or decide which models should be taken into the final aggregated forecast.
+# MAGIC %md ### Evaluation Output
+# MAGIC In the evaluation output table, the evaluation for all backtest windows and all models are stored. This info can be used to monitor model performance or decide which models should be taken into the final aggregated forecast.
 
 # COMMAND ----------
 
-# MAGIC %sql select * from solacc_uc.mmf.monthly_metrics_output order by unique_id, model, backtest_window_start_date
+# MAGIC %sql select * from solacc_uc.mmf.monthly_evaluation_output order by unique_id, model, backtest_window_start_date
 
 # COMMAND ----------
 
-# MAGIC %md ### Forecast output
+# MAGIC %md ### Forecast Output
 # MAGIC In the Forecast output table, the final forecast for each model and each time series is stored. 
 
 # COMMAND ----------
@@ -180,7 +172,7 @@ run_forecast(
 
 # COMMAND ----------
 
-# MAGIC %md ### Final Ensemble Output
+# MAGIC %md ### Ensemble Output
 # MAGIC In the final ensemble output table, we store the averaged forecast. The models which meet the threshold defined using the ensembling parameters are taken into consideration
 
 # COMMAND ----------
@@ -189,7 +181,11 @@ run_forecast(
 
 # COMMAND ----------
 
-# MAGIC %sql delete from solacc_uc.mmf.monthly_metrics_output
+# MAGIC %md ### Delete Tables
+
+# COMMAND ----------
+
+# MAGIC %sql delete from solacc_uc.mmf.monthly_evaluation_output
 
 # COMMAND ----------
 
