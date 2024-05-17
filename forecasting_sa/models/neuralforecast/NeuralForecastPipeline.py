@@ -1,6 +1,5 @@
 import pandas as pd
 import numpy as np
-from typing import Dict, Any, Union
 from sktime.performance_metrics.forecasting import mean_absolute_percentage_error
 from neuralforecast import NeuralForecast
 from forecasting_sa.models.abstract_model import ForecastingRegressor

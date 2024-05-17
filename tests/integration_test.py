@@ -104,7 +104,7 @@ run_forecast(
     train_data="mmf_train",
     scoring_data="mmf_train",
     scoring_output=f"{catalog}.{db}.daily_scoring_output",
-    metrics_output=f"{catalog}.{db}.daily_metrics_output",
+    evaluation_output=f"{catalog}.{db}.daily_evaluation_output",
     group_id="unique_id",
     date_col="ds",
     target="y",
@@ -127,7 +127,7 @@ run_forecast(
 
 # COMMAND ----------
 
-# MAGIC %sql drop table main.mmf.daily_metrics_output
+# MAGIC %sql drop table main.mmf.daily_evaluation_output
 
 # COMMAND ----------
 
