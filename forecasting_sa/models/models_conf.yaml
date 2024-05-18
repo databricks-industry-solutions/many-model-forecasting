@@ -23,9 +23,7 @@ models:
     model_class: StatsFcBaselineWindowAverage
     framework: StatsForecast
     model_type: local
-    data_prep: vertical
     trainable: false
-
     model_spec:
       window_size: 7
 
@@ -34,9 +32,7 @@ models:
     model_class: StatsFcBaselineSeasonalWindowAverage
     framework: StatsForecast
     model_type: local
-    data_prep: vertical
     trainable: false
-
     model_spec:
       season_length: 7
       window_size: 7
@@ -46,7 +42,6 @@ models:
     model_class: StatsFcBaselineNaive
     framework: StatsForecast
     model_type: local
-    data_prep: vertical
     trainable: false
 
   StatsForecastBaselineSeasonalNaive:
@@ -54,9 +49,7 @@ models:
     model_class: StatsFcBaselineSeasonalNaive
     framework: StatsForecast
     model_type: local
-    data_prep: vertical
     trainable: false
-
     model_spec:
       season_length: 7
 
@@ -65,9 +58,7 @@ models:
     model_class: StatsFcAutoArima
     framework: StatsForecast
     model_type: local
-    data_prep: vertical
     trainable: false
-
     model_spec:
       season_length:
       approximation:
@@ -78,9 +69,7 @@ models:
     model_class: StatsFcAutoETS
     framework: StatsForecast
     model_type: local
-    data_prep: vertical
     trainable: false
-
     model_spec:
       season_length:
       model_type: "ZZZ"
@@ -90,9 +79,7 @@ models:
     model_class: StatsFcAutoCES
     framework: StatsForecast
     model_type: local
-    data_prep: vertical
     trainable: false
-
     model_spec:
       season_length: 1
       model_type: "Z"
@@ -102,9 +89,7 @@ models:
     model_class: StatsFcAutoTheta
     framework: StatsForecast
     model_type: local
-    data_prep: vertical
     trainable: false
-
     model_spec:
       season_length: 1
       decomposition_type: "multiplicative"
@@ -114,9 +99,7 @@ models:
     model_class: StatsFcTSB
     framework: StatsForecast
     model_type: local
-    data_prep: vertical
     trainable: false
-
     model_spec:
       alpha_d: 0.2
       alpha_p: 0.2
@@ -126,9 +109,7 @@ models:
     model_class: StatsFcADIDA
     framework: StatsForecast
     model_type: local
-    data_prep: vertical
     trainable: false
-
     model_spec:
 
   StatsForecastIMAPA:
@@ -136,9 +117,7 @@ models:
     model_class: StatsFcIMAPA
     framework: StatsForecast
     model_type: local
-    data_prep: vertical
     trainable: false
-
     model_spec:
 
   StatsForecastCrostonClassic:
@@ -146,9 +125,7 @@ models:
     model_class: StatsFcCrostonClassic
     framework: StatsForecast
     model_type: local
-    data_prep: vertical
     trainable: false
-
     model_spec:
 
   StatsForecastCrostonOptimized:
@@ -156,9 +133,7 @@ models:
     model_class: StatsFcCrostonOptimized
     framework: StatsForecast
     model_type: local
-    data_prep: vertical
     trainable: false
-
     model_spec:
 
   StatsForecastCrostonSBA:
@@ -166,9 +141,7 @@ models:
     model_class: StatsFcCrostonSBA
     framework: StatsForecast
     model_type: local
-    data_prep: vertical
     trainable: false
-
     model_spec:
 
   RFableArima:
@@ -176,9 +149,7 @@ models:
     model_class: RFableModel
     framework: RFable
     model_type: local
-    data_prep: vertical
     trainable: false
-
     model_spec:
       season_length:
 
@@ -187,9 +158,7 @@ models:
     model_class: RFableModel
     framework: RFable
     model_type: local
-    data_prep: vertical
     trainable: false
-
     model_spec:
       season_length:
 
@@ -198,9 +167,7 @@ models:
     model_class: RFableModel
     framework: RFable
     model_type: local
-    data_prep: vertical
     trainable: false
-
     model_spec:
       season_length:
 
@@ -209,7 +176,6 @@ models:
     model_class: RFableModel
     framework: RFable
     model_type: local
-    data_prep: vertical
     trainable: false
 
   RDynamicHarmonicRegression:
@@ -217,9 +183,7 @@ models:
     model_class: RFableModel
     framework: RFable
     model_type: local
-    data_prep: vertical
     trainable: false
-
     model_spec:
       fourier_terms:
 
@@ -228,10 +192,8 @@ models:
     model_class: SKTimeLgbmDsDt
     framework: SKTime
     model_type: local
-    data_prep: vertical
     trainable: false
     enable_gcv: false
-
     model_spec:
       deseasonalise_model: multiplicative
       season_length: 7
@@ -242,10 +204,8 @@ models:
     model_class: SKTimeTBats
     framework: SKTime
     model_type: local
-    data_prep: vertical
     trainable: false
     enable_gcv: false
-
     model_spec:
       box_cox: True
       use_trend: True
@@ -258,7 +218,6 @@ models:
     model_type: global
     trainable: true
     tuning: false
-
     max_steps: 200
     input_size_factor: 2
     loss: smape
@@ -337,7 +296,6 @@ models:
     model_type: global
     trainable: true
     tuning: false #-> eventually true
-
     max_steps: 200
     num_samples: 20
     loss: smape
@@ -355,7 +313,6 @@ models:
     model_type: global
     trainable: true
     tuning: false #-> eventually true
-
     max_steps: 200
     num_samples: 20
     loss: smape
@@ -373,7 +330,6 @@ models:
     model_type: global
     trainable: true
     tuning: false #-> eventually true
-
     max_steps: 200
     num_samples: 20
     loss: smape
@@ -389,7 +345,6 @@ models:
     model_type: global
     trainable: true
     tuning: false #-> eventually true
-
     max_steps: 200
     num_samples: 20
     loss: smape

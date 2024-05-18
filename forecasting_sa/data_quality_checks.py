@@ -18,16 +18,11 @@ class DataQualityChecks:
     """
     def __init__(
         self,
-        df: Union[pd.DataFrame, pyspark.sql.DataFrame],
+        df: pyspark.sql.DataFrame,
         conf: DictConfig,
         spark: SparkSession = None,
     ):
-        if isinstance(df, pd.DataFrame):
-            self.type = "pandas"
-            self.df = df
-        else:
-            self.type = "spark"
-            self.df = df.toPandas()
+        self.df = df.toPandas()
         self.conf = conf
         self.spark = spark
 
@@ -157,11 +152,9 @@ class DataQualityChecks:
                 conf=self.conf,
                 max_date=self.df[self.conf["date_col"]].max(),
             )
-
             clean_df = self.df.groupby(self.conf["group_id"]).apply(
                 _multiple_checks_func
             )
-
             if isinstance(clean_df.index, pd.MultiIndex):
                 clean_df = clean_df.drop(
                     columns=[self.conf["group_id"]], errors="ignore"
@@ -185,8 +178,5 @@ class DataQualityChecks:
         if clean_df.empty:
             raise Exception("None of the time series passed the data quality checks.")
         print(f"Finished data quality checks...")
-
-        if self.type == "spark":
-            clean_df = self.spark.createDataFrame(clean_df)
-
+        clean_df = self.spark.createDataFrame(clean_df)
         return clean_df, removed
