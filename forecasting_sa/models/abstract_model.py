@@ -129,6 +129,6 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
             "curr_date": curr_date,
             "metric_name": self.params["metric"],
             "metric_value": metric_value,
-            "forecast": pred_df[self.params["target"]].to_numpy(),
+            "forecast": pred_df[self.params["target"]].to_numpy("float"),
             "actual": val_df[self.params["target"]].to_numpy(),
             "model_pickle": cloudpickle.dumps(model_fitted)}
