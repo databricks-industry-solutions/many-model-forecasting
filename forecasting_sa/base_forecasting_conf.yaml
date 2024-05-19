@@ -1,6 +1,6 @@
 output_format: "delta"
 accelerator: cpu
-temp_path: /dbfs/tmp
+temp_path: /Volumes/solacc_uc/mmf/partitions
 
 metric: smape
 scoring_model_stage: Production
