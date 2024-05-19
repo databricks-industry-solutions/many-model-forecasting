@@ -353,7 +353,8 @@ class Forecaster:
             best_model.fit(pd.concat([train_df, val_df]))
             return best_model, best_params
         else:
-            model.fit(pd.concat([train_df, val_df]))
+            #model.fit(x=pd.concat([train_df, val_df]), spark=self.spark)
+            model.fit(x=pd.concat([train_df, val_df]))
             return model, model_conf
 
     def backtest_global_model(
@@ -580,15 +581,16 @@ class Forecaster:
                 print(f"Champion alias assigned to the new model")
 
     def score_models(self):
-        print("starting run_scoring")
+        print("Starting run_scoring")
         for model_name in self.model_registry.get_active_model_keys():
             model_conf = self.model_registry.get_model_conf(model_name)
+            print(f"Started scoring with {model_name}")
             if model_conf["model_type"] == "global":
                 self.score_global_model(model_conf)
             elif model_conf["model_type"] == "local":
                 self.score_local_model(model_conf)
-            print(f"finished scoring with {model_name}")
-        print("finished run_scoring")
+            print(f"Finished scoring with {model_name}")
+        print("Finished run_scoring")
 
     def score_local_model(self, model_conf):
         src_df = self.resolve_source("train_data")

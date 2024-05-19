@@ -5,12 +5,12 @@
 
 # COMMAND ----------
 
-# MAGIC %pip install -r requirements.txt --quiet
+# MAGIC %pip install -r ../requirements.txt --quiet
 dbutils.library.restartPython()
+
 # COMMAND ----------
 
 import logging
-from tqdm.autonotebook import tqdm
 logger = spark._jvm.org.apache.log4j
 logging.getLogger("py4j.java_gateway").setLevel(logging.ERROR)
 logging.getLogger("py4j.clientserver").setLevel(logging.ERROR)
@@ -37,9 +37,10 @@ from forecasting_sa import run_forecast
 # Number of time series
 n = 100
 
-def load_m4():
-    y_df, _, _ = M4.load(directory=str(pathlib.Path.home()), group="Monthly")
-    _ids = [f"M{i}" for i in range(1, n + 1)]
+
+def create_m4_daily():
+    y_df, _, _ = M4.load(directory=str(pathlib.Path.home()), group="Daily")
+    _ids = [f"D{i}" for i in range(1, n)]
     y_df = (
         y_df.groupby("unique_id")
         .filter(lambda x: x.unique_id.iloc[0] in _ids)
@@ -49,25 +50,32 @@ def load_m4():
     )
     return y_df
 
+
 def transform_group(df):
     unique_id = df.unique_id.iloc[0]
-    _cnt = 60  # df.count()[0]
-    _start = pd.Timestamp("2018-01-01")
-    _end = _start + pd.DateOffset(months=_cnt)
-    date_idx = pd.date_range(start=_start, end=_end, freq="M", name="date")
-    _df = (
-        pd.DataFrame(data=[], index=date_idx)
-        .reset_index()
-        .rename(columns={"index": "date"})
-    )
-    _df["unique_id"] = unique_id
-    _df["y"] = df[:60].y.values
-    return _df
+    _start = pd.Timestamp("2020-01-01")
+    _end = _start + pd.DateOffset(days=int(df.count()[0]) - 1)
+    date_idx = pd.date_range(start=_start, end=_end, freq="D", name="ds")
+    res_df = pd.DataFrame(data=[], index=date_idx).reset_index()
+    res_df["unique_id"] = unique_id
+    res_df["y"] = df.y.values
+    return res_df
 
-train = spark.createDataFrame(load_m4())
-train.createOrReplaceTempView("mmf_train")
 
-display(spark.read.table("mmf_train"))
+# COMMAND ----------
+
+# Make sure that the catalog and the schema exist
+catalog = "solacc_uc" # Name of the catalog we use to manage our assets
+db = "mmf" # Name of the schema we use to manage our assets (e.g. datasets)
+
+_ = spark.sql(f"CREATE CATALOG IF NOT EXISTS {catalog}")
+_ = spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{db}")
+
+(
+    spark.createDataFrame(create_m4_daily())
+    .write.format("delta").mode("overwrite")
+    .saveAsTable(f"{catalog}.{db}.m4_daily_train")
+)
 
 # COMMAND ----------
 
@@ -75,11 +83,7 @@ display(spark.read.table("mmf_train"))
 
 # COMMAND ----------
 
-# MAGIC %sql select unique_id, count(date) as count from mmf_train group by unique_id order by unique_id
-
-# COMMAND ----------
-
-# MAGIC %sql select count(distinct(unique_id)) from mmf_train
+# MAGIC %sql select * from solacc_uc.mmf.m4_daily_train where unique_id in ('D1', 'D2', 'D6', 'D7', 'D10') order by unique_id, ds
 
 # COMMAND ----------
 
@@ -117,28 +121,19 @@ active_models = [
 
 # COMMAND ----------
 
-# Make sure that the catalog and the schema exist
-catalog = "solacc_uc" # Name of the catalog we use to manage our assets
-db = "mmf" # Name of the schema we use to manage our assets (e.g. datasets)
-
-_ = spark.sql(f"CREATE CATALOG IF NOT EXISTS {catalog}")
-_ = spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{db}")
-
-# COMMAND ----------
-
 run_forecast(
     spark=spark,
-    train_data="mmf_train",
-    scoring_data="mmf_train",
-    scoring_output=f"{catalog}.{db}.monthly_scoring_output",
-    evaluation_output=f"{catalog}.{db}.monthly_evaluation_output",
+    train_data=f"{catalog}.{db}.m4_daily_train",
+    scoring_data=f"{catalog}.{db}.m4_daily_train",
+    scoring_output=f"{catalog}.{db}.daily_scoring_output",
+    evaluation_output=f"{catalog}.{db}.daily_evaluation_output",
     group_id="unique_id",
-    date_col="date",
+    date_col="ds",
     target="y",
-    freq="M",
-    prediction_length=3,
-    backtest_months=12,
-    stride=1,
+    freq="D",
+    prediction_length=10,
+    backtest_months=1,
+    stride=10,
     train_predict_ratio=2,
     data_quality_check=True,
     resample=False,
@@ -146,20 +141,20 @@ run_forecast(
     ensemble_metric="smape",
     ensemble_metric_avg=0.3,
     ensemble_metric_max=0.5,
-    ensemble_scoring_output=f"{catalog}.{db}.monthly_ensemble_output",
+    ensemble_scoring_output=f"{catalog}.{db}.daily_ensemble_output",
     active_models=active_models,
-    experiment_path=f"/Shared/mmf_experiment_monthly",
+    experiment_path=f"/Shared/mmf_experiment",
     use_case_name="mmf",
 )
 
 # COMMAND ----------
 
 # MAGIC %md ### Evaluation Output
-# MAGIC In the evaluation output table, the evaluation for all backtest windows and all models are stored. This info can be used to monitor model performance or decide which models should be taken into the final aggregated forecast.
+# MAGIC In the evaluation output table, the evaluations for all backtest windows and all models are stored. This info can be used to monitor model performance or decide which models should be taken into the final aggregated forecast.
 
 # COMMAND ----------
 
-# MAGIC %sql select * from solacc_uc.mmf.monthly_evaluation_output order by unique_id, model, backtest_window_start_date
+# MAGIC %sql select * from solacc_uc.mmf.daily_evaluation_output order by unique_id, model, backtest_window_start_date
 
 # COMMAND ----------
 
@@ -168,7 +163,7 @@ run_forecast(
 
 # COMMAND ----------
 
-# MAGIC %sql select * from solacc_uc.mmf.monthly_scoring_output order by unique_id, model, date
+# MAGIC %sql select * from solacc_uc.mmf.daily_scoring_output order by unique_id, model, ds
 
 # COMMAND ----------
 
@@ -177,7 +172,7 @@ run_forecast(
 
 # COMMAND ----------
 
-# MAGIC %sql select * from solacc_uc.mmf.monthly_ensemble_output order by unique_id, model, date
+# MAGIC %sql select * from solacc_uc.mmf.daily_ensemble_output order by unique_id, model, ds
 
 # COMMAND ----------
 
@@ -185,16 +180,12 @@ run_forecast(
 
 # COMMAND ----------
 
-# MAGIC %sql delete from solacc_uc.mmf.monthly_evaluation_output
+# MAGIC #%sql delete from solacc_uc.mmf.daily_evaluation_output
 
 # COMMAND ----------
 
-# MAGIC %sql delete from solacc_uc.mmf.monthly_scoring_output
+# MAGIC #%sql delete from solacc_uc.mmf.daily_scoring_output
 
 # COMMAND ----------
 
-# MAGIC %sql delete from solacc_uc.mmf.monthly_ensemble_output
-
-# COMMAND ----------
-
-
+# MAGIC #%sql delete from solacc_uc.mmf.daily_ensemble_output

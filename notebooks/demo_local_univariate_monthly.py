@@ -5,8 +5,9 @@
 
 # COMMAND ----------
 
-# MAGIC %pip install -r requirements.txt --quiet
+# MAGIC %pip install -r ../requirements.txt --quiet
 dbutils.library.restartPython()
+
 # COMMAND ----------
 
 import logging
@@ -37,7 +38,8 @@ from forecasting_sa import run_forecast
 # Number of time series
 n = 100
 
-def load_m4():
+
+def create_m4_monthly():
     y_df, _, _ = M4.load(directory=str(pathlib.Path.home()), group="Monthly")
     _ids = [f"M{i}" for i in range(1, n + 1)]
     y_df = (
@@ -48,6 +50,7 @@ def load_m4():
         .reset_index(drop=True)
     )
     return y_df
+
 
 def transform_group(df):
     unique_id = df.unique_id.iloc[0]
@@ -64,10 +67,21 @@ def transform_group(df):
     _df["y"] = df[:60].y.values
     return _df
 
-train = spark.createDataFrame(load_m4())
-train.createOrReplaceTempView("mmf_train")
 
-display(spark.read.table("mmf_train"))
+# COMMAND ----------
+
+# Make sure that the catalog and the schema exist
+catalog = "solacc_uc"  # Name of the catalog we use to manage our assets
+db = "mmf"  # Name of the schema we use to manage our assets (e.g. datasets)
+
+_ = spark.sql(f"CREATE CATALOG IF NOT EXISTS {catalog}")
+_ = spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{db}")
+
+(
+    spark.createDataFrame(create_m4_monthly())
+    .write.format("delta").mode("overwrite")
+    .saveAsTable(f"{catalog}.{db}.m4_monthly_train")
+)
 
 # COMMAND ----------
 
@@ -75,11 +89,11 @@ display(spark.read.table("mmf_train"))
 
 # COMMAND ----------
 
-# MAGIC %sql select unique_id, count(date) as count from mmf_train group by unique_id order by unique_id
+# MAGIC %sql select unique_id, count(date) as count from solacc_uc.mmf.m4_monthly_train group by unique_id order by unique_id
 
 # COMMAND ----------
 
-# MAGIC %sql select count(distinct(unique_id)) from mmf_train
+# MAGIC %sql select count(distinct(unique_id)) from solacc_uc.mmf.m4_monthly_train
 
 # COMMAND ----------
 
@@ -88,14 +102,27 @@ display(spark.read.table("mmf_train"))
 # COMMAND ----------
 
 active_models = [
-    "NeuralForecastRNN",
-    #"NeuralForecastLSTM",
-    #"NeuralForecastNBEATSx",
-    #"NeuralForecastNHITS",
-    #"NeuralForecastAutoRNN",
-    #"NeuralForecastAutoLSTM",
-    #"NeuralForecastAutoNBEATSx",
-    #"NeuralForecastAutoNHITS",
+    "StatsForecastBaselineWindowAverage",
+    "StatsForecastBaselineSeasonalWindowAverage",
+    "StatsForecastBaselineNaive",
+    "StatsForecastBaselineSeasonalNaive",
+    "StatsForecastAutoArima",
+    "StatsForecastAutoETS",
+    "StatsForecastAutoCES",
+    "StatsForecastAutoTheta",
+    "StatsForecastTSB",
+    "StatsForecastADIDA",
+    "StatsForecastIMAPA",
+    "StatsForecastCrostonClassic",
+    "StatsForecastCrostonOptimized",
+    "StatsForecastCrostonSBA",
+    "RFableArima",
+    "RFableETS",
+    "RFableNNETAR",
+    "RFableEnsemble",
+    "RDynamicHarmonicRegression",
+    "SKTimeTBats",
+    "SKTimeLgbmDsDt",
 ]
 
 # COMMAND ----------
@@ -104,22 +131,12 @@ active_models = [
 
 # COMMAND ----------
 
-# Make sure that the catalog and the schema exist
-catalog = "solacc_uc" # Name of the catalog we use to manage our assets
-db = "mmf" # Name of the schema we use to manage our assets (e.g. datasets)
-
-_ = spark.sql(f"CREATE CATALOG IF NOT EXISTS {catalog}")
-_ = spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{db}")
-
-# COMMAND ----------
-
 run_forecast(
     spark=spark,
-    train_data="mmf_train",
-    scoring_data="mmf_train",
+    train_data=f"{catalog}.{db}.m4_monthly_train",
+    scoring_data=f"{catalog}.{db}.m4_monthly_train",
     scoring_output=f"{catalog}.{db}.monthly_scoring_output",
     evaluation_output=f"{catalog}.{db}.monthly_evaluation_output",
-    model_output=f"{catalog}.{db}",
     group_id="unique_id",
     date_col="date",
     target="y",
@@ -173,16 +190,12 @@ run_forecast(
 
 # COMMAND ----------
 
-# MAGIC %sql delete from solacc_uc.mmf.monthly_evaluation_output
+# MAGIC #%sql delete from solacc_uc.mmf.monthly_evaluation_output
 
 # COMMAND ----------
 
-# MAGIC %sql delete from solacc_uc.mmf.monthly_scoring_output
+# MAGIC #%sql delete from solacc_uc.mmf.monthly_scoring_output
 
 # COMMAND ----------
 
-# MAGIC %sql delete from solacc_uc.mmf.monthly_ensemble_output
-
-# COMMAND ----------
-
-
+# MAGIC #%sql delete from solacc_uc.mmf.monthly_ensemble_output

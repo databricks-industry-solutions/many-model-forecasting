@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 from sktime.performance_metrics.forecasting import mean_absolute_percentage_error
-from neuralforecast import NeuralForecast
+from neuralforecast import NeuralForecast, DistributedConfig
 from forecasting_sa.models.abstract_model import ForecastingRegressor
 from neuralforecast.auto import (
     RNN,
@@ -104,21 +104,32 @@ class NeuralFcForecaster(ForecastingRegressor):
             return None
 
     def fit(self, x, y=None):
+        #self.spark = spark
         if isinstance(self.model, NeuralForecast):
-            _df = self.prepare_data(x)
-            _static_df = self.prepare_static_features(x)
-            self.model.fit(df=_df, static_df=_static_df)
+            pdf = self.prepare_data(x)
+            static_pdf = self.prepare_static_features(x)
+
+            #self.model.fit(
+            #    df=self.spark.createDataFrame(pdf),
+            #    static_df=self.spark.createDataFrame(static_pdf) if static_pdf else None,
+            #    distributed_config=self.dist_cfg
+            #    )
+
+            self.model.fit(df=pdf, static_df=static_pdf)
 
     def predict(self, hist_df: pd.DataFrame, val_df: pd.DataFrame = None):
         _df = self.prepare_data(hist_df)
         _dynamic_future = self.prepare_data(val_df, future=True)
         _dynamic_future = None if _dynamic_future.empty else _dynamic_future
         _static_df = self.prepare_static_features(hist_df)
-        forecast_df = self.model.predict(
-            df=_df,
-            static_df=_static_df,
-            futr_df=_dynamic_future
-        )
+
+        #forecast_df = self.model.predict(
+        #    df=self.spark.createDataFrame(_df),
+        #    static_df=self.spark.createDataFrame(_static_df) if _static_df else None,
+        #    futr_df=self.spark.createDataFrame(_dynamic_future) if _dynamic_future else None
+        #).toPandas()
+
+        forecast_df = self.model.predict(df=_df, static_df=_static_df, futr_df=_dynamic_future)
         target = [col for col in forecast_df.columns.to_list()
                   if col not in ["unique_id", "ds"]][0]
         forecast_df = forecast_df.reset_index(drop=False).rename(
@@ -149,15 +160,18 @@ class NeuralFcForecaster(ForecastingRegressor):
         # Check if dynamic futures for all unique_id are provided.
         # If not, drop unique_id without dynamic futures from scoring.
         if (_dynamic_future is not None) and \
-                (not set(_df["unique_id"].unique().flatten()) \
+                (not set(_df["unique_id"].unique().flatten())
                         .issubset(set(_dynamic_future["unique_id"].unique().flatten()))):
             _df = _df[_df["unique_id"].isin(list(_dynamic_future["unique_id"].unique()))]
 
-        forecast_df = self.model.predict(
-            df=_df,
-            static_df=_static_df,
-            futr_df=_dynamic_future
-        )
+        #forecast_df = self.model.predict(
+        #    df=self.spark.createDataFrame(_df),
+        #    static_df=self.spark.createDataFrame(_static_df),
+        #    futr_df=self.spark.createDataFrame(_dynamic_future)
+        #).toPandas()
+
+        forecast_df = self.model.predict(df=_df, static_df=_static_df, futr_df=_dynamic_future)
+
         target = [col for col in forecast_df.columns.to_list()
                   if col not in ["unique_id", "ds"]][0]
         forecast_df = forecast_df.reset_index(drop=False).rename(
@@ -350,6 +364,7 @@ class NeuralFcAutoRNN(NeuralFcForecaster):
         super().__init__(params)
         self.params = params
         self.loss = get_loss_function(self.params.loss)
+        self.cpus = 0 if self.params.accelerator == 'gpu' else -1
         self.gpus = -1 if self.params.accelerator == 'gpu' else 0
         self.config = dict(
             encoder_n_layers=self.params.encoder_n_layers,
@@ -373,6 +388,7 @@ class NeuralFcAutoRNN(NeuralFcForecaster):
                     h=int(self.params["prediction_length"]),
                     loss=self.loss,
                     config=self.config,
+                    #cpus=self.cpus,
                     gpus=self.gpus,
                     search_alg=HyperOptSearch(),
                     num_samples=int(self.params["num_samples"]),
@@ -390,6 +406,7 @@ class NeuralFcAutoLSTM(NeuralFcForecaster):
         super().__init__(params)
         self.params = params
         self.loss = get_loss_function(self.params.loss)
+        self.cpus = 0 if self.params.accelerator == 'gpu' else -1
         self.gpus = -1 if self.params.accelerator == 'gpu' else 0
         self.config = dict(
             encoder_n_layers=self.params.encoder_n_layers,
@@ -412,6 +429,7 @@ class NeuralFcAutoLSTM(NeuralFcForecaster):
                     h=int(self.params["prediction_length"]),
                     loss=self.loss,
                     config=self.config,
+                    #cpus=self.cpus,
                     gpus=self.gpus,
                     search_alg=HyperOptSearch(),
                     num_samples=int(self.params["num_samples"]),
@@ -429,6 +447,7 @@ class NeuralFcAutoNBEATSx(NeuralFcForecaster):
         super().__init__(params)
         self.params = params
         self.loss = get_loss_function(self.params.loss)
+        self.cpus = 0 if self.params.accelerator == 'gpu' else -1
         self.gpus = -1 if self.params.accelerator == 'gpu' else 0
         self.config = dict(
             input_size=self.params.input_size_factor * self.params.prediction_length,
@@ -443,16 +462,51 @@ class NeuralFcAutoNBEATSx(NeuralFcForecaster):
             learning_rate=tune.loguniform(1e-5, 1e-1),
             batch_size=tune.choice([16, 32]),
         )
+        #self.dist_cfg = DistributedConfig(
+        #    partitions_path=f'{self.params.get("temp_path")}',  # path where the partitions will be saved
+        #    num_nodes=1,  # number of nodes to use during training (machines)
+        #    devices=4,  # number of GPUs in each machine
+        #)
+        # pytorch lightning configuration
+        # the executors don't have permission to write on the filesystem, so we disable saving artifacts
+        #self.distributed_kwargs = dict(
+        #    accelerator='gpu',
+        #    enable_progress_bar=False,
+        #    logger=False,
+        #    enable_checkpointing=False,
+        #)
+        # exogenous features
+        #self.exogs = {
+        #    'futr_exog_list': list(self.params.get("dynamic_future", [])),
+        #    'stat_exog_list': list(self.params.get("static_features", [])),
+        #}
+        #def config(trial):
+        #    return dict(
+        #        input_size=self.params.input_size_factor * self.params.prediction_length,
+        #        max_steps=self.params.max_steps,
+        #        learning_rate=tune.loguniform(1e-5, 1e-1),
+        #        **self.exogs,
+        #        **self.distributed_kwargs,
+        #    )
+
         self.model = NeuralForecast(
             models=[
                 AutoNBEATSx(
                     h=int(self.params["prediction_length"]),
                     loss=self.loss,
                     config=self.config,
+                    #cpus=self.cpus,
                     gpus=self.gpus,
                     search_alg=HyperOptSearch(),
                     num_samples=int(self.params["num_samples"]),
                 ),
+                #AutoNBEATSx(
+                #    h=int(self.params["prediction_length"]),
+                #    loss=self.loss,
+                #    config=config,
+                #    backend='optuna',
+                #    num_samples=int(self.params["num_samples"]),
+                #),
             ],
             freq=self.params["freq"]
         )
@@ -466,6 +520,7 @@ class NeuralFcAutoNHITS(NeuralFcForecaster):
         super().__init__(params)
         self.params = params
         self.loss = get_loss_function(self.params.loss)
+        self.cpus = 0 if self.params.accelerator == 'gpu' else -1
         self.gpus = -1 if self.params.accelerator == 'gpu' else 0
         self.config = dict(
             input_size=self.params.input_size_factor * self.params.prediction_length,
@@ -490,6 +545,7 @@ class NeuralFcAutoNHITS(NeuralFcForecaster):
                     h=int(self.params["prediction_length"]),
                     loss=self.loss,
                     config=self.config,
+                    #cpus=self.cpus,
                     gpus=self.gpus,
                     search_alg=HyperOptSearch(),
                     num_samples=int(self.params["num_samples"]),
