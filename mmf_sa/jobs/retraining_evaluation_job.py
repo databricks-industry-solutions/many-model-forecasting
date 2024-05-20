@@ -1,8 +1,8 @@
 import mlflow
 from mlflow.tracking import MlflowClient
 
-from forecasting_sa.Forecaster import Forecaster
-from forecasting_sa.common import Job
+from mmf_sa.Forecaster import Forecaster
+from mmf_sa.common import Job
 
 
 class RetrainingEvaluationJob(Job):

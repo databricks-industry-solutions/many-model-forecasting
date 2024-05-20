@@ -8,7 +8,7 @@ from rpy2.robjects import pandas2ri
 from rpy2.robjects.lib.dplyr import DataFrame
 from rpy2.robjects import rl
 from rpy2.robjects.conversion import localconverter
-from forecasting_sa.models.abstract_model import ForecastingRegressor
+from mmf_sa.models.abstract_model import ForecastingRegressor
 
 
 # make sure R and the fable package are installed on your system
@@ -228,8 +228,8 @@ class RDynamicHarmonicRegression:
     def __call__(self):
 
         if self.params.model_spec.fourier_terms is None:
+            # rhs = "PDQ(0, 0, 0)"
             raise Warning("0 Fourier terms specified. Use non-seasonal Arima")
-            rhs = "PDQ(0, 0, 0)"
         else:
             rhs = (
                 " + ".join(

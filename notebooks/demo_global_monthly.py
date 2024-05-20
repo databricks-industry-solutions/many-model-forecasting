@@ -22,7 +22,7 @@ dbutils.library.restartPython()
 
 import pathlib
 import pandas as pd
-from forecasting_sa import run_forecast
+from mmf_sa import run_forecast
 import logging
 logger = spark._jvm.org.apache.log4j
 logging.getLogger("py4j.java_gateway").setLevel(logging.ERROR)

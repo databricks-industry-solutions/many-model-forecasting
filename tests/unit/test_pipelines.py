@@ -1,6 +1,6 @@
 import mlflow
 import datetime
-from forecasting_sa import run_forecast
+from mmf_sa import run_forecast
 
 from .fixtures import temp_dir, spark_session, m4_df, m4_df_exogenous
 

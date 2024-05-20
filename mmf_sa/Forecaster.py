@@ -28,9 +28,9 @@ from pyspark.sql.types import (
     IntegerType,
 )
 from pyspark.sql.functions import lit, avg, min, max, col, posexplode, collect_list, to_date
-from forecasting_sa.models.abstract_model import ForecastingRegressor
-from forecasting_sa.models import ModelRegistry
-from forecasting_sa.data_quality_checks import DataQualityChecks
+from mmf_sa.models.abstract_model import ForecastingRegressor
+from mmf_sa.models import ModelRegistry
+from mmf_sa.data_quality_checks import DataQualityChecks
 _logger = logging.getLogger(__name__)
 os.environ['NIXTLA_ID_AS_COL'] = '1'
 mlflow.set_registry_uri("databricks-uc")

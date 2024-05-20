@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from forecasting_sa.models import ModelRegistry
+from mmf_sa.models import ModelRegistry
 from omegaconf import OmegaConf
 from .fixtures import m4_df_exogenous
 
