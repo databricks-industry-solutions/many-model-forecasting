@@ -238,7 +238,6 @@ models:
     model_type: global
     trainable: true
     tuning: false
-
     max_steps: 200
     input_size_factor: 2
     loss: smape
@@ -258,7 +257,6 @@ models:
     model_type: global
     trainable: true
     tuning: false
-
     max_steps: 100
     input_size_factor: 2
     loss: smape
@@ -275,7 +273,6 @@ models:
     model_type: global
     trainable: true
     tuning: false
-
     max_steps: 200
     input_size_factor: 2
     loss: smape
@@ -299,12 +296,10 @@ models:
     max_steps: 200
     num_samples: 20
     loss: smape
-    encoder_n_layers: 2
-    encoder_hidden_size: 100
-    encoder_activation: tanh
-    context_size: 10
-    decoder_hidden_size: 100
-    decoder_layers: 2
+    encoder_hidden_size: [ 50, 100, 200, 300 ]
+    encoder_n_layers: [ 1, 2, 3, 4 ]
+    context_size: [ 5, 10, 50 ]
+    decoder_hidden_size: [ 64, 128, 256, 512 ]
 
   NeuralForecastAutoLSTM:
     module: forecasting_sa.models.neuralforecast.NeuralForecastPipeline
@@ -316,12 +311,10 @@ models:
     max_steps: 200
     num_samples: 20
     loss: smape
-    encoder_n_layers: 2
-    encoder_hidden_size: 100
-    encoder_activation: tanh
-    context_size: 10
-    decoder_hidden_size: 100
-    decoder_layers: 2
+    encoder_hidden_size: [ 50, 100, 200, 300 ]
+    encoder_n_layers: [ 1, 2, 3, 4 ]
+    context_size: [ 5, 10, 50 ]
+    decoder_hidden_size: [ 64, 128, 256, 512 ]
 
   NeuralForecastAutoNBEATSx:
     module: forecasting_sa.models.neuralforecast.NeuralForecastPipeline
@@ -333,10 +326,8 @@ models:
     max_steps: 200
     num_samples: 20
     loss: smape
-    input_size_factor: 2
-    n_harmonics: 2
-    n_polynomials: 2
-    dropout_prob_theta: 0.0
+    input_size: 4
+    scaler_type: [ "robust", "standard" ]
 
   NeuralForecastAutoNHITS:
     module: forecasting_sa.models.neuralforecast.NeuralForecastPipeline
@@ -348,14 +339,44 @@ models:
     max_steps: 200
     num_samples: 20
     loss: smape
-    input_size_factor: 2
-    dropout_prob_theta: 0.0
-    stack_types: [ "identity", "identity", "identity" ]
-    n_blocks: [ 1, 1, 1 ]
-    n_pool_kernel_size: [ 2, 2, 1 ]
-    n_freq_downsample: [ 4, 2, 1 ]
-    interpolation_mode: linear
-    pooling_mode: MaxPool1d
+    input_size: 4
+    n_pool_kernel_size: [ [2, 2, 1], [1, 1, 1], [2, 2, 2], [4, 4, 4], [8, 4, 1], [16, 8, 1] ]
+    n_freq_downsample: [ [168, 24, 1], [24, 12, 1], [180, 60, 1],  [60, 8, 1], [40, 20, 1], [1, 1, 1] ]
+    scaler_type: [ "robust", "standard" ]
 
+  NeuralForecastAutoTiDE:
+    module: forecasting_sa.models.neuralforecast.NeuralForecastPipeline
+    model_class: NeuralFcAutoTiDE
+    framework: NeuralForecast
+    model_type: global
+    trainable: true
+    tuning: false #-> eventually true
+    max_steps: 200
+    num_samples: 20
+    loss: smape
+    input_size: 4
+    hidden_size: [ 256, 512, 1024 ]
+    decoder_output_dim: [ 8, 16, 32 ]
+    temporal_decoder_dim: [ 32, 64, 128 ]
+    num_encoder_layers: [ 1, 2, 3 ]
+    num_decoder_layers: [ 1, 2, 3 ]
+    temporal_width: [ 4, 8, 16 ]
+    dropout: [ 0.0, 0.1, 0.2, 0.3, 0.5 ]
+    layernorm: [ True, False ]
 
-
+  NeuralForecastAutoPatchTST:
+    module: forecasting_sa.models.neuralforecast.NeuralForecastPipeline
+    model_class: NeuralFcAutoPatchTST
+    framework: NeuralForecast
+    model_type: global
+    trainable: true
+    tuning: false #-> eventually true
+    max_steps: 200
+    num_samples: 20
+    loss: smape
+    input_size: 4
+    hidden_size: [ 64, 128, 256 ]
+    n_heads: [ 4, 8 ]
+    patch_len: [ 16, 24 ]
+    scaler_type: [ "robust", "standard" ]
+    revin: [ False, True ]

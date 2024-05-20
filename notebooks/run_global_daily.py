@@ -45,6 +45,6 @@ run_forecast(
     ensemble_scoring_output=f"{catalog}.{db}.daily_ensemble_output",
     active_models=[model],
     experiment_path=f"/Shared/mmf_experiment",
-    use_case_name="mmf",
+    use_case_name="m4_daily",
     accelerator="gpu",
 )
