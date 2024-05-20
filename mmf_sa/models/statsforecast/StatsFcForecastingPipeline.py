@@ -17,7 +17,7 @@ from statsforecast.models import (
     Naive,
     SeasonalNaive,
 )
-from forecasting_sa.models.abstract_model import ForecastingRegressor
+from mmf_sa.models.abstract_model import ForecastingRegressor
 
 
 class StatsFcForecaster(ForecastingRegressor):
@@ -79,7 +79,7 @@ class StatsFcForecaster(ForecastingRegressor):
         self.model = StatsForecast(models=[self.model_spec], freq=self.freq, n_jobs=-1)
         self.model.fit(x)
 
-    def predict(self, hist_df: pd.DataFrame, val_df: pd.DataFrame):
+    def predict(self, hist_df: pd.DataFrame, val_df: pd.DataFrame = None):
         _df = self.prepare_data(hist_df)
         _exogenous = self.prepare_data(val_df, future=True)
         self.fit(_df)

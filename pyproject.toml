@@ -1,5 +1,5 @@
 [project]
-name = "forecasting_sa"
+name = "mmf_sa"
 version = "0.0.1"
 dependencies = [
     "rpy2",
@@ -38,7 +38,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build]
 include = [
-    "forecasting_sa/",
+    "mmf_sa/",
 ]
 exclude = [
     "/tests",

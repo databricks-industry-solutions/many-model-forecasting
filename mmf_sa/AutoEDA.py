@@ -385,10 +385,10 @@ class AutoEDA:
 
     def report_generation_new(self):
         def load_html():
-            import forecasting_sa.html_templates
+            import mmf_sa.html_templates
 
             html_template = pkg_resources.read_text(
-                sys.modules["forecasting_sa.html_templates"], "eda_template_v2.html"
+                sys.modules["mmf_sa.html_templates"], "eda_template_v2.html"
             )
             return html_template
 

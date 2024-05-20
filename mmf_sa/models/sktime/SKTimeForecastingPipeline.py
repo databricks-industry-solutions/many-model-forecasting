@@ -13,7 +13,7 @@ from sktime.forecasting.compose import TransformedTargetForecaster
 from sktime.transformations.series.detrend import Detrender, ConditionalDeseasonalizer
 from sktime.forecasting.trend import PolynomialTrendForecaster
 from sktime.forecasting.base import ForecastingHorizon, BaseForecaster
-from forecasting_sa.models.abstract_model import ForecastingRegressor
+from mmf_sa.models.abstract_model import ForecastingRegressor
 
 
 class SKTimeForecastingPipeline(ForecastingRegressor):

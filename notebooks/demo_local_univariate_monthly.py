@@ -21,7 +21,7 @@ logging.getLogger("py4j.clientserver").setLevel(logging.ERROR)
 import pathlib
 import pandas as pd
 from datasetsforecast.m4 import M4
-from forecasting_sa import run_forecast
+from mmf_sa import run_forecast
 
 # COMMAND ----------
 

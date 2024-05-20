@@ -19,7 +19,7 @@ promoted_props:
 models:
 
   StatsForecastBaselineWindowAverage:
-    module: forecasting_sa.models.statsforecast.StatsFcForecastingPipeline
+    module: mmf_sa.models.statsforecast.StatsFcForecastingPipeline
     model_class: StatsFcBaselineWindowAverage
     framework: StatsForecast
     model_type: local
@@ -28,7 +28,7 @@ models:
       window_size: 7
 
   StatsForecastBaselineSeasonalWindowAverage:
-    module: forecasting_sa.models.statsforecast.StatsFcForecastingPipeline
+    module: mmf_sa.models.statsforecast.StatsFcForecastingPipeline
     model_class: StatsFcBaselineSeasonalWindowAverage
     framework: StatsForecast
     model_type: local
@@ -38,14 +38,14 @@ models:
       window_size: 7
 
   StatsForecastBaselineNaive:
-    module: forecasting_sa.models.statsforecast.StatsFcForecastingPipeline
+    module: mmf_sa.models.statsforecast.StatsFcForecastingPipeline
     model_class: StatsFcBaselineNaive
     framework: StatsForecast
     model_type: local
     trainable: false
 
   StatsForecastBaselineSeasonalNaive:
-    module: forecasting_sa.models.statsforecast.StatsFcForecastingPipeline
+    module: mmf_sa.models.statsforecast.StatsFcForecastingPipeline
     model_class: StatsFcBaselineSeasonalNaive
     framework: StatsForecast
     model_type: local
@@ -54,7 +54,7 @@ models:
       season_length: 7
 
   StatsForecastAutoArima:
-    module: forecasting_sa.models.statsforecast.StatsFcForecastingPipeline
+    module: mmf_sa.models.statsforecast.StatsFcForecastingPipeline
     model_class: StatsFcAutoArima
     framework: StatsForecast
     model_type: local
@@ -65,7 +65,7 @@ models:
       level:
 
   StatsForecastAutoETS:
-    module: forecasting_sa.models.statsforecast.StatsFcForecastingPipeline
+    module: mmf_sa.models.statsforecast.StatsFcForecastingPipeline
     model_class: StatsFcAutoETS
     framework: StatsForecast
     model_type: local
@@ -75,7 +75,7 @@ models:
       model_type: "ZZZ"
 
   StatsForecastAutoCES:
-    module: forecasting_sa.models.statsforecast.StatsFcForecastingPipeline
+    module: mmf_sa.models.statsforecast.StatsFcForecastingPipeline
     model_class: StatsFcAutoCES
     framework: StatsForecast
     model_type: local
@@ -85,7 +85,7 @@ models:
       model_type: "Z"
 
   StatsForecastAutoTheta:
-    module: forecasting_sa.models.statsforecast.StatsFcForecastingPipeline
+    module: mmf_sa.models.statsforecast.StatsFcForecastingPipeline
     model_class: StatsFcAutoTheta
     framework: StatsForecast
     model_type: local
@@ -95,7 +95,7 @@ models:
       decomposition_type: "multiplicative"
 
   StatsForecastTSB:
-    module: forecasting_sa.models.statsforecast.StatsFcForecastingPipeline
+    module: mmf_sa.models.statsforecast.StatsFcForecastingPipeline
     model_class: StatsFcTSB
     framework: StatsForecast
     model_type: local
@@ -105,7 +105,7 @@ models:
       alpha_p: 0.2
 
   StatsForecastADIDA:
-    module: forecasting_sa.models.statsforecast.StatsFcForecastingPipeline
+    module: mmf_sa.models.statsforecast.StatsFcForecastingPipeline
     model_class: StatsFcADIDA
     framework: StatsForecast
     model_type: local
@@ -113,7 +113,7 @@ models:
     model_spec:
 
   StatsForecastIMAPA:
-    module: forecasting_sa.models.statsforecast.StatsFcForecastingPipeline
+    module: mmf_sa.models.statsforecast.StatsFcForecastingPipeline
     model_class: StatsFcIMAPA
     framework: StatsForecast
     model_type: local
@@ -121,7 +121,7 @@ models:
     model_spec:
 
   StatsForecastCrostonClassic:
-    module: forecasting_sa.models.statsforecast.StatsFcForecastingPipeline
+    module: mmf_sa.models.statsforecast.StatsFcForecastingPipeline
     model_class: StatsFcCrostonClassic
     framework: StatsForecast
     model_type: local
@@ -129,7 +129,7 @@ models:
     model_spec:
 
   StatsForecastCrostonOptimized:
-    module: forecasting_sa.models.statsforecast.StatsFcForecastingPipeline
+    module: mmf_sa.models.statsforecast.StatsFcForecastingPipeline
     model_class: StatsFcCrostonOptimized
     framework: StatsForecast
     model_type: local
@@ -137,7 +137,7 @@ models:
     model_spec:
 
   StatsForecastCrostonSBA:
-    module: forecasting_sa.models.statsforecast.StatsFcForecastingPipeline
+    module: mmf_sa.models.statsforecast.StatsFcForecastingPipeline
     model_class: StatsFcCrostonSBA
     framework: StatsForecast
     model_type: local
@@ -145,7 +145,7 @@ models:
     model_spec:
 
   RFableArima:
-    module: forecasting_sa.models.r_fable.RFableForecastingPipeline
+    module: mmf_sa.models.r_fable.RFableForecastingPipeline
     model_class: RFableModel
     framework: RFable
     model_type: local
@@ -154,7 +154,7 @@ models:
       season_length:
 
   RFableETS:
-    module: forecasting_sa.models.r_fable.RFableForecastingPipeline
+    module: mmf_sa.models.r_fable.RFableForecastingPipeline
     model_class: RFableModel
     framework: RFable
     model_type: local
@@ -163,7 +163,7 @@ models:
       season_length:
 
   RFableNNETAR:
-    module: forecasting_sa.models.r_fable.RFableForecastingPipeline
+    module: mmf_sa.models.r_fable.RFableForecastingPipeline
     model_class: RFableModel
     framework: RFable
     model_type: local
@@ -172,14 +172,14 @@ models:
       season_length:
 
   RFableEnsemble:
-    module: forecasting_sa.models.r_fable.RFableForecastingPipeline
+    module: mmf_sa.models.r_fable.RFableForecastingPipeline
     model_class: RFableModel
     framework: RFable
     model_type: local
     trainable: false
 
   RDynamicHarmonicRegression:
-    module: forecasting_sa.models.r_fable.RFableForecastingPipeline
+    module: mmf_sa.models.r_fable.RFableForecastingPipeline
     model_class: RFableModel
     framework: RFable
     model_type: local
@@ -188,7 +188,7 @@ models:
       fourier_terms:
 
   SKTimeLgbmDsDt:
-    module: forecasting_sa.models.sktime.SKTimeForecastingPipeline
+    module: mmf_sa.models.sktime.SKTimeForecastingPipeline
     model_class: SKTimeLgbmDsDt
     framework: SKTime
     model_type: local
@@ -200,7 +200,7 @@ models:
       detrend_poly_degree: 2
 
   SKTimeTBats:
-    module: forecasting_sa.models.sktime.SKTimeForecastingPipeline
+    module: mmf_sa.models.sktime.SKTimeForecastingPipeline
     model_class: SKTimeTBats
     framework: SKTime
     model_type: local
@@ -212,7 +212,7 @@ models:
       season_length: 7
 
   NeuralForecastRNN:
-    module: forecasting_sa.models.neuralforecast.NeuralForecastPipeline
+    module: mmf_sa.models.neuralforecast.NeuralForecastPipeline
     model_class: NeuralFcRNN
     framework: NeuralForecast
     model_type: global
@@ -232,7 +232,7 @@ models:
     decoder_layers: 2
 
   NeuralForecastLSTM:
-    module: forecasting_sa.models.neuralforecast.NeuralForecastPipeline
+    module: mmf_sa.models.neuralforecast.NeuralForecastPipeline
     model_class: NeuralFcLSTM
     framework: NeuralForecast
     model_type: global
@@ -251,7 +251,7 @@ models:
     decoder_layers: 2
 
   NeuralForecastNBEATSx:
-    module: forecasting_sa.models.neuralforecast.NeuralForecastPipeline
+    module: mmf_sa.models.neuralforecast.NeuralForecastPipeline
     model_class: NeuralFcNBEATSx
     framework: NeuralForecast
     model_type: global
@@ -267,7 +267,7 @@ models:
     dropout_prob_theta: 0.0
 
   NeuralForecastNHITS:
-    module: forecasting_sa.models.neuralforecast.NeuralForecastPipeline
+    module: mmf_sa.models.neuralforecast.NeuralForecastPipeline
     model_class: NeuralFcNHITS
     framework: NeuralForecast
     model_type: global
@@ -287,7 +287,7 @@ models:
     pooling_mode: MaxPool1d
 
   NeuralForecastAutoRNN:
-    module: forecasting_sa.models.neuralforecast.NeuralForecastPipeline
+    module: mmf_sa.models.neuralforecast.NeuralForecastPipeline
     model_class: NeuralFcAutoRNN
     framework: NeuralForecast
     model_type: global
@@ -302,7 +302,7 @@ models:
     decoder_hidden_size: [ 64, 128, 256, 512 ]
 
   NeuralForecastAutoLSTM:
-    module: forecasting_sa.models.neuralforecast.NeuralForecastPipeline
+    module: mmf_sa.models.neuralforecast.NeuralForecastPipeline
     model_class: NeuralFcAutoLSTM
     framework: NeuralForecast
     model_type: global
@@ -317,7 +317,7 @@ models:
     decoder_hidden_size: [ 64, 128, 256, 512 ]
 
   NeuralForecastAutoNBEATSx:
-    module: forecasting_sa.models.neuralforecast.NeuralForecastPipeline
+    module: mmf_sa.models.neuralforecast.NeuralForecastPipeline
     model_class: NeuralFcAutoNBEATSx
     framework: NeuralForecast
     model_type: global
@@ -330,7 +330,7 @@ models:
     scaler_type: [ "robust", "standard" ]
 
   NeuralForecastAutoNHITS:
-    module: forecasting_sa.models.neuralforecast.NeuralForecastPipeline
+    module: mmf_sa.models.neuralforecast.NeuralForecastPipeline
     model_class: NeuralFcAutoNHITS
     framework: NeuralForecast
     model_type: global
@@ -345,7 +345,7 @@ models:
     scaler_type: [ "robust", "standard" ]
 
   NeuralForecastAutoTiDE:
-    module: forecasting_sa.models.neuralforecast.NeuralForecastPipeline
+    module: mmf_sa.models.neuralforecast.NeuralForecastPipeline
     model_class: NeuralFcAutoTiDE
     framework: NeuralForecast
     model_type: global
@@ -365,7 +365,7 @@ models:
     layernorm: [ True, False ]
 
   NeuralForecastAutoPatchTST:
-    module: forecasting_sa.models.neuralforecast.NeuralForecastPipeline
+    module: mmf_sa.models.neuralforecast.NeuralForecastPipeline
     model_class: NeuralFcAutoPatchTST
     framework: NeuralForecast
     model_type: global

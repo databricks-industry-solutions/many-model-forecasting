@@ -25,7 +25,7 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
         return df
 
     @abstractmethod
-    def fit(self, x, y=None, spark=None):
+    def fit(self, x, y=None):
         pass
 
     @abstractmethod

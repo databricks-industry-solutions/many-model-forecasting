@@ -59,7 +59,7 @@ display(spark.sql(f"select * from {catalog}.{db}.rossmann_daily_test where Store
 
 import pathlib
 import pandas as pd
-from forecasting_sa import run_forecast
+from mmf_sa import run_forecast
 
 active_models = [
     "StatsForecastBaselineWindowAverage",

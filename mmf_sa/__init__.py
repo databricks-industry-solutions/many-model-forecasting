@@ -12,7 +12,7 @@ from omegaconf import OmegaConf
 from omegaconf.basecontainer import BaseContainer
 from pyspark.sql import SparkSession, DataFrame
 
-from forecasting_sa.Forecaster import Forecaster
+from mmf_sa.Forecaster import Forecaster
 
 
 def run_forecast(

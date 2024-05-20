@@ -1,8 +1,8 @@
 import mlflow
 from mlflow.tracking import MlflowClient
 
-from forecasting_sa.AutoEDA import AutoEDA
-from forecasting_sa.common import Job
+from mmf_sa.AutoEDA import AutoEDA
+from mmf_sa.common import Job
 
 
 class EDAJob(Job):
