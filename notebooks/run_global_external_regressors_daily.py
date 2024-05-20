@@ -46,6 +46,6 @@ run_forecast(
     ensemble_metric_max=0.5,
     ensemble_scoring_output=f"{catalog}.{db}.rossmann_daily_ensemble_output",
     experiment_path=f"/Shared/mmf_rossmann",
-    use_case_name="mmf_rossmann",
+    use_case_name="rossmann_daily",
     accelerator="gpu",
 )

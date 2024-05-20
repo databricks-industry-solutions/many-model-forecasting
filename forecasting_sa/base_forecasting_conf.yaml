@@ -61,6 +61,8 @@ active_models:
   - NeuralForecastAutoLSTM
   - NeuralForecastAutoNBEATSx
   - NeuralForecastAutoNHITS
+  - NeuralForecastAutoTiDE
+  - NeuralForecastAutoPatchTST
 
 #Here we can override hyperparameters for built-in models
 models:

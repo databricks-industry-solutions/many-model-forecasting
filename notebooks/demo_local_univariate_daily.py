@@ -144,7 +144,7 @@ run_forecast(
     ensemble_scoring_output=f"{catalog}.{db}.daily_ensemble_output",
     active_models=active_models,
     experiment_path=f"/Shared/mmf_experiment",
-    use_case_name="mmf",
+    use_case_name="m4_daily",
 )
 
 # COMMAND ----------

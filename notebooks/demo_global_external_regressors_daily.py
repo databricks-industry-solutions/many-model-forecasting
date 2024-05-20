@@ -70,6 +70,8 @@ active_models = [
     "NeuralForecastAutoLSTM",
     "NeuralForecastAutoNBEATSx",
     "NeuralForecastAutoNHITS",
+    "NeuralForecastAutoTiDE",
+    "NeuralForecastAutoPatchTST",
 ]
 
 # COMMAND ----------
@@ -85,7 +87,7 @@ active_models = [
 
 for model in active_models:
   dbutils.notebook.run(
-    "run_global_daily",
+    "run_global_external_regressors_daily",
     timeout_seconds=0,
     arguments={"catalog": catalog, "db": db, "model": model})
 

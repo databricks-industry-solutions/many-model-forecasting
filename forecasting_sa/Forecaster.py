@@ -2,11 +2,9 @@ import os
 import functools
 import logging
 import pathlib
-import shutil
 from datetime import datetime
 import uuid
 import yaml
-from hyperopt import fmin, tpe, SparkTrials, STATUS_OK
 from typing import Dict, Any, Tuple, Union
 import pandas as pd
 import numpy as np
@@ -28,7 +26,6 @@ from pyspark.sql.types import (
     BinaryType,
     ArrayType,
     IntegerType,
-    LongType,
 )
 from pyspark.sql.functions import lit, avg, min, max, col, posexplode, collect_list, to_date
 from forecasting_sa.models.abstract_model import ForecastingRegressor
@@ -243,7 +240,7 @@ class Forecaster:
         model: ForecastingRegressor,
     ):
         print(f"Started training {model_conf['name']}")
-        tuned_model, tuned_params = self.tune_global_model(model_conf, model, train_df, val_df)
+        model.fit(pd.concat([train_df, val_df]))
         # TODO fix
         signature = infer_signature(
             model_input=train_df,
@@ -251,25 +248,25 @@ class Forecaster:
         )
         input_example = train_df
         model_info = mlflow.sklearn.log_model(
-            tuned_model,
+            model,
             "model",
-            registered_model_name=f"{self.conf['model_output']}.{model_conf['name']}",
+            registered_model_name=f"{self.conf['model_output']}.{model_conf['name']}_{self.conf['use_case_name']}",
             input_example=input_example,
             signature=signature,
             pip_requirements=[],
         )
-        print(f"Model registered: {self.conf['model_output']}.{model_conf['name']}")
+        print(f"Model registered: {self.conf['model_output']}.{model_conf['name']}_{self.conf['use_case_name']}")
         try:
-            mlflow.log_params(tuned_params)
+            mlflow.log_params(model.get_params())
         except MlflowException:
             # MLflow log_params has a parameter length limit of 500
             # When using ensemble models parameters consist of
             # nested parameter dictionaries which are flattened here
             mlflow.log_params(
-                flatten_nested_parameters(OmegaConf.to_object(tuned_params))
+                flatten_nested_parameters(OmegaConf.to_object(model.get_params()))
             )
-        self.backtest_global_model(
-            model=tuned_model,
+        metrics = self.backtest_global_model(
+            model=model,
             train_df=train_df,
             val_df=val_df,
             model_uri=model_info.model_uri,
@@ -279,83 +276,6 @@ class Forecaster:
         mlflow.set_tag("candidate", "true")
         mlflow.set_tag("model_name", model.params["name"])
         print(f"Finished training {model_conf.get('name')}")
-
-    def tune_global_model(
-        self,
-        model_conf: DictConfig,
-        model: ForecastingRegressor,
-        train_df: pd.DataFrame,
-        val_df: pd.DataFrame,
-    ):
-        def objective(params, train_df_path, val_df_path):
-            obj_conf = dict(model_conf)
-            obj_conf.update(params)
-            _model = model.__class__(obj_conf)
-            obj_train_df = pd.read_parquet(train_df_path)
-            obj_val_df = pd.read_parquet(val_df_path)
-            _model.fit(obj_train_df)
-            _metrics = _model.backtest(
-                pd.concat([obj_train_df, obj_val_df]),
-                start=obj_train_df[_date_col].max(),
-                retrain=_tuning_retrain,
-            )
-            return {"loss": _metrics["metric_value"], "status": STATUS_OK}
-
-        if (
-            self.conf.get("tuning_enabled", False)
-            and model.params.get("tuning", False)
-            and model.supports_tuning()
-        ):
-            print(f'Tuning model: {model_conf["name"]}')
-            spark_trials = None
-            if self.conf["tuning_distributed"]:
-                spark_trials = SparkTrials(
-                    spark_session=self.spark,
-                    parallelism=int(self.conf["tuning_parallelism"]),
-                )
-            # print(model.search_space())
-            temp_prefix = self.conf.get("temp_path", "/tmp")
-            run_id = uuid.uuid4().hex
-            final_prefix = f"{temp_prefix}/{run_id}/"
-            pathlib.Path(final_prefix).mkdir(parents=True, exist_ok=True)
-            train_path = f"{final_prefix}/train.parquet"
-            val_path = f"{final_prefix}/val.parquet"
-            train_df.to_parquet(f"{temp_prefix}/{run_id}/train.parquet")
-            val_df.to_parquet(f"/{temp_prefix}/{run_id}/val.parquet")
-            _objective_bound = functools.partial(
-                objective,
-                train_df_path=train_path,
-                val_df_path=val_path,
-            )
-            _date_col = self.conf["date_col"]
-            _tuning_retrain = self.conf["tuning_retrain"]
-            best_params = fmin(
-                fn=_objective_bound,
-                space=model.search_space(),
-                algo=tpe.suggest,
-                max_evals=int(self.conf["tuning_max_trials"]),
-                trials=spark_trials,
-            )
-            shutil.rmtree(final_prefix, ignore_errors=True)
-            print(best_params)
-            _conf = dict(model_conf)
-            _conf.update(best_params)
-            for k in _conf.keys():
-                if type(_conf[k]) == np.float64:
-                    _conf[k] = float(_conf[k])
-                elif type(_conf[k]) == np.int64:
-                    _conf[k] = int(_conf[k])
-            best_model = self.model_registry.get_model(
-                model_conf["name"], OmegaConf.create(_conf)
-            )
-            # TODO final train should be configurable
-            # check if we should use all the data for final retrain
-            best_model.fit(pd.concat([train_df, val_df]))
-            return best_model, best_params
-        else:
-            #model.fit(x=pd.concat([train_df, val_df]), spark=self.spark)
-            model.fit(x=pd.concat([train_df, val_df]))
-            return model, model_conf
 
     def backtest_global_model(
         self,
@@ -373,8 +293,7 @@ class Forecaster:
 
         group_id_dtype = IntegerType() \
             if train_df[self.conf["group_id"]].dtype == 'int' else StringType()
-        print(f"group_id_dtype: {group_id_dtype}")
-        print(f"train_df[self.conf['group_id']].dtype: {train_df[self.conf['group_id']].dtype}")
+
         schema = StructType(
             [
                 StructField(self.conf["group_id"], group_id_dtype),
@@ -407,6 +326,10 @@ class Forecaster:
             .withColumnRenamed("avg(metric_value)", "metric_value")
             .toPandas()
         )
+
+        metric_name = None
+        metric_value = None
+
         for rec in res_df.values:
             metric_name, metric_value = rec
             if write:
@@ -523,62 +446,60 @@ class Forecaster:
 
     def evaluate_global_model(self, model_conf):
         mlflow_client = mlflow.tracking.MlflowClient()
-        with mlflow.start_run(experiment_id=self.experiment_id):
-            hist_df, removed = self.prepare_data_for_global_model(model_conf, "evaluating")
-            train_df, val_df = self.split_df_train_val(hist_df)
-            model_name = model_conf["name"]
-            mlflow.set_tag("model_name", model_conf["name"])
-            mlflow_model_name = f"{self.conf['model_output']}.{model_name}"
-            try:
-                champion = mlflow_client.get_model_version_by_alias(mlflow_model_name, "champion")
-                champion_version = champion.version
-                champion_run_id = f"runs:/{champion.run_id}/model"
-                champion_model = mlflow.sklearn.load_model(
-                    f"models:/{mlflow_model_name}/{champion_version}"
-                )
-                champion_metrics = self.backtest_global_model(
-                    model=champion_model,
-                    train_df=train_df,
-                    val_df=val_df,
-                    model_uri=champion_run_id,
-                    write=False,
-                )
-            except:
-                print(f"No deployed model yet available for model: {mlflow_model_name}")
-                champion_model = None
-
-            new_runs = mlflow_client.search_runs(
-                experiment_ids=[self.experiment_id],
-                filter_string=f"tags.candidate='true' and tags.model_name='{model_name}'",
-                order_by=["start_time DESC"],
-                max_results=10,
+        hist_df, removed = self.prepare_data_for_global_model(model_conf, "evaluating")
+        train_df, val_df = self.split_df_train_val(hist_df)
+        model_name = model_conf["name"]
+        mlflow_model_name = f"{self.conf['model_output']}.{model_name}_{self.conf['use_case_name']}"
+        try:
+            champion = mlflow_client.get_model_version_by_alias(mlflow_model_name, "champion")
+            champion_version = champion.version
+            champion_run_id = f"runs:/{champion.run_id}/model"
+            champion_model = mlflow.sklearn.load_model(
+                f"models:/{mlflow_model_name}/{champion_version}"
             )
-            if len(new_runs) == 0:
-                print(
-                    f"No candidate models found for model {model_name}! Nothing to deploy! Exiting.."
-                )
-                return
-            new_run = new_runs[0]
-            new_model_uri = f"runs:/{new_run.info.run_uuid}/model"
-            new_model = mlflow.sklearn.load_model(new_model_uri)
-            new_metrics = self.backtest_global_model(
-                model=new_model,
+            champion_metrics = self.backtest_global_model(
+                model=champion_model,
                 train_df=train_df,
                 val_df=val_df,
-                model_uri=new_model_uri,
+                model_uri=champion_run_id,
                 write=False,
             )
+        except:
+            print(f"No deployed model yet available for model: {mlflow_model_name}")
+            champion_model = None
 
-            if (champion_model is None) or (new_metrics <= champion_metrics):
-                model_details = mlflow.register_model(
-                    model_uri=new_model_uri, name=mlflow_model_name)
-                # wait_until_ready(model_details.name, model_details.version)
-                # TODO: Add description, version, metadata in general
-                mlflow_client.set_registered_model_alias(
-                    mlflow_model_name,
-                    "champion",
-                    model_details.version)
-                print(f"Champion alias assigned to the new model")
+        new_runs = mlflow_client.search_runs(
+            experiment_ids=[self.experiment_id],
+            filter_string=f"tags.candidate='true' and tags.model_name='{model_name}'",
+            order_by=["start_time DESC"],
+            max_results=10,
+        )
+        if len(new_runs) == 0:
+            print(
+                f"No candidate models found for model {model_name}! Nothing to deploy! Exiting.."
+            )
+            return
+        new_run = new_runs[0]
+        new_model_uri = f"runs:/{new_run.info.run_uuid}/model"
+        new_model = mlflow.sklearn.load_model(new_model_uri)
+        new_metrics = self.backtest_global_model(
+            model=new_model,
+            train_df=train_df,
+            val_df=val_df,
+            model_uri=new_model_uri,
+            write=False,
+        )
+
+        if (champion_model is None) or (new_metrics <= champion_metrics):
+            model_details = mlflow.register_model(
+                model_uri=new_model_uri, name=mlflow_model_name)
+            # wait_until_ready(model_details.name, model_details.version)
+            # TODO: Add description, version, metadata in general
+            mlflow_client.set_registered_model_alias(
+                mlflow_model_name,
+                "champion",
+                model_details.version)
+            print(f"Champion alias assigned to the new model")
 
     def score_models(self):
         print("Starting run_scoring")
@@ -694,7 +615,7 @@ class Forecaster:
     def get_model_for_scoring(self, model_conf):
         mlflow_client = MlflowClient()
         if model_conf["trainable"]:
-            mlflow_model_name = f"{self.conf['model_output']}.{model_conf['name']}"
+            mlflow_model_name = f"{self.conf['model_output']}.{model_conf['name']}_{self.conf['use_case_name']}"
             champion = mlflow_client.get_model_version_by_alias(mlflow_model_name, "champion")
             champion_version = champion.version
             champion_model_uri = f"runs:/{champion.run_id}/model"
