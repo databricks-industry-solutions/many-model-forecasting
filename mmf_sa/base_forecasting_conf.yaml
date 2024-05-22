@@ -3,23 +3,12 @@ accelerator: cpu
 temp_path: /Volumes/solacc_uc/mmf/partitions
 
 metric: smape
-scoring_model_stage: Production
 selection_metric: smape_eval
 backtest_retrain: false
 
 resample: false
 train_predict_ratio: 4
 freq: D
-
-tuning_enabled: false
-tuning_max_trials: 16
-tuning_parallelism: 4
-tuning_retrain: false
-tuning_distributed: true
-tuning_max_epochs: 10
-tuning_max_context_len: 40
-
-dynamic_reals:
 
 static_features:
   #- State
@@ -63,6 +52,7 @@ active_models:
   - NeuralForecastAutoNHITS
   - NeuralForecastAutoTiDE
   - NeuralForecastAutoPatchTST
+  - ChronosT5Large
 
 #Here we can override hyperparameters for built-in models
 models:

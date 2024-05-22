@@ -32,11 +32,11 @@ class StatsFcForecaster(ForecastingRegressor):
             # Prepare historical dataframe with/out exogenous regressors for training
             # Fix here
             df[self.params.target] = df[self.params.target].clip(0.1)
-            if 'dynamic_reals' in self.params.keys():
+            if 'dynamic_future' in self.params.keys():
                 try:
                     df_statsfc = (
                         df[[self.params.group_id, self.params.date_col, self.params.target]
-                           + self.params.dynamic_reals]
+                           + self.params.dynamic_future]
                     )
                 except Exception as e:
                     raise Exception(f"Exogenous regressors missing: {e}")
@@ -54,11 +54,11 @@ class StatsFcForecaster(ForecastingRegressor):
             )
         else:
             # Prepare future dataframe with/out exogenous regressors for forecasting
-            if 'dynamic_reals' in self.params.keys():
+            if 'dynamic_future' in self.params.keys():
                 try:
                     df_statsfc = (
                         df[[self.params.group_id, self.params.date_col]
-                           + self.params.dynamic_reals]
+                           + self.params.dynamic_future]
                     )
                 except Exception as e:
                     raise Exception(f"Exogenous regressors missing: {e}")
@@ -104,7 +104,7 @@ class StatsFcForecaster(ForecastingRegressor):
         _df = df[df[self.params.target].notnull()]
         _df = self.prepare_data(_df)
         self.fit(_df)
-        if 'dynamic_reals' in self.params.keys():
+        if 'dynamic_future' in self.params.keys():
             _last_date = _df["ds"].max()
             _future_df = df[
                 (df[self.params["date_col"]] > np.datetime64(_last_date))

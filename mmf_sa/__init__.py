@@ -1,17 +1,13 @@
 __version__ = "0.0.1"
-
 import pathlib
 import sys
 from typing import Union, Any, Dict, List
-
 import importlib.resources as pkg_resources
-
 import pandas as pd
 import yaml
 from omegaconf import OmegaConf
 from omegaconf.basecontainer import BaseContainer
 from pyspark.sql import SparkSession, DataFrame
-
 from mmf_sa.Forecaster import Forecaster
 
 
@@ -40,7 +36,6 @@ def run_forecast(
     static_features: List[str] = None,
     dynamic_future: List[str] = None,
     dynamic_historical: List[str] = None,
-    dynamic_reals: List[str] = None,
     active_models: List[str] = None,
     accelerator: str = None,
     scoring_model_stage: str = None,
@@ -129,8 +124,6 @@ def run_forecast(
         _conf["dynamic_future"] = dynamic_future
     if dynamic_historical is not None:
         _conf["dynamic_historical"] = dynamic_historical
-    if dynamic_reals is not None:
-        _conf["dynamic_reals"] = dynamic_reals
 
     f = Forecaster(conf=_conf, data_conf=_data_conf, spark=spark)
     run_id = f.train_eval_score(export_metrics=False, scoring=run_scoring)
