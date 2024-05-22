@@ -243,9 +243,6 @@ class NeuralFcRNN(NeuralFcForecaster):
             freq=self.params["freq"]
         )
 
-    def supports_tuning(self) -> bool:
-        return False
-
 
 class NeuralFcLSTM(NeuralFcForecaster):
     def __init__(self, params):
@@ -279,9 +276,6 @@ class NeuralFcLSTM(NeuralFcForecaster):
             freq=self.params["freq"]
         )
 
-    def supports_tuning(self) -> bool:
-        return False
-
 
 class NeuralFcNBEATSx(NeuralFcForecaster):
     def __init__(self, params):
@@ -311,9 +305,6 @@ class NeuralFcNBEATSx(NeuralFcForecaster):
             ],
             freq=self.params["freq"]
         )
-
-    def supports_tuning(self) -> bool:
-        return False
 
 
 class NeuralFcNHITS(NeuralFcForecaster):
@@ -348,9 +339,6 @@ class NeuralFcNHITS(NeuralFcForecaster):
             ],
             freq=self.params["freq"]
         )
-
-    def supports_tuning(self) -> bool:
-        return False
 
 
 class NeuralFcAutoRNN(NeuralFcForecaster):
@@ -405,9 +393,6 @@ class NeuralFcAutoRNN(NeuralFcForecaster):
             freq=self.params["freq"]
         )
 
-    def supports_tuning(self) -> bool:
-        return True
-
 
 class NeuralFcAutoLSTM(NeuralFcForecaster):
     def __init__(self, params):
@@ -460,9 +445,6 @@ class NeuralFcAutoLSTM(NeuralFcForecaster):
             freq=self.params["freq"]
         )
 
-    def supports_tuning(self) -> bool:
-        return True
-
 
 class NeuralFcAutoNBEATSx(NeuralFcForecaster):
     def __init__(self, params):
@@ -509,9 +491,6 @@ class NeuralFcAutoNBEATSx(NeuralFcForecaster):
             ],
             freq=self.params["freq"]
         )
-
-    def supports_tuning(self) -> bool:
-        return True
 
 
 class NeuralFcAutoNHITS(NeuralFcForecaster):
@@ -563,9 +542,6 @@ class NeuralFcAutoNHITS(NeuralFcForecaster):
             freq=self.params["freq"]
         )
 
-    def supports_tuning(self) -> bool:
-        return True
-
 
 class NeuralFcAutoTiDE(NeuralFcForecaster):
     def __init__(self, params):
@@ -609,7 +585,7 @@ class NeuralFcAutoTiDE(NeuralFcForecaster):
                     'dropout', list(self.params.dropout)),
                 layernorm=trial.suggest_categorical(
                     'layernorm', list(self.params.layernorm)),
-                **self.exogs,
+                #**self.exogs,
                 **self.distributed_kwargs,
             )
         self.model = NeuralForecast(
@@ -627,9 +603,6 @@ class NeuralFcAutoTiDE(NeuralFcForecaster):
             freq=self.params["freq"]
         )
 
-    def supports_tuning(self) -> bool:
-        return True
-
 
 class NeuralFcAutoPatchTST(NeuralFcForecaster):
     def __init__(self, params):
@@ -644,6 +617,11 @@ class NeuralFcAutoPatchTST(NeuralFcForecaster):
             logger=False,
             enable_checkpointing=False,
         )
+        self.exogs = {
+            'stat_exog_list': list(self.params.get("static_features", [])),
+            'futr_exog_list': list(self.params.get("dynamic_future", [])),
+            'hist_exog_list': list(self.params.get("dynamic_historical", [])),
+        }
 
         def config(trial):
             return dict(
@@ -661,6 +639,7 @@ class NeuralFcAutoPatchTST(NeuralFcForecaster):
                     'scaler_type', list(self.params.scaler_type)),
                 revin=trial.suggest_categorical(
                     'revin', list(self.params.revin)),
+                #**self.exogs,
                 **self.distributed_kwargs,
             )
         self.model = NeuralForecast(
@@ -677,6 +656,3 @@ class NeuralFcAutoPatchTST(NeuralFcForecaster):
             ],
             freq=self.params["freq"]
         )
-
-    def supports_tuning(self) -> bool:
-        return True

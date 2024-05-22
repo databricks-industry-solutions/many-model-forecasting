@@ -38,12 +38,6 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
         # TODO Shouldn't X be optional if we have a trainable model and provide a prediction length
         pass
 
-    def supports_tuning(self) -> bool:
-        return False
-
-    def search_space(self):
-        pass
-
     def backtest(
             self,
             df: pd.DataFrame,

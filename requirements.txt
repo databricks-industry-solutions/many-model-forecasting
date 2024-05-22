@@ -10,3 +10,4 @@ sktime==0.29.0
 lightgbm==4.3.0
 datasetsforecast==0.0.8
 fugue==0.9.0
+git+https://github.com/amazon-science/chronos-forecasting.git

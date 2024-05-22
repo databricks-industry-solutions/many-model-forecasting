@@ -7,11 +7,8 @@ promoted_props:
   - freq
   - temp_path
   - accelerator
-  - tuning_max_epochs
-  - tuning_max_context_len
   - backtest_months
   - stride
-  - dynamic_reals
   - static_features
   - dynamic_future
   - dynamic_historical
@@ -217,7 +214,6 @@ models:
     framework: NeuralForecast
     model_type: global
     trainable: true
-    tuning: false
     max_steps: 200
     input_size_factor: 2
     loss: smape
@@ -237,7 +233,6 @@ models:
     framework: NeuralForecast
     model_type: global
     trainable: true
-    tuning: false
     max_steps: 200
     input_size_factor: 2
     loss: smape
@@ -256,7 +251,6 @@ models:
     framework: NeuralForecast
     model_type: global
     trainable: true
-    tuning: false
     max_steps: 100
     input_size_factor: 2
     loss: smape
@@ -272,7 +266,6 @@ models:
     framework: NeuralForecast
     model_type: global
     trainable: true
-    tuning: false
     max_steps: 200
     input_size_factor: 2
     loss: smape
@@ -292,7 +285,6 @@ models:
     framework: NeuralForecast
     model_type: global
     trainable: true
-    tuning: false #-> eventually true
     max_steps: 200
     num_samples: 20
     loss: smape
@@ -307,7 +299,6 @@ models:
     framework: NeuralForecast
     model_type: global
     trainable: true
-    tuning: false #-> eventually true
     max_steps: 200
     num_samples: 20
     loss: smape
@@ -322,7 +313,6 @@ models:
     framework: NeuralForecast
     model_type: global
     trainable: true
-    tuning: false #-> eventually true
     max_steps: 200
     num_samples: 20
     loss: smape
@@ -335,7 +325,6 @@ models:
     framework: NeuralForecast
     model_type: global
     trainable: true
-    tuning: false #-> eventually true
     max_steps: 200
     num_samples: 20
     loss: smape
@@ -350,7 +339,6 @@ models:
     framework: NeuralForecast
     model_type: global
     trainable: true
-    tuning: false #-> eventually true
     max_steps: 200
     num_samples: 20
     loss: smape
@@ -370,7 +358,6 @@ models:
     framework: NeuralForecast
     model_type: global
     trainable: true
-    tuning: false #-> eventually true
     max_steps: 200
     num_samples: 20
     loss: smape
@@ -380,3 +367,11 @@ models:
     patch_len: [ 16, 24 ]
     scaler_type: [ "robust", "standard" ]
     revin: [ False, True ]
+
+  ChronosT5Large:
+    module: mmf_sa.models.chronosforecast.ChronosPipeline
+    model_class: ChronosT5Large
+    framework: Chronos
+    model_type: foundation
+    trainable: false
+    num_samples: 20

@@ -176,10 +176,12 @@ class Forecaster:
                 .saveAsTable(self.conf["ensemble_scoring_output"])
             )
 
-    def prepare_data_for_global_model(self, model_conf: DictConfig, mode: str):
+    def prepare_data_for_global_model(self, mode: str):
         src_df = self.resolve_source("train_data")
         src_df, removed = DataQualityChecks(src_df, self.conf, self.spark).run()
-        if mode == "scoring":
+        if (mode == "scoring") \
+                and (self.conf["scoring_data"]) \
+                and (self.conf["scoring_data"] != self.conf["train_data"]):
             score_df = self.resolve_source("scoring_data")
             score_df = score_df.where(~col(self.conf["group_id"]).isin(removed))
             src_df = src_df.unionByName(score_df, allowMissingColumns=True)
@@ -219,7 +221,7 @@ class Forecaster:
                     try:
                         model = self.model_registry.get_model(model_name)
                         # Get training and scoring data
-                        hist_df, removed = self.prepare_data_for_global_model(model_conf, "training")
+                        hist_df, removed = self.prepare_data_for_global_model("training")
                         train_df, val_train_df = self.split_df_train_val(hist_df)
                         # Train and evaluate new models - results are saved to MLFlow
                         print(f"Training model: {model}")
@@ -289,7 +291,8 @@ class Forecaster:
             model.backtest(
                 pd.concat([train_df, val_df]),
                 start=train_df[self.conf["date_col"]].max(),
-                retrain=self.conf["backtest_retrain"]))
+                retrain=self.conf["backtest_retrain"],
+            ))
 
         group_id_dtype = IntegerType() \
             if train_df[self.conf["group_id"]].dtype == 'int' else StringType()
@@ -347,6 +350,8 @@ class Forecaster:
                     self.evaluate_global_model(model_conf)
                 elif model_conf["model_type"] == "local":
                     self.evaluate_local_model(model_conf)
+                elif model_conf["model_type"] == "foundation":
+                    self.evaluate_foundation_model(model_conf)
             except Exception as err:
                 _logger.error(
                     f"Error has occurred while training model {model_name}: {repr(err)}",
@@ -446,7 +451,7 @@ class Forecaster:
 
     def evaluate_global_model(self, model_conf):
         mlflow_client = mlflow.tracking.MlflowClient()
-        hist_df, removed = self.prepare_data_for_global_model(model_conf, "evaluating")
+        hist_df, removed = self.prepare_data_for_global_model("evaluating")
         train_df, val_df = self.split_df_train_val(hist_df)
         model_name = model_conf["name"]
         mlflow_model_name = f"{self.conf['model_output']}.{model_name}_{self.conf['use_case_name']}"
@@ -501,6 +506,23 @@ class Forecaster:
                 model_details.version)
             print(f"Champion alias assigned to the new model")
 
+    def evaluate_foundation_model(self, model_conf):
+        model_name = model_conf["name"]
+        model = self.model_registry.get_model(model_name)
+        hist_df, removed = self.prepare_data_for_global_model("evaluating")
+        train_df, val_df = self.split_df_train_val(hist_df)
+        metrics = self.backtest_global_model(
+            model=model,
+            train_df=train_df,
+            val_df=val_df,
+            model_uri="",
+            write=True,
+        )
+        mlflow.set_tag("action", "train")
+        mlflow.set_tag("candidate", "true")
+        mlflow.set_tag("model_name", model.params["name"])
+        print(f"Finished training {model_conf.get('name')}")
+
     def score_models(self):
         print("Starting run_scoring")
         for model_name in self.model_registry.get_active_model_keys():
@@ -518,8 +540,9 @@ class Forecaster:
         src_df, removed = DataQualityChecks(src_df, self.conf, self.spark).run()
         # Check if external regressors are provided and framework is statsforecast
         # External regressors are supported only with statsforecast and neuralforecast models
-        if (self.conf["train_data"] != self.conf["scoring_data"]) & \
-                (model_conf["framework"] == "StatsForecast"):
+        if (self.conf["scoring_data"])\
+                and (self.conf["train_data"] != self.conf["scoring_data"])\
+                and (model_conf["framework"] == "StatsForecast"):
             score_df = self.resolve_source("scoring_data")
             score_df = score_df.where(~col(self.conf["group_id"]).isin(removed))
             src_df = src_df.unionByName(score_df, allowMissingColumns=True)
@@ -578,7 +601,7 @@ class Forecaster:
     def score_global_model(self, model_conf):
         print(f"Running scoring for {model_conf['name']}...")
         champion_model, champion_model_uri = self.get_model_for_scoring(model_conf)
-        score_df, removed = self.prepare_data_for_global_model(model_conf, "scoring")
+        score_df, removed = self.prepare_data_for_global_model("scoring")
         prediction_df, model_fitted = champion_model.forecast(score_df)
         if prediction_df[self.conf["date_col"]].dtype.type != np.datetime64:
             prediction_df[self.conf["date_col"]] = prediction_df[
