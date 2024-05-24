@@ -46,7 +46,10 @@ class ModelRegistry:
         return conf
 
     def get_model(
-        self, model_name: str, override_conf: DictConfig = None
+        self,
+        model_name: str,
+        override_conf: DictConfig = None,
+        spark=None,
     ) -> ForecastingRegressor:
         model_conf = self.active_models.get(model_name)
         if override_conf is not None:

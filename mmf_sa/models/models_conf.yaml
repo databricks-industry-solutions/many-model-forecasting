@@ -368,6 +368,38 @@ models:
     scaler_type: [ "robust", "standard" ]
     revin: [ False, True ]
 
+  ChronosT5Tiny:
+    module: mmf_sa.models.chronosforecast.ChronosPipeline
+    model_class: ChronosT5Tiny
+    framework: Chronos
+    model_type: foundation
+    trainable: false
+    num_samples: 20
+
+  ChronosT5Mini:
+    module: mmf_sa.models.chronosforecast.ChronosPipeline
+    model_class: ChronosT5Mini
+    framework: Chronos
+    model_type: foundation
+    trainable: false
+    num_samples: 20
+
+  ChronosT5Small:
+    module: mmf_sa.models.chronosforecast.ChronosPipeline
+    model_class: ChronosT5Small
+    framework: Chronos
+    model_type: foundation
+    trainable: false
+    num_samples: 20
+
+  ChronosT5Base:
+    module: mmf_sa.models.chronosforecast.ChronosPipeline
+    model_class: ChronosT5Base
+    framework: Chronos
+    model_type: foundation
+    trainable: false
+    num_samples: 20
+
   ChronosT5Large:
     module: mmf_sa.models.chronosforecast.ChronosPipeline
     model_class: ChronosT5Large

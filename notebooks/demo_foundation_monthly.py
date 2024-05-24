@@ -22,6 +22,7 @@ dbutils.library.restartPython()
 
 import pathlib
 import pandas as pd
+from mmf_sa import run_forecast
 import logging
 logger = spark._jvm.org.apache.log4j
 logging.getLogger("py4j.java_gateway").setLevel(logging.ERROR)
@@ -43,9 +44,9 @@ _ = spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{db}")
 n = 100
 
 
-def create_m4_daily():
-    y_df, _, _ = M4.load(directory=str(pathlib.Path.home()), group="Daily")
-    _ids = [f"D{i}" for i in range(1, n+1)]
+def create_m4_monthly():
+    y_df, _, _ = M4.load(directory=str(pathlib.Path.home()), group="Monthly")
+    _ids = [f"M{i}" for i in range(1, n + 1)]
     y_df = (
         y_df.groupby("unique_id")
         .filter(lambda x: x.unique_id.iloc[0] in _ids)
@@ -58,19 +59,24 @@ def create_m4_daily():
 
 def transform_group(df):
     unique_id = df.unique_id.iloc[0]
-    _start = pd.Timestamp("2020-01-01")
-    _end = _start + pd.DateOffset(days=int(df.count()[0]) - 1)
-    date_idx = pd.date_range(start=_start, end=_end, freq="D", name="ds")
-    res_df = pd.DataFrame(data=[], index=date_idx).reset_index()
-    res_df["unique_id"] = unique_id
-    res_df["y"] = df.y.values
-    return res_df
+    _cnt = 60  # df.count()[0]
+    _start = pd.Timestamp("2018-01-01")
+    _end = _start + pd.DateOffset(months=_cnt)
+    date_idx = pd.date_range(start=_start, end=_end, freq="M", name="date")
+    _df = (
+        pd.DataFrame(data=[], index=date_idx)
+        .reset_index()
+        .rename(columns={"index": "date"})
+    )
+    _df["unique_id"] = unique_id
+    _df["y"] = df[:60].y.values
+    return _df
 
 
 (
-    spark.createDataFrame(create_m4_daily())
+    spark.createDataFrame(create_m4_monthly())
     .write.format("delta").mode("overwrite")
-    .saveAsTable(f"{catalog}.{db}.m4_daily_train")
+    .saveAsTable(f"{catalog}.{db}.m4_monthly_train")
 )
 
 # COMMAND ----------
@@ -79,7 +85,11 @@ def transform_group(df):
 
 # COMMAND ----------
 
-# MAGIC %sql select * from solacc_uc.mmf.m4_daily_train where unique_id in ('D1', 'D2', 'D6', 'D7', 'D10') order by unique_id, ds
+# MAGIC %sql select unique_id, count(date) as count from solacc_uc.mmf.m4_monthly_train group by unique_id order by unique_id
+
+# COMMAND ----------
+
+# MAGIC %sql select count(distinct(unique_id)) from solacc_uc.mmf.m4_monthly_train
 
 # COMMAND ----------
 
@@ -88,16 +98,11 @@ def transform_group(df):
 # COMMAND ----------
 
 active_models = [
-    "NeuralForecastRNN",
-    "NeuralForecastLSTM",
-    "NeuralForecastNBEATSx",
-    "NeuralForecastNHITS",
-    "NeuralForecastAutoRNN",
-    "NeuralForecastAutoLSTM",
-    "NeuralForecastAutoNBEATSx",
-    "NeuralForecastAutoNHITS",
-    "NeuralForecastAutoTiDE",
-    "NeuralForecastAutoPatchTST",
+    "ChronosT5Tiny",
+    "ChronosT5Mini",
+    "ChronosT5Small",
+    "ChronosT5Base",
+    "ChronosT5Large",
 ]
 
 # COMMAND ----------
@@ -113,27 +118,27 @@ active_models = [
 
 for model in active_models:
   dbutils.notebook.run(
-    "run_daily",
-    timeout_seconds=0, 
+    "run_monthly",
+    timeout_seconds=0,
     arguments={"catalog": catalog, "db": db, "model": model})
 
 # COMMAND ----------
 
-# MAGIC %md ### Evaluation output
+# MAGIC %md ### Evaluation Output
 # MAGIC In the evaluation output table, the evaluation for all backtest windows and all models are stored. This info can be used to monitor model performance or decide which models should be taken into the final aggregated forecast.
 
 # COMMAND ----------
 
-# MAGIC %sql select * from solacc_uc.mmf.daily_evaluation_output order by unique_id, model, backtest_window_start_date
+# MAGIC %sql select * from solacc_uc.mmf.monthly_evaluation_output order by unique_id, model, backtest_window_start_date
 
 # COMMAND ----------
 
 # MAGIC %md ### Forecast Output
-# MAGIC In the Forecast output table, the final forecast for each model and each time series is stored. 
+# MAGIC In the Forecast output table, the final forecast for each model and each time series is stored.
 
 # COMMAND ----------
 
-# MAGIC %sql select * from solacc_uc.mmf.daily_scoring_output order by unique_id, model, ds
+# MAGIC %sql select * from solacc_uc.mmf.monthly_scoring_output order by unique_id, model, date
 
 # COMMAND ----------
 
@@ -142,7 +147,7 @@ for model in active_models:
 
 # COMMAND ----------
 
-# MAGIC %sql select * from solacc_uc.mmf.daily_ensemble_output order by unique_id, model, ds
+# MAGIC %sql select * from solacc_uc.mmf.monthly_ensemble_output order by unique_id, model, date
 
 # COMMAND ----------
 
@@ -150,12 +155,12 @@ for model in active_models:
 
 # COMMAND ----------
 
-# MAGIC #%sql delete from solacc_uc.mmf.daily_evaluation_output
+# MAGIC #%sql delete from solacc_uc.mmf.monthly_evaluation_output
 
 # COMMAND ----------
 
-# MAGIC #%sql delete from solacc_uc.mmf.daily_scoring_output
+# MAGIC #%sql delete from solacc_uc.mmf.monthly_scoring_output
 
 # COMMAND ----------
 
-# MAGIC #%sql delete from solacc_uc.mmf.daily_ensemble_output
+# MAGIC #%sql delete from solacc_uc.mmf.monthly_ensemble_output
