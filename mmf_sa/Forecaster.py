@@ -292,6 +292,7 @@ class Forecaster:
                 pd.concat([train_df, val_df]),
                 start=train_df[self.conf["date_col"]].max(),
                 retrain=self.conf["backtest_retrain"],
+                spark=self.spark,
             ))
 
         group_id_dtype = IntegerType() \
@@ -507,21 +508,23 @@ class Forecaster:
             print(f"Champion alias assigned to the new model")
 
     def evaluate_foundation_model(self, model_conf):
-        model_name = model_conf["name"]
-        model = self.model_registry.get_model(model_name)
-        hist_df, removed = self.prepare_data_for_global_model("evaluating")
-        train_df, val_df = self.split_df_train_val(hist_df)
-        metrics = self.backtest_global_model(
-            model=model,
-            train_df=train_df,
-            val_df=val_df,
-            model_uri="",
-            write=True,
-        )
-        mlflow.set_tag("action", "train")
-        mlflow.set_tag("candidate", "true")
-        mlflow.set_tag("model_name", model.params["name"])
-        print(f"Finished training {model_conf.get('name')}")
+        with mlflow.start_run(experiment_id=self.experiment_id) as run:
+            model_name = model_conf["name"]
+            model = self.model_registry.get_model(model_name)
+            hist_df, removed = self.prepare_data_for_global_model("evaluating")  # Reuse the same as global
+            train_df, val_df = self.split_df_train_val(hist_df)
+            metrics = self.backtest_global_model(  # Reuse the same as global
+                model=model,
+                train_df=train_df,
+                val_df=val_df,
+                model_uri="",
+                write=True,
+            )
+            mlflow.log_metric(self.conf["metric"], metrics)
+            mlflow.set_tag("action", "evaluate")
+            mlflow.set_tag("candidate", "true")
+            mlflow.set_tag("model_name", model.params["name"])
+            print(f"Finished evaluating {model_conf.get('name')}")
 
     def score_models(self):
         print("Starting run_scoring")
@@ -532,6 +535,8 @@ class Forecaster:
                 self.score_global_model(model_conf)
             elif model_conf["model_type"] == "local":
                 self.score_local_model(model_conf)
+            elif model_conf["model_type"] == "foundation":
+                self.score_foundation_model(model_conf)
             print(f"Finished scoring with {model_name}")
         print("Finished run_scoring")
 
@@ -627,13 +632,24 @@ class Forecaster:
             .saveAsTable(self.conf["scoring_output"])
         )
 
-    def get_latest_model_version(self, mlflow_client, registered_name):
-        latest_version = 1
-        for mv in mlflow_client.search_model_versions(f"name='{registered_name}'"):
-            version_int = int(mv.version)
-            if version_int > latest_version:
-                latest_version = version_int
-        return latest_version
+    def score_foundation_model(self, model_conf):
+        print(f"Running scoring for {model_conf['name']}...")
+        model_name = model_conf["name"]
+        model = self.model_registry.get_model(model_name)
+        hist_df, removed = self.prepare_data_for_global_model("evaluating")
+        prediction_df, model_pretrained = model.forecast(hist_df, spark=self.spark)
+        sdf = self.spark.createDataFrame(prediction_df).drop('index')
+        (
+            sdf.withColumn(self.conf["group_id"], col(self.conf["group_id"]).cast(StringType()))
+            .withColumn("model", lit(model_conf["name"]))
+            .withColumn("run_id", lit(self.run_id))
+            .withColumn("run_date", lit(self.run_date))
+            .withColumn("use_case", lit(self.conf["use_case_name"]))
+            .withColumn("model_pickle", lit(b""))
+            .withColumn("model_uri", lit(""))
+            .write.mode("append")
+            .saveAsTable(self.conf["scoring_output"])
+        )
 
     def get_model_for_scoring(self, model_conf):
         mlflow_client = MlflowClient()
@@ -649,6 +665,7 @@ class Forecaster:
         else:
             return self.model_registry.get_model(model_conf["name"]), None
 
+
 def flatten_nested_parameters(d):
     out = {}
     for key, val in d.items():
@@ -661,3 +678,12 @@ def flatten_nested_parameters(d):
         else:
             out[key] = val
     return out
+
+
+def get_latest_model_version(self, mlflow_client, registered_name):
+    latest_version = 1
+    for mv in mlflow_client.search_model_versions(f"name='{registered_name}'"):
+        version_int = int(mv.version)
+        if version_int > latest_version:
+            latest_version = version_int
+    return latest_version

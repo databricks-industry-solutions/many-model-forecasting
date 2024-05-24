@@ -160,7 +160,7 @@ class NeuralFcForecaster(ForecastingRegressor):
         return forecast_df, self.model
 
     def calculate_metrics(
-        self, hist_df: pd.DataFrame, val_df: pd.DataFrame, curr_date
+        self, hist_df: pd.DataFrame, val_df: pd.DataFrame, curr_date, spark=None
     ) -> list:
         pred_df, model_fitted = self.predict(hist_df, val_df)
         keys = pred_df[self.params["group_id"]].unique()

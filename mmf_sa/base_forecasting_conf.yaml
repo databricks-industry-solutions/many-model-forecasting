@@ -52,6 +52,10 @@ active_models:
   - NeuralForecastAutoNHITS
   - NeuralForecastAutoTiDE
   - NeuralForecastAutoPatchTST
+  - ChronosT5Tiny
+  - ChronosT5Mini
+  - ChronosT5Small
+  - ChronosT5Base
   - ChronosT5Large
 
 #Here we can override hyperparameters for built-in models

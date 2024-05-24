@@ -3,8 +3,11 @@ import numpy as np
 import pandas as pd
 import cloudpickle
 from typing import Dict, Union
+from transformers import pipeline
 from sklearn.base import BaseEstimator, RegressorMixin
 from sktime.performance_metrics.forecasting import mean_absolute_percentage_error
+import mlflow
+mlflow.set_registry_uri("databricks-uc")
 
 
 class ForecastingRegressor(BaseEstimator, RegressorMixin):
@@ -45,6 +48,7 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
             group_id: Union[str, int] = None,
             stride: int = None,
             retrain: bool = True,
+            spark=None,
     ) -> pd.DataFrame:
         if stride is None:
             stride = int(self.params.get("stride", 7))
@@ -73,7 +77,7 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
             if retrain:
                 self.fit(_df)
 
-            metrics = self.calculate_metrics(_df, actuals_df, curr_date)
+            metrics = self.calculate_metrics(_df, actuals_df, curr_date, spark)
 
             if isinstance(metrics, dict):
                 evaluation_results = [
@@ -103,10 +107,11 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
                      "actual",
                      "model_pickle"],
         )
+
         return res_df
 
     def calculate_metrics(
-            self, hist_df: pd.DataFrame, val_df: pd.DataFrame, curr_date
+            self, hist_df: pd.DataFrame, val_df: pd.DataFrame, curr_date, spark=None
     ) -> Dict[str, Union[str, float, bytes]]:
         pred_df, model_fitted = self.predict(hist_df, val_df)
         smape = mean_absolute_percentage_error(

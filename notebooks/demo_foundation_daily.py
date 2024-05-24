@@ -88,6 +88,10 @@ def transform_group(df):
 # COMMAND ----------
 
 active_models = [
+    "ChronosT5Tiny",
+    "ChronosT5Mini",
+    "ChronosT5Small",
+    "ChronosT5Base",
     "ChronosT5Large",
 ]
 
@@ -104,7 +108,7 @@ active_models = [
 
 for model in active_models:
   dbutils.notebook.run(
-    "run_foundation_daily",
+    "run_daily",
     timeout_seconds=0, 
     arguments={"catalog": catalog, "db": db, "model": model})
 
