@@ -1,10 +1,8 @@
 from abc import ABC
-
 import pandas as pd
 import numpy as np
 import torch
 from chronos import ChronosPipeline
-from transformers import pipeline
 from sktime.performance_metrics.forecasting import mean_absolute_percentage_error
 from typing import Iterator
 from pyspark.sql.functions import collect_list, pandas_udf
