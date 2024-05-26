@@ -407,3 +407,11 @@ models:
     model_type: foundation
     trainable: false
     num_samples: 20
+
+  Moment1Large:
+    module: mmf_sa.models.momentforecast.MomentPipeline
+    model_class: Moment1Large
+    framework: Moment
+    model_type: foundation
+    trainable: false
+    num_samples: 20

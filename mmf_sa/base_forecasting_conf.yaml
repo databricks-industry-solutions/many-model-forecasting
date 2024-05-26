@@ -57,6 +57,7 @@ active_models:
   - ChronosT5Small
   - ChronosT5Base
   - ChronosT5Large
+  - Moment1Large
 
 #Here we can override hyperparameters for built-in models
 models:
