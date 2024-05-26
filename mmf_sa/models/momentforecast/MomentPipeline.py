@@ -11,13 +11,13 @@ from pyspark.sql import DataFrame
 from mmf_sa.models.abstract_model import ForecastingRegressor
 
 
-class ChronosForecaster(ForecastingRegressor):
+class MomentForecaster(ForecastingRegressor):
     def __init__(self, params):
         super().__init__(params)
         self.params = params
         self.device = None
         self.model = None
-        self.install("git+https://github.com/amazon-science/chronos-forecasting.git")
+        self.install("git+https://github.com/moment-timeseries-foundation-model/moment.git")
 
     def install(self, package: str):
         subprocess.check_call([sys.executable, "-m", "pip", "install", package, "--quiet"])
@@ -53,13 +53,8 @@ class ChronosForecaster(ForecastingRegressor):
                 curr_date=None,
                 spark=None):
         hist_df = self.prepare_data(hist_df, spark=spark)
-        forecast_udf = create_predict_udf(
-            prediction_length=self.params["prediction_length"],
-            num_samples=self.params["num_samples"]
-        )
-
+        forecast_udf = self.create_predict_udf()
         horizon_timestamps_udf = self.create_horizon_timestamps_udf()
-
         # Todo figure out the distribution strategy
         forecast_df = (
             hist_df.repartition(4)
@@ -115,96 +110,48 @@ class ChronosForecaster(ForecastingRegressor):
                 pass
         return metrics
 
+    def create_predict_udf(self):
+        @pandas_udf('array<double>')
+        def predict_udf(batch_iterator: Iterator[pd.Series]) -> Iterator[pd.Series]:
+            import torch
+            import pandas as pd
+            for batch in batch_iterator:
+                batch_forecast = []
+                for series in batch:
+                    # takes in tensor of shape [batchsize, n_channels, context_length]
+                    context = list(series)
+                    if len(context) < 512:
+                        input_mask = [1] * len(context) + [0] * (512 - len(context))
+                        context = context + [0] * (512 - len(context))
+                    else:
+                        input_mask = [1] * 512
+                        context = context[-512:]
+                    input_mask = torch.reshape(torch.tensor(input_mask), (1, 512))
+                    context = torch.reshape(torch.tensor(context), (1, 1, 512)).to(dtype=torch.float32)
+                    output = self.model(context, input_mask=input_mask)
+                    forecast = output.forecast.squeeze().tolist()
+                    batch_forecast.append(forecast)
+            yield pd.Series(batch_forecast)
+        return predict_udf
 
-class ChronosT5Tiny(ChronosForecaster):
+
+class Moment1Large(MomentForecaster):
     def __init__(self, params):
         super().__init__(params)
+        from momentfm import MOMENTPipeline
         self.params = params
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        from chronos import ChronosPipeline
-        self.model = ChronosPipeline.from_pretrained(
-            "amazon/chronos-t5-tiny",
-            device_map=self.device,  # use "cuda" for GPU and "cpu" for CPU inference
-            torch_dtype=torch.bfloat16,
+        self.model = MOMENTPipeline.from_pretrained(
+            "AutonLab/MOMENT-1-large",
+            model_kwargs={
+                'task_name': 'forecasting',
+                'forecast_horizon': self.params["prediction_length"],
+                'head_dropout': 0.1,
+                'weight_decay': 0,
+                'freeze_encoder': True,  # Freeze the patch embedding layer
+                'freeze_embedder': True,  # Freeze the transformer encoder
+                'freeze_head': False,  # The linear forecasting head must be trained
+            },
         )
+        self.model.init()
 
-
-class ChronosT5Mini(ChronosForecaster):
-    def __init__(self, params):
-        super().__init__(params)
-        self.params = params
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        from chronos import ChronosPipeline
-        self.model = ChronosPipeline.from_pretrained(
-            "amazon/chronos-t5-mini",
-            device_map=self.device,  # use "cuda" for GPU and "cpu" for CPU inference
-            torch_dtype=torch.bfloat16,
-        )
-
-
-class ChronosT5Small(ChronosForecaster):
-    def __init__(self, params):
-        super().__init__(params)
-        self.params = params
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        from chronos import ChronosPipeline
-        self.model = ChronosPipeline.from_pretrained(
-            "amazon/chronos-t5-small",
-            device_map=self.device,  # use "cuda" for GPU and "cpu" for CPU inference
-            torch_dtype=torch.bfloat16,
-        )
-
-
-class ChronosT5Base(ChronosForecaster):
-    def __init__(self, params):
-        super().__init__(params)
-        self.params = params
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        from chronos import ChronosPipeline
-        self.model = ChronosPipeline.from_pretrained(
-            "amazon/chronos-t5-base",
-            device_map=self.device,  # use "cuda" for GPU and "cpu" for CPU inference
-            torch_dtype=torch.bfloat16,
-        )
-
-
-class ChronosT5Large(ChronosForecaster):
-    def __init__(self, params):
-        super().__init__(params)
-        self.params = params
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        from chronos import ChronosPipeline
-        self.model = ChronosPipeline.from_pretrained(
-            "amazon/chronos-t5-large",
-            device_map=self.device,  # use "cuda" for GPU and "cpu" for CPU inference
-            torch_dtype=torch.bfloat16,
-        )
-
-
-def create_predict_udf(prediction_length: int, num_samples: int):
-    @pandas_udf('array<double>')
-    def predict_udf(batch_iterator: Iterator[pd.Series]) -> Iterator[pd.Series]:
-        # initialization step
-        import torch
-        import numpy as np
-        import pandas as pd
-        from chronos import ChronosPipeline
-        pipeline = ChronosPipeline.from_pretrained(
-            "amazon/chronos-t5-large",
-            device_map="cuda",
-            torch_dtype=torch.bfloat16,
-        )
-        # inference
-        for batch in batch_iterator:
-            median = []
-            for series in batch:
-                context = torch.tensor(list(series))
-                forecast = pipeline.predict(
-                    context=context,
-                    prediction_length=prediction_length,
-                    num_samples=num_samples
-                )
-                median.append(np.quantile(forecast[0].numpy(), [0.5], axis=0)[0])
-        yield pd.Series(median)
-
-    return predict_udf
