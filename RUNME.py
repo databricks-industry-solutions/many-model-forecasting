@@ -66,13 +66,16 @@ job_json = {
                         "spark.databricks.delta.formatCheck.enabled": "false",
                         "spark.databricks.delta.schema.autoMerge.enabled": "true"
                     },
-                    "num_workers": 2,
-                    "node_type_id": {"AWS": "i3.xlarge", "MSA": "Standard_DS3_v2", "GCP": "n1-standard-4"},
+                    "num_workers": 0,
+                    "node_type_id": {"AWS": "i3.xlarge", "MSA": "Standard_DS3_v2", "GCP": "n1-highmem-4"},
                     "custom_tags": {
-                        "usage": "solacc_testing"
+                        "ResourceClass": "SingleNode",
+                        "usage": "solacc_testing",
                     },
-                }
-            }
+                },
+            },
+
+
         ]
     }
 
