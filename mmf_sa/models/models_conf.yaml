@@ -415,3 +415,30 @@ models:
     model_type: foundation
     trainable: false
     num_samples: 20
+
+  MoiraiSmall:
+    module: mmf_sa.models.moiraiforecast.MoiraiPipeline
+    model_class: MoiraiSmall
+    framework: Moirai
+    model_type: foundation
+    trainable: false
+    num_samples: 100
+    patch_size: 32
+
+  MoiraiBase:
+    module: mmf_sa.models.moiraiforecast.MoiraiPipeline
+    model_class: MoiraiBase
+    framework: Moirai
+    model_type: foundation
+    trainable: false
+    num_samples: 100
+    patch_size: 32
+
+  MoiraiLarge:
+    module: mmf_sa.models.moiraiforecast.MoiraiPipeline
+    model_class: MoiraiLarge
+    framework: Moirai
+    model_type: foundation
+    trainable: false
+    num_samples: 100
+    patch_size: 32
