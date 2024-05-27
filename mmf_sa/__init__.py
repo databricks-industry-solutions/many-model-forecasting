@@ -126,7 +126,7 @@ def run_forecast(
         _conf["dynamic_historical"] = dynamic_historical
 
     f = Forecaster(conf=_conf, data_conf=_data_conf, spark=spark)
-    run_id = f.train_eval_score(export_metrics=False, scoring=run_scoring)
+    run_id = f.train_eval_score(scoring=run_scoring)
     return run_id
 
 

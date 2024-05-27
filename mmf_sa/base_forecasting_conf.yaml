@@ -58,6 +58,9 @@ active_models:
   - ChronosT5Base
   - ChronosT5Large
   - Moment1Large
+  - MoiraiSmall
+  - MoiraiBase
+  - MoiraiLarge
 
 #Here we can override hyperparameters for built-in models
 models:

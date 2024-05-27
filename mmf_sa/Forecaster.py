@@ -88,15 +88,13 @@ class Forecaster:
         else:
             return self.spark.read.table(self.conf[key])
 
-    def train_eval_score(self, export_metrics=False, scoring=True) -> str:
+    def train_eval_score(self, scoring=True) -> str:
         print("Starting train_evaluate_models")
         self.train_models()
         self.evaluate_models()
         if scoring:
             self.score_models()
             self.ensemble()
-        if export_metrics:
-            self.update_metrics()
         print("Finished train_evaluate_models")
         return self.run_id
 
@@ -524,6 +522,8 @@ class Forecaster:
             mlflow.set_tag("action", "evaluate")
             mlflow.set_tag("candidate", "true")
             mlflow.set_tag("model_name", model.params["name"])
+            mlflow.set_tag("run_id", self.run_id)
+            mlflow.log_params(model.get_params())
             print(f"Finished evaluating {model_conf.get('name')}")
 
     def score_models(self):
@@ -678,12 +678,3 @@ def flatten_nested_parameters(d):
         else:
             out[key] = val
     return out
-
-
-def get_latest_model_version(self, mlflow_client, registered_name):
-    latest_version = 1
-    for mv in mlflow_client.search_model_versions(f"name='{registered_name}'"):
-        version_int = int(mv.version)
-        if version_int > latest_version:
-            latest_version = version_int
-    return latest_version
