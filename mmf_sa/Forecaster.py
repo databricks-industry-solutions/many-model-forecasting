@@ -12,7 +12,8 @@ import cloudpickle
 import mlflow
 from mlflow.exceptions import MlflowException
 from mlflow.tracking import MlflowClient
-from mlflow.models import infer_signature
+from mlflow.models import ModelSignature, infer_signature
+from mlflow.types.schema import Schema, ColSpec
 from omegaconf import OmegaConf, DictConfig
 from omegaconf.basecontainer import BaseContainer
 from pyspark.sql import SparkSession, DataFrame
@@ -240,13 +241,21 @@ class Forecaster:
         model: ForecastingRegressor,
     ):
         print(f"Started training {model_conf['name']}")
+        # Todo fix
         model.fit(pd.concat([train_df, val_df]))
-        # TODO fix
-        signature = infer_signature(
-            model_input=train_df,
-            model_output=train_df,
+
+        input_example = train_df[train_df[self.conf['group_id']] == train_df[self.conf['group_id']]\
+            .unique()[0]].sort_values(by=[self.conf['date_col']])
+        input_schema = infer_signature(model_input=input_example).inputs
+        output_schema = Schema(
+            [
+                ColSpec("integer", "index"),
+                ColSpec("string", self.conf['group_id']),
+                ColSpec("datetime", self.conf['date_col']),
+                ColSpec("float", self.conf['target']),
+            ]
         )
-        input_example = train_df
+        signature = ModelSignature(inputs=input_schema, outputs=output_schema)
         model_info = mlflow.sklearn.log_model(
             model,
             "model",
