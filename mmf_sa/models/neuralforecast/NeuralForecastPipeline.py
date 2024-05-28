@@ -135,7 +135,6 @@ class NeuralFcForecaster(ForecastingRegressor):
             & (df[self.params["date_col"]]
                <= np.datetime64(_last_date + self.prediction_length_offset))
         ]
-
         _dynamic_future = self.prepare_data(_future_df, future=True)
         _dynamic_future = None if _dynamic_future.empty else _dynamic_future
         _static_df = self.prepare_static_features(_future_df)
