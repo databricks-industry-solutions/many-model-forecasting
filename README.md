@@ -6,9 +6,9 @@ Bootstrap your large-scale forecasting solutions on Databricks with the Many Mod
 
 MMF expedites the development of sales and demand forecasting solutions on Databricks, including all critical phases: data preparation, training, backtesting, cross-validation, scoring, and deployment. Adopting a configuration-over-code approach, it minimizes the need for extensive coding.
 
-MMF integrates a variety of well-established and cutting-edge algorithms, including local statistical models, machine learning based models, global deep learning based models, and foundation time series models. MMF enables the parallel modeling of hundreds or thousands of time series using over 40 models leveraging Spark's distributed computing power. Users can apply multiple models at once and select the best performing one for each time series based on custom metrics.
+MMF integrates a variety of well-established and cutting-edge algorithms, including local statistical models, machine learning based models, global deep learning based models, and foundation time series models. MMF enables parallel modeling of hundreds or thousands of time series leveraging Spark's distributed computing power. Users can apply multiple models at once and select the best performing one for each time series based on their custom metrics.
 
-With its extensible architecture, MMF allows technically proficient users to incorporate new models and algorithms, and modify the source code to their specific requirements. 
+With its extensible architecture, MMF allows technically proficient users to incorporate new models and new algorithms. We recommend reading though the source code and modify it to your specific requirements. 
 
 Get started now!
 
@@ -18,11 +18,11 @@ To run this solution on a public [M4](https://www.kaggle.com/datasets/yogesh94/m
 
 ### Local Models
 
-Local models are used to model individual time series. We support models from [statsforecast](https://github.com/Nixtla/statsforecast), [R fable](https://cran.r-project.org/web/packages/fable/vignettes/fable.html) and [sktime](https://www.sktime.net/en/stable/). Covariates (i.e. exogenous regressors) are supported for the models from statsforecast. 
+Local models are used to model individual time series. We support models from [statsforecast](https://github.com/Nixtla/statsforecast), [r fable](https://cran.r-project.org/web/packages/fable/vignettes/fable.html) and [sktime](https://www.sktime.net/en/stable/). Covariates (i.e. exogenous regressors) are currently only supported for some statsforecast models. 
 
-Attach the [notebooks/demo_local_univariate_daily.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/notebooks/demo_local_univariate_daily.py) notebook to a cluster running [DBR 14.3 ML](https://docs.databricks.com/en/release-notes/runtime/14.3lts-ml.html) or later runtime. This cluster can be either a single-node or multi-node CPU cluster. We will apply 20+ models to multiple time series.
+To get started, attach the [notebooks/demo_local_univariate_daily.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/notebooks/demo_local_univariate_daily.py) notebook to a cluster running [DBR 14.3 ML](https://docs.databricks.com/en/release-notes/runtime/14.3lts-ml.html) or later runtime. The cluster can be either a single-node or multi-node CPU cluster. Make sure to set the following [Spark configurations](https://spark.apache.org/docs/latest/configuration.html) on the cluster before you start using MMF: ```spark.sql.execution.arrow.enabled true``` and ```spark.sql.adaptive.enabled false``` (more detailed explanation to follow). 
 
-You can choose the models to fit your input data by specifying them in a list:
+In this notebook, we will apply 20+ models to 100 time series. You can specify the models to use in a list:
 
 ```python
 active_models = [
@@ -113,15 +113,15 @@ run_forecast(
   
 To modify the model hyperparameters, directly change the values in [mmf_sa/models/models_conf.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/models_conf.yaml) or overwrite these values in [mmf_sa/base_forecasting_conf.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/base_forecasting_conf.yaml). 
 
-MMF is fully integrated with MLflow and so once the training kicks off, the experiments will be visible in the MLflow Tracking UI with the corresponding metrics and parameters (note that we do not log local models in MLFlow but we store the binary in the tables ```evaluation_output``` and ```scoring_output```). 
+MMF is fully integrated with MLflow, so once the training kicks off, the experiments will be visible in the MLflow Tracking UI with the corresponding metrics and parameters (note that we do not log all local models in MLFlow but we store the binary in the tables ```evaluation_output``` and ```scoring_output```). The metric you see in the MLflow Tracking UI is a simple mean over backtesting trials over all time series.
 
-Other example notebooks for monthly forecasting and forecasting with exogenous regressors can be found in [notebooks/demo_local_univariate_monthly.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/notebooks/demo_local_univariate_monthly.py) and [notebooks/demo_local_univariate_external_regressors_daily.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/notebooks/demo_local_univariate_external_regressors_daily.py) respectively.
+Other example notebooks for monthly forecasting and forecasting with exogenous regressors can be found in [notebooks/demo_local_univariate_monthly.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/notebooks/demo_local_univariate_monthly.py) and [notebooks/demo_local_univariate_external_regressors_daily.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/notebooks/demo_local_univariate_external_regressors_daily.py).
 
 ### Global Models
 
-Global models leverage patterns across multiple time series, enabling shared learning and improved predictions for each series. You would train one large model for many or all time series. We support models from [neuralforecast](https://nixtlaverse.nixtla.io/neuralforecast/index.html). Covariates (i.e. exogenous regressors) and hyperparamete tuning are both supported. 
+Global models leverage patterns across multiple time series, enabling shared learning and improved predictions for each series. You typically train one big model for many or all time series. We support deep learning based models from [neuralforecast](https://nixtlaverse.nixtla.io/neuralforecast/index.html). Covariates (i.e. exogenous regressors) and hyperparameter tuning are both supported. 
 
-Attach the [notebooks/demo_global_daily.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/notebooks/demo_global_daily.py) notebook to a cluster running [DBR 14.3 ML](https://docs.databricks.com/en/release-notes/runtime/index.html) or later runtime. We recommend using a single-node cluster with multiple GPU instances such as [g4dn.12xlarge [T4]](https://aws.amazon.com/ec2/instance-types/g4/) on AWS or [Standard_NC64as_T4_v3](https://learn.microsoft.com/en-us/azure/virtual-machines/nct4-v3-series) on Azure. Multi-node setting is currently not supported.
+To get started, attach the [notebooks/demo_global_daily.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/notebooks/demo_global_daily.py) notebook to a cluster running [DBR 14.3 ML](https://docs.databricks.com/en/release-notes/runtime/index.html) or later runtime. We recommend using a single-node cluster with multiple GPU instances such as [g4dn.12xlarge [T4]](https://aws.amazon.com/ec2/instance-types/g4/) on AWS or [Standard_NC64as_T4_v3](https://learn.microsoft.com/en-us/azure/virtual-machines/nct4-v3-series) on Azure. Multi-node setting is currently not supported.
 
 You can choose the models to train and put them in a list:
 
@@ -140,9 +140,9 @@ active_models = [
 ]
 ```
 
-A comprehensive list of models currently supported by MMF is available in the [models_conf.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/models_conf.yaml). 
+The models prefixed with "Auto" perform hyperparameter optimization within a specified range (see below for more detail). A comprehensive list of models currently supported by MMF is available in the [models_conf.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/models_conf.yaml). 
 
-Now, with the following command, we run the [notebooks/run_daily.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/notebooks/run_daily.py) that will run the ```run_forecast``` function. We loop through the ```active_models``` list . The reason why we iterate through the models this way is because once a neuralforecast model is loaded to the memory, we need to restart the python kernel to use another model. 
+Now, with the following command, we run the [notebooks/run_daily.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/notebooks/run_daily.py) that will run the ```run_forecast``` function and loop through the ```active_models``` list . The reason why we iterate through the models this way is because once a neuralforecast model is loaded to the memory, we need to restart the python kernel to use another model. 
 
 ```python
 for model in active_models:
@@ -186,9 +186,9 @@ run_forecast(
 
 #### Parameters description:
 
-The parameters are all the same except for:
+The parameters are all the same except:
 -  ```model_output``` is where you store your model.
--  ```use_case_name``` will be used to suffix the global model when registered to Unity Catalog.
+-  ```use_case_name``` will be used to suffix the model name when registered to Unity Catalog.
 -  ```accelerator``` tells MMF to use GPU instead of CPU.
   
 To modify the model hyperparameters or reset the range of the hyperparameter optimization, directly change the values in [mmf_sa/models/models_conf.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/models_conf.yaml) or overwrite these values in [mmf_sa/base_forecasting_conf.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/base_forecasting_conf.yaml). 
@@ -199,9 +199,9 @@ Other example notebooks for monthly forecasting and forecasting with exogenous r
 
 ### Foundation Models
 
-Foundation time series models are large transformer based models pretrained on millions or billions of time series. These models can produce analysis (i.e. forecasting, anomaly detection, classfication) on an unforeseen time series off-the-shelf (without training). We support models from [chronos-forecasting]([https://nixtlaverse.nixtla.io/neuralforecast/index.html](https://github.com/amazon-science/chronos-forecasting)), [moirai](https://blog.salesforceairesearch.com/moirai/), and [moment](https://github.com/moment-timeseries-foundation-model/moment). Covariates (i.e. exogenous regressors) and fine-tuning are currently not supported. This is a rapidly changing field, and we are working on updating the supported models and features as the field evolves.
+Foundation time series models are large transformer based models pretrained on millions or billions of time series. These models can produce analysis (i.e. forecasting, anomaly detection, classfication) on an unforeseen time series without training or tuning. We support open source models from multiple sources: [chronos-forecasting](https://github.com/amazon-science/chronos-forecasting), [moirai](https://blog.salesforceairesearch.com/moirai/), and [moment](https://github.com/moment-timeseries-foundation-model/moment). Covariates (i.e. exogenous regressors) and fine-tuning are currently not yet supported. This is a rapidly changing field, and we are working on updating the supported models and features as the field evolves.
 
-Attach the [notebooks/demo_foundation_daily.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/notebooks/demo_foundation_daily.py) notebook to a cluster running [DBR 14.3 ML](https://docs.databricks.com/en/release-notes/runtime/index.html) or later runtime. We recommend using a single-node cluster with multiple GPU instances such as [g4dn.12xlarge [T4]](https://aws.amazon.com/ec2/instance-types/g4/) on AWS or [Standard_NC64as_T4_v3](https://learn.microsoft.com/en-us/azure/virtual-machines/nct4-v3-series) on Azure. Multi-node setup is currently not supported. 
+To get started, attach the [notebooks/demo_foundation_daily.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/notebooks/demo_foundation_daily.py) notebook to a cluster running [DBR 14.3 ML](https://docs.databricks.com/en/release-notes/runtime/index.html) or later runtime. We recommend using a single-node cluster with multiple GPU instances such as [g4dn.12xlarge [T4]](https://aws.amazon.com/ec2/instance-types/g4/) on AWS or [Standard_NC64as_T4_v3](https://learn.microsoft.com/en-us/azure/virtual-machines/nct4-v3-series) on Azure. Multi-node setup is currently not supported. 
 
 You can choose the models you want to evaluate and forecast by specifying them in a list:
 
@@ -221,7 +221,7 @@ active_models = [
 
 A comprehensive list of models currently supported by MMF is available in the [models_conf.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/models_conf.yaml). 
 
-Now, with the following command, we run the [notebooks/run_daily.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/notebooks/run_daily.py) that will run the ```run_forecast``` function. We loop through the ```active_models``` list . The reason why we iterate through the models has been mentioned above.
+Now, with the following command, we run the [notebooks/run_daily.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/notebooks/run_daily.py) that will run the ```run_forecast``` function. We loop through the ```active_models``` list for the same reason mentioned above.
 
 ```python
 for model in active_models:
@@ -235,10 +235,9 @@ Inside the [notebooks/run_daily.py](https://github.com/databricks-industry-solut
   
 To modify the model hyperparameters, directly change the values in [mmf_sa/models/models_conf.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/models_conf.yaml) or overwrite these values in [mmf_sa/base_forecasting_conf.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/base_forecasting_conf.yaml). 
 
-MMF is fully integrated with MLflow and so once the training kicks off, the experiments will be visible in the MLflow Tracking UI with the corresponding metrics and parameters. However, note that currently foundation models are not logged in MLFlow or registered to Unity Catalog. 
+MMF is fully integrated with MLflow and so once the training kicks off, the experiments will be visible in the MLflow Tracking UI with the corresponding metrics and parameters. However, note that foundation models are currently not logged in MLFlow or registered to Unity Catalog. 
 
 An example notebook for monthly forecasting can be found in [notebooks/demo_foundation_monthly.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/notebooks/demo_foundation_monthly.py).
-
 
 ## Project support
 Please note the code in this project is provided for your exploration only, and are not formally supported by Databricks with Service Level Agreements (SLAs). They are provided AS-IS and we do not make any guarantees of any kind. Please do not submit a support ticket relating to any issues arising from the use of these projects. The source in this project is provided subject to the Databricks License. All included or referenced third party libraries are subject to the licenses set forth below.
