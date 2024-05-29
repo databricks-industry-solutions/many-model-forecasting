@@ -3,7 +3,6 @@ import numpy as np
 import pandas as pd
 import cloudpickle
 from typing import Dict, Union
-from transformers import pipeline
 from sklearn.base import BaseEstimator, RegressorMixin
 from sktime.performance_metrics.forecasting import mean_absolute_percentage_error
 import mlflow
@@ -47,7 +46,7 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
             start: pd.Timestamp,
             group_id: Union[str, int] = None,
             stride: int = None,
-            retrain: bool = True,
+            backtest_retrain: bool = False,
             spark=None,
     ) -> pd.DataFrame:
         if stride is None:
@@ -74,7 +73,8 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
                         < np.datetime64(curr_date + self.prediction_length_offset)
                 )]
 
-            if retrain:
+            # backtest_retrain for global models is currently not supported
+            if backtest_retrain and self.params["model_type"] == "global":
                 self.fit(_df)
 
             metrics = self.calculate_metrics(_df, actuals_df, curr_date, spark)

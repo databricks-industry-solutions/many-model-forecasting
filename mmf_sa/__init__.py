@@ -77,6 +77,7 @@ def run_forecast(
     _conf["metric"] = metric
     _conf["resample"] = resample
 
+    run_evaluation = True
     run_scoring = False
     if scoring_data is not None and scoring_output is not None:
         run_scoring = True
@@ -85,6 +86,7 @@ def run_forecast(
             _data_conf["scoring_data"] = scoring_data
         else:
             _conf["scoring_data"] = scoring_data
+    run_ensemble = True
 
     if use_case_name is not None:
         _conf["use_case_name"] = use_case_name
@@ -126,7 +128,11 @@ def run_forecast(
         _conf["dynamic_historical"] = dynamic_historical
 
     f = Forecaster(conf=_conf, data_conf=_data_conf, spark=spark)
-    run_id = f.train_eval_score(scoring=run_scoring)
+    run_id = f.evaluate_score(
+        evaluating=run_evaluation,
+        scoring=run_scoring,
+        ensemble=run_ensemble,
+    )
     return run_id
 
 
