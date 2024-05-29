@@ -6,7 +6,7 @@ Bootstrap your large-scale forecasting solutions on Databricks with the Many Mod
 
 MMF expedites the development of sales and demand forecasting solutions on Databricks, including all critical phases: data preparation, training, backtesting, cross-validation, scoring, and deployment. Adopting a configuration-over-code approach, it minimizes the need for extensive coding.
 
-MMF integrates a variety of well-established and cutting-edge algorithms, including local statistical models, machine learning based models, global deep learning based models, and foundation time series models. MMF enables parallel modeling of hundreds or thousands of time series leveraging Spark's distributed computing power. Users can apply multiple models at once and select the best performing one for each time series based on their custom metrics.
+MMF integrates a variety of well-established and cutting-edge algorithms, including **local statistical models**, **machine learning models**, **global deep learning models**, and **foundation time series models**. MMF enables parallel modeling of hundreds or thousands of time series leveraging Spark's distributed computing power. Users can apply multiple models at once and select the best performing one for each time series based on their custom metrics.
 
 With its extensible architecture, MMF allows technically proficient users to incorporate new models and new algorithms. We recommend reading though the source code and modify it to your specific requirements. 
 
