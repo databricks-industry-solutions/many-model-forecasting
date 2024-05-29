@@ -584,7 +584,7 @@ class NeuralFcAutoTiDE(NeuralFcForecaster):
                     'dropout', list(self.params.dropout)),
                 layernorm=trial.suggest_categorical(
                     'layernorm', list(self.params.layernorm)),
-                #**self.exogs,
+                #**self.exogs, #exogenous regressors not yet supported
                 **self.distributed_kwargs,
             )
         self.model = NeuralForecast(
@@ -638,7 +638,7 @@ class NeuralFcAutoPatchTST(NeuralFcForecaster):
                     'scaler_type', list(self.params.scaler_type)),
                 revin=trial.suggest_categorical(
                     'revin', list(self.params.revin)),
-                #**self.exogs,
+                #**self.exogs, #exogenous regressors not yet supported
                 **self.distributed_kwargs,
             )
         self.model = NeuralForecast(

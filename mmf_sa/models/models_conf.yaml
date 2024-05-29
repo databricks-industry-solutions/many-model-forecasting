@@ -20,7 +20,6 @@ models:
     model_class: StatsFcBaselineWindowAverage
     framework: StatsForecast
     model_type: local
-    trainable: false
     model_spec:
       window_size: 7
 
@@ -29,7 +28,6 @@ models:
     model_class: StatsFcBaselineSeasonalWindowAverage
     framework: StatsForecast
     model_type: local
-    trainable: false
     model_spec:
       season_length: 7
       window_size: 7
@@ -39,14 +37,12 @@ models:
     model_class: StatsFcBaselineNaive
     framework: StatsForecast
     model_type: local
-    trainable: false
 
   StatsForecastBaselineSeasonalNaive:
     module: mmf_sa.models.statsforecast.StatsFcForecastingPipeline
     model_class: StatsFcBaselineSeasonalNaive
     framework: StatsForecast
     model_type: local
-    trainable: false
     model_spec:
       season_length: 7
 
@@ -55,7 +51,6 @@ models:
     model_class: StatsFcAutoArima
     framework: StatsForecast
     model_type: local
-    trainable: false
     model_spec:
       season_length:
       approximation:
@@ -66,7 +61,6 @@ models:
     model_class: StatsFcAutoETS
     framework: StatsForecast
     model_type: local
-    trainable: false
     model_spec:
       season_length:
       model_type: "ZZZ"
@@ -76,7 +70,6 @@ models:
     model_class: StatsFcAutoCES
     framework: StatsForecast
     model_type: local
-    trainable: false
     model_spec:
       season_length: 1
       model_type: "Z"
@@ -86,7 +79,6 @@ models:
     model_class: StatsFcAutoTheta
     framework: StatsForecast
     model_type: local
-    trainable: false
     model_spec:
       season_length: 1
       decomposition_type: "multiplicative"
@@ -96,7 +88,6 @@ models:
     model_class: StatsFcTSB
     framework: StatsForecast
     model_type: local
-    trainable: false
     model_spec:
       alpha_d: 0.2
       alpha_p: 0.2
@@ -106,7 +97,6 @@ models:
     model_class: StatsFcADIDA
     framework: StatsForecast
     model_type: local
-    trainable: false
     model_spec:
 
   StatsForecastIMAPA:
@@ -114,7 +104,6 @@ models:
     model_class: StatsFcIMAPA
     framework: StatsForecast
     model_type: local
-    trainable: false
     model_spec:
 
   StatsForecastCrostonClassic:
@@ -122,7 +111,6 @@ models:
     model_class: StatsFcCrostonClassic
     framework: StatsForecast
     model_type: local
-    trainable: false
     model_spec:
 
   StatsForecastCrostonOptimized:
@@ -130,7 +118,6 @@ models:
     model_class: StatsFcCrostonOptimized
     framework: StatsForecast
     model_type: local
-    trainable: false
     model_spec:
 
   StatsForecastCrostonSBA:
@@ -138,7 +125,6 @@ models:
     model_class: StatsFcCrostonSBA
     framework: StatsForecast
     model_type: local
-    trainable: false
     model_spec:
 
   RFableArima:
@@ -146,7 +132,6 @@ models:
     model_class: RFableModel
     framework: RFable
     model_type: local
-    trainable: false
     model_spec:
       season_length:
 
@@ -155,7 +140,6 @@ models:
     model_class: RFableModel
     framework: RFable
     model_type: local
-    trainable: false
     model_spec:
       season_length:
 
@@ -164,7 +148,6 @@ models:
     model_class: RFableModel
     framework: RFable
     model_type: local
-    trainable: false
     model_spec:
       season_length:
 
@@ -173,14 +156,12 @@ models:
     model_class: RFableModel
     framework: RFable
     model_type: local
-    trainable: false
 
   RDynamicHarmonicRegression:
     module: mmf_sa.models.r_fable.RFableForecastingPipeline
     model_class: RFableModel
     framework: RFable
     model_type: local
-    trainable: false
     model_spec:
       fourier_terms:
 
@@ -189,7 +170,6 @@ models:
     model_class: SKTimeLgbmDsDt
     framework: SKTime
     model_type: local
-    trainable: false
     enable_gcv: false
     model_spec:
       deseasonalise_model: multiplicative
@@ -201,7 +181,6 @@ models:
     model_class: SKTimeTBats
     framework: SKTime
     model_type: local
-    trainable: false
     enable_gcv: false
     model_spec:
       box_cox: True
@@ -213,7 +192,6 @@ models:
     model_class: NeuralFcRNN
     framework: NeuralForecast
     model_type: global
-    trainable: true
     max_steps: 200
     input_size_factor: 2
     loss: smape
@@ -232,7 +210,6 @@ models:
     model_class: NeuralFcLSTM
     framework: NeuralForecast
     model_type: global
-    trainable: true
     max_steps: 200
     input_size_factor: 2
     loss: smape
@@ -250,7 +227,6 @@ models:
     model_class: NeuralFcNBEATSx
     framework: NeuralForecast
     model_type: global
-    trainable: true
     max_steps: 100
     input_size_factor: 2
     loss: smape
@@ -265,7 +241,6 @@ models:
     model_class: NeuralFcNHITS
     framework: NeuralForecast
     model_type: global
-    trainable: true
     max_steps: 200
     input_size_factor: 2
     loss: smape
@@ -284,7 +259,6 @@ models:
     model_class: NeuralFcAutoRNN
     framework: NeuralForecast
     model_type: global
-    trainable: true
     max_steps: 200
     num_samples: 20
     loss: smape
@@ -298,7 +272,6 @@ models:
     model_class: NeuralFcAutoLSTM
     framework: NeuralForecast
     model_type: global
-    trainable: true
     max_steps: 200
     num_samples: 20
     loss: smape
@@ -312,7 +285,6 @@ models:
     model_class: NeuralFcAutoNBEATSx
     framework: NeuralForecast
     model_type: global
-    trainable: true
     max_steps: 200
     num_samples: 20
     loss: smape
@@ -324,7 +296,6 @@ models:
     model_class: NeuralFcAutoNHITS
     framework: NeuralForecast
     model_type: global
-    trainable: true
     max_steps: 200
     num_samples: 20
     loss: smape
@@ -338,7 +309,6 @@ models:
     model_class: NeuralFcAutoTiDE
     framework: NeuralForecast
     model_type: global
-    trainable: true
     max_steps: 200
     num_samples: 20
     loss: smape
@@ -357,7 +327,6 @@ models:
     model_class: NeuralFcAutoPatchTST
     framework: NeuralForecast
     model_type: global
-    trainable: true
     max_steps: 200
     num_samples: 20
     loss: smape
@@ -373,7 +342,6 @@ models:
     model_class: ChronosT5Tiny
     framework: Chronos
     model_type: foundation
-    trainable: false
     num_samples: 20
 
   ChronosT5Mini:
@@ -381,7 +349,6 @@ models:
     model_class: ChronosT5Mini
     framework: Chronos
     model_type: foundation
-    trainable: false
     num_samples: 20
 
   ChronosT5Small:
@@ -389,7 +356,6 @@ models:
     model_class: ChronosT5Small
     framework: Chronos
     model_type: foundation
-    trainable: false
     num_samples: 20
 
   ChronosT5Base:
@@ -397,7 +363,6 @@ models:
     model_class: ChronosT5Base
     framework: Chronos
     model_type: foundation
-    trainable: false
     num_samples: 20
 
   ChronosT5Large:
@@ -405,7 +370,6 @@ models:
     model_class: ChronosT5Large
     framework: Chronos
     model_type: foundation
-    trainable: false
     num_samples: 20
 
   Moment1Large:
@@ -413,7 +377,6 @@ models:
     model_class: Moment1Large
     framework: Moment
     model_type: foundation
-    trainable: false
     num_samples: 20
 
   MoiraiSmall:
@@ -421,7 +384,6 @@ models:
     model_class: MoiraiSmall
     framework: Moirai
     model_type: foundation
-    trainable: false
     num_samples: 100
     patch_size: 32
 
@@ -430,7 +392,6 @@ models:
     model_class: MoiraiBase
     framework: Moirai
     model_type: foundation
-    trainable: false
     num_samples: 100
     patch_size: 32
 
@@ -439,6 +400,5 @@ models:
     model_class: MoiraiLarge
     framework: Moirai
     model_type: foundation
-    trainable: false
     num_samples: 100
     patch_size: 32
