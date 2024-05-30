@@ -53,18 +53,11 @@ class MoiraiForecaster(ForecastingRegressor):
                 curr_date=None,
                 spark=None):
         hist_df = self.prepare_data(hist_df, spark=spark)
-        forecast_udf = create_predict_udf(
-            repo=self.repo,
-            prediction_length=self.params["prediction_length"],
-            patch_size=self.params["patch_size"],
-            num_samples=self.params["num_samples"]
-        )
-
         horizon_timestamps_udf = self.create_horizon_timestamps_udf()
-
-        # Todo figure out the distribution strategy
+        forecast_udf = self.create_predict_udf()
+        device_count = torch.cuda.device_count()
         forecast_df = (
-            hist_df.repartition(4)
+            hist_df.repartition(device_count)
             .select(
                 hist_df.unique_id,
                 horizon_timestamps_udf(hist_df.ds).alias("ds"),
@@ -81,7 +74,6 @@ class MoiraiForecaster(ForecastingRegressor):
 
         # Todo
         #forecast_df[self.params.target] = forecast_df[self.params.target].clip(0.01)
-
         return forecast_df, self.model
 
     def forecast(self, df: pd.DataFrame, spark=None):
@@ -117,12 +109,54 @@ class MoiraiForecaster(ForecastingRegressor):
                 pass
         return metrics
 
+    def create_predict_udf(self):
+        @pandas_udf('array<double>')
+        def predict_udf(batch_iterator: Iterator[pd.Series]) -> Iterator[pd.Series]:
+            # initialization step
+            import torch
+            import numpy as np
+            import pandas as pd
+            from einops import rearrange
+            from uni2ts.model.moirai import MoiraiModule, MoiraiForecast
+            module = MoiraiModule.from_pretrained(self.repo)
+            # inference
+            for batch in batch_iterator:
+                median = []
+                for series in batch:
+                    model = MoiraiForecast(
+                        module=module,
+                        prediction_length=self.params["prediction_length"],
+                        context_length=len(series),
+                        patch_size=self.params["patch_size"],
+                        num_samples=self.params["num_samples"],
+                        target_dim=1,
+                        feat_dynamic_real_dim=0,
+                        past_feat_dynamic_real_dim=0,
+                    )
+
+                    # Time series values. Shape: (batch, time, variate)
+                    past_target = rearrange(
+                        torch.as_tensor(series, dtype=torch.float32), "t -> 1 t 1"
+                    )
+                    # 1s if the value is observed, 0s otherwise. Shape: (batch, time, variate)
+                    past_observed_target = torch.ones_like(past_target, dtype=torch.bool)
+                    # 1s if the value is padding, 0s otherwise. Shape: (batch, time)
+                    past_is_pad = torch.zeros_like(past_target, dtype=torch.bool).squeeze(-1)
+
+                    forecast = model(
+                        past_target=past_target,
+                        past_observed_target=past_observed_target,
+                        past_is_pad=past_is_pad,
+                    )
+                    median.append(np.median(forecast[0], axis=0))
+            yield pd.Series(median)
+        return predict_udf
+
 
 class MoiraiSmall(MoiraiForecaster):
     def __init__(self, params):
         super().__init__(params)
         self.params = params
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.repo = "Salesforce/moirai-1.0-R-small"
 
 
@@ -130,7 +164,6 @@ class MoiraiBase(MoiraiForecaster):
     def __init__(self, params):
         super().__init__(params)
         self.params = params
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.repo = "Salesforce/moirai-1.0-R-base"
 
 
@@ -138,52 +171,4 @@ class MoiraiLarge(MoiraiForecaster):
     def __init__(self, params):
         super().__init__(params)
         self.params = params
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.repo = "Salesforce/moirai-1.0-R-base"
-
-
-def create_predict_udf(repo, prediction_length: int, patch_size: int, num_samples: int):
-
-    @pandas_udf('array<double>')
-    def predict_udf(batch_iterator: Iterator[pd.Series]) -> Iterator[pd.Series]:
-
-        # initialization step
-        import torch
-        import numpy as np
-        import pandas as pd
-        from einops import rearrange
-        from uni2ts.model.moirai import MoiraiModule, MoiraiForecast
-        module = MoiraiModule.from_pretrained(repo)
-
-        # inference
-        for batch in batch_iterator:
-            median = []
-            for series in batch:
-                model = MoiraiForecast(
-                    module=module,
-                    prediction_length=prediction_length,
-                    context_length=len(series),
-                    patch_size=patch_size,
-                    num_samples=num_samples,
-                    target_dim=1,
-                    feat_dynamic_real_dim=0,
-                    past_feat_dynamic_real_dim=0,
-                )
-
-                # Time series values. Shape: (batch, time, variate)
-                past_target = rearrange(
-                    torch.as_tensor(series, dtype=torch.float32), "t -> 1 t 1"
-                )
-                # 1s if the value is observed, 0s otherwise. Shape: (batch, time, variate)
-                past_observed_target = torch.ones_like(past_target, dtype=torch.bool)
-                # 1s if the value is padding, 0s otherwise. Shape: (batch, time)
-                past_is_pad = torch.zeros_like(past_target, dtype=torch.bool).squeeze(-1)
-
-                forecast = model(
-                    past_target=past_target,
-                    past_observed_target=past_observed_target,
-                    past_is_pad=past_is_pad,
-                )
-                median.append(np.median(forecast[0], axis=0))
-        yield pd.Series(median)
-    return predict_udf
