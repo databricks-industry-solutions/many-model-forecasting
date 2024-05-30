@@ -53,11 +53,11 @@ class MomentForecaster(ForecastingRegressor):
                 curr_date=None,
                 spark=None):
         hist_df = self.prepare_data(hist_df, spark=spark)
-        forecast_udf = self.create_predict_udf()
         horizon_timestamps_udf = self.create_horizon_timestamps_udf()
-        # Todo figure out the distribution strategy
+        forecast_udf = self.create_predict_udf()
+        device_count = torch.cuda.device_count()
         forecast_df = (
-            hist_df.repartition(4)
+            hist_df.repartition(device_count)
             .select(
                 hist_df.unique_id,
                 horizon_timestamps_udf(hist_df.ds).alias("ds"),
@@ -74,7 +74,6 @@ class MomentForecaster(ForecastingRegressor):
 
         # Todo
         #forecast_df[self.params.target] = forecast_df[self.params.target].clip(0.01)
-
         return forecast_df, self.model
 
     def forecast(self, df: pd.DataFrame, spark=None):
@@ -113,8 +112,24 @@ class MomentForecaster(ForecastingRegressor):
     def create_predict_udf(self):
         @pandas_udf('array<double>')
         def predict_udf(batch_iterator: Iterator[pd.Series]) -> Iterator[pd.Series]:
+            # initialization step
             import torch
             import pandas as pd
+            from momentfm import MOMENTPipeline
+            model = MOMENTPipeline.from_pretrained(
+                self.repo,
+                model_kwargs={
+                    'task_name': 'forecasting',
+                    'forecast_horizon': self.params["prediction_length"],
+                    'head_dropout': 0.1,
+                    'weight_decay': 0,
+                    'freeze_encoder': True,  # Freeze the patch embedding layer
+                    'freeze_embedder': True,  # Freeze the transformer encoder
+                    'freeze_head': False,  # The linear forecasting head must be trained
+                },
+            )
+            model.init()
+            # inference
             for batch in batch_iterator:
                 batch_forecast = []
                 for series in batch:
@@ -128,7 +143,7 @@ class MomentForecaster(ForecastingRegressor):
                         context = context[-512:]
                     input_mask = torch.reshape(torch.tensor(input_mask), (1, 512))
                     context = torch.reshape(torch.tensor(context), (1, 1, 512)).to(dtype=torch.float32)
-                    output = self.model(context, input_mask=input_mask)
+                    output = model(context, input_mask=input_mask)
                     forecast = output.forecast.squeeze().tolist()
                     batch_forecast.append(forecast)
             yield pd.Series(batch_forecast)
@@ -138,20 +153,7 @@ class MomentForecaster(ForecastingRegressor):
 class Moment1Large(MomentForecaster):
     def __init__(self, params):
         super().__init__(params)
-        from momentfm import MOMENTPipeline
         self.params = params
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.model = MOMENTPipeline.from_pretrained(
-            "AutonLab/MOMENT-1-large",
-            model_kwargs={
-                'task_name': 'forecasting',
-                'forecast_horizon': self.params["prediction_length"],
-                'head_dropout': 0.1,
-                'weight_decay': 0,
-                'freeze_encoder': True,  # Freeze the patch embedding layer
-                'freeze_embedder': True,  # Freeze the transformer encoder
-                'freeze_head': False,  # The linear forecasting head must be trained
-            },
-        )
-        self.model.init()
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.repo = "AutonLab/MOMENT-1-large"
 
