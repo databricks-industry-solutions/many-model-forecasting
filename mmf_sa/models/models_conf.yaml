@@ -342,63 +342,72 @@ models:
     model_class: ChronosT5Tiny
     framework: Chronos
     model_type: foundation
-    num_samples: 20
+    num_samples: 10
+    batch_size: 16
 
   ChronosT5Mini:
     module: mmf_sa.models.chronosforecast.ChronosPipeline
     model_class: ChronosT5Mini
     framework: Chronos
     model_type: foundation
-    num_samples: 20
+    num_samples: 10
+    batch_size: 16
 
   ChronosT5Small:
     module: mmf_sa.models.chronosforecast.ChronosPipeline
     model_class: ChronosT5Small
     framework: Chronos
     model_type: foundation
-    num_samples: 20
+    num_samples: 10
+    batch_size: 8
 
   ChronosT5Base:
     module: mmf_sa.models.chronosforecast.ChronosPipeline
     model_class: ChronosT5Base
     framework: Chronos
     model_type: foundation
-    num_samples: 20
+    num_samples: 10
+    batch_size: 8
 
   ChronosT5Large:
     module: mmf_sa.models.chronosforecast.ChronosPipeline
     model_class: ChronosT5Large
     framework: Chronos
     model_type: foundation
-    num_samples: 20
+    num_samples: 10
+    batch_size: 4
 
   Moment1Large:
     module: mmf_sa.models.momentforecast.MomentPipeline
     model_class: Moment1Large
     framework: Moment
     model_type: foundation
-    num_samples: 20
-
-  MoiraiSmall:
-    module: mmf_sa.models.moiraiforecast.MoiraiPipeline
-    model_class: MoiraiSmall
-    framework: Moirai
-    model_type: foundation
-    num_samples: 100
-    patch_size: 32
+    num_samples: 10
+    batch_size: 10
 
   MoiraiBase:
     module: mmf_sa.models.moiraiforecast.MoiraiPipeline
     model_class: MoiraiBase
     framework: Moirai
     model_type: foundation
-    num_samples: 100
+    num_samples: 10
     patch_size: 32
+    batch_size: 10
 
   MoiraiLarge:
     module: mmf_sa.models.moiraiforecast.MoiraiPipeline
     model_class: MoiraiLarge
     framework: Moirai
     model_type: foundation
-    num_samples: 100
+    num_samples: 10
     patch_size: 32
+    batch_size: 10
+
+  MoiraiSmall:
+    module: mmf_sa.models.moiraiforecast.MoiraiPipeline
+    model_class: MoiraiSmall
+    framework: Moirai
+    model_type: foundation
+    num_samples: 10
+    patch_size: 32
+    batch_size: 10

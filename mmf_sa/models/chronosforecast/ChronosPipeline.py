@@ -111,7 +111,7 @@ class ChronosForecaster(ForecastingRegressor):
 
     def create_predict_udf(self):
         @pandas_udf('array<double>')
-        def predict_udf(batch_iterator: Iterator[pd.Series]) -> Iterator[pd.Series]:
+        def predict_udf(bulk_iterator: Iterator[pd.Series]) -> Iterator[pd.Series]:
             # initialization step
             import torch
             import numpy as np
@@ -123,16 +123,17 @@ class ChronosForecaster(ForecastingRegressor):
                 torch_dtype=torch.bfloat16,
             )
             # inference
-            for batch in batch_iterator:
+            for bulk in bulk_iterator:
                 median = []
-                for series in batch:
-                    context = torch.tensor(list(series))
-                    forecast = pipeline.predict(
-                        context=context,
+                for i in range(0, len(bulk), self.params["batch_size"]):
+                    batch = bulk[i:i+self.params["batch_size"]]
+                    contexts = [torch.tensor(list(series)) for series in batch]
+                    forecasts = pipeline.predict(
+                        context=contexts,
                         prediction_length=self.params["prediction_length"],
                         num_samples=self.params["num_samples"],
                     )
-                    median.append(np.quantile(forecast[0].numpy(), [0.5], axis=0)[0])
+                    median.extend([np.median(forecast, axis=0) for forecast in forecasts])
             yield pd.Series(median)
         return predict_udf
 
