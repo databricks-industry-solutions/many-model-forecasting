@@ -171,4 +171,3 @@ class ChronosT5Large(ChronosForecaster):
         super().__init__(params)
         self.params = params
         self.repo = "amazon/chronos-t5-large"
-
