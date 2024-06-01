@@ -377,14 +377,6 @@ models:
     num_samples: 10
     batch_size: 4
 
-  Moment1Large:
-    module: mmf_sa.models.momentforecast.MomentPipeline
-    model_class: Moment1Large
-    framework: Moment
-    model_type: foundation
-    num_samples: 10
-    batch_size: 10
-
   MoiraiBase:
     module: mmf_sa.models.moiraiforecast.MoiraiPipeline
     model_class: MoiraiBase
@@ -410,4 +402,18 @@ models:
     model_type: foundation
     num_samples: 10
     patch_size: 32
+    batch_size: 10
+
+  TimesFM_1_0_200m:
+    module: mmf_sa.models.timesfmforecast.TimesFMPipeline
+    model_class: TimesFM_1_0_200m
+    framework: TimesFM
+    model_type: foundation
+
+  Moment1Large:
+    module: mmf_sa.models.momentforecast.MomentPipeline
+    model_class: Moment1Large
+    framework: Moment
+    model_type: foundation
+    num_samples: 10
     batch_size: 10
