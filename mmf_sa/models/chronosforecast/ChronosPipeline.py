@@ -1,9 +1,12 @@
 from abc import ABC
-import subprocess
 import sys
+import subprocess
 import pandas as pd
 import numpy as np
 import torch
+import mlflow
+from mlflow.types import Schema, TensorSpec
+from mlflow.models.signature import ModelSignature
 from sktime.performance_metrics.forecasting import mean_absolute_percentage_error
 from typing import Iterator
 from pyspark.sql.functions import collect_list, pandas_udf
@@ -19,8 +22,31 @@ class ChronosForecaster(ForecastingRegressor):
         self.model = None
         self.install("git+https://github.com/amazon-science/chronos-forecasting.git")
 
-    def install(self, package: str):
+    @staticmethod
+    def install(package: str):
         subprocess.check_call([sys.executable, "-m", "pip", "install", package, "--quiet"])
+
+    def register(self, registered_model_name: str):
+        pipeline = ChronosModel(
+            self.repo,
+            self.params["prediction_length"],
+            self.params["num_samples"],
+        )
+        input_schema = Schema([TensorSpec(np.dtype(np.double), (-1, -1))])
+        output_schema = Schema([TensorSpec(np.dtype(np.uint8), (-1, -1, -1))])
+        signature = ModelSignature(inputs=input_schema, outputs=output_schema)
+        input_example = np.random.rand(1, 52)
+        mlflow.pyfunc.log_model(
+            "model",
+            python_model=pipeline,
+            registered_model_name=registered_model_name,
+            signature=signature,
+            input_example=input_example,
+            pip_requirements=[
+                "git+https://github.com/amazon-science/chronos-forecasting.git",
+                "git+https://github.com/databricks-industry-solutions/many-model-forecasting.git",
+            ],
+        )
 
     def create_horizon_timestamps_udf(self):
         @pandas_udf('array<timestamp>')
@@ -57,7 +83,7 @@ class ChronosForecaster(ForecastingRegressor):
         forecast_udf = self.create_predict_udf()
         device_count = torch.cuda.device_count()
         forecast_df = (
-            hist_df.repartition(device_count)
+            hist_df.repartition(device_count, self.params.group_id)
             .select(
                 hist_df.unique_id,
                 horizon_timestamps_udf(hist_df.ds).alias("ds"),
@@ -171,3 +197,27 @@ class ChronosT5Large(ChronosForecaster):
         super().__init__(params)
         self.params = params
         self.repo = "amazon/chronos-t5-large"
+
+
+class ChronosModel(mlflow.pyfunc.PythonModel):
+    def __init__(self, repository, prediction_length, num_samples):
+        import torch
+        from chronos import ChronosPipeline
+        self.repository = repository
+        self.prediction_length = prediction_length
+        self.num_samples = num_samples
+        self.pipeline = ChronosPipeline.from_pretrained(
+            self.repository,
+            device_map="cuda",
+            torch_dtype=torch.bfloat16,
+        )
+
+    def predict(self, context, input_data, params=None):
+        history = [torch.tensor(list(series)) for series in input_data]
+        forecast = self.pipeline.predict(
+            context=history,
+            prediction_length=self.prediction_length,
+            num_samples=self.num_samples,
+        )
+        return forecast.numpy()
+
