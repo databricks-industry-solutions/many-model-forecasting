@@ -355,6 +355,9 @@ class Forecaster:
         with mlflow.start_run(experiment_id=self.experiment_id) as run:
             model_name = model_conf["name"]
             model = self.model_registry.get_model(model_name)
+            model.register(
+                registered_model_name=f"{self.conf['model_output']}.{model_conf['name']}_{self.conf['use_case_name']}"
+            )
             hist_df, removed = self.prepare_data_for_global_model("evaluating")  # Reuse the same as global
             train_df, val_df = self.split_df_train_val(hist_df)
             metrics = self.backtest_global_model(  # Reuse the same as global
@@ -364,6 +367,7 @@ class Forecaster:
                 model_uri="",
                 write=True,
             )
+
             mlflow.log_metric(self.conf["metric"], metrics)
             mlflow.set_tag("action", "evaluate")
             mlflow.set_tag("candidate", "true")

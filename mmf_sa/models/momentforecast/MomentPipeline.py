@@ -57,7 +57,7 @@ class MomentForecaster(ForecastingRegressor):
         forecast_udf = self.create_predict_udf()
         device_count = torch.cuda.device_count()
         forecast_df = (
-            hist_df.repartition(device_count)
+            hist_df.repartition(device_count, self.params.group_id)
             .select(
                 hist_df.unique_id,
                 horizon_timestamps_udf(hist_df.ds).alias("ds"),
