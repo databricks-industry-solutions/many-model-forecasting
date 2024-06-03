@@ -355,8 +355,8 @@ class Forecaster:
         with mlflow.start_run(experiment_id=self.experiment_id) as run:
             model_name = model_conf["name"]
             model = self.model_registry.get_model(model_name)
-            # For now, only support registering chronos and moirai models
-            if model_conf["framework"] in ["Chronos", "Moirai"]:
+            # For now, only support registering chronos, moirai and moment models
+            if model_conf["framework"] in ["Chronos", "Moirai", "Moment"]:
                 model.register(
                     registered_model_name=f"{self.conf['model_output']}.{model_conf['name']}_{self.conf['use_case_name']}"
                 )
