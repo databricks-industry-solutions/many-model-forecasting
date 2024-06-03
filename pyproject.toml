@@ -2,6 +2,7 @@
 name = "mmf_sa"
 version = "0.0.1"
 dependencies = [
+    #"rpy2==3.5.16",  # causes issue when deploying the model to Model Serving
     "kaleido==0.2.1",
     "Jinja2",
     "omegaconf==2.3.0",

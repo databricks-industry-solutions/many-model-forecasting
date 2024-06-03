@@ -109,12 +109,12 @@ for model in active_models:
 
 # COMMAND ----------
 
-# MAGIC #%sql delete from solacc_uc.mmf.rossmann_daily_evaluation_output
+# MAGIC %sql delete from solacc_uc.mmf.rossmann_daily_evaluation_output
 
 # COMMAND ----------
 
-# MAGIC #%sql delete from solacc_uc.mmf.rossmann_daily_scoring_output
+# MAGIC %sql delete from solacc_uc.mmf.rossmann_daily_scoring_output
 
 # COMMAND ----------
 
-# MAGIC #%sql delete from solacc_uc.mmf.rossmann_daily_ensemble_output
+# MAGIC %sql delete from solacc_uc.mmf.rossmann_daily_ensemble_output

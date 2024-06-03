@@ -88,7 +88,7 @@ class Forecaster:
         else:
             return self.spark.read.table(self.conf[key])
 
-    def prepare_data_for_global_model(self, mode: str):
+    def prepare_data_for_global_model(self, mode: str = None):
         src_df = self.resolve_source("train_data")
         src_df, removed = DataQualityChecks(src_df, self.conf, self.spark).run()
         if (mode == "scoring") \
@@ -284,7 +284,7 @@ class Forecaster:
                 model=model,
                 train_df=train_df,
                 val_df=val_df,
-                model_uri=model_info.model_uri, # This model_uri is from the final model
+                model_uri=model_info.model_uri,  # This model_uri is from the final model
                 write=True,
             )
             print(f"Finished training {model_conf.get('name')}")
@@ -360,17 +360,15 @@ class Forecaster:
             )
             hist_df, removed = self.prepare_data_for_global_model("evaluating")  # Reuse the same as global
             train_df, val_df = self.split_df_train_val(hist_df)
+            model_uri = f"runs:/{run.info.run_id}/model"
             metrics = self.backtest_global_model(  # Reuse the same as global
                 model=model,
                 train_df=train_df,
                 val_df=val_df,
-                model_uri="",
+                model_uri=model_uri,
                 write=True,
             )
-
             mlflow.log_metric(self.conf["metric"], metrics)
-            mlflow.set_tag("action", "evaluate")
-            mlflow.set_tag("candidate", "true")
             mlflow.set_tag("model_name", model.params["name"])
             mlflow.set_tag("run_id", self.run_id)
             mlflow.log_params(model.get_params())
@@ -485,8 +483,9 @@ class Forecaster:
     def score_foundation_model(self, model_conf):
         print(f"Running scoring for {model_conf['name']}...")
         model_name = model_conf["name"]
+        _, model_uri = self.get_model_for_scoring(model_conf)
         model = self.model_registry.get_model(model_name)
-        hist_df, removed = self.prepare_data_for_global_model("evaluating")
+        hist_df, removed = self.prepare_data_for_global_model()
         prediction_df, model_pretrained = model.forecast(hist_df, spark=self.spark)
         sdf = self.spark.createDataFrame(prediction_df).drop('index')
         (
@@ -496,20 +495,22 @@ class Forecaster:
             .withColumn("run_date", lit(self.run_date))
             .withColumn("use_case", lit(self.conf["use_case_name"]))
             .withColumn("model_pickle", lit(b""))
-            .withColumn("model_uri", lit(""))
+            .withColumn("model_uri", lit(model_uri))
             .write.mode("append")
             .saveAsTable(self.conf["scoring_output"])
         )
 
     def get_model_for_scoring(self, model_conf):
         client = MlflowClient()
+        registered_name = f"{self.conf['model_output']}.{model_conf['name']}_{self.conf['use_case_name']}"
+        model_info = self.get_latest_model_info(client, registered_name)
+        model_version = model_info.version
+        model_uri = f"runs:/{model_info.run_id}/model"
         if model_conf.get("model_type", None) == "global":
-            registered_name = f"{self.conf['model_output']}.{model_conf['name']}_{self.conf['use_case_name']}"
-            model_info = Forecaster.get_latest_model_info(client, registered_name)
-            model_version = model_info.version
-            model_uri = f"runs:/{model_info.run_id}/model"
             model = mlflow.sklearn.load_model(f"models:/{registered_name}/{model_version}")
             return model, model_uri
+        elif model_conf.get("model_type", None) == "foundation":
+            return None, model_uri
         else:
             return self.model_registry.get_model(model_conf["name"]), None
 
