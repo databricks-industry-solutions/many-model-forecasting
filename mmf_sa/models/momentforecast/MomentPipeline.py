@@ -4,6 +4,9 @@ import sys
 import pandas as pd
 import numpy as np
 import torch
+import mlflow
+from mlflow.types import Schema, TensorSpec
+from mlflow.models.signature import ModelSignature
 from sktime.performance_metrics.forecasting import mean_absolute_percentage_error
 from typing import Iterator
 from pyspark.sql.functions import collect_list, pandas_udf
@@ -19,8 +22,31 @@ class MomentForecaster(ForecastingRegressor):
         self.model = None
         self.install("git+https://github.com/moment-timeseries-foundation-model/moment.git")
 
-    def install(self, package: str):
+    @staticmethod
+    def install(package: str):
         subprocess.check_call([sys.executable, "-m", "pip", "install", package, "--quiet"])
+
+    def register(self, registered_model_name: str):
+        pipeline = MomentModel(
+            self.repo,
+            self.params["prediction_length"],
+        )
+        input_schema = Schema([TensorSpec(np.dtype(np.double), (-1,))])
+        output_schema = Schema([TensorSpec(np.dtype(np.uint8), (-1,))])
+        signature = ModelSignature(inputs=input_schema, outputs=output_schema)
+        input_example = np.random.rand(52)
+        mlflow.pyfunc.log_model(
+            "model",
+            python_model=pipeline,
+            registered_model_name=registered_model_name,
+            signature=signature,
+            input_example=input_example,
+            pip_requirements=[
+                "git+https://github.com/moment-timeseries-foundation-model/moment.git",
+                "git+https://github.com/databricks-industry-solutions/many-model-forecasting.git",
+                "pyspark==3.5.0",
+            ],
+        )
 
     def create_horizon_timestamps_udf(self):
         @pandas_udf('array<timestamp>')
@@ -156,4 +182,35 @@ class Moment1Large(MomentForecaster):
         self.params = params
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.repo = "AutonLab/MOMENT-1-large"
+
+
+class MomentModel(mlflow.pyfunc.PythonModel):
+    def __init__(self, repository, prediction_length):
+        from momentfm import MOMENTPipeline
+        self.repository = repository
+        self.prediction_length = prediction_length
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.pipeline = MOMENTPipeline.from_pretrained(
+          self.repository,
+          device_map=self.device,
+          model_kwargs={
+            "task_name": "forecasting",
+            "forecast_horizon": self.prediction_length},
+          )
+        self.pipeline.init()
+        self.pipeline = self.pipeline.to(self.device)
+
+    def predict(self, context, input_data, params=None):
+        series = list(input_data)
+        if len(series) < 512:
+            input_mask = [1] * len(series) + [0] * (512 - len(series))
+            series = series + [0] * (512 - len(series))
+        else:
+            input_mask = [1] * 512
+            series = series[-512:]
+        input_mask = torch.reshape(torch.tensor(input_mask),(1, 512)).to(self.device)
+        series = torch.reshape(torch.tensor(series),(1, 1, 512)).to(dtype=torch.float32).to(self.device)
+        output = self.pipeline(series, input_mask=input_mask)
+        forecast = output.forecast.squeeze().tolist()
+        return forecast
 
