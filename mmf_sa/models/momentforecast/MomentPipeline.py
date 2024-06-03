@@ -210,7 +210,7 @@ class MomentModel(mlflow.pyfunc.PythonModel):
             series = series[-512:]
         input_mask = torch.reshape(torch.tensor(input_mask),(1, 512)).to(self.device)
         series = torch.reshape(torch.tensor(series),(1, 1, 512)).to(dtype=torch.float32).to(self.device)
-        output = self.model(series, input_mask=input_mask)
+        output = self.pipeline(series, input_mask=input_mask)
         forecast = output.forecast.squeeze().tolist()
         return forecast
 
