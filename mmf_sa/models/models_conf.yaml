@@ -375,7 +375,7 @@ models:
     framework: Chronos
     model_type: foundation
     num_samples: 10
-    batch_size: 4
+    batch_size: 2
 
   MoiraiBase:
     module: mmf_sa.models.moiraiforecast.MoiraiPipeline

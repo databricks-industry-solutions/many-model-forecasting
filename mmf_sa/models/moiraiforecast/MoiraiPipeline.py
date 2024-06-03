@@ -4,6 +4,9 @@ import sys
 import pandas as pd
 import numpy as np
 import torch
+import mlflow
+from mlflow.types import Schema, TensorSpec
+from mlflow.models.signature import ModelSignature
 from sktime.performance_metrics.forecasting import mean_absolute_percentage_error
 from typing import Iterator
 from pyspark.sql.functions import collect_list, pandas_udf
@@ -19,8 +22,33 @@ class MoiraiForecaster(ForecastingRegressor):
         self.model = None
         self.install("git+https://github.com/SalesforceAIResearch/uni2ts.git")
 
-    def install(self, package: str):
+    @staticmethod
+    def install(package: str):
         subprocess.check_call([sys.executable, "-m", "pip", "install", package, "--quiet"])
+
+    def register(self, registered_model_name: str):
+        pipeline = MoiraiModel(
+            self.repo,
+            self.params["prediction_length"],
+            self.params["patch_size"],
+            self.params["num_samples"],
+        )
+        input_schema = Schema([TensorSpec(np.dtype(np.double), (-1,))])
+        output_schema = Schema([TensorSpec(np.dtype(np.uint8), (-1,))])
+        signature = ModelSignature(inputs=input_schema, outputs=output_schema)
+        input_example = np.random.rand(52)
+        mlflow.pyfunc.log_model(
+            "model",
+            python_model=pipeline,
+            registered_model_name=registered_model_name,
+            signature=signature,
+            input_example=input_example,
+            pip_requirements=[
+                "git+https://github.com/SalesforceAIResearch/uni2ts.git",
+                "git+https://github.com/databricks-industry-solutions/many-model-forecasting.git",
+                "pyspark==3.5.0",
+            ],
+        )
 
     def create_horizon_timestamps_udf(self):
         @pandas_udf('array<timestamp>')
@@ -172,3 +200,41 @@ class MoiraiLarge(MoiraiForecaster):
         super().__init__(params)
         self.params = params
         self.repo = "Salesforce/moirai-1.0-R-base"
+
+
+class MoiraiModel(mlflow.pyfunc.PythonModel):
+    def __init__(self, repository, prediction_length, patch_size, num_samples):
+        from uni2ts.model.moirai import MoiraiForecast, MoiraiModule
+        self.repository = repository
+        self.prediction_length = prediction_length
+        self.patch_size = patch_size
+        self.num_samples = num_samples
+        self.module = MoiraiModule.from_pretrained(self.repository)
+
+    def predict(self, context, input_data, params=None):
+        from einops import rearrange
+        from uni2ts.model.moirai import MoiraiForecast, MoiraiModule
+        model = MoiraiForecast(
+            module=self.module,
+            prediction_length=self.prediction_length,
+            context_length=len(input_data),
+            patch_size=self.patch_size,
+            num_samples=self.num_samples,
+            target_dim=1,
+            feat_dynamic_real_dim=0,
+            past_feat_dynamic_real_dim=0,
+        )
+        # Time series values. Shape: (batch, time, variate)
+        past_target = rearrange(
+            torch.as_tensor(input_data, dtype=torch.float32), "t -> 1 t 1"
+        )
+        # 1s if the value is observed, 0s otherwise. Shape: (batch, time, variate)
+        past_observed_target = torch.ones_like(past_target, dtype=torch.bool)
+        # 1s if the value is padding, 0s otherwise. Shape: (batch, time)
+        past_is_pad = torch.zeros_like(past_target, dtype=torch.bool).squeeze(-1)
+        forecast = model(
+            past_target=past_target,
+            past_observed_target=past_observed_target,
+            past_is_pad=past_is_pad,
+        )
+        return np.median(forecast[0], axis=0)

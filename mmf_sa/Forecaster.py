@@ -355,9 +355,11 @@ class Forecaster:
         with mlflow.start_run(experiment_id=self.experiment_id) as run:
             model_name = model_conf["name"]
             model = self.model_registry.get_model(model_name)
-            model.register(
-                registered_model_name=f"{self.conf['model_output']}.{model_conf['name']}_{self.conf['use_case_name']}"
-            )
+            # For now, only support registering chronos and moirai models
+            if model_conf["framework"] in ["Chronos", "Moirai"]:
+                model.register(
+                    registered_model_name=f"{self.conf['model_output']}.{model_conf['name']}_{self.conf['use_case_name']}"
+                )
             hist_df, removed = self.prepare_data_for_global_model("evaluating")  # Reuse the same as global
             train_df, val_df = self.split_df_train_val(hist_df)
             model_uri = f"runs:/{run.info.run_id}/model"
