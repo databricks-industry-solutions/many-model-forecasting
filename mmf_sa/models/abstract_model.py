@@ -36,7 +36,7 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
         pass
 
     @abstractmethod
-    def forecast(self, x):
+    def forecast(self, x, spark=None):
         # TODO Shouldn't X be optional if we have a trainable model and provide a prediction length
         pass
 

@@ -180,12 +180,12 @@ run_forecast(
 
 # COMMAND ----------
 
-# MAGIC #%sql delete from solacc_uc.mmf.daily_evaluation_output
+# MAGIC %sql delete from solacc_uc.mmf.daily_evaluation_output
 
 # COMMAND ----------
 
-# MAGIC #%sql delete from solacc_uc.mmf.daily_scoring_output
+# MAGIC %sql delete from solacc_uc.mmf.daily_scoring_output
 
 # COMMAND ----------
 
-# MAGIC #%sql delete from solacc_uc.mmf.daily_ensemble_output
+# MAGIC %sql delete from solacc_uc.mmf.daily_ensemble_output

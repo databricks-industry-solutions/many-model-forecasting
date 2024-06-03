@@ -45,6 +45,7 @@ class ChronosForecaster(ForecastingRegressor):
             pip_requirements=[
                 "git+https://github.com/amazon-science/chronos-forecasting.git",
                 "git+https://github.com/databricks-industry-solutions/many-model-forecasting.git",
+                "pyspark==3.5.0",
             ],
         )
 

@@ -159,12 +159,12 @@ for model in active_models:
 
 # COMMAND ----------
 
-# MAGIC #%sql delete from solacc_uc.mmf.monthly_evaluation_output
+# MAGIC %sql delete from solacc_uc.mmf.monthly_evaluation_output
 
 # COMMAND ----------
 
-# MAGIC #%sql delete from solacc_uc.mmf.monthly_scoring_output
+# MAGIC %sql delete from solacc_uc.mmf.monthly_scoring_output
 
 # COMMAND ----------
 
-# MAGIC #%sql delete from solacc_uc.mmf.monthly_ensemble_output
+# MAGIC %sql delete from solacc_uc.mmf.monthly_ensemble_output
