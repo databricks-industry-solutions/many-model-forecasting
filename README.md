@@ -4,11 +4,9 @@
 
 Bootstrap your large-scale forecasting solutions on Databricks with the Many Models Forecasting (MMF) Solution Accelerator.
 
-MMF expedites the development of sales and demand forecasting solutions on Databricks, including all critical phases: data preparation, training, backtesting, cross-validation, scoring, and deployment. Adopting a configuration-over-code approach, it minimizes the need for extensive coding.
+MMF expedites the development of sales and demand forecasting solutions on Databricks, including all critical steps: data preparation, training, backtesting, cross-validation, scoring, and deployment. Adopting a configuration-over-code approach, it minimizes the need for extensive coding. However, with its extensible architecture, MMF allows technically proficient users to incorporate new models and algorithms. We recommend reading though the source code and modify it to your specific requirements. 
 
 MMF integrates a variety of well-established and cutting-edge algorithms, including **local statistical models**, **machine learning models**, **global deep learning models**, and **foundation time series models**. MMF enables parallel modeling of hundreds or thousands of time series leveraging Spark's distributed computing power. Users can apply multiple models at once and select the best performing one for each time series based on their custom metrics.
-
-With its extensible architecture, MMF allows technically proficient users to incorporate new models and new algorithms. We recommend reading though the source code and modify it to your specific requirements. 
 
 Get started now!
 
@@ -199,7 +197,7 @@ Other example notebooks for monthly forecasting and forecasting with exogenous r
 
 ### Foundation Models
 
-Foundation time series models are large transformer based models pretrained on millions or billions of time series. These models can produce analysis (i.e. forecasting, anomaly detection, classfication) on an unforeseen time series without training or tuning. We support open source models from multiple sources: [chronos-forecasting](https://github.com/amazon-science/chronos-forecasting), [moirai](https://blog.salesforceairesearch.com/moirai/), and [moment](https://github.com/moment-timeseries-foundation-model/moment). Covariates (i.e. exogenous regressors) and fine-tuning are currently not yet supported. This is a rapidly changing field, and we are working on updating the supported models and features as the field evolves.
+Foundation time series models are large transformer based models pretrained on millions or billions of time series. These models can produce analysis (i.e. forecasting, anomaly detection, classfication) on an unforeseen time series without training or tuning. We support open source models from multiple sources: [chronos](https://github.com/amazon-science/chronos-forecasting), [moirai](https://blog.salesforceairesearch.com/moirai/), and [moment](https://github.com/moment-timeseries-foundation-model/moment). Covariates (i.e. exogenous regressors) and fine-tuning are currently not yet supported. This is a rapidly changing field, and we are working on updating the supported models and features as the field evolves.
 
 To get started, attach the [notebooks/demo_foundation_daily.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/notebooks/demo_foundation_daily.py) notebook to a cluster running [DBR 14.3 ML](https://docs.databricks.com/en/release-notes/runtime/index.html) or later runtime. We recommend using a single-node cluster with multiple GPU instances such as [g4dn.12xlarge [T4]](https://aws.amazon.com/ec2/instance-types/g4/) on AWS or [Standard_NC64as_T4_v3](https://learn.microsoft.com/en-us/azure/virtual-machines/nct4-v3-series) on Azure. Multi-node setup is currently not supported. 
 
@@ -221,7 +219,7 @@ active_models = [
 
 A comprehensive list of models currently supported by MMF is available in the [models_conf.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/models_conf.yaml). 
 
-Now, with the following command, we run the [notebooks/run_daily.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/notebooks/run_daily.py) that will run the ```run_forecast``` function. We loop through the ```active_models``` list for the same reason mentioned above.
+Now, with the following command, we run the [notebooks/run_daily.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/notebooks/run_daily.py) that will run the ```run_forecast``` function. We loop through the ```active_models``` list for the same reason mentioned above (see the global model section).
 
 ```python
 for model in active_models:
@@ -235,7 +233,7 @@ Inside the [notebooks/run_daily.py](https://github.com/databricks-industry-solut
   
 To modify the model hyperparameters, directly change the values in [mmf_sa/models/models_conf.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/models_conf.yaml) or overwrite these values in [mmf_sa/base_forecasting_conf.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/base_forecasting_conf.yaml). 
 
-MMF is fully integrated with MLflow and so once the training kicks off, the experiments will be visible in the MLflow Tracking UI with the corresponding metrics and parameters. However, note that foundation models are currently not logged in MLFlow or registered to Unity Catalog. 
+MMF is fully integrated with MLflow and so once the training kicks off, the experiments will be visible in the MLflow Tracking UI with the corresponding metrics and parameters. During the evaluation, the models are logged and registered to Unity Catalog.
 
 An example notebook for monthly forecasting can be found in [notebooks/demo_foundation_monthly.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/notebooks/demo_foundation_monthly.py).
 
