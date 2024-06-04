@@ -1,0 +1,379 @@
+# Databricks notebook source
+# MAGIC %pip install git+https://github.com/amazon-science/chronos-forecasting.git --quiet
+# MAGIC dbutils.library.restartPython()
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Distributed Inference
+
+# COMMAND ----------
+
+import pandas as pd
+import numpy as np
+import torch
+from typing import Iterator
+from pyspark.sql.functions import collect_list, pandas_udf
+
+
+def create_get_horizon_timestamps(freq, prediction_length):
+
+  @pandas_udf('array<timestamp>')
+  def get_horizon_timestamps(batch_iterator: Iterator[pd.Series]) -> Iterator[pd.Series]:   
+      one_ts_offset = pd.offsets.MonthEnd(1) if freq == "M" else pd.DateOffset(days=1)
+      barch_horizon_timestamps = []
+      for batch in batch_iterator:
+          for series in batch:
+              timestamp = last = series.max()
+              horizon_timestamps = []
+              for i in range(prediction_length):
+                  timestamp = timestamp + one_ts_offset
+                  horizon_timestamps.append(timestamp)
+              barch_horizon_timestamps.append(np.array(horizon_timestamps))
+      yield pd.Series(barch_horizon_timestamps)
+
+  return get_horizon_timestamps
+
+
+def create_forecast_udf(repository, prediction_length, num_samples, batch_size):
+
+  @pandas_udf('array<double>')
+  def forecast_udf(bulk_iterator: Iterator[pd.Series]) -> Iterator[pd.Series]:
+    
+    ## initialization step
+    import numpy as np
+    import pandas as pd
+    import torch
+    from chronos import ChronosPipeline
+    pipeline = ChronosPipeline.from_pretrained(
+        repository,
+        device_map="auto",
+        torch_dtype=torch.bfloat16,
+        )
+    
+    ## inference
+    for bulk in bulk_iterator:
+      median = []
+      for i in range(0, len(bulk), batch_size):
+        batch = bulk[i:i+batch_size]
+        contexts = [torch.tensor(list(series)) for series in batch]
+        forecasts = pipeline.predict(context=contexts, prediction_length=prediction_length, num_samples=num_samples)
+        median.extend([np.median(forecast, axis=0) for forecast in forecasts])
+
+    yield pd.Series(median)
+  
+  return forecast_udf
+
+# COMMAND ----------
+
+# Make sure that the data exists
+df = spark.table('solacc_uc.mmf.m4_daily_train')
+df = df.groupBy('unique_id').agg(collect_list('ds').alias('ds'), collect_list('y').alias('y'))
+
+# COMMAND ----------
+
+get_horizon_timestamps = create_get_horizon_timestamps(freq="D", prediction_length=10)
+forecast_udf = create_forecast_udf(
+  repository="amazon/chronos-t5-tiny", 
+  prediction_length=10, 
+  num_samples=10, 
+  batch_size=4,
+  )
+
+device_count = torch.cuda.device_count()
+
+forecasts = df.repartition(device_count).select(
+  df.unique_id,  
+  get_horizon_timestamps(df.ds).alias("ds"),
+  forecast_udf(df.y).alias("forecast")
+  )
+
+display(forecasts)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ##Register Model
+
+# COMMAND ----------
+
+import mlflow
+import torch
+import numpy as np
+from mlflow.models import infer_signature
+from mlflow.models.signature import ModelSignature
+from mlflow.types import DataType, Schema, TensorSpec
+mlflow.set_registry_uri("databricks-uc")
+
+
+class ChronosModel(mlflow.pyfunc.PythonModel):
+  def __init__(self, repository):
+    import torch
+    from chronos import ChronosPipeline
+    self.pipeline = ChronosPipeline.from_pretrained(
+      repository,
+      device_map="cuda",
+      torch_dtype=torch.bfloat16,
+      )  
+  
+  def predict(self, context, input_data, params=None):
+    history = [torch.tensor(list(series)) for series in input_data]
+    forecast = self.pipeline.predict(
+        context=history,
+        prediction_length=10,
+        num_samples=10,
+    )
+    return forecast.numpy()
+
+pipeline = ChronosModel("amazon/chronos-t5-tiny")
+input_schema = Schema([TensorSpec(np.dtype(np.double), (-1, -1))])
+output_schema = Schema([TensorSpec(np.dtype(np.uint8), (-1, -1, -1))])
+signature = ModelSignature(inputs=input_schema, outputs=output_schema)
+input_example = np.random.rand(1, 52)
+
+with mlflow.start_run() as run:
+  mlflow.pyfunc.log_model(
+    "model",
+    python_model=pipeline,
+    registered_model_name="solacc_uc.mmf.chronos-t5-tiny",
+    signature=signature,
+    input_example=input_example,
+    pip_requirements=[
+      f"git+https://github.com/amazon-science/chronos-forecasting.git",
+    ],
+  )
+
+# COMMAND ----------
+
+import mlflow
+from mlflow import MlflowClient
+import pandas as pd
+import numpy as np
+
+client = MlflowClient()
+mlflow.set_registry_uri("databricks-uc")
+
+
+def get_latest_model_version(client, registered_name):
+    latest_version = 1
+    for mv in client.search_model_versions(f"name='{registered_name}'"):
+        version_int = int(mv.version)
+        if version_int > latest_version:
+            latest_version = version_int
+    return latest_version
+
+registered_name = f"solacc_uc.mmf.chronos-t5-tiny"
+model_version = get_latest_model_version(client, registered_name)
+logged_model = f"models:/{registered_name}/{model_version}"
+
+# Load model as a PyFuncModel
+loaded_model = mlflow.pyfunc.load_model(logged_model)
+
+# Create random input data
+input_data = np.random.rand(5, 52) # (batch, series)
+
+# Generate forecast
+loaded_model.predict(input_data)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Deploy Model for Online Forecast
+
+# COMMAND ----------
+
+catalog = "solacc_uc"
+log_schema = "mmf" # A schema within the catalog where the inferece log is going to be stored 
+model_serving_endpoint_name = "chronos-t5-tiny"
+
+token = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiToken().getOrElse(None)
+
+# With the token, you can create our authorization header for our subsequent REST calls
+headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
+# Next you need an endpoint at which to execute your request which you can get from the notebook's tags collection
+java_tags = dbutils.notebook.entry_point.getDbutils().notebook().getContext().tags()
+
+# This object comes from the Java CM - Convert the Java Map opject to a Python dictionary
+tags = sc._jvm.scala.collection.JavaConversions.mapAsJavaMap(java_tags)
+
+# Lastly, extract the Databricks instance (domain name) from the dictionary
+instance = tags["browserHostName"]
+
+# COMMAND ----------
+
+import requests
+
+my_json = {
+    "name": model_serving_endpoint_name,
+    "config": {
+        "served_models": [
+            {
+                "model_name": registered_name,
+                "model_version": model_version,
+                "workload_type": "GPU_SMALL",
+                "workload_size": "Small",
+                "scale_to_zero_enabled": "true",
+            }
+        ],
+        "auto_capture_config": {
+            "catalog_name": catalog,
+            "schema_name": log_schema,
+            "table_name_prefix": model_serving_endpoint_name,
+        },
+    },
+}
+
+# Make sure to the schema for the inference table exists
+_ = spark.sql(
+    f"CREATE SCHEMA IF NOT EXISTS {catalog}.{log_schema}"
+)
+
+# Make sure to drop the inference table of it exists
+_ = spark.sql(
+    f"DROP TABLE IF EXISTS {catalog}.{log_schema}.`{model_serving_endpoint_name}_payload`"
+)
+
+# COMMAND ----------
+
+def func_create_endpoint(model_serving_endpoint_name):
+    # get endpoint status
+    endpoint_url = f"https://{instance}/api/2.0/serving-endpoints"
+    url = f"{endpoint_url}/{model_serving_endpoint_name}"
+    r = requests.get(url, headers=headers)
+    if "RESOURCE_DOES_NOT_EXIST" in r.text:
+        print(
+            "Creating this new endpoint: ",
+            f"https://{instance}/serving-endpoints/{model_serving_endpoint_name}/invocations",
+        )
+        re = requests.post(endpoint_url, headers=headers, json=my_json)
+    else:
+        new_model_version = (my_json["config"])["served_models"][0]["model_version"]
+        print(
+            "This endpoint existed previously! We are updating it to a new config with new model version: ",
+            new_model_version,
+        )
+        # update config
+        url = f"{endpoint_url}/{model_serving_endpoint_name}/config"
+        re = requests.put(url, headers=headers, json=my_json["config"])
+        # wait till new config file in place
+        import time, json
+
+        # get endpoint status
+        url = f"https://{instance}/api/2.0/serving-endpoints/{model_serving_endpoint_name}"
+        retry = True
+        total_wait = 0
+        while retry:
+            r = requests.get(url, headers=headers)
+            assert (
+                r.status_code == 200
+            ), f"Expected an HTTP 200 response when accessing endpoint info, received {r.status_code}"
+            endpoint = json.loads(r.text)
+            if "pending_config" in endpoint.keys():
+                seconds = 10
+                print("New config still pending")
+                if total_wait < 6000:
+                    # if less the 10 mins waiting, keep waiting
+                    print(f"Wait for {seconds} seconds")
+                    print(f"Total waiting time so far: {total_wait} seconds")
+                    time.sleep(10)
+                    total_wait += seconds
+                else:
+                    print(f"Stopping,  waited for {total_wait} seconds")
+                    retry = False
+            else:
+                print("New config in place now!")
+                retry = False
+
+    assert (
+        re.status_code == 200
+    ), f"Expected an HTTP 200 response, received {re.status_code}"
+
+
+def func_delete_model_serving_endpoint(model_serving_endpoint_name):
+    endpoint_url = f"https://{instance}/api/2.0/serving-endpoints"
+    url = f"{endpoint_url}/{model_serving_endpoint_name}"
+    response = requests.delete(url, headers=headers)
+    if response.status_code != 200:
+        raise Exception(
+            f"Request failed with status {response.status_code}, {response.text}"
+        )
+    else:
+        print(model_serving_endpoint_name, "endpoint is deleted!")
+    return response.json()
+
+# COMMAND ----------
+
+func_create_endpoint(model_serving_endpoint_name)
+
+# COMMAND ----------
+
+import time, mlflow
+
+
+def wait_for_endpoint():
+    endpoint_url = f"https://{instance}/api/2.0/serving-endpoints"
+    while True:
+        url = f"{endpoint_url}/{model_serving_endpoint_name}"
+        response = requests.get(url, headers=headers)
+        assert (
+            response.status_code == 200
+        ), f"Expected an HTTP 200 response, received {response.status_code}\n{response.text}"
+
+        status = response.json().get("state", {}).get("ready", {})
+        # print("status",status)
+        if status == "READY":
+            print(status)
+            print("-" * 80)
+            return
+        else:
+            print(f"Endpoint not ready ({status}), waiting 5 miutes")
+            time.sleep(300)  # Wait 300 seconds
+
+
+api_url = mlflow.utils.databricks_utils.get_webapp_url()
+
+wait_for_endpoint()
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Online Inference
+
+# COMMAND ----------
+
+import os
+import requests
+import pandas as pd
+import json
+import matplotlib.pyplot as plt
+
+# Replace URL with the end point invocation url you get from Model Seriving page.
+endpoint_url = f"https://{instance}/serving-endpoints/{model_serving_endpoint_name}/invocations"
+token = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiToken().get()
+def forecast(input_data, url=endpoint_url, databricks_token=token):
+    headers = {
+        "Authorization": f"Bearer {databricks_token}",
+        "Content-Type": "application/json",
+    }
+    body = {"inputs": input_data.tolist()}
+    data = json.dumps(body)
+    response = requests.request(method="POST", headers=headers, url=url, data=data)
+    if response.status_code != 200:
+        raise Exception(
+            f"Request failed with status {response.status_code}, {response.text}"
+        )
+    return response.json()
+
+# COMMAND ----------
+
+input_data = np.random.rand(5, 52) # (batch, series)
+forecast(input_data)
+
+# COMMAND ----------
+
+func_delete_model_serving_endpoint(model_serving_endpoint_name)
+
+# COMMAND ----------
+
+

@@ -6,31 +6,37 @@
 # COMMAND ----------
 
 # MAGIC %pip install -r ../requirements.txt --quiet
-dbutils.library.restartPython()
+# MAGIC dbutils.library.restartPython()
 
 # COMMAND ----------
 
-import logging
-logger = spark._jvm.org.apache.log4j
-logging.getLogger("py4j.java_gateway").setLevel(logging.ERROR)
-logging.getLogger("py4j.clientserver").setLevel(logging.ERROR)
+# MAGIC %md
+# MAGIC ### Data preparation steps
+# MAGIC We are using `datasetsforecast` package to download M4 data.
+# MAGIC
+# MAGIC M4 dataset contains a set of time series which we use for testing of MMF SA.
+# MAGIC
+# MAGIC Below we have developed a number of functions to convert M4 time series to the expected format.
 
 # COMMAND ----------
 
 import pathlib
 import pandas as pd
+import logging
+logger = spark._jvm.org.apache.log4j
+logging.getLogger("py4j.java_gateway").setLevel(logging.ERROR)
+logging.getLogger("py4j.clientserver").setLevel(logging.ERROR)
 from datasetsforecast.m4 import M4
-from mmf_sa import run_forecast
+import uuid
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Data preparation steps 
-# MAGIC We are using `datasetsforecast` package to download M4 data. 
-# MAGIC 
-# MAGIC M4 dataset contains a set of time series which we use for testing of MMF SA. 
-# MAGIC 
-# MAGIC Below we have developed a number of functions to convert M4 time series to the expected format. 
+# Make sure that the catalog and the schema exist
+catalog = "solacc_uc"  # Name of the catalog we use to manage our assets
+db = "mmf"  # Name of the schema we use to manage our assets (e.g. datasets)
+
+_ = spark.sql(f"CREATE CATALOG IF NOT EXISTS {catalog}")
+_ = spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{db}")
 
 # COMMAND ----------
 
@@ -40,7 +46,7 @@ n = 100
 
 def create_m4_daily():
     y_df, _, _ = M4.load(directory=str(pathlib.Path.home()), group="Daily")
-    _ids = [f"D{i}" for i in range(1, n)]
+    _ids = [f"D{i}" for i in range(1, n+1)]
     y_df = (
         y_df.groupby("unique_id")
         .filter(lambda x: x.unique_id.iloc[0] in _ids)
@@ -61,15 +67,6 @@ def transform_group(df):
     res_df["y"] = df.y.values
     return res_df
 
-
-# COMMAND ----------
-
-# Make sure that the catalog and the schema exist
-catalog = "solacc_uc" # Name of the catalog we use to manage our assets
-db = "mmf" # Name of the schema we use to manage our assets (e.g. datasets)
-
-_ = spark.sql(f"CREATE CATALOG IF NOT EXISTS {catalog}")
-_ = spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{db}")
 
 (
     spark.createDataFrame(create_m4_daily())
@@ -92,27 +89,16 @@ _ = spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{db}")
 # COMMAND ----------
 
 active_models = [
-    "StatsForecastBaselineWindowAverage",
-    "StatsForecastBaselineSeasonalWindowAverage",
-    "StatsForecastBaselineNaive",
-    "StatsForecastBaselineSeasonalNaive",
-    "StatsForecastAutoArima",
-    "StatsForecastAutoETS",
-    "StatsForecastAutoCES",
-    "StatsForecastAutoTheta",
-    "StatsForecastTSB",
-    "StatsForecastADIDA",
-    "StatsForecastIMAPA",
-    "StatsForecastCrostonClassic",
-    "StatsForecastCrostonOptimized",
-    "StatsForecastCrostonSBA",
-    "RFableArima",
-    "RFableETS",
-    "RFableNNETAR",
-    "RFableEnsemble",
-    "RDynamicHarmonicRegression",
-    "SKTimeTBats",
-    "SKTimeLgbmDsDt",
+    "NeuralForecastRNN",
+    "NeuralForecastLSTM",
+    "NeuralForecastNBEATSx",
+    "NeuralForecastNHITS",
+    "NeuralForecastAutoRNN",
+    "NeuralForecastAutoLSTM",
+    "NeuralForecastAutoNBEATSx",
+    "NeuralForecastAutoNHITS",
+    "NeuralForecastAutoTiDE",
+    "NeuralForecastAutoPatchTST",
 ]
 
 # COMMAND ----------
@@ -121,31 +107,23 @@ active_models = [
 
 # COMMAND ----------
 
-run_forecast(
-    spark=spark,
-    train_data=f"{catalog}.{db}.m4_daily_train",
-    scoring_data=f"{catalog}.{db}.m4_daily_train",
-    scoring_output=f"{catalog}.{db}.daily_scoring_output",
-    evaluation_output=f"{catalog}.{db}.daily_evaluation_output",
-    group_id="unique_id",
-    date_col="ds",
-    target="y",
-    freq="D",
-    prediction_length=10,
-    backtest_months=1,
-    stride=10,
-    train_predict_ratio=2,
-    data_quality_check=True,
-    resample=False,
-    active_models=active_models,
-    experiment_path=f"/Shared/mmf_experiment",
-    use_case_name="m4_daily",
-)
+# MAGIC %md
+# MAGIC We have to loop through the model in the following way else cuda will throw an error.
 
 # COMMAND ----------
 
-# MAGIC %md ### Evaluation Output
-# MAGIC In the evaluation output table, the evaluations for all backtest windows and all models are stored. This info can be used to monitor model performance or decide which models should be taken into the final aggregated forecast.
+run_id = str(uuid.uuid4())
+
+for model in active_models:
+  dbutils.notebook.run(
+    "run_daily",
+    timeout_seconds=0, 
+    arguments={"catalog": catalog, "db": db, "model": model, "run_id": run_id})
+
+# COMMAND ----------
+
+# MAGIC %md ### Evaluation output
+# MAGIC In the evaluation output table, the evaluation for all backtest windows and all models are stored. This info can be used to monitor model performance or decide which models should be taken into the final aggregated forecast.
 
 # COMMAND ----------
 

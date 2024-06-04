@@ -6,37 +6,32 @@
 # COMMAND ----------
 
 # MAGIC %pip install -r ../requirements.txt --quiet
-dbutils.library.restartPython()
+# MAGIC dbutils.library.restartPython()
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Data preparation steps
-# MAGIC We are using `datasetsforecast` package to download M4 data.
-# MAGIC
-# MAGIC M4 dataset contains a set of time series which we use for testing of MMF SA.
-# MAGIC
-# MAGIC Below we have developed a number of functions to convert M4 time series to the expected format.
+import logging
+from tqdm.autonotebook import tqdm
+logger = spark._jvm.org.apache.log4j
+logging.getLogger("py4j.java_gateway").setLevel(logging.ERROR)
+logging.getLogger("py4j.clientserver").setLevel(logging.ERROR)
 
 # COMMAND ----------
 
 import pathlib
 import pandas as pd
-import logging
-logger = spark._jvm.org.apache.log4j
-logging.getLogger("py4j.java_gateway").setLevel(logging.ERROR)
-logging.getLogger("py4j.clientserver").setLevel(logging.ERROR)
 from datasetsforecast.m4 import M4
-import uuid
+from mmf_sa import run_forecast
 
 # COMMAND ----------
 
-# Make sure that the catalog and the schema exist
-catalog = "solacc_uc"  # Name of the catalog we use to manage our assets
-db = "mmf"  # Name of the schema we use to manage our assets (e.g. datasets)
-
-_ = spark.sql(f"CREATE CATALOG IF NOT EXISTS {catalog}")
-_ = spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{db}")
+# MAGIC %md
+# MAGIC ### Data preparation steps 
+# MAGIC We are using `datasetsforecast` package to download M4 data. 
+# MAGIC
+# MAGIC M4 dataset contains a set of time series which we use for testing of MMF SA. 
+# MAGIC
+# MAGIC Below we have developed a number of functions to convert M4 time series to the expected format. 
 
 # COMMAND ----------
 
@@ -73,6 +68,15 @@ def transform_group(df):
     return _df
 
 
+# COMMAND ----------
+
+# Make sure that the catalog and the schema exist
+catalog = "solacc_uc"  # Name of the catalog we use to manage our assets
+db = "mmf"  # Name of the schema we use to manage our assets (e.g. datasets)
+
+_ = spark.sql(f"CREATE CATALOG IF NOT EXISTS {catalog}")
+_ = spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{db}")
+
 (
     spark.createDataFrame(create_m4_monthly())
     .write.format("delta").mode("overwrite")
@@ -98,15 +102,27 @@ def transform_group(df):
 # COMMAND ----------
 
 active_models = [
-    "ChronosT5Tiny",
-    "ChronosT5Mini",
-    "ChronosT5Small",
-    "ChronosT5Base",
-    "ChronosT5Large",
-    "MoiraiSmall",
-    "MoiraiBase",
-    "MoiraiLarge",
-    "Moment1Large",
+    "StatsForecastBaselineWindowAverage",
+    "StatsForecastBaselineSeasonalWindowAverage",
+    "StatsForecastBaselineNaive",
+    "StatsForecastBaselineSeasonalNaive",
+    "StatsForecastAutoArima",
+    "StatsForecastAutoETS",
+    "StatsForecastAutoCES",
+    "StatsForecastAutoTheta",
+    "StatsForecastTSB",
+    "StatsForecastADIDA",
+    "StatsForecastIMAPA",
+    "StatsForecastCrostonClassic",
+    "StatsForecastCrostonOptimized",
+    "StatsForecastCrostonSBA",
+    "RFableArima",
+    "RFableETS",
+    "RFableNNETAR",
+    "RFableEnsemble",
+    "RDynamicHarmonicRegression",
+    "SKTimeTBats",
+    "SKTimeLgbmDsDt",
 ]
 
 # COMMAND ----------
@@ -115,18 +131,26 @@ active_models = [
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC We have to loop through the model in the following way else cuda will throw an error.
-
-# COMMAND ----------
-
-run_id = str(uuid.uuid4())
-
-for model in active_models:
-  dbutils.notebook.run(
-    "run_monthly",
-    timeout_seconds=0,
-    arguments={"catalog": catalog, "db": db, "model": model, "run_id": run_id})
+run_forecast(
+    spark=spark,
+    train_data=f"{catalog}.{db}.m4_monthly_train",
+    scoring_data=f"{catalog}.{db}.m4_monthly_train",
+    scoring_output=f"{catalog}.{db}.monthly_scoring_output",
+    evaluation_output=f"{catalog}.{db}.monthly_evaluation_output",
+    group_id="unique_id",
+    date_col="date",
+    target="y",
+    freq="M",
+    prediction_length=3,
+    backtest_months=12,
+    stride=1,
+    train_predict_ratio=2,
+    data_quality_check=True,
+    resample=False,
+    active_models=active_models,
+    experiment_path=f"/Shared/mmf_experiment_monthly",
+    use_case_name="m4_monthly",
+)
 
 # COMMAND ----------
 
@@ -140,7 +164,7 @@ for model in active_models:
 # COMMAND ----------
 
 # MAGIC %md ### Forecast Output
-# MAGIC In the Forecast output table, the final forecast for each model and each time series is stored.
+# MAGIC In the Forecast output table, the final forecast for each model and each time series is stored. 
 
 # COMMAND ----------
 
