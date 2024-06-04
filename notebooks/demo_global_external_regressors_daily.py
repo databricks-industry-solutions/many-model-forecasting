@@ -8,6 +8,7 @@ from tqdm.autonotebook import tqdm
 logger = spark._jvm.org.apache.log4j
 logging.getLogger("py4j.java_gateway").setLevel(logging.ERROR)
 logging.getLogger("py4j.clientserver").setLevel(logging.ERROR)
+import uuid
 
 # COMMAND ----------
 
@@ -85,11 +86,13 @@ active_models = [
 
 # COMMAND ----------
 
+run_id = str(uuid.uuid4())
+
 for model in active_models:
   dbutils.notebook.run(
     "run_external_regressors_daily",
     timeout_seconds=0,
-    arguments={"catalog": catalog, "db": db, "model": model})
+    arguments={"catalog": catalog, "db": db, "model": model, "run_id": run_id})
 
 # COMMAND ----------
 
@@ -98,10 +101,6 @@ for model in active_models:
 # COMMAND ----------
 
 # MAGIC %sql select * from solacc_uc.mmf.rossmann_daily_scoring_output order by Store, model
-
-# COMMAND ----------
-
-# MAGIC %sql select * from solacc_uc.mmf.rossmann_daily_ensemble_output order by Store
 
 # COMMAND ----------
 
@@ -114,7 +113,3 @@ for model in active_models:
 # COMMAND ----------
 
 # MAGIC %sql delete from solacc_uc.mmf.rossmann_daily_scoring_output
-
-# COMMAND ----------
-
-# MAGIC %sql delete from solacc_uc.mmf.rossmann_daily_ensemble_output

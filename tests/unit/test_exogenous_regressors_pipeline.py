@@ -31,6 +31,9 @@ def test_exogenous_regressors(base_config, m4_df_exogenous):
     res_df = model.predict(_hist_df, _val_df)
     print(
         model.backtest(
-            _df, start=_df.ds.max() - pd.DateOffset(days=35), stride=10, retrain=True
+            _df,
+            start=_df.ds.max() - pd.DateOffset(days=35),
+            stride=10,
+            #retrain=True
         )
     )

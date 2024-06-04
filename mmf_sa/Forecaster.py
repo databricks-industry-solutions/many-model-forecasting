@@ -43,6 +43,7 @@ class Forecaster:
         data_conf: Dict[str, Any],
         spark: SparkSession,
         experiment_id: str = None,
+        run_id: str = None,
     ):
         if isinstance(conf, BaseContainer):
             self.conf = conf
@@ -53,8 +54,10 @@ class Forecaster:
             self.conf = OmegaConf.create(_yaml_conf)
         else:
             raise Exception("No configuration provided!")
-
-        self.run_id = str(uuid.uuid4())
+        if run_id:
+            self.run_id = run_id
+        else:
+            self.run_id = str(uuid.uuid4())
         self.data_conf = data_conf
         self.model_registry = ModelRegistry(self.conf)
         self.spark = spark
@@ -66,7 +69,6 @@ class Forecaster:
             raise Exception(
                 "Please set 'experiment_path' parameter in the configuration file!"
             )
-        self.selection_metric = self.conf["selection_metric"]
         self.run_date = datetime.now()
 
     def set_mlflow_experiment(self):
@@ -118,15 +120,12 @@ class Forecaster:
         return train_df, val_df
 
     def evaluate_score(
-            self, evaluating: bool = True, scoring: bool = True, ensemble: bool = True
-    ) -> str:
+            self, evaluate: bool = True, score: bool = True) -> str:
         print("Starting evaluate_score")
-        if evaluating:
+        if evaluate:
             self.evaluate_models()
-        if scoring:
+        if score:
             self.score_models()
-        if ensemble:
-            self.ensemble()
         print("Finished evaluate_score")
         return self.run_id
 
@@ -525,78 +524,3 @@ class Forecaster:
                 latest_version = version_int
         return client.get_model_version(registered_name, latest_version)
 
-    def ensemble(self):
-        if self.conf.get("ensemble") and self.conf["ensemble_scoring_output"]:
-            metrics_df = (
-                self.spark.table(self.conf["evaluation_output"])
-                .where(col("run_id").eqNullSafe(lit(self.run_id)))
-                .where(
-                    col("metric_name").eqNullSafe(
-                        lit(self.conf.get("ensemble_metric", "smape"))
-                    )
-                )
-            )
-            models_df = (
-                metrics_df.groupby(self.conf["group_id"], "model")
-                .agg(
-                    avg("metric_value").alias("metric_avg"),
-                    min("metric_value").alias("metric_min"),
-                    max("metric_value").alias("metric_max"),
-                )
-                .where(
-                    col("metric_avg") < lit(self.conf.get("ensemble_metric_avg", 0.2))
-                )
-                .where(
-                    col("metric_max") < lit(self.conf.get("ensemble_metric_max", 0.5))
-                )
-                .where(col("metric_min") > lit(0.01))
-            )
-            df = (
-                self.spark.table(self.conf["scoring_output"])
-                .where(col("run_id").eqNullSafe(lit(self.run_id)))
-                .join(
-                    models_df.select(self.conf["group_id"], "model"),
-                    on=[self.conf["group_id"], "model"],
-                )
-            )
-
-            left = df.select(
-                self.conf["group_id"], "run_id", "run_date", "use_case", "model",
-                posexplode(self.conf["date_col"])
-            ).withColumnRenamed('col', self.conf["date_col"])
-
-            right = df.select(
-                self.conf["group_id"], "run_id", "run_date", "use_case", "model",
-                posexplode(self.conf["target"])
-            ).withColumnRenamed('col', self.conf["target"])
-
-            merged = left.join(right, [
-                self.conf["group_id"], 'run_id', 'run_date', 'use_case', 'model',
-                'pos'], 'inner').drop("pos")
-
-            aggregated_df = merged.groupby(
-                self.conf["group_id"], self.conf["date_col"]
-            ).agg(
-                avg(self.conf["target"]).alias(self.conf["target"] + "_avg"),
-                min(self.conf["target"]).alias(self.conf["target"] + "_min"),
-                max(self.conf["target"]).alias(self.conf["target"] + "_max"),
-            )
-
-            aggregated_df = aggregated_df.orderBy(self.conf["group_id"], self.conf["date_col"])\
-                .groupBy(self.conf["group_id"]).agg(
-                collect_list(self.conf["date_col"]).alias(self.conf["date_col"]),
-                collect_list(self.conf["target"] + "_avg").alias(self.conf["target"] + "_avg"),
-                collect_list(self.conf["target"] + "_min").alias(self.conf["target"] + "_min"),
-                collect_list(self.conf["target"] + "_max").alias(self.conf["target"] + "_max")
-            )
-
-            (
-                aggregated_df.withColumn(self.conf["group_id"], col(self.conf["group_id"]).cast(StringType()))
-                .withColumn("run_id", lit(self.run_id))
-                .withColumn("run_date", lit(self.run_date))
-                .withColumn("use_case", lit(self.conf["use_case_name"]))
-                .withColumn("model", lit("ensemble"))
-                .write.format("delta")
-                .mode("append")
-                .saveAsTable(self.conf["ensemble_scoring_output"])
-            )
