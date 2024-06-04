@@ -103,11 +103,6 @@ run_id = run_forecast(
     active_models=active_models,
     data_quality_check=True,
     resample=False,
-    ensemble=True,
-    ensemble_metric="smape",
-    ensemble_metric_avg=0.3,
-    ensemble_metric_max=0.5,
-    ensemble_scoring_output=f"{catalog}.{db}.rossmann_daily_ensemble_output",
     experiment_path=f"/Shared/mmf_rossmann",
     use_case_name="rossmann_daily",
 )
@@ -123,10 +118,6 @@ print(run_id)
 
 # COMMAND ----------
 
-# MAGIC %sql select * from solacc_uc.mmf.rossmann_daily_ensemble_output order by Store
-
-# COMMAND ----------
-
 # MAGIC %md ### Delete Tables
 
 # COMMAND ----------
@@ -136,7 +127,3 @@ print(run_id)
 # COMMAND ----------
 
 # MAGIC %sql delete from solacc_uc.mmf.rossmann_daily_scoring_output
-
-# COMMAND ----------
-
-# MAGIC %sql delete from solacc_uc.mmf.rossmann_daily_ensemble_output

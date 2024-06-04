@@ -1,11 +1,7 @@
-output_format: "delta"
-accelerator: cpu
 temp_path: /Volumes/solacc_uc/mmf/partitions
-
 metric: smape
-selection_metric: smape_eval
 backtest_retrain: false
-
+accelerator: cpu
 resample: false
 train_predict_ratio: 4
 freq: D

@@ -62,35 +62,10 @@ m4_df = spark.createDataFrame(create_m4_df())
 m4_df.createOrReplaceTempView("mmf_train")
 
 active_models = [
-    #"StatsForecastBaselineWindowAverage",
-    #"StatsForecastBaselineSeasonalWindowAverage",
-    #"StatsForecastBaselineNaive",
-    #"StatsForecastBaselineSeasonalNaive",
-    "StatsForecastAutoArima",
-    #"StatsForecastAutoETS",
-    #"StatsForecastAutoCES",
-    #"StatsForecastAutoTheta",
-    #"StatsForecastTSB",
-    #"StatsForecastADIDA",
-    #"StatsForecastIMAPA",
-    #"StatsForecastCrostonClassic",
-    #"StatsForecastCrostonOptimized",
-    #"StatsForecastCrostonSBA",
-    #"RFableArima",
-    #"RFableETS",
-    #"RFableNNETAR",
-    #"RFableEnsemble",
-    #"RDynamicHarmonicRegression",
-    #"SKTimeLgbmDsDt",
-    #"SKTimeTBats",
-    #"NeuralForecastRNN",
-    #"NeuralForecastLSTM",
-    #"NeuralForecastNBEATSx",
-    #"NeuralForecastNHITS",
-    #"NeuralForecastAutoRNN",
-    #"NeuralForecastAutoLSTM",
-    #"NeuralForecastAutoNBEATSx",
-    #"NeuralForecastAutoNHITS",
+    "StatsForecastBaselineWindowAverage",
+    "StatsForecastBaselineSeasonalWindowAverage",
+    "StatsForecastBaselineNaive",
+    "StatsForecastBaselineSeasonalNaive",
 ]
 
 # COMMAND ----------
@@ -115,11 +90,6 @@ run_forecast(
     train_predict_ratio=2,
     data_quality_check=True,
     resample=False,
-    ensemble=True,
-    ensemble_metric="smape",
-    ensemble_metric_avg=0.3,
-    ensemble_metric_max=0.5,
-    ensemble_scoring_output=f"{catalog}.{db}.daily_ensemble_output",
     active_models=active_models,
     experiment_path=f"/Shared/mmf_experiment",
     use_case_name="mmf",
@@ -132,10 +102,4 @@ run_forecast(
 # COMMAND ----------
 
 # MAGIC %sql drop table main.mmf.daily_scoring_output
-
-# COMMAND ----------
-
-# MAGIC %sql drop table main.mmf.daily_ensemble_output
-
-# COMMAND ----------
 

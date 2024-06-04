@@ -22,12 +22,12 @@ dbutils.library.restartPython()
 
 import pathlib
 import pandas as pd
-from mmf_sa import run_forecast
 import logging
 logger = spark._jvm.org.apache.log4j
 logging.getLogger("py4j.java_gateway").setLevel(logging.ERROR)
 logging.getLogger("py4j.clientserver").setLevel(logging.ERROR)
 from datasetsforecast.m4 import M4
+import uuid
 
 # COMMAND ----------
 
@@ -120,11 +120,13 @@ active_models = [
 
 # COMMAND ----------
 
+run_id = str(uuid.uuid4())
+
 for model in active_models:
   dbutils.notebook.run(
     "run_monthly",
     timeout_seconds=0,
-    arguments={"catalog": catalog, "db": db, "model": model})
+    arguments={"catalog": catalog, "db": db, "model": model, "run_id": run_id})
 
 # COMMAND ----------
 
@@ -146,15 +148,6 @@ for model in active_models:
 
 # COMMAND ----------
 
-# MAGIC %md ### Ensemble Output
-# MAGIC In the final ensemble output table, we store the averaged forecast. The models which meet the threshold defined using the ensembling parameters are taken into consideration
-
-# COMMAND ----------
-
-# MAGIC %sql select * from solacc_uc.mmf.monthly_ensemble_output order by unique_id, model, date
-
-# COMMAND ----------
-
 # MAGIC %md ### Delete Tables
 
 # COMMAND ----------
@@ -164,7 +157,3 @@ for model in active_models:
 # COMMAND ----------
 
 # MAGIC %sql delete from solacc_uc.mmf.monthly_scoring_output
-
-# COMMAND ----------
-
-# MAGIC %sql delete from solacc_uc.mmf.monthly_ensemble_output

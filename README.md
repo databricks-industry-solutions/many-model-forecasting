@@ -73,13 +73,8 @@ run_forecast(
     train_predict_ratio=2,
     data_quality_check=True,
     resample=False,
-    ensemble=True,
-    ensemble_metric="smape",
-    ensemble_metric_avg=0.3,
-    ensemble_metric_max=0.5,
-    ensemble_scoring_output=f"{catalog}.{db}.daily_ensemble_output",
     active_models=active_models,
-    experiment_path=f"/Shared/mmf_experiment",
+    experiment_path="/Shared/mmf_experiment",
     use_case_name="m4_daily",
 )
 ```
@@ -99,12 +94,7 @@ run_forecast(
 -  ```stride``` is the number of steps in which you update your backtesting trial start date when going from one trial to the next.
 -  ```train_predict_ratio``` specifies the minimum length required for your training dataset with respect to ```prediction_length```. If ```train_predict_ratio```=2, you need to have training dataset that is at least twice as long as ```prediciton_length```.
 -  ```data_quality_check``` checks the quality of the input data if set to True. See [data_quality_checks.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/data_quality_checks.py) for the full details of the checks. 
--  ```resample``` backfills empty entries with 0 if set to True.
--  ```ensemble```: if you have forecasts from multiple models, you can take a simple mean, min and max of these values and generate an ensemble forecast. 
--  ```ensemble_metric``` is smape (symmetric mean absolute percentage error) by default. You can or add your own metrics at the main core of the forecasting_sa package or you simply can use ```evaluation_output``` to calculate any metric of your choice.
--  ```ensemble_metric_avg``` sets the maximum for the avg smape from each model, above which we exclude from ensembling.
--  ```ensemble_metric_max``` sets the maximum for the smape of each model, above which we exclude from ensembling.
--  ```ensemble_scoring_output``` is a delta table where you write the ensembled forecasts. 
+-  ```resample``` backfills skipped entries with 0 if set to True. Default is False.
 -  ```active_models``` is a list of models you want to use.
 -  ```experiment_path``` to keep metrics under the MLFlow.
 -  ```use_case_name``` a new column will be created under the delta Table, in case you save multiple trials under 1 table.
@@ -170,13 +160,8 @@ run_forecast(
     train_predict_ratio=2,
     data_quality_check=True,
     resample=False,
-    ensemble=True,
-    ensemble_metric="smape",
-    ensemble_metric_avg=0.3,
-    ensemble_metric_max=0.5,
-    ensemble_scoring_output=f"{catalog}.{db}.daily_ensemble_output",
     active_models=[model],
-    experiment_path=f"/Shared/mmf_experiment",
+    experiment_path="/Shared/mmf_experiment",
     use_case_name="m4_daily",
     accelerator="gpu",
 )

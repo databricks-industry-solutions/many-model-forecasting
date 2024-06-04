@@ -137,11 +137,6 @@ run_forecast(
     train_predict_ratio=2,
     data_quality_check=True,
     resample=False,
-    ensemble=True,
-    ensemble_metric="smape",
-    ensemble_metric_avg=0.3,
-    ensemble_metric_max=0.5,
-    ensemble_scoring_output=f"{catalog}.{db}.daily_ensemble_output",
     active_models=active_models,
     experiment_path=f"/Shared/mmf_experiment",
     use_case_name="m4_daily",
@@ -167,15 +162,6 @@ run_forecast(
 
 # COMMAND ----------
 
-# MAGIC %md ### Ensemble Output
-# MAGIC In the final ensemble output table, we store the averaged forecast. The models which meet the threshold defined using the ensembling parameters are taken into consideration
-
-# COMMAND ----------
-
-# MAGIC %sql select * from solacc_uc.mmf.daily_ensemble_output order by unique_id, model, ds
-
-# COMMAND ----------
-
 # MAGIC %md ### Delete Tables
 
 # COMMAND ----------
@@ -185,7 +171,3 @@ run_forecast(
 # COMMAND ----------
 
 # MAGIC %sql delete from solacc_uc.mmf.daily_scoring_output
-
-# COMMAND ----------
-
-# MAGIC %sql delete from solacc_uc.mmf.daily_ensemble_output
