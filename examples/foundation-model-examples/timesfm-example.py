@@ -159,7 +159,6 @@ with mlflow.start_run() as run:
     input_example=df,
     pip_requirements=[
       "jax[cuda12]==0.4.26",
-      "protobuf==3.20.*",
       "utilsforecast==0.1.10",
       "git+https://github.com/google-research/timesfm.git",
     ],
@@ -375,4 +374,4 @@ forecast(df)
 
 # COMMAND ----------
 
-func_delete_model_serving_endpoint(model_serving_endpoint_name)
+#func_delete_model_serving_endpoint(model_serving_endpoint_name)
