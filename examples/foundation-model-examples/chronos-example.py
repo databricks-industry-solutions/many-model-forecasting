@@ -1,11 +1,49 @@
 # Databricks notebook source
+# MAGIC %md
+# MAGIC This is an example notebook that shows how to use [chronos](https://github.com/amazon-science/chronos-forecasting/tree/main) models on Databricks. 
+# MAGIC
+# MAGIC The notebook loads the model, distributes the inference, registers the model, deploys the model and makes online forecasts.
+
+# COMMAND ----------
+
 # MAGIC %pip install git+https://github.com/amazon-science/chronos-forecasting.git --quiet
 # MAGIC dbutils.library.restartPython()
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Distributed Inference
+# MAGIC ## Prepare Data
+
+# COMMAND ----------
+
+catalog = "solacc_uc"  # Name of the catalog we use to manage our assets
+db = "mmf"  # Name of the schema we use to manage our assets (e.g. datasets)
+n = 100  # Number of time series to sample
+
+# COMMAND ----------
+
+# This cell will create tables: {catalog}.{db}.m4_daily_train, {catalog}.{db}.m4_monthly_train, {catalog}.{db}.rossmann_daily_train, {catalog}.{db}.rossmann_daily_test
+
+dbutils.notebook.run("data_preparation", timeout_seconds=0, arguments={"catalog": catalog, "db": db, "n": n})
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC
+
+# COMMAND ----------
+
+from pyspark.sql.functions import collect_list
+
+# Make sure that the data exists
+df = spark.table(f'{catalog}.{db}.m4_daily_train')
+df = df.groupBy('unique_id').agg(collect_list('ds').alias('ds'), collect_list('y').alias('y'))
+display(df)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Distribute Inference
 
 # COMMAND ----------
 
@@ -13,7 +51,7 @@ import pandas as pd
 import numpy as np
 import torch
 from typing import Iterator
-from pyspark.sql.functions import collect_list, pandas_udf
+from pyspark.sql.functions import pandas_udf
 
 
 def create_get_horizon_timestamps(freq, prediction_length):
@@ -66,21 +104,22 @@ def create_forecast_udf(repository, prediction_length, num_samples, batch_size):
 
 # COMMAND ----------
 
-# Make sure that the data exists
-df = spark.table('solacc_uc.mmf.m4_daily_train')
-df = df.groupBy('unique_id').agg(collect_list('ds').alias('ds'), collect_list('y').alias('y'))
+chronos_model = "chronos-t5-tiny"  # Alternatibely chronos-t5-mini, chronos-t5-small, chronos-t5-base, chronos-t5-large
+prediction_length = 10  # Time horizon for forecasting
+num_samples = 10  # Number of forecast to generate. We will take median as our final forecast.
+batch_size = 4  # Number of time series to process simultaneously 
+freq = "D" # Frequency of the time series
+device_count = torch.cuda.device_count()  # Number of GPUs available
 
 # COMMAND ----------
 
-get_horizon_timestamps = create_get_horizon_timestamps(freq="D", prediction_length=10)
+get_horizon_timestamps = create_get_horizon_timestamps(freq=freq, prediction_length=prediction_length)
 forecast_udf = create_forecast_udf(
-  repository="amazon/chronos-t5-tiny", 
-  prediction_length=10, 
-  num_samples=10, 
-  batch_size=4,
+  repository=f"amazon/{chronos_model}", 
+  prediction_length=prediction_length,
+  num_samples=num_samples,
+  batch_size=batch_size,
   )
-
-device_count = torch.cuda.device_count()
 
 forecasts = df.repartition(device_count).select(
   df.unique_id,  
@@ -100,7 +139,6 @@ display(forecasts)
 import mlflow
 import torch
 import numpy as np
-from mlflow.models import infer_signature
 from mlflow.models.signature import ModelSignature
 from mlflow.types import DataType, Schema, TensorSpec
 mlflow.set_registry_uri("databricks-uc")
@@ -125,17 +163,18 @@ class ChronosModel(mlflow.pyfunc.PythonModel):
     )
     return forecast.numpy()
 
-pipeline = ChronosModel("amazon/chronos-t5-tiny")
+pipeline = ChronosModel(f"amazon/{chronos_model}")
 input_schema = Schema([TensorSpec(np.dtype(np.double), (-1, -1))])
 output_schema = Schema([TensorSpec(np.dtype(np.uint8), (-1, -1, -1))])
 signature = ModelSignature(inputs=input_schema, outputs=output_schema)
 input_example = np.random.rand(1, 52)
+registered_model_name=f"{catalog}.{db}.{chronos_model}"
 
 with mlflow.start_run() as run:
   mlflow.pyfunc.log_model(
     "model",
     python_model=pipeline,
-    registered_model_name="solacc_uc.mmf.chronos-t5-tiny",
+    registered_model_name=registered_model_name,
     signature=signature,
     input_example=input_example,
     pip_requirements=[
@@ -145,26 +184,19 @@ with mlflow.start_run() as run:
 
 # COMMAND ----------
 
-import mlflow
 from mlflow import MlflowClient
-import pandas as pd
-import numpy as np
-
 client = MlflowClient()
-mlflow.set_registry_uri("databricks-uc")
 
-
-def get_latest_model_version(client, registered_name):
+def get_latest_model_version(client, registered_model_name):
     latest_version = 1
-    for mv in client.search_model_versions(f"name='{registered_name}'"):
+    for mv in client.search_model_versions(f"name='{registered_model_name}'"):
         version_int = int(mv.version)
         if version_int > latest_version:
             latest_version = version_int
     return latest_version
 
-registered_name = f"solacc_uc.mmf.chronos-t5-tiny"
-model_version = get_latest_model_version(client, registered_name)
-logged_model = f"models:/{registered_name}/{model_version}"
+model_version = get_latest_model_version(client, registered_model_name)
+logged_model = f"models:/{registered_model_name}/{model_version}"
 
 # Load model as a PyFuncModel
 loaded_model = mlflow.pyfunc.load_model(logged_model)
@@ -172,7 +204,7 @@ loaded_model = mlflow.pyfunc.load_model(logged_model)
 # Create random input data
 input_data = np.random.rand(5, 52) # (batch, series)
 
-# Generate forecast
+# Generate forecasts
 loaded_model.predict(input_data)
 
 # COMMAND ----------
@@ -182,13 +214,8 @@ loaded_model.predict(input_data)
 
 # COMMAND ----------
 
-catalog = "solacc_uc"
-log_schema = "mmf" # A schema within the catalog where the inferece log is going to be stored 
-model_serving_endpoint_name = "chronos-t5-tiny"
-
-token = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiToken().getOrElse(None)
-
 # With the token, you can create our authorization header for our subsequent REST calls
+token = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiToken().getOrElse(None)
 headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
 # Next you need an endpoint at which to execute your request which you can get from the notebook's tags collection
@@ -204,12 +231,14 @@ instance = tags["browserHostName"]
 
 import requests
 
+model_serving_endpoint_name = chronos_model
+
 my_json = {
     "name": model_serving_endpoint_name,
     "config": {
         "served_models": [
             {
-                "model_name": registered_name,
+                "model_name": registered_model_name,
                 "model_version": model_version,
                 "workload_type": "GPU_SMALL",
                 "workload_size": "Small",
@@ -218,20 +247,15 @@ my_json = {
         ],
         "auto_capture_config": {
             "catalog_name": catalog,
-            "schema_name": log_schema,
+            "schema_name": db,
             "table_name_prefix": model_serving_endpoint_name,
         },
     },
 }
 
-# Make sure to the schema for the inference table exists
-_ = spark.sql(
-    f"CREATE SCHEMA IF NOT EXISTS {catalog}.{log_schema}"
-)
-
 # Make sure to drop the inference table of it exists
 _ = spark.sql(
-    f"DROP TABLE IF EXISTS {catalog}.{log_schema}.`{model_serving_endpoint_name}_payload`"
+    f"DROP TABLE IF EXISTS {catalog}.{db}.`{model_serving_endpoint_name}_payload`"
 )
 
 # COMMAND ----------
@@ -338,7 +362,7 @@ wait_for_endpoint()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Online Inference
+# MAGIC ## Online Forecast
 
 # COMMAND ----------
 
