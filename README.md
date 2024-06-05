@@ -6,7 +6,7 @@ Bootstrap your large-scale forecasting solutions on Databricks with the Many Mod
 
 MMF expedites the development of sales and demand forecasting solutions on Databricks, including all critical steps: data preparation, training, backtesting, cross-validation, scoring, and deployment. Adopting a configuration-over-code approach, it minimizes the need for extensive coding. However, with its extensible architecture, MMF allows technically proficient users to incorporate new models and algorithms. We recommend reading though the source code and modify it to your specific requirements. 
 
-MMF integrates a variety of well-established and cutting-edge algorithms, including **local statistical models**, **machine learning models**, **global deep learning models**, and **foundation time series models**. MMF enables parallel modeling of hundreds or thousands of time series leveraging Spark's distributed computing power. Users can apply multiple models at once and select the best performing one for each time series based on their custom metrics.
+MMF integrates a variety of well-established and cutting-edge algorithms, including [local statistical models](https://github.com/databricks-industry-solutions/many-model-forecasting?tab=readme-ov-file#local-models), [global deep learning models](https://github.com/databricks-industry-solutions/many-model-forecasting?tab=readme-ov-file#global-models), and [foundation time series models](https://github.com/databricks-industry-solutions/many-model-forecasting?tab=readme-ov-file#foundation-models). MMF enables parallel modeling of hundreds or thousands of time series leveraging Spark's distributed computing power. Users can apply multiple models at once and select the best performing one for each time series based on their custom metrics.
 
 Get started now!
 
@@ -221,6 +221,11 @@ To modify the model hyperparameters, directly change the values in [mmf_sa/model
 MMF is fully integrated with MLflow and so once the training kicks off, the experiments will be visible in the MLflow Tracking UI with the corresponding metrics and parameters. During the evaluation, the models are logged and registered to Unity Catalog.
 
 An example notebook for monthly forecasting can be found in [examples/foundation_monthly.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/foundation_monthly.py).
+
+#### Using Foundation Models on Databricks
+
+If you just want to try out open source foundation models on Databricks, you can find example notebooks in [examples/foundation-model-examples](https://github.com/databricks-industry-solutions/many-model-forecasting/tree/main/examples/foundation-model-examples). These notebooks will show you how you can load a model, distribute the inference, register the model, deploy the model and generate online forecasts. We have a notebook for chronos, moirai, moment, and timesFM.
+
 
 ## Project support
 Please note the code in this project is provided for your exploration only, and are not formally supported by Databricks with Service Level Agreements (SLAs). They are provided AS-IS and we do not make any guarantees of any kind. Please do not submit a support ticket relating to any issues arising from the use of these projects. The source in this project is provided subject to the Databricks License. All included or referenced third party libraries are subject to the licenses set forth below.
