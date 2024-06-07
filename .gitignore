@@ -133,3 +133,6 @@ dmypy.json
 
 .databricks
 .dbx
+
+# Lightning Logs
+examples/lightning_logs
