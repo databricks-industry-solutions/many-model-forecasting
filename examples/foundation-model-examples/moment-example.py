@@ -13,6 +13,7 @@
 
 # MAGIC %md
 # MAGIC ## Prepare Data
+# MAGIC Make sure that the catalog and the schema already exist.
 
 # COMMAND ----------
 
@@ -38,7 +39,8 @@ display(df)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Distributed Inference
+# MAGIC ## Distribute Inference
+# MAGIC We use [Pandas UDF](https://docs.databricks.com/en/udf/pandas.html#iterator-of-series-to-iterator-of-series-udf) to distribute the inference.
 
 # COMMAND ----------
 
@@ -193,6 +195,11 @@ with mlflow.start_run() as run:
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC ##Reload Model
+
+# COMMAND ----------
+
 from mlflow import MlflowClient
 mlflow_client = MlflowClient()
 
@@ -218,7 +225,7 @@ loaded_model.predict(input_data)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Deploy Model for Online Forecast
+# MAGIC ## Deploy Model on Databricks Model Serving
 
 # COMMAND ----------
 

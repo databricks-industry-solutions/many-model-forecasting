@@ -1,0 +1,91 @@
+accelerator: gpu
+activation: ReLU
+alias: null
+batch_size: 32
+devices: -1
+drop_last_loader: false
+dropout_prob_theta: 0.0
+early_stop_patience_steps: -1
+exclude_insample_y: false
+futr_exog_list: []
+h: 10
+hist_exog_list: []
+inference_windows_batch_size: -1
+input_size: 20
+interpolation_mode: linear
+learning_rate: 0.001
+loss: !!python/object:neuralforecast.losses.pytorch.SMAPE
+  _backward_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _backward_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _buffers: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_hooks_always_called: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_hooks_with_kwargs: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _forward_pre_hooks_with_kwargs: !!python/object/apply:collections.OrderedDict
+  - []
+  _is_full_backward_hook: null
+  _load_state_dict_post_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _load_state_dict_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _modules: !!python/object/apply:collections.OrderedDict
+  - []
+  _non_persistent_buffers_set: !!set {}
+  _parameters: !!python/object/apply:collections.OrderedDict
+  - []
+  _state_dict_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  _state_dict_pre_hooks: !!python/object/apply:collections.OrderedDict
+  - []
+  horizon_weight: null
+  is_distribution_output: false
+  output_names:
+  - ''
+  outputsize_multiplier: 1
+  training: true
+max_steps: 200
+mlp_units:
+- - 512
+  - 512
+- - 512
+  - 512
+- - 512
+  - 512
+n_blocks:
+- 1
+- 1
+- 1
+n_freq_downsample:
+- 4
+- 2
+- 1
+n_pool_kernel_size:
+- 2
+- 2
+- 1
+num_lr_decays: 3
+num_workers_loader: 0
+optimizer: null
+optimizer_kwargs: null
+pooling_mode: MaxPool1d
+random_seed: 1
+scaler_type: robust
+stack_types:
+- identity
+- identity
+- identity
+start_padding_enabled: false
+stat_exog_list: []
+step_size: 1
+val_check_steps: 100
+valid_batch_size: null
+valid_loss: null
+windows_batch_size: 1024

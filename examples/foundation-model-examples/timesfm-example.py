@@ -4,7 +4,7 @@
 # MAGIC
 # MAGIC The notebook loads the model, distributes the inference, registers the model, deploys the model and makes online forecasts.
 # MAGIC
-# MAGIC As of today (June 5, 2024), TimesFM supports python version below [3.10](https://github.com/google-research/timesfm/issues/60). So make sure your cluster is below DBR ML 14.3.
+# MAGIC As of June 5, 2024, TimesFM supports python version below [3.10](https://github.com/google-research/timesfm/issues/60). So make sure your cluster is below DBR ML 14.3.
 
 # COMMAND ----------
 
@@ -24,6 +24,7 @@ subprocess.check_call([sys.executable, "-m", "pip", "install", package, "--quiet
 
 # MAGIC %md
 # MAGIC ## Prepare Data
+# MAGIC Make sure that the catalog and the schema already exist.
 
 # COMMAND ----------
 
@@ -51,7 +52,7 @@ display(df)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC See the [github repository](https://github.com/google-research/timesfm/tree/master?tab=readme-ov-file#initialize-the-model-and-load-a-checkpoint) of TimesFM for detailed description of the input parameters. 
+# MAGIC Distribution of the inference is managed by TimesFM so we don't need to use Pandas UDF. See the [github repository](https://github.com/google-research/timesfm/tree/master?tab=readme-ov-file#initialize-the-model-and-load-a-checkpoint) of TimesFM for detailed description of the input parameters. 
 
 # COMMAND ----------
 
@@ -166,6 +167,11 @@ with mlflow.start_run() as run:
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC ##Reload Model
+
+# COMMAND ----------
+
 from mlflow import MlflowClient
 client = MlflowClient()
 
@@ -189,7 +195,7 @@ loaded_model.predict(df)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Deploy Model for Online Forecast
+# MAGIC ## Deploy Model on Databricks Model Serving
 
 # COMMAND ----------
 

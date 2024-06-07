@@ -1,7 +1,20 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Many Models Forecasting SA (MMFSA) Demo
-# MAGIC This demo highlights how to configure MMF SA to use M4 competition data
+# MAGIC # Many Models Forecasting Demo
+# MAGIC This notebook showcases how to run MMF with global models on multiple time series of monthly resolution. We will use [M4 competition](https://www.sciencedirect.com/science/article/pii/S0169207019301128#sec5) data. The descriptions here are mostly the same as the case with the [daily resolution](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/global_daily.py), so we will skip the redundant parts and focus only on the essentials.
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ### Cluster setup
+# MAGIC
+# MAGIC We recommend using a cluster with [Databricks Runtime 14.3 LTS for ML](https://docs.databricks.com/en/release-notes/runtime/14.3lts-ml.html) or above. The cluster should be single-node with one or more GPU instances: e.g. [g4dn.12xlarge [T4]](https://aws.amazon.com/ec2/instance-types/g4/) on AWS or [Standard_NC64as_T4_v3](https://learn.microsoft.com/en-us/azure/virtual-machines/nct4-v3-series) on Azure.
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ### Install and import packages
+# MAGIC Check out [requirements.txt](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/requirements.txt) if you're interested in the libraries we use.
 
 # COMMAND ----------
 
@@ -10,33 +23,24 @@
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Data preparation steps
-# MAGIC We are using `datasetsforecast` package to download M4 data.
-# MAGIC
-# MAGIC M4 dataset contains a set of time series which we use for testing of MMF SA.
-# MAGIC
-# MAGIC Below we have developed a number of functions to convert M4 time series to the expected format.
-
-# COMMAND ----------
-
-import pathlib
-import pandas as pd
 import logging
 logger = spark._jvm.org.apache.log4j
 logging.getLogger("py4j.java_gateway").setLevel(logging.ERROR)
 logging.getLogger("py4j.clientserver").setLevel(logging.ERROR)
-from datasetsforecast.m4 import M4
-import uuid
 
 # COMMAND ----------
 
-# Make sure that the catalog and the schema exist
-catalog = "solacc_uc"  # Name of the catalog we use to manage our assets
-db = "mmf"  # Name of the schema we use to manage our assets (e.g. datasets)
+import uuid
+import pathlib
+import pandas as pd
+from datasetsforecast.m4 import M4
+from mmf_sa import run_forecast
 
-_ = spark.sql(f"CREATE CATALOG IF NOT EXISTS {catalog}")
-_ = spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{db}")
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ### Prepare data 
+# MAGIC We are using [`datasetsforecast`](https://github.com/Nixtla/datasetsforecast/tree/main/) package to download M4 data.
 
 # COMMAND ----------
 
@@ -73,6 +77,20 @@ def transform_group(df):
     return _df
 
 
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC We are going to save this data in a delta lake table. Provide catalog and database names where you want to store the data.__
+
+# COMMAND ----------
+
+catalog = "solacc_uc" # Name of the catalog we use to manage our assets
+db = "mmf" # Name of the schema we use to manage our assets (e.g. datasets)
+
+# Making sure that the catalog and the schema exist
+_ = spark.sql(f"CREATE CATALOG IF NOT EXISTS {catalog}")
+_ = spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{db}")
+
 (
     spark.createDataFrame(create_m4_monthly())
     .write.format("delta").mode("overwrite")
@@ -81,19 +99,22 @@ def transform_group(df):
 
 # COMMAND ----------
 
-# MAGIC %md ### Now the dataset looks in the following way:
+# MAGIC %md Let's take a peak at the dataset:
 
 # COMMAND ----------
 
-# MAGIC %sql select unique_id, count(date) as count from solacc_uc.mmf.m4_monthly_train group by unique_id order by unique_id
+display(spark.sql(f"select unique_id, count(date) as count from {catalog}.{db}.m4_monthly_train group by unique_id order by unique_id"))
 
 # COMMAND ----------
 
-# MAGIC %sql select count(distinct(unique_id)) from solacc_uc.mmf.m4_monthly_train
+display(
+  spark.sql(f"select * from {catalog}.{db}.m4_monthly_train where unique_id in ('M1', 'M2', 'M3', 'M4', 'M5') order by unique_id, date")
+  )
 
 # COMMAND ----------
 
-# MAGIC %md ### Let's configure the list of models we are going to use for training:
+# MAGIC %md ### Models
+# MAGIC Let's configure a list of models we are going to apply to our time series for evaluation and forecasting. A comprehensive list of all supported models is available in [mmf_sa/models/models_conf.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/models_conf.yaml). Look for the models where `model_type: global`; these are the global models we import from [neuralforecast](https://github.com/Nixtla/neuralforecast). Check their documentation for the detailed description of each model. 
 
 # COMMAND ----------
 
@@ -112,15 +133,13 @@ active_models = [
 
 # COMMAND ----------
 
-# MAGIC %md ### Now we can run the forecasting process using `run_forecast` function.
+# MAGIC %md ### Run MMF
+# MAGIC
+# MAGIC Now, we can run the evaluation and forecasting using `run_forecast` function defined in [mmf_sa/models/__init__.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/__init__.py). Refer to [README.md](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/README.md#parameters-description) for a comprehensive description of each parameter. Make sure to set `freq="M"` in `run_forecast` function called in [examples/run_monthly.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/run_monthly.py).
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC We have to loop through the model in the following way else cuda will throw an error.
-
-# COMMAND ----------
-
+# The same run_id will be assigned to all the models. This makes it easier to run the post evaluation analysis later.
 run_id = str(uuid.uuid4())
 
 for model in active_models:
@@ -131,30 +150,31 @@ for model in active_models:
 
 # COMMAND ----------
 
-# MAGIC %md ### Evaluation Output
-# MAGIC In the evaluation output table, the evaluation for all backtest windows and all models are stored. This info can be used to monitor model performance or decide which models should be taken into the final aggregated forecast.
+# MAGIC %md ### Evaluate
+# MAGIC In `evaluation_output` table, the we store all evaluation results for all backtesting trials from all models.
 
 # COMMAND ----------
 
-# MAGIC %sql select * from solacc_uc.mmf.monthly_evaluation_output order by unique_id, model, backtest_window_start_date
+display(spark.sql(f"select * from {catalog}.{db}.monthly_evaluation_output order by unique_id, model, backtest_window_start_date"))
 
 # COMMAND ----------
 
-# MAGIC %md ### Forecast Output
-# MAGIC In the Forecast output table, the final forecast for each model and each time series is stored. 
+# MAGIC %md ### Forecast
+# MAGIC In `scoring_output` table, forecasts for each time series from each model are stored.
 
 # COMMAND ----------
 
-# MAGIC %sql select * from solacc_uc.mmf.monthly_scoring_output order by unique_id, model, date
+display(spark.sql(f"select * from {catalog}.{db}.monthly_scoring_output order by unique_id, model, date"))
 
 # COMMAND ----------
 
 # MAGIC %md ### Delete Tables
+# MAGIC Let's clean up the tables.
 
 # COMMAND ----------
 
-# MAGIC %sql delete from solacc_uc.mmf.monthly_evaluation_output
+display(spark.sql(f"delete from {catalog}.{db}.monthly_evaluation_output"))
 
 # COMMAND ----------
 
-# MAGIC %sql delete from solacc_uc.mmf.monthly_scoring_output
+display(spark.sql(f"delete from {catalog}.{db}.monthly_scoring_output"))
