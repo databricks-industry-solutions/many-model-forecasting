@@ -1,15 +1,9 @@
 import functools
-from abc import ABC, abstractmethod
-from argparse import ArgumentParser
-from logging import Logger
 from typing import Dict, Any, Union
-import yaml
-import pathlib
-from omegaconf import OmegaConf, DictConfig
+from omegaconf import DictConfig
 import pandas as pd
 import pyspark
 from pyspark.sql import SparkSession
-import sys
 
 
 class DataQualityChecks:
@@ -28,8 +22,9 @@ class DataQualityChecks:
 
     def _backtest_length_check(self):
         """
-        Checks if the backtest interval contains at least one prediction length.
-        Mandatory check irrespective of data_quality_check being True or False.
+        Checks if backtest_months contains at least one prediction_length.
+        Mandatory check regardless of data_quality_check set to True or False.
+        Parameters: self (Forecaster): A Forecaster object.
         """
         backtest_days = self.conf["backtest_months"] * 30
         prediction_length_days = (
@@ -42,13 +37,14 @@ class DataQualityChecks:
 
     def _external_regressors_check(self):
         """
-        Checks if the resampling is turned off when an external regressor is given.
-        Mandatory check irrespective of data_quality_check being True or False.
+        Checks if the resampling is turned off when an exogenous regressor is given.
+        Mandatory check irrespective of data_quality_check set to True or False.
+        Parameters: self (Forecaster): A Forecaster object.
         """
         if (
-            self.conf.get("static_categoricals", None)
-            or self.conf.get("dynamic_categoricals", None)
-            or self.conf.get("dynamic_reals", None)
+            self.conf.get("static_features", None)
+            or self.conf.get("dynamic_future", None)
+            or self.conf.get("dynamic_historical", None)
         ):
             if self.conf.get("resample"):
                 raise Exception(
@@ -60,16 +56,21 @@ class DataQualityChecks:
         _df: pd.DataFrame, conf: Dict[str, Any], max_date: pd.Timestamp
     ) -> pd.DataFrame:
         """
-        Run 3 checks on the subset dataset grouped by group_id.
-        Optional checks only when data_quality_check is True.
-        1. Check if any of external regressor provided contains null. If it does, this time series is removed.
-        2. Check if the training period is longer than the requirement (train_predict_ratio).
-        3. Check for missing entries. If the time series has a missing entry and the resampling is disabled,
-        this time series is removed. If the time series has too many missing entries (more than 0.2 of the
+        Runs 4 checks on the subset dataset grouped by group_id.
+        These optional checks run only when data_quality_check is True.
+        1. Checks if any of external regressor provided contains null. If it does, this time series is removed.
+        2. Checks if the training period is longer than the requirement (train_predict_ratio).
+        3. Checks for missing entries. If the time series has a missing entry and the resampling is disabled,
+        it is removed. If the time series has too many missing entries (more than 0.2 of the
         entire duration), it is removed even when resampling is enabled.
         4. If the time series has too many negative entries (more than 0.2 of the entire duration), it is removed.
-        :return:
-        pandas DataFrame with time series not meeting the requirement removed.
+
+        Parameters:
+            _df (pd.DataFrame): A pandas DataFrame.
+            conf (Dict[str, Any]): A dictionary specifying the configuration.
+            max_date (pd.Timestamp, optional): A pandas Timestamp object.
+
+        Returns: _df (pd.DataFrame): A pandas DataFrame after time series not meeting the requirement removed.
         """
 
         group_id = _df[conf["group_id"]].iloc[0]
@@ -135,8 +136,11 @@ class DataQualityChecks:
 
     def run(self) -> tuple[Union[pd.DataFrame, pyspark.sql.DataFrame], list]:
         """
-        Main method of the job.
-        :return:
+        Runs the main method of the job.
+        Parameters: self (Forecaster): A Forecaster object.
+        Returns:
+            clean_df (Union[pd.DataFrame, pyspark.sql.DataFrame]): A pandas DataFrame or a PySpark DataFrame.
+            removed (list): A list of group ids that are removed.
         """
         print(f"Running data quality checks...")
         self.df[self.conf["date_col"]] = pd.to_datetime(self.df[self.conf["date_col"]])

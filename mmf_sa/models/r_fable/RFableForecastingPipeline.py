@@ -11,8 +11,6 @@ from rpy2.robjects.conversion import localconverter
 from mmf_sa.models.abstract_model import ForecastingRegressor
 
 
-# make sure R and the fable package are installed on your system
-# TODO: Above comment should be moved to README at some point
 base = importr("base")
 tsibble = importr("tsibble")
 fabletools = importr("fabletools")
@@ -55,7 +53,6 @@ class RFableModel(ForecastingRegressor):
         return rts
 
     def prepare_forecast_data(self, df: pd.DataFrame) -> pd.DataFrame:
-        # TODO Combine the prepare_data method to one single method
         df_rfable = df[
             [self.params.group_id, self.params.date_col]
             + [xreg for xreg in self.params.model_spec.xreg]
@@ -99,7 +96,7 @@ class RFableModel(ForecastingRegressor):
         )
         return forecast_df, self.model
 
-    def forecast(self, df: pd.DataFrame):
+    def forecast(self, df: pd.DataFrame, spark=None):
         return self.predict(df)
 
     def _get_model_definition(self):
