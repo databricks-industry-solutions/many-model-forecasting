@@ -126,7 +126,7 @@ class NeuralFcForecaster(ForecastingRegressor):
 
         return forecast_df, self.model
 
-    def forecast(self, df: pd.DataFrame):
+    def forecast(self, df: pd.DataFrame, spark=None):
         _df = df[df[self.params.target].notnull()]
         _df = self.prepare_data(_df)
         _last_date = _df["ds"].max()

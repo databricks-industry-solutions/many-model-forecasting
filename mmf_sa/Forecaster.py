@@ -72,6 +72,11 @@ class Forecaster:
         self.run_date = datetime.now()
 
     def set_mlflow_experiment(self):
+        """
+        Sets the MLflow experiment using the provided experiment path and returns the experiment id.
+        Parameters: self (Forecaster): A Forecaster object.
+        Returns: experiment_id (str): A string specifying the experiment id.
+        """
         mlflow.set_experiment(self.conf["experiment_path"])
         experiment_id = (
             MlflowClient()
@@ -81,6 +86,11 @@ class Forecaster:
         return experiment_id
 
     def resolve_source(self, key: str) -> DataFrame:
+        """
+        Resolve a data source using the provided key and return Spark DataFrame.
+        Parameters: self (Forecaster): A Forecaster object. key (str): A string specifying the key.
+        Returns: DataFrame: A Spark DataFrame object.
+        """
         if self.data_conf:
             df_val = self.data_conf.get(key)
             if df_val is not None and isinstance(df_val, pd.DataFrame):
@@ -91,6 +101,16 @@ class Forecaster:
             return self.spark.read.table(self.conf[key])
 
     def prepare_data_for_global_model(self, mode: str = None):
+        """
+        Prepares data for a global model by resolving the training data source, performing data quality checks,
+        optionally merging scoring data, and converting the DataFrame to a pandas DataFrame.
+        Parameters:
+            self (Forecaster): A Forecaster object.
+            mode (str, optional): A string specifying the mode. Default is None.
+        Returns:
+            src_df (pd.DataFrame): A pandas DataFrame.
+            removed (List[str]): A list of strings specifying the removed groups.
+        """
         src_df = self.resolve_source("train_data")
         src_df, removed = DataQualityChecks(src_df, self.conf, self.spark).run()
         if (mode == "scoring") \
@@ -103,8 +123,16 @@ class Forecaster:
         return src_df, removed
 
     def split_df_train_val(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
-        """Splits df into train and data, based on backtest months and prediction length.
-        Data before backtest will be train, and data from backtest (at most prediction length days) will be val data."""
+        """
+        Splits df into train and validation data, based on backtest months and prediction length.
+        Data before backtest will be "train", and data after the backtest (at most prediction length days) will be "val".
+        Parameters:
+            self (Forecaster): A Forecaster object.
+            df (pd.DataFrame): A pandas DataFrame.
+        Returns:
+            train_df (pd.DataFrame): A pandas DataFrame.
+            val_df (pd.DataFrame): A pandas DataFrame.
+        """
         # Train with data before the backtest months in conf
         train_df = df[
             df[self.conf["date_col"]]
@@ -121,6 +149,14 @@ class Forecaster:
 
     def evaluate_score(
             self, evaluate: bool = True, score: bool = True) -> str:
+        """
+        Evaluates and scores the models using the provided configuration.
+        Parameters:
+            self (Forecaster): A Forecaster object.
+            evaluate (bool, optional): A boolean specifying whether to evaluate the models. Default is True.
+            score (bool, optional): A boolean specifying whether to score the models. Default is True.
+        Returns: run_id (str): A string specifying the run id.
+        """
         print("Starting evaluate_score")
         if evaluate:
             self.evaluate_models()
@@ -132,6 +168,7 @@ class Forecaster:
     def evaluate_models(self):
         """
         Trains and evaluates all models from the active models list.
+        Parameters: self (Forecaster): A Forecaster object.
         """
         print("Starting evaluate_models")
         for model_name in self.model_registry.get_active_model_keys():
@@ -153,8 +190,17 @@ class Forecaster:
         print("Finished evaluate_models")
 
     def evaluate_local_model(self, model_conf):
+        """
+        Evaluates a local model using the provided model configuration. It applies the Pandas UDF to the training data.
+        It then logs the aggregated metrics and a few tags to MLflow.
+        Parameters:
+            self (Forecaster): A Forecaster object.
+            model_conf (dict): A dictionary specifying the model configuration.
+        """
         src_df = self.resolve_source("train_data")
         src_df, removed = DataQualityChecks(src_df, self.conf, self.spark).run()
+
+        # Specifying the output schema for Pandas UDF
         output_schema = StructType(
             [
                 StructField(
@@ -170,7 +216,7 @@ class Forecaster:
         )
         model = self.model_registry.get_model(model_conf["name"])
 
-        # Use Pandas UDF to forecast
+        # Use Pandas UDF to forecast individual group
         evaluate_one_local_model_fn = functools.partial(
             Forecaster.evaluate_one_local_model, model=model
         )
@@ -178,6 +224,8 @@ class Forecaster:
             src_df.groupby(self.conf["group_id"])
             .applyInPandas(evaluate_one_local_model_fn, schema=output_schema)
         )
+
+        # Write evaluation result to a delta table
         if self.conf.get("evaluation_output", None) is not None:
             (
                 res_sdf.withColumn(self.conf["group_id"], col(self.conf["group_id"]).cast(StringType()))
@@ -189,6 +237,8 @@ class Forecaster:
                 .write.mode("append")
                 .saveAsTable(self.conf.get("evaluation_output"))
             )
+
+        # Compute aggregated metrics
         res_df = (
             res_sdf.groupby(["metric_name"])
             .mean("metric_value")
@@ -210,6 +260,14 @@ class Forecaster:
     def evaluate_one_local_model(
         pdf: pd.DataFrame, model: ForecastingRegressor
     ) -> pd.DataFrame:
+        """
+        A static method that evaluates a single local model using the provided pandas DataFrame and model.
+        If the evaluation for a single group fails, it returns an empty DataFrame without failing the entire process.
+        Parameters:
+            pdf (pd.DataFrame): A pandas DataFrame.
+            model (ForecastingRegressor): A ForecastingRegressor object.
+        Returns: metrics_df (pd.DataFrame): A pandas DataFrame.
+        """
         pdf[model.params["date_col"]] = pd.to_datetime(pdf[model.params["date_col"]])
         pdf.sort_values(by=model.params["date_col"], inplace=True)
         split_date = pdf[model.params["date_col"]].max() - pd.DateOffset(
@@ -228,7 +286,6 @@ class Forecaster:
                 exc_info=err,
                 stack_info=True,
             )
-            # raise Exception(f"Error evaluating group {group_id}: {err}")
             return pd.DataFrame(
                 columns=[
                     model.params["group_id"],
@@ -242,17 +299,25 @@ class Forecaster:
             )
 
     def evaluate_global_model(self, model_conf):
+        """
+        Evaluate a global model using the provided model configuration. Trains and registers the model.
+        Parameters:
+            self (Forecaster): A Forecaster object.
+            model_conf (dict): A dictionary specifying the model configuration.
+        """
         with mlflow.start_run(experiment_id=self.experiment_id) as run:
             model_name = model_conf["name"]
             hist_df, removed = self.prepare_data_for_global_model("evaluating")
             train_df, val_df = self.split_df_train_val(hist_df)
 
-            # First, we train the model on the entire history (train_df, val_df)
-            # and then register this model as our final model in Unity Catalog
+            # First, we train the model on the entire history (train_df, val_df).
+            # Then we register this model as our final model in Unity Catalog.
             final_model = self.model_registry.get_model(model_name)
             final_model.fit(pd.concat([train_df, val_df]))
             input_example = train_df[train_df[self.conf['group_id']] == train_df[self.conf['group_id']] \
                 .unique()[0]].sort_values(by=[self.conf['date_col']])
+
+            # Prepare model signature for model registry
             input_schema = infer_signature(model_input=input_example).inputs
             output_schema = Schema(
                 [
@@ -263,6 +328,8 @@ class Forecaster:
                 ]
             )
             signature = ModelSignature(inputs=input_schema, outputs=output_schema)
+
+            # Register the model
             model_info = mlflow.sklearn.log_model(
                 final_model,
                 "model",
@@ -286,7 +353,6 @@ class Forecaster:
                 model_uri=model_info.model_uri,  # This model_uri is from the final model
                 write=True,
             )
-            print(f"Finished training {model_conf.get('name')}")
 
     def backtest_global_model(
         self,
@@ -296,12 +362,24 @@ class Forecaster:
         model_uri: str,
         write: bool = True,
     ):
+        """
+        Performs detailed backtesting of a global model using the provided model, training DataFrame,
+        validation DataFrame, model URI, and write parameter.
+        Parameters:
+            self (Forecaster): A Forecaster object.
+            model (ForecastingRegressor): A ForecastingRegressor object.
+            train_df (pd.DataFrame): A pandas DataFrame.
+            val_df (pd.DataFrame): A pandas DataFrame.
+            model_uri (str): A string specifying the model URI.
+            write (bool, optional): A boolean specifying whether to write the results to a table. Default is True.
+        Returns: metric_value (float): A float specifying the mean metric value.
+        """
         res_pdf = (
             model.backtest(
                 pd.concat([train_df, val_df]),
                 start=train_df[self.conf["date_col"]].max(),
                 spark=self.spark,
-                #backtest_retrain=self.conf["backtest_retrain"],
+                # backtest_retrain=self.conf["backtest_retrain"],
             ))
 
         group_id_dtype = IntegerType() \
@@ -320,6 +398,7 @@ class Forecaster:
         )
         res_sdf = self.spark.createDataFrame(res_pdf, schema)
 
+        # Write evaluation results to a delta table
         if write:
             if self.conf.get("evaluation_output", None):
                 (
@@ -333,6 +412,7 @@ class Forecaster:
                     .saveAsTable(self.conf.get("evaluation_output"))
                 )
 
+        # Compute aggregated metrics
         res_df = (
             res_sdf.groupby(["metric_name"])
             .mean("metric_value")
@@ -343,6 +423,7 @@ class Forecaster:
         metric_name = None
         metric_value = None
 
+        # Log metrics to MLFlow
         for rec in res_df.values:
             metric_name, metric_value = rec
             if write:
@@ -351,6 +432,12 @@ class Forecaster:
         return metric_value
 
     def evaluate_foundation_model(self, model_conf):
+        """
+        Evaluates a foundation model using the provided model configuration. Registers the model.
+        Parameters:
+            self (Forecaster): A Forecaster object.
+            model_conf (dict): A dictionary specifying the model configuration.
+        """
         with mlflow.start_run(experiment_id=self.experiment_id) as run:
             model_name = model_conf["name"]
             model = self.model_registry.get_model(model_name)
@@ -373,9 +460,12 @@ class Forecaster:
             mlflow.set_tag("model_name", model.params["name"])
             mlflow.set_tag("run_id", self.run_id)
             mlflow.log_params(model.get_params())
-            print(f"Finished evaluating {model_conf.get('name')}")
 
     def score_models(self):
+        """
+        Scores the models using the provided model configuration.
+        Parameters: self (Forecaster): A Forecaster object.
+        """
         print("Starting run_scoring")
         for model_name in self.model_registry.get_active_model_keys():
             model_conf = self.model_registry.get_model_conf(model_name)
@@ -390,16 +480,24 @@ class Forecaster:
         print("Finished run_scoring")
 
     def score_local_model(self, model_conf):
+        """
+        Scores a local model using the provided model configuration and writes the results to a delta table.
+        Parameters:
+            self (Forecaster): A Forecaster object.
+            model_conf (dict): A dictionary specifying the model configuration.
+        """
         src_df = self.resolve_source("train_data")
         src_df, removed = DataQualityChecks(src_df, self.conf, self.spark).run()
-        # Check if external regressors are provided and framework is statsforecast
-        # External regressors are supported only with statsforecast and neuralforecast models
+        # Check if external regressors are provided and if the framework is statsforecast.
+        # External regressors are supported only with statsforecast models.
         if (self.conf["scoring_data"])\
                 and (self.conf["train_data"] != self.conf["scoring_data"])\
                 and (model_conf["framework"] == "StatsForecast"):
             score_df = self.resolve_source("scoring_data")
             score_df = score_df.where(~col(self.conf["group_id"]).isin(removed))
             src_df = src_df.unionByName(score_df, allowMissingColumns=True)
+
+        # Specify output schema for Pandas UDF
         output_schema = StructType(
             [
                 StructField(
@@ -411,11 +509,15 @@ class Forecaster:
             ]
         )
         model = self.model_registry.get_model(model_conf["name"])
+
+        # Use Pandas UDF to distribute scoring
         score_one_local_model_fn = functools.partial(Forecaster.score_one_local_model, model=model)
         res_sdf = (
             src_df.groupby(self.conf["group_id"])
             .applyInPandas(score_one_local_model_fn, schema=output_schema)
         )
+
+        # Write the results to a delta table
         (
             res_sdf.withColumn(self.conf["group_id"], col(self.conf["group_id"]).cast(StringType()))
             .withColumn("run_id", lit(self.run_id))
@@ -431,6 +533,15 @@ class Forecaster:
     def score_one_local_model(
         pdf: pd.DataFrame, model: ForecastingRegressor
     ) -> pd.DataFrame:
+        """
+        A static method that scores a single local model using the provided pandas DataFrame and model.
+        If the scoring for one time series fails, it returns an empty DataFrame instead of failing the
+        entire process.
+        Parameters:
+            pdf (pd.DataFrame): A pandas DataFrame.
+            model (ForecastingRegressor): A ForecastingRegressor object.
+        Returns: res_df (pd.DataFrame): A pandas DataFrame.
+        """
         pdf[model.params["date_col"]] = pd.to_datetime(pdf[model.params["date_col"]])
         pdf.sort_values(by=model.params["date_col"], inplace=True)
         group_id = pdf[model.params["group_id"]].iloc[0]
@@ -482,6 +593,12 @@ class Forecaster:
         )
 
     def score_foundation_model(self, model_conf):
+        """
+        Scores a global model using the provided model configuration. Writes the results to a delta table.
+        Parameters:
+            self (Forecaster): A Forecaster object.
+            model_conf (dict): A dictionary specifying the model configuration.
+        """
         print(f"Running scoring for {model_conf['name']}...")
         model_name = model_conf["name"]
         _, model_uri = self.get_model_for_scoring(model_conf)
@@ -502,6 +619,13 @@ class Forecaster:
         )
 
     def get_model_for_scoring(self, model_conf):
+        """
+        Gets a model for scoring using the provided model configuration.
+        Parameters:
+            self (Forecaster): A Forecaster object.
+            model_conf (dict): A dictionary specifying the model configuration.
+        Returns: model (Model): A model object. model_uri (str): A string specifying the model URI.
+        """
         client = MlflowClient()
         registered_name = f"{self.conf['model_output']}.{model_conf['name']}_{self.conf['use_case_name']}"
         model_info = self.get_latest_model_info(client, registered_name)
@@ -517,10 +641,17 @@ class Forecaster:
 
     @staticmethod
     def get_latest_model_info(client, registered_name):
+        """
+         Gets the latest model info using the provided MLflow client and registered name.
+        Parameters:
+            client (MlflowClient): An MLflowClient object.
+            registered_name (str): A string specifying the registered name.
+        Returns: model_info (ModelVersion): A ModelVersion object.
+        """
         latest_version = 1
         for mv in client.search_model_versions(f"name='{registered_name}'"):
             version_int = int(mv.version)
             if version_int > latest_version:
                 latest_version = version_int
-        return client.get_model_version(registered_name, latest_version)
+        return client.get_model_version(registered_name, str(latest_version))
 

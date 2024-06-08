@@ -99,7 +99,7 @@ class MomentForecaster(ForecastingRegressor):
         )
 
         # Todo
-        #forecast_df[self.params.target] = forecast_df[self.params.target].clip(0.01)
+        # forecast_df[self.params.target] = forecast_df[self.params.target].clip(0.01)
         return forecast_df, self.model
 
     def forecast(self, df: pd.DataFrame, spark=None):

@@ -1,6 +1,5 @@
 import mlflow
 from mlflow.tracking import MlflowClient
-
 from mmf_sa.Forecaster import Forecaster
 from mmf_sa.common import Job
 
@@ -17,7 +16,7 @@ class ForecastingJob(Job):
         )
 
         forecaster = Forecaster(self.conf, self.spark, experiment_id)
-        forecaster.train_eval_score(export_metrics=False, scoring=False)
+        forecaster.evaluate_score()
         self.logger.info("Forecasting Job finished!")
 
 

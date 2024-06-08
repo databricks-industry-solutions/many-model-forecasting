@@ -78,7 +78,7 @@ class SKTimeForecastingPipeline(ForecastingRegressor):
         forecast_df[self.params.target] = forecast_df[self.params.target].clip(0.01)
         return forecast_df, self.model
 
-    def forecast(self, x):
+    def forecast(self, x, spark=None):
         return self.predict(x)
 
 
@@ -92,14 +92,14 @@ class SKTimeLgbmDsDt(SKTimeForecastingPipeline):
                 (
                     "deseasonalise",
                     ConditionalDeseasonalizer(
-                        model=self.model_spec.get("deseasonalise_model", "additive"),
-                        sp=int(self.model_spec.get("season_length", 1))
+                        model=self.model_spec.get("deseasonalise_model"),
+                        sp=int(self.model_spec.get("season_length"))
                     )
                 ),
                 (
                     "detrend",
                     Detrender(
-                        forecaster=PolynomialTrendForecaster(degree=int(self.model_spec.get("detrend_poly_degree", 1)))
+                        forecaster=PolynomialTrendForecaster(degree=int(self.model_spec.get("detrend_poly_degree")))
                     )
                 ),
                 (
@@ -134,9 +134,9 @@ class SKTimeTBats(SKTimeForecastingPipeline):
 
     def create_model(self) -> BaseForecaster:
         model = TBATS(
-            sp=int(self.model_spec.get("season_length", 7)),
-            use_trend=self.model_spec.get("use_trend", True),
-            use_box_cox=self.model_spec.get("box_cox", True),
+            sp=int(self.model_spec.get("season_length")),
+            use_trend=self.model_spec.get("use_trend"),
+            use_box_cox=self.model_spec.get("box_cox"),
             n_jobs=-1,
         )
         return model

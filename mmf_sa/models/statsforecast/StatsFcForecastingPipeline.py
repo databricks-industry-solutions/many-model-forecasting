@@ -100,7 +100,7 @@ class StatsFcForecaster(ForecastingRegressor):
         forecast_df[self.params.target] = forecast_df[self.params.target].clip(0.01)
         return forecast_df, self.model
 
-    def forecast(self, df: pd.DataFrame):
+    def forecast(self, df: pd.DataFrame, spark=None):
         _df = df[df[self.params.target].notnull()]
         _df = self.prepare_data(_df)
         self.fit(_df)
@@ -138,16 +138,43 @@ class StatsFcForecaster(ForecastingRegressor):
         return forecast_df, self.model
 
 
+class StatsFcBaselineWindowAverage(StatsFcForecaster):
+    def __init__(self, params):
+        super().__init__(params)
+        self.model_spec = WindowAverage(
+            window_size=self.params.model_spec.window_size,
+        )
+
+
+class StatsFcBaselineSeasonalWindowAverage(StatsFcForecaster):
+    def __init__(self, params):
+        super().__init__(params)
+        self.model_spec = SeasonalWindowAverage(
+            season_length=self.params.model_spec.season_length,
+            window_size=self.params.model_spec.window_size,
+        )
+
+
+class StatsFcBaselineNaive(StatsFcForecaster):
+    def __init__(self, params):
+        super().__init__(params)
+        self.model_spec = Naive()
+
+
+class StatsFcBaselineSeasonalNaive(StatsFcForecaster):
+    def __init__(self, params):
+        super().__init__(params)
+        self.model_spec = SeasonalNaive(
+            season_length=self.params.model_spec.season_length,
+        )
+
+
 class StatsFcAutoArima(StatsFcForecaster):
     def __init__(self, params):
         super().__init__(params)
         self.model_spec = AutoARIMA(
-            season_length=self.params.model_spec.season_length
-            if self.params.model_spec.season_length
-            else 1,
-            approximation=self.params.model_spec.approximation
-            if self.params.model_spec.approximation
-            else False,
+            season_length=self.params.model_spec.season_length,
+            approximation=self.params.model_spec.approximation,
         )
 
 
@@ -155,12 +182,8 @@ class StatsFcAutoETS(StatsFcForecaster):
     def __init__(self, params):
         super().__init__(params)
         self.model_spec = AutoETS(
-            season_length=self.params.model_spec.season_length
-            if self.params.model_spec.season_length
-            else 1,
-            model=self.params.model_spec.model
-            if self.params.model_spec.model
-            else "ZNZ",
+            season_length=self.params.model_spec.season_length,
+            model=self.params.model_spec.model,
         )
 
 
@@ -168,12 +191,8 @@ class StatsFcAutoCES(StatsFcForecaster):
     def __init__(self, params):
         super().__init__(params)
         self.model_spec = AutoCES(
-            season_length=self.params.model_spec.season_length
-            if self.params.model_spec.season_length
-            else 1,
-            model=self.params.model_spec.model
-            if self.params.model_spec.model
-            else "Z",
+            season_length=self.params.model_spec.season_length,
+            model=self.params.model_spec.model,
         )
 
 
@@ -181,12 +200,17 @@ class StatsFcAutoTheta(StatsFcForecaster):
     def __init__(self, params):
         super().__init__(params)
         self.model_spec = AutoTheta(
-            season_length=self.params.model_spec.season_length
-            if self.params.model_spec.season_length
-            else 1,
-            decomposition_type=self.params.model_spec.decomposition_type
-            if self.params.model_spec.decomposition_type
-            else "multiplicative",
+            season_length=self.params.model_spec.season_length,
+            decomposition_type=self.params.model_spec.decomposition_type,
+        )
+
+
+class StatsFcTSB(StatsFcForecaster):
+    def __init__(self, params):
+        super().__init__(params)
+        self.model_spec = TSB(
+            alpha_d=self.params.model_spec.alpha_d,
+            alpha_p=self.params.model_spec.alpha_p,
         )
 
 
@@ -200,15 +224,6 @@ class StatsFcIMAPA(StatsFcForecaster):
     def __init__(self, params):
         super().__init__(params)
         self.model_spec = IMAPA()
-
-
-class StatsFcTSB(StatsFcForecaster):
-    def __init__(self, params):
-        super().__init__(params)
-        self.model_spec = TSB(
-            alpha_d=float(params.get("alpha_d", 0.2)),
-            alpha_p=float(params.get("alpha_p", 0.2)),
-        )
 
 
 class StatsFcCrostonClassic(StatsFcForecaster):
@@ -228,41 +243,3 @@ class StatsFcCrostonSBA(StatsFcForecaster):
         super().__init__(params)
         self.model_spec = CrostonSBA()
 
-
-class StatsFcBaselineWindowAverage(StatsFcForecaster):
-    def __init__(self, params):
-        super().__init__(params)
-        self.model_spec = WindowAverage(
-            window_size=self.params.model_spec.window_size
-            if self.params.model_spec.window_size
-            else 7,
-        )
-
-
-class StatsFcBaselineSeasonalWindowAverage(StatsFcForecaster):
-    def __init__(self, params):
-        super().__init__(params)
-        self.model_spec = SeasonalWindowAverage(
-            season_length=self.params.model_spec.season_length
-            if self.params.model_spec.season_length
-            else 7,
-            window_size=self.params.model_spec.window_size
-            if self.params.model_spec.window_size
-            else 7,
-        )
-
-
-class StatsFcBaselineNaive(StatsFcForecaster):
-    def __init__(self, params):
-        super().__init__(params)
-        self.model_spec = Naive()
-
-
-class StatsFcBaselineSeasonalNaive(StatsFcForecaster):
-    def __init__(self, params):
-        super().__init__(params)
-        self.model_spec = SeasonalNaive(
-            season_length=self.params.model_spec.season_length
-            if self.params.model_spec.season_length
-            else 7,
-        )
