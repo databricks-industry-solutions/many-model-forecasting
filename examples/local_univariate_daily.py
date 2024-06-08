@@ -113,7 +113,7 @@ display(
 # MAGIC %md ### Models
 # MAGIC Let's configure a list of models we are going to apply to our time series for evaluation and forecasting. A comprehensive list of all supported models is available in [mmf_sa/models/models_conf.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/models_conf.yaml). Look for the models where `model_type: local`; these are the local models we import from [statsforecast](https://github.com/Nixtla/statsforecast), [r fable](https://cran.r-project.org/web/packages/fable/vignettes/fable.html) and [sktime](https://github.com/sktime/sktime). Check their documentations for the detailed description of each model. 
 # MAGIC
-# MAGIC Some of these models perform hyperparameter optimization ([statsforecast Automatic Forecasting](https://nixtlaverse.nixtla.io/statsforecast/index.html#automatic-forecasting)) on itself to search for the best parameters. For other models, you can modify the model hyperparameters in [mmf_sa/models/models_conf.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/models_conf.yaml) or overwrite the default values in [mmf_sa/forecasting_conf.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/forecasting_conf.yaml).
+# MAGIC Some of these models perform hyperparameter optimization ([statsforecast Automatic Forecasting](https://nixtlaverse.nixtla.io/statsforecast/index.html#automatic-forecasting)) on its own for some hyperparameters. For other hyperparameters or models, you can modify the hyperparameters in [mmf_sa/models/models_conf.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/models_conf.yaml) or overwrite the default values in [mmf_sa/forecasting_conf.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/forecasting_conf.yaml). You can also introduce new hyperparameters that are supported by the base models. To do this, first add those hyperparameters under the model specification in [mmf_sa/models/models_conf.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/models_conf.yaml). Then, include these hyperparameters inside the model instantiation which happens in the model pipeline script: e.g. `StatsFcAutoArima` class in [mmf_sa/models/statsforecast/StatsFcForecastingPipeline.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/statsforecast/StatsFcForecastingPipeline.py).
 
 # COMMAND ----------
 
@@ -137,8 +137,8 @@ active_models = [
     "RFableNNETAR",
     "RFableEnsemble",
     "RDynamicHarmonicRegression",
-    "SKTimeTBats",
-    "SKTimeLgbmDsDt",
+    #"SKTimeTBats",
+    #"SKTimeLgbmDsDt",
 ]
 
 # COMMAND ----------
