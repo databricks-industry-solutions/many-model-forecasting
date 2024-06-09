@@ -31,13 +31,14 @@ daily_train = pd.merge(df_target, df_exogenous, on=['unique_id','ds'], how='inne
 
 # MAGIC %md
 # MAGIC #### Write out the entire dataset to a delta table
+# MAGIC Writing the full dataset takes about 45 minutes.
 
 # COMMAND ----------
 
 (
     spark.createDataFrame(daily_train)
     .write.format("delta").mode("overwrite")
-    .saveAsTable(f"{catalog}.{db}.daily_train")
+    .saveAsTable(f"{catalog}.{db}.daily_train_full")
 )
 print(f"Saved data to {catalog}.{db}.daily_train_full")
 
