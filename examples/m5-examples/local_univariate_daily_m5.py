@@ -53,8 +53,8 @@ active_models = [
     "RFableNNETAR",
     "RFableEnsemble",
     "RDynamicHarmonicRegression",
-    #"SKTimeTBats",
-    #"SKTimeLgbmDsDt",
+    "SKTimeTBats",
+    "SKTimeLgbmDsDt",
 ]
 
 # COMMAND ----------
@@ -78,7 +78,7 @@ run_forecast(
     backtest_months=3,
     stride=7,
     train_predict_ratio=1,
-    data_quality_check=False,
+    data_quality_check=True,
     resample=False,
     active_models=active_models,
     experiment_path=f"/Users/{user_email}/mmf/m5",
@@ -95,11 +95,11 @@ display(spark.sql(f"select * from {catalog}.{db}.daily_scoring_output order by u
 
 # COMMAND ----------
 
-#display(spark.sql(f"delete from {catalog}.{db}.daily_evaluation_output"))
+display(spark.sql(f"delete from {catalog}.{db}.daily_evaluation_output"))
 
 # COMMAND ----------
 
-#display(spark.sql(f"delete from {catalog}.{db}.daily_scoring_output"))
+display(spark.sql(f"delete from {catalog}.{db}.daily_scoring_output"))
 
 # COMMAND ----------
 
