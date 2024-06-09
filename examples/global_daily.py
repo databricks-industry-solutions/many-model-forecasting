@@ -46,7 +46,7 @@ from mmf_sa import run_forecast
 # COMMAND ----------
 
 # Number of time series
-n = 100
+n = 1000
 
 
 def create_m4_daily():
@@ -64,6 +64,8 @@ def create_m4_daily():
 
 def transform_group(df):
     unique_id = df.unique_id.iloc[0]
+    if len(df) > 1020:
+        df = df.iloc[-1020:]
     _start = pd.Timestamp("2020-01-01")
     _end = _start + pd.DateOffset(days=int(df.count()[0]) - 1)
     date_idx = pd.date_range(start=_start, end=_end, freq="D", name="ds")
@@ -82,6 +84,8 @@ def transform_group(df):
 
 catalog = "solacc_uc" # Name of the catalog we use to manage our assets
 db = "mmf" # Name of the schema we use to manage our assets (e.g. datasets)
+
+# COMMAND ----------
 
 # Making sure that the catalog and the schema exist
 _ = spark.sql(f"CREATE CATALOG IF NOT EXISTS {catalog}")
@@ -137,7 +141,7 @@ active_models = [
 # MAGIC
 # MAGIC If you are interested in how MMF achieves distributed training and inference, have a look at the two methods `evaluate_global_model` and `evaluate_global_model` defined in the source code [`Forecaster.py`](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/Forecaster.py).
 # MAGIC
-# MAGIC One small difference here in running `run_forecast` from the local model case is that we have to iterate through the `active_models` and  call the function written in a [separate notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/run_daily.py). This is to avoid the CUDA out of memory issue by freeing up the GPU memory after each model. Make sure to provide `accelerator="gpu"` as an input parameter to `run_forecast` function.
+# MAGIC A small difference here in running `run_forecast` from the local model case is that we have to iterate through the `active_models` and  call the function in a [separate notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/run_daily.py). This is to avoid the CUDA out of memory issue by freeing up the GPU memory after each model. Make sure to provide `accelerator="gpu"` as an input parameter to `run_forecast` function. Also, set the parameter `data_quality_check=True` or provide a complete dataset without missing entries to avoid issues with skipped dates.
 
 # COMMAND ----------
 

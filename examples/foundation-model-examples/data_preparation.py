@@ -51,6 +51,8 @@ def create_m4_daily():
 
 def transform_group_daily(df):
     unique_id = df.unique_id.iloc[0]
+    if len(df) > 1020:
+        df = df.iloc[-1020:]
     _start = pd.Timestamp("2020-01-01")
     _end = _start + pd.DateOffset(days=int(df.count()[0]) - 1)
     date_idx = pd.date_range(start=_start, end=_end, freq="D", name="ds")

@@ -58,7 +58,7 @@ class MomentForecaster(ForecastingRegressor):
                     horizon_timestamps = []
                     for i in range(self.params["prediction_length"]):
                         last = last + self.one_ts_offset
-                        horizon_timestamps.append(last)
+                        horizon_timestamps.append(last.to_numpy())
                     batch_horizon_timestamps.append(np.array(horizon_timestamps))
             yield pd.Series(batch_horizon_timestamps)
         return horizon_timestamps_udf

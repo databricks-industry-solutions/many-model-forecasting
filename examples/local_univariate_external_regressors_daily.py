@@ -42,6 +42,8 @@ catalog = "solacc_uc" # Name of the catalog we use to manage our assets
 db = "mmf" # Name of the schema we use to manage our assets (e.g. datasets)
 volume = "rossmann" # Name of the volume where you have your rossmann dataset csv sotred
 
+# COMMAND ----------
+
 # Make sure that the catalog and the schema exist
 _ = spark.sql(f"CREATE CATALOG IF NOT EXISTS {catalog}")
 _ = spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{db}")
@@ -55,7 +57,7 @@ random.seed(7)
 
 # Number of time series to sample
 sample = True
-size = 100
+size = 1000
 stores = sorted(random.sample(range(0, 1000), size))
 
 train = spark.read.csv(f"/Volumes/{catalog}/{db}/{volume}/train.csv", header=True, inferSchema=True)
@@ -88,6 +90,11 @@ display(spark.sql(f"select * from {catalog}.{db}.rossmann_daily_test where Store
 
 # MAGIC %md
 # MAGIC Note that in `rossmann_daily_train` we have our target variable `Sales` but not in `rossmann_daily_test`. This is because `rossmann_daily_test` is going to be used as our `scoring_data` that stores `dynamic_future` variables of the future dates. When you adapt this notebook to your use case, make sure to comply with these datasets formats. See statsforecast's [documentation](https://nixtlaverse.nixtla.io/statsforecast/docs/how-to-guides/exogenous.html) for more detail on exogenous regressors.
+
+# COMMAND ----------
+
+if sample and size > sc.defaultParallelism:
+    sqlContext.setConf("spark.sql.shuffle.partitions", sc.defaultParallelism)
 
 # COMMAND ----------
 
@@ -144,9 +151,9 @@ run_forecast(
     prediction_length=10,
     backtest_months=1,
     stride=10,
-    train_predict_ratio=2,
+    train_predict_ratio=1,
     active_models=active_models,
-    data_quality_check=True,
+    data_quality_check=False,
     resample=False,
     experiment_path=f"/Shared/mmf_rossmann",
     use_case_name="rossmann_daily",
@@ -159,7 +166,9 @@ run_forecast(
 
 # COMMAND ----------
 
-display(spark.sql(f"select * from {catalog}.{db}.rossmann_daily_evaluation_output order by Store, model, backtest_window_start_date"))
+display(
+  spark.sql(f"select * from {catalog}.{db}.rossmann_daily_evaluation_output order by Store, model, backtest_window_start_date")
+  )
 
 # COMMAND ----------
 

@@ -45,7 +45,7 @@ from mmf_sa import run_forecast
 # COMMAND ----------
 
 # Number of time series
-n = 100
+n = 1000
 
 
 def create_m4_monthly():
