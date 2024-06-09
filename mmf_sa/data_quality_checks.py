@@ -77,14 +77,19 @@ class DataQualityChecks:
 
         # 1. Checking for nulls in external regressors
         static_features = conf.get("static_features", None)
-        dynamic_reals = conf.get("dynamic_reals", None)
+        dynamic_future = conf.get("dynamic_future", None)
+        dynamic_historical = conf.get("dynamic_historical", None)
         if static_features:
             if _df[static_features].isnull().values.any():
                 # Removing: null in static categoricals
                 return pd.DataFrame()
-        if dynamic_reals:
-            if _df[dynamic_reals].isnull().values.any():
-                # Removing: null in dynamic reals
+        if dynamic_future:
+            if _df[dynamic_future].isnull().values.any():
+                # Removing: null in dynamic future
+                return pd.DataFrame()
+        if dynamic_historical:
+            if _df[dynamic_historical].isnull().values.any():
+                # Removing: null in dynamic historical
                 return pd.DataFrame()
 
         # 2. Checking for training period length
@@ -102,6 +107,7 @@ class DataQualityChecks:
         # 3. Checking for missing entries
         if max_date is None:
             max_date = _df[conf["date_col"]].max()
+        
         _resampled = _df.set_index(conf["date_col"])
         date_idx = pd.date_range(
             start=_df[conf["date_col"]].min(),
@@ -114,7 +120,8 @@ class DataQualityChecks:
             .reset_index()
             .fillna(value=0)
         )
-        if len(_df) != len(_resampled):
+        
+        if len(_resampled) > len(_df):
             if conf.get("resample"):
                 if (len(_resampled) - len(_df)) / len(_resampled) > 0.2:
                     # Removing: missing rate over 0.2
@@ -126,9 +133,9 @@ class DataQualityChecks:
                 return pd.DataFrame()
 
         # 4. Checking for negative entries
-        _positive = _resampled[_resampled[conf["target"]] > 0]
+        _positive = _resampled[_resampled[conf["target"]] >= 0]
         if (len(_resampled) - len(_positive)) / len(_resampled) > 0.2:
-            # Removing: zero or negative entries over 0.2
+            # Removing: negative entries over 0.2
             return pd.DataFrame()
         else:
             _df = _resampled

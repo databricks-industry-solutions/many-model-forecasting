@@ -45,7 +45,7 @@ from mmf_sa import run_forecast
 # COMMAND ----------
 
 # Number of time series
-n = 100
+n = 1000
 
 
 def create_m4_monthly():
@@ -86,6 +86,8 @@ def transform_group(df):
 
 catalog = "solacc_uc" # Name of the catalog we use to manage our assets
 db = "mmf" # Name of the schema we use to manage our assets (e.g. datasets)
+
+# COMMAND ----------
 
 # Making sure that the catalog and the schema exist
 _ = spark.sql(f"CREATE CATALOG IF NOT EXISTS {catalog}")
@@ -178,3 +180,7 @@ display(spark.sql(f"delete from {catalog}.{db}.monthly_evaluation_output"))
 # COMMAND ----------
 
 display(spark.sql(f"delete from {catalog}.{db}.monthly_scoring_output"))
+
+# COMMAND ----------
+
+

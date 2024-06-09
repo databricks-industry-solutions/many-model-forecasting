@@ -51,7 +51,7 @@ from mmf_sa import run_forecast
 # COMMAND ----------
 
 # Number of time series
-n = 100
+n = 1000
 
 
 def create_m4_daily():
@@ -69,6 +69,8 @@ def create_m4_daily():
 
 def transform_group(df):
     unique_id = df.unique_id.iloc[0]
+    if len(df) > 1020:
+        df = df.iloc[-1020:]
     _start = pd.Timestamp("2020-01-01")
     _end = _start + pd.DateOffset(days=int(df.count()[0]) - 1)
     date_idx = pd.date_range(start=_start, end=_end, freq="D", name="ds")
@@ -76,7 +78,6 @@ def transform_group(df):
     res_df["unique_id"] = unique_id
     res_df["y"] = df.y.values
     return res_df
-
 
 # COMMAND ----------
 
@@ -87,6 +88,8 @@ def transform_group(df):
 
 catalog = "solacc_uc" # Name of the catalog we use to manage our assets
 db = "mmf" # Name of the schema we use to manage our assets (e.g. datasets)
+
+# COMMAND ----------
 
 # Making sure that the catalog and the schema exist
 _ = spark.sql(f"CREATE CATALOG IF NOT EXISTS {catalog}")
@@ -107,6 +110,16 @@ _ = spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{db}")
 display(
   spark.sql(f"select * from {catalog}.{db}.m4_daily_train where unique_id in ('D1', 'D2', 'D3', 'D4', 'D5') order by unique_id, ds")
   )
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC If the number of time series is larger than the number of total cores, we set `spark.sql.shuffle.partitions` to the number of cores (can also be a multiple) so that we don't under-utilize the resource.
+
+# COMMAND ----------
+
+if n > sc.defaultParallelism:
+    sqlContext.setConf("spark.sql.shuffle.partitions", sc.defaultParallelism)
 
 # COMMAND ----------
 
@@ -139,7 +152,7 @@ active_models = [
     "RDynamicHarmonicRegression",
     "SKTimeTBats",
     "SKTimeLgbmDsDt",
-]
+    ]
 
 # COMMAND ----------
 
@@ -168,8 +181,8 @@ run_forecast(
     prediction_length=10,
     backtest_months=1,
     stride=10,
-    train_predict_ratio=2,
-    data_quality_check=True,
+    train_predict_ratio=1,
+    data_quality_check=False,
     resample=False,
     active_models=active_models,
     experiment_path=f"/Shared/mmf_experiment",
@@ -183,7 +196,9 @@ run_forecast(
 
 # COMMAND ----------
 
-display(spark.sql(f"select * from {catalog}.{db}.daily_evaluation_output order by unique_id, model, backtest_window_start_date"))
+display(
+  spark.sql(f"select * from {catalog}.{db}.daily_evaluation_output order by unique_id, model, backtest_window_start_date")
+  )
 
 # COMMAND ----------
 

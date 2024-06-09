@@ -63,7 +63,7 @@ def create_get_horizon_timestamps(freq, prediction_length):
               horizon_timestamps = []
               for i in range(prediction_length):
                   timestamp = timestamp + one_ts_offset
-                  horizon_timestamps.append(timestamp)
+                  horizon_timestamps.append(timestamp.to_numpy())
               barch_horizon_timestamps.append(np.array(horizon_timestamps))
       yield pd.Series(barch_horizon_timestamps)
 

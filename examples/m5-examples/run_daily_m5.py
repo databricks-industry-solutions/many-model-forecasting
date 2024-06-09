@@ -22,27 +22,30 @@ logger = spark._jvm.org.apache.log4j
 logging.getLogger("py4j.java_gateway").setLevel(logging.ERROR)
 logging.getLogger("py4j.clientserver").setLevel(logging.ERROR)
 
+n = 1000  # Number of items: choose from [1000, 10000, 'full']. full is 35k
+taining_table = f"daily_train_{n}"
+user_email = spark.sql('select current_user() as user').collect()[0]['user']
 
 run_forecast(
     spark=spark,
-    train_data=f"{catalog}.{db}.m4_monthly_train",
-    scoring_data=f"{catalog}.{db}.m4_monthly_train",
-    scoring_output=f"{catalog}.{db}.monthly_scoring_output",
-    evaluation_output=f"{catalog}.{db}.monthly_evaluation_output",
+    train_data=f"{catalog}.{db}.{taining_table}",
+    scoring_data=f"{catalog}.{db}.{taining_table}",
+    scoring_output=f"{catalog}.{db}.daily_scoring_output",
+    evaluation_output=f"{catalog}.{db}.daily_evaluation_output",
     model_output=f"{catalog}.{db}",
     group_id="unique_id",
-    date_col="date",
+    date_col="ds",
     target="y",
-    freq="M",
-    prediction_length=3,
-    backtest_months=12,
-    stride=1,
+    freq="D",
+    prediction_length=28,
+    backtest_months=3,
+    stride=7,
     train_predict_ratio=1,
     data_quality_check=True,
     resample=False,
     active_models=[model],
-    experiment_path=f"/Shared/mmf_experiment_monthly",
-    use_case_name="m4_monthly",
+    experiment_path=f"/Users/{user_email}/mmf/m5",
+    use_case_name="m5_daily",
     run_id=run_id,
     accelerator="gpu",
 )

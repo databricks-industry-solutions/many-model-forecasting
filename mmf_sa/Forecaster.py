@@ -27,7 +27,7 @@ from pyspark.sql.types import (
     ArrayType,
     IntegerType,
 )
-from pyspark.sql.functions import lit, avg, min, max, col, posexplode, collect_list, to_date
+from pyspark.sql.functions import lit, avg, min, max, col, posexplode, collect_list, to_date, countDistinct
 from mmf_sa.models.abstract_model import ForecastingRegressor
 from mmf_sa.models import ModelRegistry
 from mmf_sa.data_quality_checks import DataQualityChecks
@@ -214,6 +214,7 @@ class Forecaster:
                 StructField("model_pickle", BinaryType()),
             ]
         )
+        
         model = self.model_registry.get_model(model_conf["name"])
 
         # Use Pandas UDF to forecast individual group

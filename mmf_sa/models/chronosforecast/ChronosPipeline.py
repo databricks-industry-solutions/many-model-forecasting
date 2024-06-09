@@ -52,6 +52,7 @@ class ChronosForecaster(ForecastingRegressor):
     def create_horizon_timestamps_udf(self):
         @pandas_udf('array<timestamp>')
         def horizon_timestamps_udf(batch_iterator: Iterator[pd.Series]) -> Iterator[pd.Series]:
+            import numpy as np
             batch_horizon_timestamps = []
             for batch in batch_iterator:
                 for series in batch:
@@ -59,8 +60,8 @@ class ChronosForecaster(ForecastingRegressor):
                     horizon_timestamps = []
                     for i in range(self.params["prediction_length"]):
                         last = last + self.one_ts_offset
-                        horizon_timestamps.append(last)
-                    batch_horizon_timestamps.append(np.array(horizon_timestamps))
+                        horizon_timestamps.append(last.to_numpy())
+                    batch_horizon_timestamps.append(np.array(horizon_timestamps))    
             yield pd.Series(batch_horizon_timestamps)
         return horizon_timestamps_udf
 

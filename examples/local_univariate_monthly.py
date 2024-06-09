@@ -52,7 +52,7 @@ from mmf_sa import run_forecast
 # COMMAND ----------
 
 # Number of time series
-n = 100
+n = 1000
 
 
 def create_m4_monthly():
@@ -94,6 +94,8 @@ def transform_group(df):
 catalog = "solacc_uc"  # Name of the catalog we use to manage our assets
 db = "mmf"  # Name of the schema we use to manage our assets (e.g. datasets)
 
+# COMMAND ----------
+
 # Making sure that the catalog and the schema exist
 _ = spark.sql(f"CREATE CATALOG IF NOT EXISTS {catalog}")
 _ = spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{db}")
@@ -110,13 +112,20 @@ _ = spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{db}")
 
 # COMMAND ----------
 
-display(spark.sql(f"select unique_id, count(date) as count from {catalog}.{db}.m4_monthly_train group by unique_id order by unique_id"))
+display(
+  spark.sql(f"select unique_id, count(date) as count from {catalog}.{db}.m4_monthly_train group by unique_id order by unique_id")
+  )
 
 # COMMAND ----------
 
 display(
   spark.sql(f"select * from {catalog}.{db}.m4_monthly_train where unique_id in ('M1', 'M2', 'M3', 'M4', 'M5') order by unique_id, date")
   )
+
+# COMMAND ----------
+
+if n > sc.defaultParallelism:
+    sqlContext.setConf("spark.sql.shuffle.partitions", sc.defaultParallelism)
 
 # COMMAND ----------
 
@@ -170,8 +179,8 @@ run_forecast(
     prediction_length=3,
     backtest_months=12,
     stride=1,
-    train_predict_ratio=2,
-    data_quality_check=True,
+    train_predict_ratio=1,
+    data_quality_check=False,
     resample=False,
     active_models=active_models,
     experiment_path=f"/Shared/mmf_experiment_monthly",
@@ -185,7 +194,9 @@ run_forecast(
 
 # COMMAND ----------
 
-display(spark.sql(f"select * from {catalog}.{db}.monthly_evaluation_output order by unique_id, model, backtest_window_start_date"))
+display(
+  spark.sql(f"select * from {catalog}.{db}.monthly_evaluation_output order by unique_id, model, backtest_window_start_date")
+  )
 
 # COMMAND ----------
 

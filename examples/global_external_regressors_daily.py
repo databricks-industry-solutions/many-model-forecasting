@@ -50,6 +50,8 @@ catalog = "solacc_uc" # Name of the catalog we use to manage our assets
 db = "mmf" # Name of the schema we use to manage our assets (e.g. datasets)
 volume = "rossmann" # Name of the volume where you have your rossmann dataset csv sotred
 
+# COMMAND ----------
+
 # Make sure that the catalog and the schema exist
 _ = spark.sql(f"CREATE CATALOG IF NOT EXISTS {catalog}")
 _ = spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{db}")
