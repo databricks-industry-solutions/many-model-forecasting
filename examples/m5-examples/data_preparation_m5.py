@@ -53,11 +53,23 @@ import random
 random.seed(7)
 
 unique_ids = list(daily_train["unique_id"].unique())
+
+unique_id_100 = sorted(random.sample(unique_ids, 100))
 unique_id_1000 = sorted(random.sample(unique_ids, 1000))
 unique_id_10000 = sorted(random.sample(unique_ids, 10000))
 
+daily_train_100 = daily_train[daily_train["unique_id"].isin(unique_id_100)]
 daily_train_1000 = daily_train[daily_train["unique_id"].isin(unique_id_1000)]
 daily_train_10000 = daily_train[daily_train["unique_id"].isin(unique_id_10000)]
+
+# COMMAND ----------
+
+(
+    spark.createDataFrame(daily_train_100)
+    .write.format("delta").mode("overwrite")
+    .saveAsTable(f"{catalog}.{db}.daily_train_100")
+)
+print(f"Saved data to {catalog}.{db}.daily_train_100")
 
 # COMMAND ----------
 
@@ -76,11 +88,3 @@ print(f"Saved data to {catalog}.{db}.daily_train_1000")
     .saveAsTable(f"{catalog}.{db}.daily_train_10000")
 )
 print(f"Saved data to {catalog}.{db}.daily_train_10000")
-
-# COMMAND ----------
-
-display(spark.sql(f"select * from {catalog}.{db}.daily_train_1000"))
-
-# COMMAND ----------
-
-

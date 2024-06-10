@@ -22,7 +22,6 @@ def run_forecast(
     backtest_months: int,
     stride: int,
     metric: str = "smape",
-    resample: bool = False,
     scoring_data: Union[str, pd.DataFrame, DataFrame] = None,
     scoring_output: str = None,
     evaluation_output: str = None,
@@ -35,7 +34,8 @@ def run_forecast(
     accelerator: str = "cpu",
     backtest_retrain: bool = None,
     train_predict_ratio: int = None,
-    data_quality_check: bool = None,
+    data_quality_check: bool = False,
+    resample: bool = False,
     experiment_path: str = None,
     run_id: str = None,
     conf: Union[str, Dict[str, Any], OmegaConf] = None,
@@ -56,8 +56,7 @@ def run_forecast(
         prediction_length (int): An integer specifying the prediction length: i.e. forecasting horizon.
         backtest_months (int): An integer specifying the number of backtest months.
         stride (int): An integer specifying the stride length.
-        metric (str): A string specifying the metric to use for evaluation. Default is smape.
-        resample (bool): A boolean specifying whether to back-fill skipped entries with 0. Default is False.
+        metric (str): A string specifying the metric to use for evaluation. Supported metrics are mape and smape. Default is smape.
         scoring_data (Union[str, pd.DataFrame, DataFrame]): Scoring data as a string of delta table name, pandas DataFrame, or Spark DataFrame.
         scoring_output (str): A string specifying the output table name for scoring.
         evaluation_output (str): A string specifying the output table name for evaluation.
@@ -70,7 +69,8 @@ def run_forecast(
         accelerator (str): A string specifying the accelerator to use: cpu or gpu. Default is cpu.
         backtest_retrain (bool): A boolean specifying whether to retrain the model during backtesting. Currently, not supported.
         train_predict_ratio (int): An integer specifying the train predict ratio.
-        data_quality_check (bool): A boolean specifying whether to check the data quality.
+        data_quality_check (bool): A boolean specifying whether to check the data quality. Default is False.
+        resample (bool): A boolean specifying whether to back-fill skipped entries with 0. Only relevant when data_quality_check is True. Default is False.
         experiment_path (str): A string specifying the experiment path.
         run_id (str): A string specifying the run id. If not provided a random string is generated and assigned to each run.
         conf (Union[str, Dict[str, Any], OmegaConf]): A configuration object.

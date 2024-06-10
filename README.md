@@ -70,6 +70,7 @@ run_forecast(
     prediction_length=10,
     backtest_months=1,
     stride=10,
+    metric="smape",
     train_predict_ratio=2,
     data_quality_check=True,
     resample=False,
@@ -81,29 +82,30 @@ run_forecast(
 
 #### Parameters description:
 
--  ```train_data``` is a delta table name that stores the input dataset.
--  ```scoring_data``` is a delta table name that stores the [dynamic future regressors](https://nixtlaverse.nixtla.io/neuralforecast/examples/exogenous_variables.html#3-training-with-exogenous-variables). If not provided or if the same name as ```train_data``` is provided, the models will ignore the future dynamical regressors. 
--  ```scoring_output``` is a delta table where you write your forecasting output. This table will be created if does not exist
--  ```evaluation_output``` is a delta table where you write the evalution results from all backtesting trials from all time series and all models. This table will be created if does not exist.
--  ```group_id``` is a column storing the unique id that groups your dataset to each time series.
--  ```date_col``` is your time column name.
--  ```target``` is your target column name.
--  ```freq``` is your prediction frequency. Currently, "D" for daily and "M" for monthly are supported. Note that ```freq``` supported is as per the model basis, hence check the model documentation carefully.
--  ```prediction_length``` is your forecasting horizon in the number of steps.
--  ```backtest_months``` specifies how many previous months you use for backtesting. 
--  ```stride``` is the number of steps in which you update your backtesting trial start date when going from one trial to the next.
--  ```train_predict_ratio``` specifies the minimum length required for your training dataset with respect to ```prediction_length```. If ```train_predict_ratio```=2, you need to have training dataset that is at least twice as long as ```prediciton_length```.
--  ```data_quality_check``` checks the quality of the input data if set to True. See [data_quality_checks.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/data_quality_checks.py) for the full details of the checks. 
--  ```resample``` backfills skipped entries with 0 if set to True. Default is False.
--  ```active_models``` is a list of models you want to use.
--  ```experiment_path``` to keep metrics under the MLFlow.
--  ```use_case_name``` a new column will be created under the delta Table, in case you save multiple trials under 1 table.
+- ```train_data``` is a delta table name that stores the input dataset.
+- ```scoring_data``` is a delta table name that stores the [dynamic future regressors](https://nixtlaverse.nixtla.io/neuralforecast/examples/exogenous_variables.html#3-training-with-exogenous-variables). If not provided or if the same name as ```train_data``` is provided, the models will ignore the future dynamical regressors. 
+- ```scoring_output``` is a delta table where you write your forecasting output. This table will be created if does not exist
+- ```evaluation_output``` is a delta table where you write the evaluation results from all backtesting trials from all time series and all models. This table will be created if does not exist.
+- ```group_id``` is a column storing the unique id that groups your dataset to each time series.
+- ```date_col``` is your time column name.
+- ```target``` is your target column name.
+- ```freq``` is your prediction frequency. Currently, "D" for daily and "M" for monthly are supported. Note that ```freq``` supported is as per the model basis, hence check the model documentation carefully.
+- ```prediction_length``` is your forecasting horizon in the number of steps.
+- ```backtest_months``` specifies how many previous months you use for backtesting. 
+- ```stride``` is the number of steps in which you update your backtesting trial start date when going from one trial to the next.
+- ```metric``` is the metric to log in the evaluation table and MLFlow. Supported metrics are mape and smape. Default is smape.
+- ```train_predict_ratio``` specifies the minimum length required for your training dataset with respect to ```prediction_length```. If ```train_predict_ratio```=2, you need to have training dataset that is at least twice as long as ```prediciton_length```.
+- ```data_quality_check``` checks the quality of the input data if set to True (default False). See [data_quality_checks.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/data_quality_checks.py) for the full details of the checks. 
+- ```resample``` backfills skipped entries with 0 if set to True. Only relevant when data_quality_check is True. Default is False. If data_quality_check is True and resample is False, the check removes all time series with skipped dates.
+- ```active_models``` is a list of models you want to use.
+- ```experiment_path``` to keep metrics under the MLFlow.
+- ```use_case_name``` a new column will be created under the delta Table, in case you save multiple trials under 1 table.
   
 To modify the model hyperparameters, change the values in [mmf_sa/models/models_conf.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/models_conf.yaml) or overwrite these values in [mmf_sa/forecasting_conf.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/forecasting_conf.yaml). 
 
-MMF is fully integrated with MLflow, so once the training kicks off, the experiments will be visible in the MLflow Tracking UI with the corresponding metrics and parameters (note that we do not log all local models in MLFlow but we store the binaries in the tables ```evaluation_output``` and ```scoring_output```). The metric you see in the MLflow Tracking UI is a simple mean over backtesting trials over all time series.
+MMF is fully integrated with MLflow, so once the training kicks off, the experiments will be visible in the MLflow Tracking UI with the corresponding metrics and parameters (note that we do not log all local models in MLFlow, but we store the binaries in the tables ```evaluation_output``` and ```scoring_output```). The metric you see in the MLflow Tracking UI is a simple mean over backtesting trials over all time series.
 
-We encourage you to reading through [examples/local_univariate_daily.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/local_univariate_daily.py) notebook to better understand how local models can be applied to your time series using MMF. Other example notebooks for monthly forecasting and forecasting with exogenous regressors can be found in [examples/local_univariate_monthly.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/local_univariate_monthly.py) and [examples/local_univariate_external_regressors_daily.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/local_univariate_external_regressors_daily.py).
+We encourage you to read through [examples/local_univariate_daily.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/local_univariate_daily.py) notebook to better understand how local models can be applied to your time series using MMF. Other example notebooks for monthly forecasting and forecasting with exogenous regressors can be found in [examples/local_univariate_monthly.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/local_univariate_monthly.py) and [examples/local_univariate_external_regressors_daily.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/local_univariate_external_regressors_daily.py).
 
 ### Global Models
 
@@ -157,6 +159,7 @@ run_forecast(
     prediction_length=10,
     backtest_months=1,
     stride=10,
+    metric="smape",
     train_predict_ratio=2,
     data_quality_check=True,
     resample=False,
@@ -179,7 +182,7 @@ To modify the model hyperparameters or reset the range of the hyperparameter sea
 
 MMF is fully integrated with MLflow and so once the training kicks off, the experiments will be visible in the MLflow Tracking UI with the corresponding metrics and parameters. Once the training is complete the models will be logged to MLFlow and registered to Unity Catalog. 
 
-We encourage you to reading through [examples/global_daily.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/global_daily.py) notebook to better understand how global models can be applied to your time series using MMF. Other example notebooks for monthly forecasting and forecasting with exogenous regressors can be found in [examples/global_monthly.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/global_monthly.py) and [examples/global_external_regressors_daily.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/global_external_regressors_daily.py) respectively.
+We encourage you to read through [examples/global_daily.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/global_daily.py) notebook to better understand how global models can be applied to your time series using MMF. Other example notebooks for monthly forecasting and forecasting with exogenous regressors can be found in [examples/global_monthly.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/global_monthly.py) and [examples/global_external_regressors_daily.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/global_external_regressors_daily.py) respectively.
 
 ### Foundation Models
 
@@ -221,7 +224,7 @@ To modify the model hyperparameters, change the values in [mmf_sa/models/models_
 
 MMF is fully integrated with MLflow and so once the training kicks off, the experiments will be visible in the MLflow Tracking UI with the corresponding metrics and parameters. During the evaluation, the models are logged and registered to Unity Catalog.
 
-We encourage you to reading through [examples/foundation_daily.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/foundation_daily.py) notebook to better understand how foundation models can be applied to your time series using MMF. An example notebook for monthly forecasting can be found in [examples/foundation_monthly.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/foundation_monthly.py).
+We encourage you to read through [examples/foundation_daily.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/foundation_daily.py) notebook to better understand how foundation models can be applied to your time series using MMF. An example notebook for monthly forecasting can be found in [examples/foundation_monthly.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/foundation_monthly.py).
 
 #### Using Foundation Models on Databricks
 

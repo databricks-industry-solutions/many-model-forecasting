@@ -115,6 +115,8 @@ class ChronosForecaster(ForecastingRegressor):
         metrics = []
         if self.params["metric"] == "smape":
             metric_name = "smape"
+        elif self.params["metric"] == "mape":
+            metric_name = "mape"
         else:
             raise Exception(f"Metric {self.params['metric']} not supported!")
         for key in keys:
@@ -123,14 +125,16 @@ class ChronosForecaster(ForecastingRegressor):
             try:
                 if metric_name == "smape":
                     metric_value = mean_absolute_percentage_error(actual, forecast, symmetric=True)
+                elif metric_name == "mape":
+                    metric_value = mean_absolute_percentage_error(actual, forecast, symmetric=False)
                 metrics.extend(
                     [(
                         key,
                         curr_date,
                         metric_name,
                         metric_value,
-                        actual,
                         forecast,
+                        actual,
                         b'',
                     )])
             except:

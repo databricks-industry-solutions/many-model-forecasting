@@ -197,60 +197,60 @@ class Forecaster:
             self (Forecaster): A Forecaster object.
             model_conf (dict): A dictionary specifying the model configuration.
         """
-        src_df = self.resolve_source("train_data")
-        src_df, removed = DataQualityChecks(src_df, self.conf, self.spark).run()
+        with mlflow.start_run(experiment_id=self.experiment_id):
+            src_df = self.resolve_source("train_data")
+            src_df, removed = DataQualityChecks(src_df, self.conf, self.spark).run()
 
-        # Specifying the output schema for Pandas UDF
-        output_schema = StructType(
-            [
-                StructField(
-                    self.conf["group_id"], src_df.schema[self.conf["group_id"]].dataType
-                ),
-                StructField("backtest_window_start_date", DateType()),
-                StructField("metric_name", StringType()),
-                StructField("metric_value", DoubleType()),
-                StructField("forecast", ArrayType(DoubleType())),
-                StructField("actual", ArrayType(DoubleType())),
-                StructField("model_pickle", BinaryType()),
-            ]
-        )
-        
-        model = self.model_registry.get_model(model_conf["name"])
-
-        # Use Pandas UDF to forecast individual group
-        evaluate_one_local_model_fn = functools.partial(
-            Forecaster.evaluate_one_local_model, model=model
-        )
-        res_sdf = (
-            src_df.groupby(self.conf["group_id"])
-            .applyInPandas(evaluate_one_local_model_fn, schema=output_schema)
-        )
-
-        # Write evaluation result to a delta table
-        if self.conf.get("evaluation_output", None) is not None:
-            (
-                res_sdf.withColumn(self.conf["group_id"], col(self.conf["group_id"]).cast(StringType()))
-                .withColumn("run_id", lit(self.run_id))
-                .withColumn("run_date", lit(self.run_date))
-                .withColumn("model", lit(model_conf["name"]))
-                .withColumn("use_case", lit(self.conf["use_case_name"]))
-                .withColumn("model_uri", lit(""))
-                .write.mode("append")
-                .saveAsTable(self.conf.get("evaluation_output"))
+            # Specifying the output schema for Pandas UDF
+            output_schema = StructType(
+                [
+                    StructField(
+                        self.conf["group_id"], src_df.schema[self.conf["group_id"]].dataType
+                    ),
+                    StructField("backtest_window_start_date", DateType()),
+                    StructField("metric_name", StringType()),
+                    StructField("metric_value", DoubleType()),
+                    StructField("forecast", ArrayType(DoubleType())),
+                    StructField("actual", ArrayType(DoubleType())),
+                    StructField("model_pickle", BinaryType()),
+                ]
             )
 
-        # Compute aggregated metrics
-        res_df = (
-            res_sdf.groupby(["metric_name"])
-            .mean("metric_value")
-            .withColumnRenamed("avg(metric_value)", "metric_value")
-            .toPandas()
-        )
-        # Print out aggregated metrics
-        print(res_df)
+            model = self.model_registry.get_model(model_conf["name"])
 
-        # Log aggregated metrics to MLflow
-        with mlflow.start_run(experiment_id=self.experiment_id):
+            # Use Pandas UDF to forecast individual group
+            evaluate_one_local_model_fn = functools.partial(
+                Forecaster.evaluate_one_local_model, model=model
+            )
+            res_sdf = (
+                src_df.groupby(self.conf["group_id"])
+                .applyInPandas(evaluate_one_local_model_fn, schema=output_schema)
+            )
+
+            # Write evaluation result to a delta table
+            if self.conf.get("evaluation_output", None) is not None:
+                (
+                    res_sdf.withColumn(self.conf["group_id"], col(self.conf["group_id"]).cast(StringType()))
+                    .withColumn("run_id", lit(self.run_id))
+                    .withColumn("run_date", lit(self.run_date))
+                    .withColumn("model", lit(model_conf["name"]))
+                    .withColumn("use_case", lit(self.conf["use_case_name"]))
+                    .withColumn("model_uri", lit(""))
+                    .write.mode("append")
+                    .saveAsTable(self.conf.get("evaluation_output"))
+                )
+
+            # Compute aggregated metrics
+            res_df = (
+                res_sdf.groupby(["metric_name"])
+                .mean("metric_value")
+                .withColumnRenamed("avg(metric_value)", "metric_value")
+                .toPandas()
+            )
+            # Print out aggregated metrics
+            print(res_df)
+
+            # Log aggregated metrics to MLflow
             for rec in res_df.values:
                 metric_name, metric_value = rec
                 mlflow.log_metric(metric_name, metric_value)
@@ -276,9 +276,9 @@ class Forecaster:
         )
         group_id = pdf[model.params["group_id"]].iloc[0]
         try:
-            pdf = pdf.fillna(0.1)
+            pdf = pdf.fillna(0)
             # Fix here
-            pdf[model.params["target"]] = pdf[model.params["target"]].clip(0.1)
+            pdf[model.params["target"]] = pdf[model.params["target"]].clip(0)
             metrics_df = model.backtest(pdf, start=split_date, group_id=group_id)
             return metrics_df
         except Exception as err:

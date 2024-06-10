@@ -38,6 +38,7 @@ run_forecast(
     prediction_length=10,
     backtest_months=1,
     stride=10,
+    metric="smape",
     train_predict_ratio=1,
     active_models=[model],
     data_quality_check=True,

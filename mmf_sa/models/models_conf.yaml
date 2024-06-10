@@ -191,7 +191,7 @@ models:
     model_class: NeuralFcRNN
     framework: NeuralForecast
     model_type: global
-    max_steps: 200
+    max_steps: 500
     input_size_factor: 2
     loss: smape
     learning_rate: 0.001
@@ -209,7 +209,7 @@ models:
     model_class: NeuralFcLSTM
     framework: NeuralForecast
     model_type: global
-    max_steps: 200
+    max_steps: 500
     input_size_factor: 2
     loss: smape
     learning_rate: 0.001
@@ -226,7 +226,7 @@ models:
     model_class: NeuralFcNBEATSx
     framework: NeuralForecast
     model_type: global
-    max_steps: 100
+    max_steps: 500
     input_size_factor: 2
     loss: smape
     learning_rate: 0.001
@@ -240,7 +240,7 @@ models:
     model_class: NeuralFcNHITS
     framework: NeuralForecast
     model_type: global
-    max_steps: 200
+    max_steps: 500
     input_size_factor: 2
     loss: smape
     learning_rate: 0.001
@@ -258,7 +258,7 @@ models:
     model_class: NeuralFcAutoRNN
     framework: NeuralForecast
     model_type: global
-    max_steps: 200
+    max_steps: 500
     num_samples: 20
     loss: smape
     encoder_hidden_size: [ 50, 100, 200, 300 ]
@@ -271,7 +271,7 @@ models:
     model_class: NeuralFcAutoLSTM
     framework: NeuralForecast
     model_type: global
-    max_steps: 200
+    max_steps: 500
     num_samples: 20
     loss: smape
     encoder_hidden_size: [ 50, 100, 200, 300 ]
@@ -284,7 +284,7 @@ models:
     model_class: NeuralFcAutoNBEATSx
     framework: NeuralForecast
     model_type: global
-    max_steps: 200
+    max_steps: 500
     num_samples: 20
     loss: smape
     input_size: 4
@@ -295,7 +295,7 @@ models:
     model_class: NeuralFcAutoNHITS
     framework: NeuralForecast
     model_type: global
-    max_steps: 200
+    max_steps: 500
     num_samples: 20
     loss: smape
     input_size: 4
@@ -308,7 +308,7 @@ models:
     model_class: NeuralFcAutoTiDE
     framework: NeuralForecast
     model_type: global
-    max_steps: 200
+    max_steps: 500
     num_samples: 20
     loss: smape
     input_size: 4
@@ -326,7 +326,7 @@ models:
     model_class: NeuralFcAutoPatchTST
     framework: NeuralForecast
     model_type: global
-    max_steps: 200
+    max_steps: 500
     num_samples: 20
     loss: smape
     input_size: 4
