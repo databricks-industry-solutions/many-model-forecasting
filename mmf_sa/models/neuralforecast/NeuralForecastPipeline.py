@@ -49,7 +49,7 @@ class NeuralFcForecaster(ForecastingRegressor):
             )
         else:
             # Prepare historical dataframe with or without exogenous regressors for training
-            df[self.params.target] = df[self.params.target].clip(0.1)
+            df[self.params.target] = df[self.params.target].clip(0)
             if 'dynamic_future' in self.params.keys():
                 try:
                     _df = (
@@ -122,7 +122,7 @@ class NeuralFcForecaster(ForecastingRegressor):
                 target: self.params.target,
             }
         )
-        forecast_df[self.params.target] = forecast_df[self.params.target].clip(0.01)
+        forecast_df[self.params.target] = forecast_df[self.params.target].clip(0)
 
         return forecast_df, self.model
 
@@ -155,7 +155,7 @@ class NeuralFcForecaster(ForecastingRegressor):
                 target: self.params.target,
             }
         )
-        forecast_df[self.params.target] = forecast_df[self.params.target].clip(0.01)
+        forecast_df[self.params.target] = forecast_df[self.params.target].clip(0)
         return forecast_df, self.model
 
     def calculate_metrics(
@@ -166,6 +166,8 @@ class NeuralFcForecaster(ForecastingRegressor):
         metrics = []
         if self.params["metric"] == "smape":
             metric_name = "smape"
+        elif self.params["metric"] == "mape":
+            metric_name = "mape"
         else:
             raise Exception(f"Metric {self.params['metric']} not supported!")
         for key in keys:
@@ -175,14 +177,17 @@ class NeuralFcForecaster(ForecastingRegressor):
             try:
                 if metric_name == "smape":
                     metric_value = mean_absolute_percentage_error(actual, forecast, symmetric=True)
+                elif metric_name == "mape":
+                    metric_value = mean_absolute_percentage_error(actual, forecast, symmetric=False)
+
                 metrics.extend(
                     [(
                         key,
                         curr_date,
                         metric_name,
                         metric_value,
-                        actual.to_numpy(),
                         forecast.to_numpy(),
+                        actual.to_numpy(),
                         b'',
                     )])
             except:

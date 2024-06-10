@@ -37,6 +37,7 @@ run_forecast(
     prediction_length=3,
     backtest_months=12,
     stride=1,
+    metric="smape",
     train_predict_ratio=1,
     data_quality_check=True,
     resample=False,

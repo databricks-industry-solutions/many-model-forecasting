@@ -133,13 +133,19 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
         Returns: metrics (Dict[str, Union[str, float, bytes]]): A dictionary specifying the metrics.
         """
         pred_df, model_fitted = self.predict(hist_df, val_df)
-        smape = mean_absolute_percentage_error(
-            val_df[self.params["target"]],
-            pred_df[self.params["target"]],
-            symmetric=True,
-        )
+
         if self.params["metric"] == "smape":
-            metric_value = smape
+            metric_value = mean_absolute_percentage_error(
+                val_df[self.params["target"]],
+                pred_df[self.params["target"]],
+                symmetric=True,
+            )
+        elif self.params["metric"] == "mape":
+            metric_value = mean_absolute_percentage_error(
+                val_df[self.params["target"]],
+                pred_df[self.params["target"]],
+                symmetric=False,
+            )
         else:
             raise Exception(f"Metric {self.params['metric']} not supported!")
 

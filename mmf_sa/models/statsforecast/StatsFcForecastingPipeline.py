@@ -31,7 +31,7 @@ class StatsFcForecaster(ForecastingRegressor):
         if not future:
             # Prepare historical dataframe with/out exogenous regressors for training
             # Fix here
-            df[self.params.target] = df[self.params.target].clip(0.1)
+            df[self.params.target] = df[self.params.target].clip(0)
             if 'dynamic_future' in self.params.keys():
                 try:
                     df_statsfc = (
@@ -97,7 +97,7 @@ class StatsFcForecaster(ForecastingRegressor):
             }
         )
         # Fix here
-        forecast_df[self.params.target] = forecast_df[self.params.target].clip(0.01)
+        forecast_df[self.params.target] = forecast_df[self.params.target].clip(0)
         return forecast_df, self.model
 
     def forecast(self, df: pd.DataFrame, spark=None):
@@ -134,7 +134,7 @@ class StatsFcForecaster(ForecastingRegressor):
             }
         )
         # Fix here
-        forecast_df[self.params.target] = forecast_df[self.params.target].clip(0.01)
+        forecast_df[self.params.target] = forecast_df[self.params.target].clip(0)
         return forecast_df, self.model
 
 
