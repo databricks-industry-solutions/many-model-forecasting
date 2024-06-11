@@ -17,7 +17,7 @@ db = dbutils.widgets.get("db")
 model = dbutils.widgets.get("model")
 run_id = dbutils.widgets.get("run_id")
 table = dbutils.widgets.get("table")
-user_email = dbutils.widgets.get("user")
+user = dbutils.widgets.get("user")
 
 # COMMAND ----------
 
