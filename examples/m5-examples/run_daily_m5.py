@@ -9,7 +9,7 @@ dbutils.widgets.text("db", "")
 dbutils.widgets.text("model", "")
 dbutils.widgets.text("run_id", "")
 dbutils.widgets.text("table", "")
-dbutils.widgets.text("user_email", "")
+dbutils.widgets.text("user", "")
 
 
 catalog = dbutils.widgets.get("catalog")
@@ -17,7 +17,7 @@ db = dbutils.widgets.get("db")
 model = dbutils.widgets.get("model")
 run_id = dbutils.widgets.get("run_id")
 table = dbutils.widgets.get("table")
-user_email = dbutils.widgets.get("user_email")
+user_email = dbutils.widgets.get("user")
 
 # COMMAND ----------
 
@@ -46,7 +46,7 @@ run_forecast(
     data_quality_check=True,
     resample=False,
     active_models=[model],
-    experiment_path=f"/Users/{user_email}/mmf/m5",
+    experiment_path=f"/Users/{user}/mmf/m5_daily",
     use_case_name="m5_daily",
     run_id=run_id,
     accelerator="gpu",

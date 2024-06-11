@@ -46,9 +46,10 @@ from mmf_sa import run_forecast
 
 # COMMAND ----------
 
-catalog = "solacc_uc" # Name of the catalog we use to manage our assets
-db = "mmf" # Name of the schema we use to manage our assets (e.g. datasets)
-volume = "rossmann" # Name of the volume where you have your rossmann dataset csv sotred
+catalog = "mmf" # Name of the catalog we use to manage our assets
+db = "rossmann" # Name of the schema we use to manage our assets (e.g. datasets)
+volume = "csv" # Name of the volume where you have your rossmann dataset csv sotred
+user = spark.sql('select current_user() as user').collect()[0]['user'] # User email address
 
 # COMMAND ----------
 
@@ -65,7 +66,7 @@ random.seed(7)
 
 # Number of time series to sample
 sample = True
-size = 100
+size = 1000
 stores = sorted(random.sample(range(0, 1000), size))
 
 train = spark.read.csv(f"/Volumes/{catalog}/{db}/{volume}/train.csv", header=True, inferSchema=True)
@@ -136,7 +137,7 @@ for model in active_models:
   dbutils.notebook.run(
     "run_external_regressors_daily",
     timeout_seconds=0,
-    arguments={"catalog": catalog, "db": db, "model": model, "run_id": run_id})
+    arguments={"catalog": catalog, "db": db, "model": model, "run_id": run_id, "user": user})
 
 # COMMAND ----------
 
