@@ -8,11 +8,13 @@ dbutils.widgets.text("catalog", "")
 dbutils.widgets.text("db", "")
 dbutils.widgets.text("model", "")
 dbutils.widgets.text("run_id", "")
+dbutils.widgets.text("user", "")
 
 catalog = dbutils.widgets.get("catalog")
 db = dbutils.widgets.get("db")
 model = dbutils.widgets.get("model")
 run_id = dbutils.widgets.get("run_id")
+user = dbutils.widgets.get("user")
 
 # COMMAND ----------
 
@@ -43,7 +45,7 @@ run_forecast(
     active_models=[model],
     data_quality_check=True,
     resample=False,
-    experiment_path=f"/Shared/mmf_rossmann",
+    experiment_path=f"/Users/{user}/mmf/rossmann_daily",
     use_case_name="rossmann_daily",
     run_id=run_id,
     accelerator="gpu",

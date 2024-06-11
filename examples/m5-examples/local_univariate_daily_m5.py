@@ -20,16 +20,18 @@ from mmf_sa import run_forecast
 
 catalog = "mmf" # Name of the catalog we use to manage our assets
 db = "m5" # Name of the schema we use to manage our assets (e.g. datasets)
-user_email = spark.sql('select current_user() as user').collect()[0]['user']
+user = spark.sql('select current_user() as user').collect()[0]['user'] # User email address
 
 n = 1000  # Number of items: choose from [1000, 10000, 'full']. full is 35k
 taining_table = f"daily_train_{n}"
 
 # COMMAND ----------
 
-display(
-  spark.sql(f"select * from {catalog}.{db}.{taining_table} where unique_id in ('FOODS_1_001_WI_1', 'FOODS_1_004_TX_2', 'FOODS_1_006_WI_1', 'FOODS_1_008_CA_3', 'FOODS_1_012_WI_1') order by unique_id, ds")
-  )
+# MAGIC %SQL
+# MAGIC
+# MAGIC display(
+# MAGIC   spark.sql(f"select * from {catalog}.{db}.{taining_table} where unique_id in ('FOODS_1_001_WI_1', 'FOODS_1_004_TX_2', 'FOODS_1_006_WI_1', 'FOODS_1_008_CA_3', 'FOODS_1_012_WI_1') order by unique_id, ds")
+# MAGIC   )
 
 # COMMAND ----------
 
@@ -53,8 +55,8 @@ active_models = [
     "RFableNNETAR",
     "RFableEnsemble",
     "RDynamicHarmonicRegression",
-    "SKTimeTBats",
-    "SKTimeLgbmDsDt",
+    #"SKTimeTBats",
+    #"SKTimeLgbmDsDt",
 ]
 
 # COMMAND ----------
@@ -82,7 +84,7 @@ run_forecast(
     data_quality_check=True,
     resample=False,
     active_models=active_models,
-    experiment_path=f"/Users/{user_email}/mmf/m5",
+    experiment_path=f"/Users/{user}/mmf/m5_daily",
     use_case_name="m5_daily",
 )
 

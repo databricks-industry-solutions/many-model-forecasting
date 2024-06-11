@@ -91,8 +91,9 @@ def transform_group(df):
 
 # COMMAND ----------
 
-catalog = "solacc_uc"  # Name of the catalog we use to manage our assets
-db = "mmf"  # Name of the schema we use to manage our assets (e.g. datasets)
+catalog = "mmf"  # Name of the catalog we use to manage our assets
+db = "m4"  # Name of the schema we use to manage our assets (e.g. datasets)
+user = spark.sql('select current_user() as user').collect()[0]['user'] # User email address
 
 # COMMAND ----------
 
@@ -181,10 +182,10 @@ run_forecast(
     stride=1,
     metric="smape",
     train_predict_ratio=1,
-    data_quality_check=False,
+    data_quality_check=True,
     resample=False,
     active_models=active_models,
-    experiment_path=f"/Shared/mmf_experiment_monthly",
+    experiment_path=f"/Users/{user}/mmf/m4_monthly",
     use_case_name="m4_monthly",
 )
 

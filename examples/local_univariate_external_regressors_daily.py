@@ -38,9 +38,10 @@ from mmf_sa import run_forecast
 
 # COMMAND ----------
 
-catalog = "solacc_uc" # Name of the catalog we use to manage our assets
-db = "mmf" # Name of the schema we use to manage our assets (e.g. datasets)
-volume = "rossmann" # Name of the volume where you have your rossmann dataset csv sotred
+catalog = "mmf" # Name of the catalog we use to manage our assets
+db = "rossmann" # Name of the schema we use to manage our assets (e.g. datasets)
+volume = "csv" # Name of the volume where you have your rossmann dataset csv sotred
+user = spark.sql('select current_user() as user').collect()[0]['user'] # User email address
 
 # COMMAND ----------
 
@@ -156,7 +157,7 @@ run_forecast(
     active_models=active_models,
     data_quality_check=False,
     resample=False,
-    experiment_path=f"/Shared/mmf_rossmann",
+    experiment_path=f"/Users/{user}/mmf/rossmann_daily",
     use_case_name="rossmann_daily",
 )
 
@@ -192,3 +193,7 @@ display(spark.sql(f"delete from {catalog}.{db}.rossmann_daily_evaluation_output"
 # COMMAND ----------
 
 display(spark.sql(f"delete from {catalog}.{db}.rossmann_daily_scoring_output"))
+
+# COMMAND ----------
+
+
