@@ -20,7 +20,7 @@ from mmf_sa import run_forecast
 
 catalog = "mmf" # Name of the catalog we use to manage our assets
 db = "m5" # Name of the schema we use to manage our assets (e.g. datasets)
-n = 1000  # Number of items: choose from [100, 1000, 10000, 'full']. full is 35k
+n = 100  # Number of items: choose from [100, 1000, 10000, 'full']. full is 35k
 table = f"daily_train_{n}" # Training table name
 user = spark.sql('select current_user() as user').collect()[0]['user'] # User email
 

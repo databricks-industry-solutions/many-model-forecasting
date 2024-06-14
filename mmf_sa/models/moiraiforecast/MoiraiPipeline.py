@@ -7,7 +7,11 @@ import torch
 import mlflow
 from mlflow.types import Schema, TensorSpec
 from mlflow.models.signature import ModelSignature
-from sktime.performance_metrics.forecasting import mean_absolute_percentage_error
+from sktime.performance_metrics.forecasting import (
+    MeanAbsoluteError,
+    MeanSquaredError,
+    MeanAbsolutePercentageError,
+)
 from typing import Iterator
 from pyspark.sql.functions import collect_list, pandas_udf
 from pyspark.sql import DataFrame
@@ -117,6 +121,12 @@ class MoiraiForecaster(ForecastingRegressor):
             metric_name = "smape"
         elif self.params["metric"] == "mape":
             metric_name = "mape"
+        elif self.params["metric"] == "mae":
+            metric_name = "mae"
+        elif self.params["metric"] == "mse":
+            metric_name = "mse"
+        elif self.params["metric"] == "rmse":
+            metric_name = "rmse"
         else:
             raise Exception(f"Metric {self.params['metric']} not supported!")
         for key in keys:
@@ -124,9 +134,20 @@ class MoiraiForecaster(ForecastingRegressor):
             forecast = pred_df[pred_df[self.params["group_id"]] == key][self.params["target"]].to_numpy()[0]
             try:
                 if metric_name == "smape":
-                    metric_value = mean_absolute_percentage_error(actual, forecast, symmetric=True)
+                    smape = MeanAbsolutePercentageError(symmetric=True)
+                    metric_value = smape(actual, forecast)
                 elif metric_name == "mape":
-                    metric_value = mean_absolute_percentage_error(actual, forecast, symmetric=False)
+                    mape = MeanAbsolutePercentageError(symmetric=False)
+                    metric_value = mape(actual, forecast)
+                elif metric_name == "mae":
+                    mae = MeanAbsoluteError()
+                    metric_value = mae(actual, forecast)
+                elif metric_name == "mse":
+                    mse = MeanSquaredError(square_root=False)
+                    metric_value = mse(actual, forecast)
+                elif metric_name == "rmse":
+                    rmse = MeanSquaredError(square_root=True)
+                    metric_value = rmse(actual, forecast)
                 metrics.extend(
                     [(
                         key,

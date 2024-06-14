@@ -4,7 +4,11 @@ import pandas as pd
 import cloudpickle
 from typing import Dict, Union
 from sklearn.base import BaseEstimator, RegressorMixin
-from sktime.performance_metrics.forecasting import mean_absolute_percentage_error
+from sktime.performance_metrics.forecasting import (
+    MeanAbsoluteError,
+    MeanSquaredError,
+    MeanAbsolutePercentageError,
+)
 import mlflow
 mlflow.set_registry_uri("databricks-uc")
 
@@ -135,16 +139,34 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
         pred_df, model_fitted = self.predict(hist_df, val_df)
 
         if self.params["metric"] == "smape":
-            metric_value = mean_absolute_percentage_error(
+            smape = MeanAbsolutePercentageError(symmetric=True)
+            metric_value = smape(
                 val_df[self.params["target"]],
                 pred_df[self.params["target"]],
-                symmetric=True,
             )
         elif self.params["metric"] == "mape":
-            metric_value = mean_absolute_percentage_error(
+            mape = MeanAbsolutePercentageError(symmetric=False)
+            metric_value = mape(
                 val_df[self.params["target"]],
                 pred_df[self.params["target"]],
-                symmetric=False,
+            )
+        elif self.params["metric"] == "mae":
+            mae = MeanAbsoluteError()
+            metric_value = mae(
+                val_df[self.params["target"]],
+                pred_df[self.params["target"]],
+            )
+        elif self.params["metric"] == "mse":
+            mse = MeanSquaredError(square_root=False)
+            metric_value = mse(
+                val_df[self.params["target"]],
+                pred_df[self.params["target"]],
+            )
+        elif self.params["metric"] == "rmse":
+            rmse = MeanSquaredError(square_root=True)
+            metric_value = rmse(
+                val_df[self.params["target"]],
+                pred_df[self.params["target"]],
             )
         else:
             raise Exception(f"Metric {self.params['metric']} not supported!")
@@ -156,3 +178,4 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
             "forecast": pred_df[self.params["target"]].to_numpy("float"),
             "actual": val_df[self.params["target"]].to_numpy(),
             "model_pickle": cloudpickle.dumps(model_fitted)}
+

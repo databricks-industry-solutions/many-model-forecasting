@@ -93,7 +93,7 @@ run_forecast(
 - ```prediction_length``` is your forecasting horizon in the number of steps.
 - ```backtest_months``` specifies how many previous months you use for backtesting. 
 - ```stride``` is the number of steps in which you update your backtesting trial start date when going from one trial to the next.
-- ```metric``` is the metric to log in the evaluation table and MLFlow. Supported metrics are mape and smape. Default is smape.
+- ```metric``` is the metric to log in the evaluation table and MLFlow. Supported metrics are mae, mse, rmse, mape and smape. Default is smape.
 - ```train_predict_ratio``` specifies the minimum length required for your training dataset with respect to ```prediction_length```. If ```train_predict_ratio```=2, you need to have training dataset that is at least twice as long as ```prediciton_length```.
 - ```data_quality_check``` checks the quality of the input data if set to True (default False). See [data_quality_checks.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/data_quality_checks.py) for the full details of the checks. 
 - ```resample``` backfills skipped entries with 0 if set to True. Only relevant when data_quality_check is True. Default is False. If data_quality_check is True and resample is False, the check removes all time series with skipped dates.

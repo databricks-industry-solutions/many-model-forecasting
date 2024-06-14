@@ -1,10 +1,12 @@
-temp_path: /Volumes/solacc_uc/mmf/partitions
-metric: smape
-backtest_retrain: false
-accelerator: cpu
-resample: false
-train_predict_ratio: 4
 freq: D
+
+metric: smape
+
+resample: false
+
+train_predict_ratio: 1
+
+accelerator: cpu
 
 static_features:
   #- State
@@ -133,3 +135,5 @@ models:
             name: RFableNNETAR
             model_spec:
               season_length: 7
+
+temp_path: /Volumes/mmf/tmp/partitions

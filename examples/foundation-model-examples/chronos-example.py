@@ -24,6 +24,7 @@ n = 100  # Number of time series to sample
 # COMMAND ----------
 
 # This cell will create tables: {catalog}.{db}.m4_daily_train, {catalog}.{db}.m4_monthly_train, {catalog}.{db}.rossmann_daily_train, {catalog}.{db}.rossmann_daily_test
+
 dbutils.notebook.run("data_preparation", timeout_seconds=0, arguments={"catalog": catalog, "db": db, "n": n})
 
 # COMMAND ----------
