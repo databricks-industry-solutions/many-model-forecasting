@@ -56,7 +56,7 @@ def run_forecast(
         prediction_length (int): An integer specifying the prediction length: i.e. forecasting horizon.
         backtest_months (int): An integer specifying the number of backtest months.
         stride (int): An integer specifying the stride length.
-        metric (str): A string specifying the metric to use for evaluation. Supported metrics are mape and smape. Default is smape.
+        metric (str): A string specifying the metric to use for evaluation. Supported metrics are mae, mse, rmse, mape and smape. Default is smape.
         scoring_data (Union[str, pd.DataFrame, DataFrame]): Scoring data as a string of delta table name, pandas DataFrame, or Spark DataFrame.
         scoring_output (str): A string specifying the output table name for scoring.
         evaluation_output (str): A string specifying the output table name for evaluation.

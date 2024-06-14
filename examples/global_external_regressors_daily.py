@@ -66,7 +66,7 @@ random.seed(7)
 
 # Number of time series to sample
 sample = True
-size = 1000
+size = 100
 stores = sorted(random.sample(range(0, 1000), size))
 
 train = spark.read.csv(f"/Volumes/{catalog}/{db}/{volume}/train.csv", header=True, inferSchema=True)

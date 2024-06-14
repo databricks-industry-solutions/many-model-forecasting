@@ -46,7 +46,7 @@ from mmf_sa import run_forecast
 # COMMAND ----------
 
 # Number of time series
-n = 1000
+n = 100
 
 
 def create_m4_daily():
@@ -82,9 +82,9 @@ def transform_group(df):
 
 # COMMAND ----------
 
-catalog = "mmf" # Name of the catalog we use to manage our assets
-db = "m4" # Name of the schema we use to manage our assets (e.g. datasets)
-user = spark.sql('select current_user() as user').collect()[0]['user'] # User email address
+catalog = "mmf"  # Name of the catalog we use to manage our assets
+db = "m4"  # Name of the schema we use to manage our assets (e.g. datasets)
+user = spark.sql('select current_user() as user').collect()[0]['user']  # User email address
 
 # COMMAND ----------
 
