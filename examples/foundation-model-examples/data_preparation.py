@@ -17,17 +17,14 @@ logging.getLogger("py4j.clientserver").setLevel(logging.ERROR)
 dbutils.widgets.text("catalog", "")
 dbutils.widgets.text("db", "")
 dbutils.widgets.text("n", "")
-dbutils.widgets.text("volume", "rossmann")
 
 catalog = dbutils.widgets.get("catalog")  # Name of the catalog we use to manage our assets
-db = dbutils.widgets.get("db") # Name of the schema we use to manage our assets (e.g. datasets)
-volume = dbutils.widgets.get("volume")  # Name of the schema where you have your rossmann dataset csv sotred
+db = dbutils.widgets.get("db")  # Name of the schema we use to store assets
 n = int(dbutils.widgets.get("n"))  # Number of time series to sample
 
 #  Make sure the catalog, schema and volume exist
 _ = spark.sql(f"CREATE CATALOG IF NOT EXISTS {catalog}")
 _ = spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{db}")
-_ = spark.sql(f"CREATE VOLUME IF NOT EXISTS {catalog}.{db}.{volume}")
 
 # COMMAND ----------
 
@@ -126,21 +123,21 @@ print(f"Saved data to {catalog}.{db}.m4_monthly_train")
 # COMMAND ----------
 
 # Randomly select 100 stores to forecast
-import random
-random.seed(7)
+#import random
+#random.seed(7)
 
 # Number of time series to sample
-sample = True
-stores = sorted(random.sample(range(0, 1000), n))
+#sample = True
+#stores = sorted(random.sample(range(0, 1000), n))
 
-train = spark.read.csv(f"/Volumes/{catalog}/{db}/{volume}/train.csv", header=True, inferSchema=True)
-test = spark.read.csv(f"/Volumes/{catalog}/{db}/{volume}/test.csv", header=True, inferSchema=True)
+#train = spark.read.csv(f"/Volumes/{catalog}/rossmann/csv/train.csv", header=True, inferSchema=True)
+#test = spark.read.csv(f"/Volumes/{catalog}/rossmann/csv/test.csv", header=True, inferSchema=True)
 
-if sample:
-    train = train.filter(train.Store.isin(stores))
-    test = test.filter(test.Store.isin(stores))
+#if sample:
+#    train = train.filter(train.Store.isin(stores))
+#    test = test.filter(test.Store.isin(stores))
 
-train.write.mode("overwrite").option("mergeSchema", "true").saveAsTable(f"{catalog}.{db}.rossmann_daily_train")
-test.write.mode("overwrite").option("mergeSchema", "true").saveAsTable(f"{catalog}.{db}.rossmann_daily_test")
+#train.write.mode("overwrite").option("mergeSchema", "true").saveAsTable(f"{catalog}.rossmann.rossmann_daily_train")
+#test.write.mode("overwrite").option("mergeSchema", "true").saveAsTable(f"{catalog}.rossmann.rossmann_daily_test")
 
-print(f"Saved data to {catalog}.{db}.rossmann_daily_train and {catalog}.{db}.rossmann_daily_test")
+#print(f"Saved data to {catalog}.rossmann.rossmann_daily_train and {catalog}.rossmann.rossmann_daily_test")

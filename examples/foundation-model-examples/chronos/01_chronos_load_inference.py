@@ -1,12 +1,12 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC This is an example notebook that shows how to use [moment](https://github.com/moment-timeseries-foundation-model/moment) model on Databricks. 
+# MAGIC This is an example notebook that shows how to use [chronos](https://github.com/amazon-science/chronos-forecasting/tree/main) models on Databricks. 
 # MAGIC
 # MAGIC The notebook loads the model, distributes the inference, registers the model, deploys the model and makes online forecasts.
 
 # COMMAND ----------
 
-# MAGIC %pip install git+https://github.com/moment-timeseries-foundation-model/moment.git --quiet
+# MAGIC %pip install git+https://github.com/amazon-science/chronos-forecasting.git --quiet
 # MAGIC dbutils.library.restartPython()
 
 # COMMAND ----------
@@ -17,15 +17,16 @@
 
 # COMMAND ----------
 
-catalog = "solacc_uc"  # Name of the catalog we use to manage our assets
-db = "mmf"  # Name of the schema we use to manage our assets (e.g. datasets)
+catalog = "mmf"  # Name of the catalog we use to manage our assets
+db = "m4" # Name of the schema we use to manage our assets (e.g. datasets)
 n = 100  # Number of time series to sample
 
 # COMMAND ----------
 
-# This cell will create tables: {catalog}.{db}.m4_daily_train, {catalog}.{db}.m4_monthly_train, {catalog}.{db}.rossmann_daily_train, {catalog}.{db}.rossmann_daily_test
-
-dbutils.notebook.run("data_preparation", timeout_seconds=0, arguments={"catalog": catalog, "db": db, "n": n})
+# This cell will create tables: 
+# 1. {catalog}.{db}.m4_daily_train
+# 2. {catalog}.{db}.m4_monthly_train
+dbutils.notebook.run("../data_preparation", timeout_seconds=0, arguments={"catalog": catalog, "db": db, "n": n})
 
 # COMMAND ----------
 
@@ -70,65 +71,58 @@ def create_get_horizon_timestamps(freq, prediction_length):
   return get_horizon_timestamps
 
 
-def create_forecast_udf(repository, prediction_length):
+def create_forecast_udf(repository, prediction_length, num_samples, batch_size):
 
   @pandas_udf('array<double>')
-  def forecast_udf(batch_iterator: Iterator[pd.Series]) -> Iterator[pd.Series]:
+  def forecast_udf(bulk_iterator: Iterator[pd.Series]) -> Iterator[pd.Series]:
+    
     ## initialization step
-    from momentfm import MOMENTPipeline
-    model = MOMENTPipeline.from_pretrained(
-      repository, 
-      model_kwargs={
-        "task_name": "forecasting",
-        "forecast_horizon": prediction_length},
-      )
-    model.init()
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = model.to(device)
-
+    import numpy as np
+    import pandas as pd
+    import torch
+    from chronos import ChronosPipeline
+    pipeline = ChronosPipeline.from_pretrained(
+        repository,
+        device_map="auto",
+        torch_dtype=torch.bfloat16,
+        )
+    
     ## inference
-    for batch in batch_iterator:
-      batch_forecast = []
-      for series in batch:
-        # takes in tensor of shape [batchsize, n_channels, context_length]
-        context = list(series)
-        if len(context) < 512:
-          input_mask = [1] * len(context) + [0] * (512 - len(context))
-          context = context + [0] * (512 - len(context))
-        else:
-          input_mask = [1] * 512
-          context = context[-512:]
-        
-        input_mask = torch.reshape(torch.tensor(input_mask),(1, 512)).to(device)
-        context = torch.reshape(torch.tensor(context),(1, 1, 512)).to(dtype=torch.float32).to(device)
-        output = model(context, input_mask=input_mask)
-        forecast = output.forecast.squeeze().tolist()
-        batch_forecast.append(forecast)
+    for bulk in bulk_iterator:
+      median = []
+      for i in range(0, len(bulk), batch_size):
+        batch = bulk[i:i+batch_size]
+        contexts = [torch.tensor(list(series)) for series in batch]
+        forecasts = pipeline.predict(context=contexts, prediction_length=prediction_length, num_samples=num_samples)
+        median.extend([np.median(forecast, axis=0) for forecast in forecasts])
 
-    yield pd.Series(batch_forecast)
-
+    yield pd.Series(median)
+  
   return forecast_udf
 
 # COMMAND ----------
 
-moment_model = "MOMENT-1-large"
+chronos_model = "chronos-t5-tiny"  # Alternatibely chronos-t5-mini, chronos-t5-small, chronos-t5-base, chronos-t5-large
 prediction_length = 10  # Time horizon for forecasting
+num_samples = 10  # Number of forecast to generate. We will take median as our final forecast.
+batch_size = 4  # Number of time series to process simultaneously 
 freq = "D" # Frequency of the time series
 device_count = torch.cuda.device_count()  # Number of GPUs available
 
 # COMMAND ----------
 
 get_horizon_timestamps = create_get_horizon_timestamps(freq=freq, prediction_length=prediction_length)
-
 forecast_udf = create_forecast_udf(
-  repository=f"AutonLab/{moment_model}", 
+  repository=f"amazon/{chronos_model}", 
   prediction_length=prediction_length,
+  num_samples=num_samples,
+  batch_size=batch_size,
   )
 
 forecasts = df.repartition(device_count).select(
-  df.unique_id, 
+  df.unique_id,  
   get_horizon_timestamps(df.ds).alias("ds"),
-  forecast_udf(df.y).alias("forecast"),
+  forecast_udf(df.y).alias("forecast")
   )
 
 display(forecasts)
@@ -143,43 +137,36 @@ display(forecasts)
 import mlflow
 import torch
 import numpy as np
-from mlflow.models import infer_signature
 from mlflow.models.signature import ModelSignature
 from mlflow.types import DataType, Schema, TensorSpec
+mlflow.set_registry_uri("databricks-uc")
 
-class MomentModel(mlflow.pyfunc.PythonModel):
+
+class ChronosModel(mlflow.pyfunc.PythonModel):
   def __init__(self, repository):
-    from momentfm import MOMENTPipeline
-    self.model = MOMENTPipeline.from_pretrained(
-      repository, 
-      model_kwargs={
-        "task_name": "forecasting",
-        "forecast_horizon": 10},
-      )
-    self.model.init()
-    self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    self.model = self.model.to(self.device)
-
+    import torch
+    from chronos import ChronosPipeline
+    self.pipeline = ChronosPipeline.from_pretrained(
+      repository,
+      device_map="cuda",
+      torch_dtype=torch.bfloat16,
+      )  
+  
   def predict(self, context, input_data, params=None):
-    series = list(input_data)
-    if len(series) < 512:
-      input_mask = [1] * len(series) + [0] * (512 - len(series))
-      series = series + [0] * (512 - len(series))
-    else:
-      input_mask = [1] * 512
-      series = series[-512:]
-    input_mask = torch.reshape(torch.tensor(input_mask),(1, 512)).to(self.device)
-    series = torch.reshape(torch.tensor(series),(1, 1, 512)).to(dtype=torch.float32).to(self.device)
-    output = self.model(series, input_mask=input_mask)
-    forecast = output.forecast.squeeze().tolist()
-    return forecast
+    history = [torch.tensor(list(series)) for series in input_data]
+    forecast = self.pipeline.predict(
+        context=history,
+        prediction_length=10,
+        num_samples=10,
+    )
+    return forecast.numpy()
 
-pipeline = MomentModel(f"AutonLab/{moment_model}")
-input_schema = Schema([TensorSpec(np.dtype(np.double), (-1,))])
-output_schema = Schema([TensorSpec(np.dtype(np.uint8), (-1,))])
+pipeline = ChronosModel(f"amazon/{chronos_model}")
+input_schema = Schema([TensorSpec(np.dtype(np.double), (-1, -1))])
+output_schema = Schema([TensorSpec(np.dtype(np.uint8), (-1, -1, -1))])
 signature = ModelSignature(inputs=input_schema, outputs=output_schema)
-input_example = np.random.rand(52)
-registered_model_name=f"{catalog}.{db}.{moment_model}"
+input_example = np.random.rand(1, 52)
+registered_model_name=f"{catalog}.{db}.{chronos_model}"
 
 with mlflow.start_run() as run:
   mlflow.pyfunc.log_model(
@@ -189,7 +176,7 @@ with mlflow.start_run() as run:
     signature=signature,
     input_example=input_example,
     pip_requirements=[
-      "git+https://github.com/moment-timeseries-foundation-model/moment.git",
+      f"git+https://github.com/amazon-science/chronos-forecasting.git",
     ],
   )
 
@@ -201,25 +188,26 @@ with mlflow.start_run() as run:
 # COMMAND ----------
 
 from mlflow import MlflowClient
-mlflow_client = MlflowClient()
+client = MlflowClient()
 
-def get_latest_model_version(mlflow_client, registered_model_name):
+def get_latest_model_version(client, registered_model_name):
     latest_version = 1
-    for mv in mlflow_client.search_model_versions(f"name='{registered_model_name}'"):
+    for mv in client.search_model_versions(f"name='{registered_model_name}'"):
         version_int = int(mv.version)
         if version_int > latest_version:
             latest_version = version_int
     return latest_version
 
-model_version = get_latest_model_version(mlflow_client, registered_model_name)
+model_version = get_latest_model_version(client, registered_model_name)
 logged_model = f"models:/{registered_model_name}/{model_version}"
 
 # Load model as a PyFuncModel
 loaded_model = mlflow.pyfunc.load_model(logged_model)
 
-# COMMAND ----------
+# Create random input data
+input_data = np.random.rand(5, 52) # (batch, series)
 
-input_data = np.random.rand(52)
+# Generate forecasts
 loaded_model.predict(input_data)
 
 # COMMAND ----------
@@ -246,7 +234,7 @@ instance = tags["browserHostName"]
 
 import requests
 
-model_serving_endpoint_name = moment_model
+model_serving_endpoint_name = chronos_model
 
 my_json = {
     "name": model_serving_endpoint_name,
@@ -406,7 +394,7 @@ def forecast(input_data, url=endpoint_url, databricks_token=token):
 
 # COMMAND ----------
 
-input_data = np.random.rand(52)
+input_data = np.random.rand(5, 52) # (batch, series)
 forecast(input_data)
 
 # COMMAND ----------

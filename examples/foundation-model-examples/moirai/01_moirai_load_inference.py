@@ -1,12 +1,12 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC This is an example notebook that shows how to use [chronos](https://github.com/amazon-science/chronos-forecasting/tree/main) models on Databricks. 
+# MAGIC This is an example notebook that shows how to use [Moirai](https://github.com/SalesforceAIResearch/uni2ts) models on Databricks. 
 # MAGIC
 # MAGIC The notebook loads the model, distributes the inference, registers the model, deploys the model and makes online forecasts.
 
 # COMMAND ----------
 
-# MAGIC %pip install git+https://github.com/amazon-science/chronos-forecasting.git --quiet
+# MAGIC %pip install git+https://github.com/SalesforceAIResearch/uni2ts.git --quiet
 # MAGIC dbutils.library.restartPython()
 
 # COMMAND ----------
@@ -17,15 +17,16 @@
 
 # COMMAND ----------
 
-catalog = "solacc_uc"  # Name of the catalog we use to manage our assets
-db = "mmf"  # Name of the schema we use to manage our assets (e.g. datasets)
+catalog = "mmf"  # Name of the catalog we use to manage our assets
+db = "m4"  # Name of the schema we use to manage our assets (e.g. datasets)
 n = 100  # Number of time series to sample
 
 # COMMAND ----------
 
-# This cell will create tables: {catalog}.{db}.m4_daily_train, {catalog}.{db}.m4_monthly_train, {catalog}.{db}.rossmann_daily_train, {catalog}.{db}.rossmann_daily_test
-
-dbutils.notebook.run("data_preparation", timeout_seconds=0, arguments={"catalog": catalog, "db": db, "n": n})
+# This cell will create tables: 
+# 1. {catalog}.{db}.m4_daily_train, 
+# 2. {catalog}.{db}.m4_monthly_train
+dbutils.notebook.run("../data_preparation", timeout_seconds=0, arguments={"catalog": catalog, "db": db, "n": n})
 
 # COMMAND ----------
 
@@ -47,6 +48,7 @@ display(df)
 import pandas as pd
 import numpy as np
 import torch
+from einops import rearrange
 from typing import Iterator
 from pyspark.sql.functions import pandas_udf
 
@@ -70,58 +72,73 @@ def create_get_horizon_timestamps(freq, prediction_length):
   return get_horizon_timestamps
 
 
-def create_forecast_udf(repository, prediction_length, num_samples, batch_size):
+def create_forecast_udf(repository, prediction_length, patch_size, num_samples):
 
   @pandas_udf('array<double>')
   def forecast_udf(bulk_iterator: Iterator[pd.Series]) -> Iterator[pd.Series]:
     
     ## initialization step
+    import torch
     import numpy as np
     import pandas as pd
-    import torch
-    from chronos import ChronosPipeline
-    pipeline = ChronosPipeline.from_pretrained(
-        repository,
-        device_map="auto",
-        torch_dtype=torch.bfloat16,
-        )
-    
+    from uni2ts.model.moirai import MoiraiForecast, MoiraiModule
+    module = MoiraiModule.from_pretrained(repository)
+
     ## inference
     for bulk in bulk_iterator:
       median = []
-      for i in range(0, len(bulk), batch_size):
-        batch = bulk[i:i+batch_size]
-        contexts = [torch.tensor(list(series)) for series in batch]
-        forecasts = pipeline.predict(context=contexts, prediction_length=prediction_length, num_samples=num_samples)
-        median.extend([np.median(forecast, axis=0) for forecast in forecasts])
-
-    yield pd.Series(median)
-  
+      for series in bulk:
+        model = MoiraiForecast(
+          module=module,
+          prediction_length=prediction_length,
+          context_length=len(series),
+          patch_size=patch_size,
+          num_samples=num_samples,
+          target_dim=1,
+          feat_dynamic_real_dim=0,
+          past_feat_dynamic_real_dim=0,
+        )
+        # Time series values. Shape: (batch, time, variate)
+        past_target = rearrange(
+            torch.as_tensor(series, dtype=torch.float32), "t -> 1 t 1"
+        )
+        # 1s if the value is observed, 0s otherwise. Shape: (batch, time, variate)
+        past_observed_target = torch.ones_like(past_target, dtype=torch.bool)
+        # 1s if the value is padding, 0s otherwise. Shape: (batch, time)
+        past_is_pad = torch.zeros_like(past_target, dtype=torch.bool).squeeze(-1)
+        forecast = model(
+            past_target=past_target,
+            past_observed_target=past_observed_target,
+            past_is_pad=past_is_pad,
+        )
+        median.append(np.median(forecast[0], axis=0))
+    yield pd.Series(median)  
   return forecast_udf
 
 # COMMAND ----------
 
-chronos_model = "chronos-t5-tiny"  # Alternatibely chronos-t5-mini, chronos-t5-small, chronos-t5-base, chronos-t5-large
+moirai_model = "moirai-1.0-R-small"  # Alternatibely moirai-1.0-R-base, moirai-1.0-R-large
 prediction_length = 10  # Time horizon for forecasting
 num_samples = 10  # Number of forecast to generate. We will take median as our final forecast.
-batch_size = 4  # Number of time series to process simultaneously 
+patch_size = 32  # Patch size: choose from {"auto", 8, 16, 32, 64, 128}
 freq = "D" # Frequency of the time series
 device_count = torch.cuda.device_count()  # Number of GPUs available
 
 # COMMAND ----------
 
 get_horizon_timestamps = create_get_horizon_timestamps(freq=freq, prediction_length=prediction_length)
+
 forecast_udf = create_forecast_udf(
-  repository=f"amazon/{chronos_model}", 
+  repository=f"Salesforce/{moirai_model}", 
   prediction_length=prediction_length,
+  patch_size=patch_size,
   num_samples=num_samples,
-  batch_size=batch_size,
   )
 
 forecasts = df.repartition(device_count).select(
-  df.unique_id,  
+  df.unique_id, 
   get_horizon_timestamps(df.ds).alias("ds"),
-  forecast_udf(df.y).alias("forecast")
+  forecast_udf(df.y).alias("forecast"),
   )
 
 display(forecasts)
@@ -141,31 +158,46 @@ from mlflow.types import DataType, Schema, TensorSpec
 mlflow.set_registry_uri("databricks-uc")
 
 
-class ChronosModel(mlflow.pyfunc.PythonModel):
+class MoiraiModel(mlflow.pyfunc.PythonModel):
   def __init__(self, repository):
     import torch
-    from chronos import ChronosPipeline
-    self.pipeline = ChronosPipeline.from_pretrained(
-      repository,
-      device_map="cuda",
-      torch_dtype=torch.bfloat16,
-      )  
+    from uni2ts.model.moirai import MoiraiForecast, MoiraiModule
+    self.module = MoiraiModule.from_pretrained(repository) 
   
   def predict(self, context, input_data, params=None):
-    history = [torch.tensor(list(series)) for series in input_data]
-    forecast = self.pipeline.predict(
-        context=history,
-        prediction_length=10,
-        num_samples=10,
+    from uni2ts.model.moirai import MoiraiForecast, MoiraiModule
+    model = MoiraiForecast(
+          module=self.module,
+          prediction_length=10,
+          context_length=len(input_data),
+          patch_size=32,
+          num_samples=10,
+          target_dim=1,
+          feat_dynamic_real_dim=0,
+          past_feat_dynamic_real_dim=0,
+        )
+    
+    # Time series values. Shape: (batch, time, variate)
+    past_target = rearrange(
+        torch.as_tensor(input_data, dtype=torch.float32), "t -> 1 t 1"
     )
-    return forecast.numpy()
+    # 1s if the value is observed, 0s otherwise. Shape: (batch, time, variate)
+    past_observed_target = torch.ones_like(past_target, dtype=torch.bool)
+    # 1s if the value is padding, 0s otherwise. Shape: (batch, time)
+    past_is_pad = torch.zeros_like(past_target, dtype=torch.bool).squeeze(-1)
+    forecast = model(
+        past_target=past_target,
+        past_observed_target=past_observed_target,
+        past_is_pad=past_is_pad,
+    )
+    return np.median(forecast[0], axis=0)
 
-pipeline = ChronosModel(f"amazon/{chronos_model}")
-input_schema = Schema([TensorSpec(np.dtype(np.double), (-1, -1))])
-output_schema = Schema([TensorSpec(np.dtype(np.uint8), (-1, -1, -1))])
+pipeline = MoiraiModel(f"Salesforce/{moirai_model}")
+input_schema = Schema([TensorSpec(np.dtype(np.double), (-1,))])
+output_schema = Schema([TensorSpec(np.dtype(np.uint8), (-1,))])
 signature = ModelSignature(inputs=input_schema, outputs=output_schema)
-input_example = np.random.rand(1, 52)
-registered_model_name=f"{catalog}.{db}.{chronos_model}"
+input_example = np.random.rand(52)
+registered_model_name=f"{catalog}.{db}.moirai-1-r-small"
 
 with mlflow.start_run() as run:
   mlflow.pyfunc.log_model(
@@ -175,7 +207,7 @@ with mlflow.start_run() as run:
     signature=signature,
     input_example=input_example,
     pip_requirements=[
-      f"git+https://github.com/amazon-science/chronos-forecasting.git",
+      "git+https://github.com/SalesforceAIResearch/uni2ts.git",
     ],
   )
 
@@ -187,26 +219,25 @@ with mlflow.start_run() as run:
 # COMMAND ----------
 
 from mlflow import MlflowClient
-client = MlflowClient()
+mlflow_client = MlflowClient()
 
-def get_latest_model_version(client, registered_model_name):
+def get_latest_model_version(mlflow_client, registered_model_name):
     latest_version = 1
-    for mv in client.search_model_versions(f"name='{registered_model_name}'"):
+    for mv in mlflow_client.search_model_versions(f"name='{registered_model_name}'"):
         version_int = int(mv.version)
         if version_int > latest_version:
             latest_version = version_int
     return latest_version
 
-model_version = get_latest_model_version(client, registered_model_name)
+model_version = get_latest_model_version(mlflow_client, registered_model_name)
 logged_model = f"models:/{registered_model_name}/{model_version}"
 
 # Load model as a PyFuncModel
 loaded_model = mlflow.pyfunc.load_model(logged_model)
 
-# Create random input data
-input_data = np.random.rand(5, 52) # (batch, series)
+# COMMAND ----------
 
-# Generate forecasts
+input_data = np.random.rand(52)
 loaded_model.predict(input_data)
 
 # COMMAND ----------
@@ -233,7 +264,7 @@ instance = tags["browserHostName"]
 
 import requests
 
-model_serving_endpoint_name = chronos_model
+model_serving_endpoint_name = "moirai-1-r-small"
 
 my_json = {
     "name": model_serving_endpoint_name,
@@ -393,7 +424,7 @@ def forecast(input_data, url=endpoint_url, databricks_token=token):
 
 # COMMAND ----------
 
-input_data = np.random.rand(5, 52) # (batch, series)
+input_data = np.random.rand(52)
 forecast(input_data)
 
 # COMMAND ----------
