@@ -1,24 +1,13 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC This is an example notebook that shows how to use [TimesFM](https://github.com/google-research/timesfm) models on Databricks. 
+# MAGIC This is an example notebook that shows how to use [moment](https://github.com/moment-timeseries-foundation-model/moment) model on Databricks. 
 # MAGIC
 # MAGIC The notebook loads the model, distributes the inference, registers the model, deploys the model and makes online forecasts.
-# MAGIC
-# MAGIC As of June 5, 2024, TimesFM supports python version below [3.10](https://github.com/google-research/timesfm/issues/60). So make sure your cluster is below DBR ML 14.3.
 
 # COMMAND ----------
 
-# MAGIC %pip install jax[cuda12]==0.4.26 --quiet
-# MAGIC %pip install protobuf==3.20.* --quiet
-# MAGIC %pip install utilsforecast --quiet
+# MAGIC %pip install git+https://github.com/moment-timeseries-foundation-model/moment.git --quiet
 # MAGIC dbutils.library.restartPython()
-
-# COMMAND ----------
-
-import sys
-import subprocess
-package = "git+https://github.com/google-research/timesfm.git"
-subprocess.check_call([sys.executable, "-m", "pip", "install", package, "--quiet"])
 
 # COMMAND ----------
 
@@ -28,66 +17,127 @@ subprocess.check_call([sys.executable, "-m", "pip", "install", package, "--quiet
 
 # COMMAND ----------
 
-catalog = "solacc_uc"  # Name of the catalog we use to manage our assets
-db = "mmf"  # Name of the schema we use to manage our assets (e.g. datasets)
+catalog = "mmf"  # Name of the catalog we use to manage our assets
+db = "m4"  # Name of the schema we use to manage our assets (e.g. datasets)
 n = 100  # Number of time series to sample
 
 # COMMAND ----------
 
-# This cell will create tables: {catalog}.{db}.m4_daily_train, {catalog}.{db}.m4_monthly_train, {catalog}.{db}.rossmann_daily_train, {catalog}.{db}.rossmann_daily_test
-
-dbutils.notebook.run("data_preparation", timeout_seconds=0, arguments={"catalog": catalog, "db": db, "n": n})
+# This cell will create tables: 
+# 1. {catalog}.{db}.m4_daily_train
+# 2. {catalog}.{db}.m4_monthly_train
+dbutils.notebook.run("../data_preparation", timeout_seconds=0, arguments={"catalog": catalog, "db": db, "n": n})
 
 # COMMAND ----------
 
+from pyspark.sql.functions import collect_list
+
 # Make sure that the data exists
-df = spark.table(f'{catalog}.{db}.m4_daily_train').toPandas()
+df = spark.table(f'{catalog}.{db}.m4_daily_train')
+df = df.groupBy('unique_id').agg(collect_list('ds').alias('ds'), collect_list('y').alias('y'))
 display(df)
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ## Distribute Inference
+# MAGIC We use [Pandas UDF](https://docs.databricks.com/en/udf/pandas.html#iterator-of-series-to-iterator-of-series-udf) to distribute the inference.
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC Distribution of the inference is managed by TimesFM so we don't need to use Pandas UDF. See the [github repository](https://github.com/google-research/timesfm/tree/master?tab=readme-ov-file#initialize-the-model-and-load-a-checkpoint) of TimesFM for detailed description of the input parameters. 
+import pandas as pd
+import numpy as np
+import torch
+from typing import Iterator
+from pyspark.sql.functions import pandas_udf
+
+
+def create_get_horizon_timestamps(freq, prediction_length):
+
+  @pandas_udf('array<timestamp>')
+  def get_horizon_timestamps(batch_iterator: Iterator[pd.Series]) -> Iterator[pd.Series]:   
+      one_ts_offset = pd.offsets.MonthEnd(1) if freq == "M" else pd.DateOffset(days=1)
+      barch_horizon_timestamps = []
+      for batch in batch_iterator:
+          for series in batch:
+              timestamp = last = series.max()
+              horizon_timestamps = []
+              for i in range(prediction_length):
+                  timestamp = timestamp + one_ts_offset
+                  horizon_timestamps.append(timestamp.to_numpy())
+              barch_horizon_timestamps.append(np.array(horizon_timestamps))
+      yield pd.Series(barch_horizon_timestamps)
+
+  return get_horizon_timestamps
+
+
+def create_forecast_udf(repository, prediction_length):
+
+  @pandas_udf('array<double>')
+  def forecast_udf(batch_iterator: Iterator[pd.Series]) -> Iterator[pd.Series]:
+    ## initialization step
+    from momentfm import MOMENTPipeline
+    model = MOMENTPipeline.from_pretrained(
+      repository, 
+      model_kwargs={
+        "task_name": "forecasting",
+        "forecast_horizon": prediction_length},
+      )
+    model.init()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = model.to(device)
+
+    ## inference
+    for batch in batch_iterator:
+      batch_forecast = []
+      for series in batch:
+        # takes in tensor of shape [batchsize, n_channels, context_length]
+        context = list(series)
+        if len(context) < 512:
+          input_mask = [1] * len(context) + [0] * (512 - len(context))
+          context = context + [0] * (512 - len(context))
+        else:
+          input_mask = [1] * 512
+          context = context[-512:]
+        
+        input_mask = torch.reshape(torch.tensor(input_mask),(1, 512)).to(device)
+        context = torch.reshape(torch.tensor(context),(1, 1, 512)).to(dtype=torch.float32).to(device)
+        output = model(context, input_mask=input_mask)
+        forecast = output.forecast.squeeze().tolist()
+        batch_forecast.append(forecast)
+
+    yield pd.Series(batch_forecast)
+
+  return forecast_udf
 
 # COMMAND ----------
 
-import timesfm
+moment_model = "MOMENT-1-large"
+prediction_length = 10  # Time horizon for forecasting
+freq = "D" # Frequency of the time series
+device_count = torch.cuda.device_count()  # Number of GPUs available
 
-tfm = timesfm.TimesFm(
-    context_len=512,  # Max context length of the model. It needs to be a multiplier of input_patch_len, i.e. a multiplier of 32.
-    horizon_len=10,  # Horizon length can be set to anything. We recommend setting it to the largest horizon length.
-    input_patch_len=32,
-    output_patch_len=128,
-    num_layers=20,
-    model_dims=1280,
-    backend="gpu",
-)
+# COMMAND ----------
 
-tfm.load_from_checkpoint(repo_id="google/timesfm-1.0-200m")
+get_horizon_timestamps = create_get_horizon_timestamps(freq=freq, prediction_length=prediction_length)
 
-forecast_df = tfm.forecast_on_df(
-    inputs=df,
-    freq="D",
-    value_name="y",
-    num_jobs=-1,
-)
+forecast_udf = create_forecast_udf(
+  repository=f"AutonLab/{moment_model}", 
+  prediction_length=prediction_length,
+  )
 
-display(forecast_df)
+forecasts = df.repartition(device_count).select(
+  df.unique_id, 
+  get_horizon_timestamps(df.ds).alias("ds"),
+  forecast_udf(df.y).alias("forecast"),
+  )
+
+display(forecasts)
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ##Register Model
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC We should ensure that any non-serializable attributes (like the timesfm model in TimesFMModel class) are not included in the serialization process. One common approach is to override the __getstate__ and __setstate__ methods in the class to manage what gets pickled. This modification ensures that the timesfm model is not included in the serialization process, thus avoiding the error. The load_model method is called to load the model when needed, such as during prediction or after deserialization.
 
 # COMMAND ----------
 
@@ -97,59 +147,40 @@ import numpy as np
 from mlflow.models import infer_signature
 from mlflow.models.signature import ModelSignature
 from mlflow.types import DataType, Schema, TensorSpec
-mlflow.set_registry_uri("databricks-uc")
 
-
-class TimesFMModel(mlflow.pyfunc.PythonModel):
+class MomentModel(mlflow.pyfunc.PythonModel):
   def __init__(self, repository):
-    self.repository = repository
-    self.tfm = None
+    from momentfm import MOMENTPipeline
+    self.model = MOMENTPipeline.from_pretrained(
+      repository, 
+      model_kwargs={
+        "task_name": "forecasting",
+        "forecast_horizon": 10},
+      )
+    self.model.init()
+    self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    self.model = self.model.to(self.device)
 
-  def load_model(self):
-    import timesfm
-    self.tfm = timesfm.TimesFm(
-        context_len=512,
-        horizon_len=10,
-        input_patch_len=32,
-        output_patch_len=128,
-        num_layers=20,
-        model_dims=1280,
-        backend="gpu",
-    )
-    self.tfm.load_from_checkpoint(repo_id=self.repository)
+  def predict(self, context, input_data, params=None):
+    series = list(input_data)
+    if len(series) < 512:
+      input_mask = [1] * len(series) + [0] * (512 - len(series))
+      series = series + [0] * (512 - len(series))
+    else:
+      input_mask = [1] * 512
+      series = series[-512:]
+    input_mask = torch.reshape(torch.tensor(input_mask),(1, 512)).to(self.device)
+    series = torch.reshape(torch.tensor(series),(1, 1, 512)).to(dtype=torch.float32).to(self.device)
+    output = self.model(series, input_mask=input_mask)
+    forecast = output.forecast.squeeze().tolist()
+    return forecast
 
-  def predict(self, context, input_df, params=None):
-    if self.tfm is None:
-      self.load_model()
-      
-    forecast_df = self.tfm.forecast_on_df(
-      inputs=input_df,
-      freq="D",
-      value_name="y",
-      num_jobs=-1,
-    )
-    return forecast_df
-  
-  def __getstate__(self):
-    state = self.__dict__.copy()
-    # Remove the tfm attribute from the state, as it's not serializable
-    del state['tfm']
-    return state
-
-  def __setstate__(self, state):
-    # Restore instance attributes
-    self.__dict__.update(state)
-    # Reload the model since it was not stored in the state
-    self.load_model()
-
-
-pipeline = TimesFMModel("google/timesfm-1.0-200m")
-signature = infer_signature(
-  model_input=df,
-  model_output=pipeline.predict(None, df),
-)
-
-registered_model_name=f"{catalog}.{db}.timesfm-1-200m"
+pipeline = MomentModel(f"AutonLab/{moment_model}")
+input_schema = Schema([TensorSpec(np.dtype(np.double), (-1,))])
+output_schema = Schema([TensorSpec(np.dtype(np.uint8), (-1,))])
+signature = ModelSignature(inputs=input_schema, outputs=output_schema)
+input_example = np.random.rand(52)
+registered_model_name=f"{catalog}.{db}.{moment_model}"
 
 with mlflow.start_run() as run:
   mlflow.pyfunc.log_model(
@@ -157,11 +188,9 @@ with mlflow.start_run() as run:
     python_model=pipeline,
     registered_model_name=registered_model_name,
     signature=signature,
-    input_example=df,
+    input_example=input_example,
     pip_requirements=[
-      "jax[cuda12]==0.4.26",
-      "utilsforecast==0.1.10",
-      "git+https://github.com/google-research/timesfm.git",
+      "git+https://github.com/moment-timeseries-foundation-model/moment.git",
     ],
   )
 
@@ -173,24 +202,26 @@ with mlflow.start_run() as run:
 # COMMAND ----------
 
 from mlflow import MlflowClient
-client = MlflowClient()
+mlflow_client = MlflowClient()
 
-def get_latest_model_version(client, registered_model_name):
+def get_latest_model_version(mlflow_client, registered_model_name):
     latest_version = 1
-    for mv in client.search_model_versions(f"name='{registered_model_name}'"):
+    for mv in mlflow_client.search_model_versions(f"name='{registered_model_name}'"):
         version_int = int(mv.version)
         if version_int > latest_version:
             latest_version = version_int
     return latest_version
 
-model_version = get_latest_model_version(client, registered_model_name)
+model_version = get_latest_model_version(mlflow_client, registered_model_name)
 logged_model = f"models:/{registered_model_name}/{model_version}"
 
 # Load model as a PyFuncModel
 loaded_model = mlflow.pyfunc.load_model(logged_model)
 
-# Generate forecasts
-loaded_model.predict(df)
+# COMMAND ----------
+
+input_data = np.random.rand(52)
+loaded_model.predict(input_data)
 
 # COMMAND ----------
 
@@ -216,7 +247,7 @@ instance = tags["browserHostName"]
 
 import requests
 
-model_serving_endpoint_name = "timesfm-1-200m"
+model_serving_endpoint_name = moment_model
 
 my_json = {
     "name": model_serving_endpoint_name,
@@ -376,8 +407,13 @@ def forecast(input_data, url=endpoint_url, databricks_token=token):
 
 # COMMAND ----------
 
-forecast(df)
+input_data = np.random.rand(52)
+forecast(input_data)
 
 # COMMAND ----------
 
-#func_delete_model_serving_endpoint(model_serving_endpoint_name)
+func_delete_model_serving_endpoint(model_serving_endpoint_name)
+
+# COMMAND ----------
+
+
