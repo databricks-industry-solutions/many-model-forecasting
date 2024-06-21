@@ -117,7 +117,7 @@ def create_forecast_udf(repository, prediction_length, patch_size, num_samples):
 
 # COMMAND ----------
 
-moirai_model = "moirai-1.0-R-small"  # Alternatibely moirai-1.0-R-base, moirai-1.0-R-large
+model = "moirai-1.0-R-small"  # Alternatibely moirai-1.0-R-base, moirai-1.0-R-large
 prediction_length = 10  # Time horizon for forecasting
 num_samples = 10  # Number of forecast to generate. We will take median as our final forecast.
 patch_size = 32  # Patch size: choose from {"auto", 8, 16, 32, 64, 128}
@@ -129,7 +129,7 @@ device_count = torch.cuda.device_count()  # Number of GPUs available
 get_horizon_timestamps = create_get_horizon_timestamps(freq=freq, prediction_length=prediction_length)
 
 forecast_udf = create_forecast_udf(
-  repository=f"Salesforce/{moirai_model}", 
+  repository=f"Salesforce/{model}", 
   prediction_length=prediction_length,
   patch_size=patch_size,
   num_samples=num_samples,
@@ -192,7 +192,7 @@ class MoiraiModel(mlflow.pyfunc.PythonModel):
     )
     return np.median(forecast[0], axis=0)
 
-pipeline = MoiraiModel(f"Salesforce/{moirai_model}")
+pipeline = MoiraiModel(f"Salesforce/{model}")
 input_schema = Schema([TensorSpec(np.dtype(np.double), (-1,))])
 output_schema = Schema([TensorSpec(np.dtype(np.uint8), (-1,))])
 signature = ModelSignature(inputs=input_schema, outputs=output_schema)
