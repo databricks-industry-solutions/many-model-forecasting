@@ -22,7 +22,7 @@
 catalog = "mmf"  # Name of the catalog we use to manage our assets
 db = "m4"  # Name of the schema we use to manage our assets (e.g. datasets)
 volume = "chronos_fine_tune" # Name of the volume we store the data and the weigts
-chronos_model = "chronos-t5-tiny" # Chronos model to finetune. Alternatives: -mini, -small, -base, -large
+model = "chronos-t5-tiny" # Chronos model to finetune. Alternatives: -mini, -small, -base, -large
 n = 1000  # Number of time series to sample
 
 # COMMAND ----------
@@ -89,7 +89,7 @@ time_series = list(df["y"])
 start_times = list(df["ds"].apply(lambda x: x.min().to_numpy()))
 
 # Make sure that the volume exists. We stored the fine-tuned weights here.
-_ = spark.sql(f"CREATE VOLUME IF NOT EXISTS {catalog}.{db}.chronos_fine_tune")
+_ = spark.sql(f"CREATE VOLUME IF NOT EXISTS {catalog}.{db}.{volume}")
 
 # Convert to GluonTS arrow format and save it in UC Volume
 convert_to_arrow(
@@ -105,7 +105,7 @@ convert_to_arrow(
 # MAGIC
 # MAGIC In this example, we wil fine-tune `amazon/chronos-t5-tiny` for 1000 steps with initial learning rate of 1e-3. 
 # MAGIC
-# MAGIC Make sure that you have the configuration yaml files placed inside the `configs` folder and the `train.py` script in the same directory. These two assets are taken directly from [chronos-forecasting/scripts/training](https://github.com/amazon-science/chronos-forecasting/tree/main/scripts/training). They are subject to change as the Chronos' team develops the framework further. Keep your eyes on the latest changes (we will try too) and use the latest versions if needed. We have made a small change to our `train.py` script and set the frequency of the time series to daily ("D"). 
+# MAGIC Make sure that you have the configuration yaml files placed inside the `configs` folder and the `train.py` script in the same directory. These two assets are taken directly from [chronos-forecasting/scripts/training](https://github.com/amazon-science/chronos-forecasting/tree/main/scripts/training). They are subject to change as the Chronos' team develops the framework further. Keep your eyes on the latest changes (we will try too) and use the latest versions as needed. We have made a small change to our `train.py` script and set the frequency of the time series to daily ("D"). 
 # MAGIC
 # MAGIC Inside the configuration yaml (for this example, `configs/chronos-t5-tiny.yaml`), make sure to set the parameters: 
 # MAGIC - `training_data_paths` to `/Volumes/mmf/m4/chronos_fine_tune/data.arrow`, where your arrow converted file is stored
@@ -168,7 +168,7 @@ class FineTunedChronosModel(mlflow.pyfunc.PythonModel):
 files = os.listdir(f"/Volumes/{catalog}/{db}/{volume}/")
 runs = [int(file[4:]) for file in files if "run-" in file]
 latest_run = max(runs)
-registered_model_name=f"{catalog}.{db}.{chronos_model}_finetuned"
+registered_model_name=f"{catalog}.{db}.{model}_finetuned"
 weights = f"/Volumes/{catalog}/{db}/{volume}/run-{latest_run}/checkpoint-final/"
 
 # Get the model signature for registry
@@ -195,7 +195,7 @@ with mlflow.start_run() as run:
 
 # MAGIC %md
 # MAGIC ##Reload Model
-# MAGIC We reload the model from the registry and perform forecasting on the in-training time series (for testing purpose). You can also go ahead and deploy this model behind a Model Serving's real-time endpoint. See the previous notebook: `01_chronos_load_inference` for more information.
+# MAGIC We reload the model from the registry and perform forecasting on the in-training time series (for testing purpose). You can also go ahead and deploy this model behind a Model Serving's real-time endpoint. See the previous notebook: [`01_chronos_load_inference`](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/foundation-model-examples/chronos/01_chronos_load_inference.py) for more information.
 
 # COMMAND ----------
 
