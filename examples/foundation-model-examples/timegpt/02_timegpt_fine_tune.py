@@ -1,7 +1,6 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC This is an example notebook that shows how to use Foundational Model Time-Series [TimeGPT](https://docs.nixtla.io/) models on Databricks and fine-tune the model on the fly. 
-# MAGIC The notebook loads the model, distributes the inference, registers and deploys the model
+# MAGIC This is an example notebook that shows how to use Foundational Model Time-Series [TimeGPT](https://docs.nixtla.io/) models on Databricks and fine-tune the model on the fly. The notebook loads the model, distributes the fine-tuning and inference, registers and deploys the model.
 
 # COMMAND ----------
 
@@ -14,13 +13,14 @@
 # MAGIC
 # MAGIC 3. Open the TimeGEN-1 model card in the model catalog: https://aka.ms/aistudio/landing/nixtlatimegen1
 # MAGIC 4. Click on Deploy and select the Pay-as-you-go option.
-# MAGIC 5.ubscribe to the Marketplace offer and deploy. You can also review the API pricing at this step.
+# MAGIC 5. Subscribe to the Marketplace offer and deploy. You can also review the API pricing at this step.
 # MAGIC 6. You should land on the deployment page that shows you the API key and URL in less than a minute.
 
 # COMMAND ----------
 
 # DBTITLE 1,Import Libraries
 # MAGIC %pip install nixtla --quiet
+# MAGIC %pip install --upgrade mlflow --quiet
 # MAGIC dbutils.library.restartPython()
 
 # COMMAND ----------
@@ -30,23 +30,29 @@
 
 # COMMAND ----------
 
-import time
-
-from databricks.sdk import WorkspaceClient
-
-w = WorkspaceClient()
-
 key_name = f'api_key'
 scope_name = f'time-gpt'
 
-# # w.secrets.create_scope(scope=scope_name)
-# w.secrets.put_secret(scope=scope_name, key=key_name, string_value=<enter API key>)
+# COMMAND ----------
 
+# MAGIC %md
+# MAGIC If this is your first time running the notebook and you still don't have your credential managed in the secret, uncomment and run the following cell.
 
-# # cleanup
-# w.secrets.delete_secret(scope=scope_name, key=key_name)
-# w.secrets.delete_secret(scope=scope_name, key=key_name)
-# # w.secrets.delete_scope(scope=scope_name)
+# COMMAND ----------
+
+#import time
+#from databricks.sdk import WorkspaceClient
+
+#w = WorkspaceClient()
+
+# put the key in secret 
+#w.secrets.create_scope(scope=scope_name)
+#w.secrets.put_secret(scope=scope_name, key=key_name, string_value=f'<input api key here>')
+
+# cleanup
+#w.secrets.delete_secret(scope=scope_name, key=key_name)
+## w.secrets.delete_secret(scope=scope_name, key=key_name)
+## w.secrets.delete_scope(scope=scope_name)
 
 # COMMAND ----------
 
@@ -56,8 +62,8 @@ scope_name = f'time-gpt'
 
 # COMMAND ----------
 
-catalog = "mlops_pj"  # Name of the catalog we use to manage our assets
-db = "timegpt"  # Name of the schema we use to manage our assets (e.g. datasets)
+catalog = "mmf"  # Name of the catalog we use to manage our assets
+db = "m4"  # Name of the schema we use to manage our assets (e.g. datasets)
 n = 10  # Number of time series to sample
 
 # COMMAND ----------
@@ -65,7 +71,7 @@ n = 10  # Number of time series to sample
 # This cell will create tables: 
 # 1. {catalog}.{db}.m4_daily_train, 
 # 2. {catalog}.{db}.m4_monthly_train
-# dbutils.notebook.run("../data_preparation", timeout_seconds=0, arguments={"catalog": catalog, "db": db, "n": n})
+dbutils.notebook.run("../data_preparation", timeout_seconds=0, arguments={"catalog": catalog, "db": db, "n": n})
 
 # COMMAND ----------
 
@@ -74,7 +80,7 @@ from pyspark.sql.functions import collect_list,size
 # Make sure that the data exists
 df = spark.table(f'{catalog}.{db}.m4_daily_train')
 df = df.groupBy('unique_id').agg(collect_list('ds').alias('ds'), collect_list('y').alias('y'))
-df = df.filter(size(df.ds)>=300)
+df = df.filter(size(df.ds) >= 300)
 display(df)
 
 # COMMAND ----------
@@ -92,8 +98,7 @@ from typing import Iterator,Tuple
 from pyspark.sql.functions import pandas_udf
 
 
-
-def create_forecast_udf(model_url, api_key,prediction_length=12,ft_steps= 10):
+def create_forecast_udf(model_url, api_key, prediction_length=12, ft_steps=10):
 
   @pandas_udf('struct<timestamp:array<string>,forecast:array<double>>')
   def forecast_udf(iterator: Iterator[Tuple[pd.Series, pd.Series]]) -> Iterator[pd.DataFrame]:
@@ -108,11 +113,12 @@ def create_forecast_udf(model_url, api_key,prediction_length=12,ft_steps= 10):
     api_key=api_key)
 
     ## inference
-    for timeseries,past_values in iterator:
+    for timeseries, past_values in iterator:
       median = []
-      for ts, y in zip(timeseries,past_values):
+      for ts, y in zip(timeseries, past_values):
         tdf = pd.DataFrame({"timestamp":ts,
                             "value" :y})
+        
         pred = model.forecast(
                       df=tdf,
                       h=prediction_length,
@@ -129,32 +135,21 @@ def create_forecast_udf(model_url, api_key,prediction_length=12,ft_steps= 10):
 
 model_url = "https://TimeGEN-1-pj-serverless.eastus2.inference.ai.azure.com"
 prediction_length = 10  # Time horizon for forecasting
-ft_steps = 10  # Number of forecast to generate. We will take median as our final forecast.
+ft_steps = 10  # Number of training interations to perform for fientuning
 api_key = dbutils.secrets.get(scope =scope_name,key = key_name)
 freq = "D" # Frequency of the time series
 
 # COMMAND ----------
 
-# from nixtla import NixtlaClient
-# nixtla_client = NixtlaClient(a
-#     base_url=model_url,
-#     api_key=dbutils.secrets.get(scope =scope_name,key = key_name),
-# )
-
-# COMMAND ----------
-
-# get_horizon_timestamps = create_get_horizon_timestamps(freq=freq, prediction_length=prediction_length)
-
 forecast_udf = create_forecast_udf(
   model_url=model_url, 
-  api_key=api_key
+  api_key=api_key,
   )
 
 forecasts = df.select(
-  df.unique_id, 
-  # get_horizon_timestamps(df.ds).alias("ds"),
-  forecast_udf("ds","y").alias("forecast"),
-  ).select("unique_id","forecast.timestamp","forecast.forecast" )
+  df.unique_id,
+  forecast_udf("ds", "y").alias("forecast"),
+  ).select("unique_id", "forecast.timestamp", "forecast.forecast")
 
 display(forecasts)
 
@@ -257,7 +252,7 @@ loaded_model = mlflow.pyfunc.load_model(logged_model)
 
 # COMMAND ----------
 
-#Test the endpoint before deployment
+# Test the endpoint before deployment
 loaded_model.predict(pdf,params = {'h' :20})
 
 # COMMAND ----------

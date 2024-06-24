@@ -10,17 +10,18 @@
 # MAGIC Here are the prerequisites:
 # MAGIC 1. If you don’t have an Azure subscription, get one here: https://azure.microsoft.com/en-us/pricing/purchase-options/pay-as-you-go
 # MAGIC 2. Create an Azure AI Studio hub and project. Supported regions are: East US 2, Sweden Central, North Central US, East US, West US, West US3, South Central US. Make sure you pick one these as the Azure region for the hub.
-# MAGIC Next, you need to create a deployment to obtain the inference API and key:
+# MAGIC Next, you need to create a deployment to obtain the inference API and key.
 # MAGIC
 # MAGIC 3. Open the TimeGEN-1 model card in the model catalog: https://aka.ms/aistudio/landing/nixtlatimegen1
 # MAGIC 4. Click on Deploy and select the Pay-as-you-go option.
-# MAGIC 5.ubscribe to the Marketplace offer and deploy. You can also review the API pricing at this step.
+# MAGIC 5. Subscribe to the Marketplace offer and deploy. You can also review the API pricing at this step.
 # MAGIC 6. You should land on the deployment page that shows you the API key and URL in less than a minute.
 
 # COMMAND ----------
 
 # DBTITLE 1,Import Libraries
 # MAGIC %pip install nixtla --quiet
+# MAGIC %pip install --upgrade mlflow --quiet
 # MAGIC dbutils.library.restartPython()
 
 # COMMAND ----------
@@ -30,23 +31,29 @@
 
 # COMMAND ----------
 
-# import time
-
-# from databricks.sdk import WorkspaceClient
-
-# w = WorkspaceClient()
-
 key_name = f'api_key'
 scope_name = f'time-gpt'
 
-# # w.secrets.create_scope(scope=scope_name)
-# # w.secrets.put_secret(scope=scope_name, key=key_name, string_value=f'<input api key here>')
+# COMMAND ----------
 
+# MAGIC %md
+# MAGIC If this is your first time running the notebook and you still don't have your credential managed in the secret, uncomment and run the following cell.
 
-# # cleanup
-# # w.secrets.delete_secret(scope=scope_name, key=key_name)
-# # w.secrets.delete_secret(scope=scope_name, key=key_name)
-# # w.secrets.delete_scope(scope=scope_name)
+# COMMAND ----------
+
+#import time
+#from databricks.sdk import WorkspaceClient
+
+#w = WorkspaceClient()
+
+# put the key in secret 
+#w.secrets.create_scope(scope=scope_name)
+#w.secrets.put_secret(scope=scope_name, key=key_name, string_value=f'<input api key here>')
+
+# cleanup
+#w.secrets.delete_secret(scope=scope_name, key=key_name)
+## w.secrets.delete_secret(scope=scope_name, key=key_name)
+## w.secrets.delete_scope(scope=scope_name)
 
 # COMMAND ----------
 
@@ -56,8 +63,8 @@ scope_name = f'time-gpt'
 
 # COMMAND ----------
 
-catalog = "mlops_pj"  # Name of the catalog we use to manage our assets
-db = "timegpt"  # Name of the schema we use to manage our assets (e.g. datasets)
+catalog = "mmf"  # Name of the catalog we use to manage our assets
+db = "m4"  # Name of the schema we use to manage our assets (e.g. datasets)
 n = 10  # Number of time series to sample
 
 # COMMAND ----------
@@ -65,7 +72,7 @@ n = 10  # Number of time series to sample
 # This cell will create tables: 
 # 1. {catalog}.{db}.m4_daily_train, 
 # 2. {catalog}.{db}.m4_monthly_train
-# dbutils.notebook.run("../data_preparation", timeout_seconds=0, arguments={"catalog": catalog, "db": db, "n": n})
+dbutils.notebook.run("../data_preparation", timeout_seconds=0, arguments={"catalog": catalog, "db": db, "n": n})
 
 # COMMAND ----------
 
@@ -90,6 +97,8 @@ import torch
 from typing import Iterator,Tuple
 from pyspark.sql.functions import pandas_udf
 
+
+## function to select single time series from the prepared dataset
 def get_single_time_series(unique_id):
   pdf = df.filter(df.unique_id == unique_id).toPandas()
   pdf = {
@@ -97,6 +106,7 @@ def get_single_time_series(unique_id):
     "value" : list(pdf['y'][0])
   }
   return pd.DataFrame(pdf)
+
 
 def create_forecast_udf(model_url, api_key,prediction_length=12):
 
@@ -132,10 +142,26 @@ def create_forecast_udf(model_url, api_key,prediction_length=12):
 # COMMAND ----------
 
 # DBTITLE 1,Forecasting with TimeGEN on Azure AI
-model_url = "https://TimeGEN-1-pj-serverless.westus3.inference.ai.azure.com"
+model_url = "https://TimeGEN-1-pj-serverless.eastus2.inference.ai.azure.com" # Your model url
 prediction_length = 12  # Time horizon for forecasting
-api_key = dbutils.secrets.get(scope =scope_name,key = key_name)
+api_key = dbutils.secrets.get(scope=scope_name, key=key_name) # Get credential from secrets 
 freq = "D" # Frequency of the time series
+
+# COMMAND ----------
+
+# Create Pandas UDF
+forecast_udf = create_forecast_udf(
+  model_url=model_url, 
+  api_key=api_key,
+  )
+
+# Apply Pandas UDF to the dataframe
+forecasts = df.select(
+  df.unique_id,
+  forecast_udf("ds", "y").alias("forecast"),
+  ).select("unique_id", "forecast.timestamp", "forecast.forecast")
+
+display(forecasts)
 
 # COMMAND ----------
 
@@ -148,7 +174,7 @@ import mlflow
 import torch
 import numpy as np
 from mlflow.models.signature import ModelSignature
-from mlflow.types import DataType, Schema, TensorSpec ,ColSpec, ParamSpec,ParamSchema
+from mlflow.types import DataType, Schema, TensorSpec, ColSpec, ParamSpec,ParamSchema
 mlflow.set_registry_uri("databricks-uc")
 
 
@@ -189,7 +215,7 @@ pdf = {
   "timestamp" : list(pdf['ds'][0]),
   "value" : list(pdf['y'][0])
 }
-pdf =get_single_time_series('D4')
+pdf=get_single_time_series('D4')
 
 with mlflow.start_run() as run:
   mlflow.pyfunc.log_model(
@@ -214,7 +240,7 @@ from mlflow import MlflowClient
 mlflow_client = MlflowClient()
 
 def get_latest_model_version(mlflow_client, registered_model_name):
-    latest_version = 4
+    latest_version = 1
     for mv in mlflow_client.search_model_versions(f"name='{registered_model_name}'"):
         version_int = int(mv.version)
         if version_int > latest_version:
@@ -234,9 +260,9 @@ loaded_model = mlflow.pyfunc.load_model(logged_model)
 
 # COMMAND ----------
 
-#Get Random Data Point
-pdf =get_single_time_series('D4')
-loaded_model.predict(pdf,params = {'h' :20})
+# Get Random Data Point
+pdf = get_single_time_series('D4')
+loaded_model.predict(pdf, params = {'h': 20})
 
 # COMMAND ----------
 
