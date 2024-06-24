@@ -40,7 +40,7 @@ key_name = f'api_key'
 scope_name = f'time-gpt'
 
 # # w.secrets.create_scope(scope=scope_name)
-w.secrets.put_secret(scope=scope_name, key=key_name, string_value='OjY9oE2qblL1oQcT1F99w6vyjjYku1ix')
+# w.secrets.put_secret(scope=scope_name, key=key_name, string_value=<enter API key>)
 
 
 # # cleanup
