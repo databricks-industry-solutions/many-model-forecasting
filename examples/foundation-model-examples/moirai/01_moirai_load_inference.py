@@ -1,8 +1,18 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC This is an example notebook that shows how to use [Moirai](https://github.com/SalesforceAIResearch/uni2ts) models on Databricks. 
+# MAGIC This is an example notebook that shows how to use [Moirai](https://github.com/SalesforceAIResearch/uni2ts) models on Databricks. The notebook loads the model, distributes the inference, registers the model, deploys the model and makes online forecasts.
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Cluster setup
 # MAGIC
-# MAGIC The notebook loads the model, distributes the inference, registers the model, deploys the model and makes online forecasts.
+# MAGIC We recommend using a cluster with [Databricks Runtime 14.3 LTS for ML](https://docs.databricks.com/en/release-notes/runtime/14.3lts-ml.html) or above. The cluster can be single-node or multi-node with one or more GPU instances on each worker: e.g. [g5.12xlarge [A10G]](https://aws.amazon.com/ec2/instance-types/g5/) on AWS or [Standard_NV72ads_A10_v5](https://learn.microsoft.com/en-us/azure/virtual-machines/nva10v5-series) on Azure. MMF leverages [Pandas UDF](https://docs.databricks.com/en/udf/pandas.html) for distributing the inference tasks and utilizing all the available resource.
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Install package
 
 # COMMAND ----------
 
@@ -13,6 +23,8 @@
 
 # MAGIC %md
 # MAGIC ## Prepare Data
+# MAGIC We are using [`datasetsforecast`](https://github.com/Nixtla/datasetsforecast/tree/main/) package to download M4 data. M4 dataset contains a set of time series which we use for testing MMF. Below we have written a number of custome functions to convert M4 time series to an expected format.
+# MAGIC
 # MAGIC Make sure that the catalog and the schema already exist.
 
 # COMMAND ----------
@@ -53,6 +65,7 @@ from typing import Iterator
 from pyspark.sql.functions import pandas_udf
 
 
+# Function to create a Pandas UDF to generate horizon timestamps
 def create_get_horizon_timestamps(freq, prediction_length):
 
   @pandas_udf('array<timestamp>')
@@ -72,6 +85,7 @@ def create_get_horizon_timestamps(freq, prediction_length):
   return get_horizon_timestamps
 
 
+# Function to create a Pandas UDF to generate forecasts
 def create_forecast_udf(repository, prediction_length, patch_size, num_samples):
 
   @pandas_udf('array<double>')
@@ -117,12 +131,22 @@ def create_forecast_udf(repository, prediction_length, patch_size, num_samples):
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC We specify the requirements of our forecasts. 
+
+# COMMAND ----------
+
 model = "moirai-1.0-R-small"  # Alternatibely moirai-1.0-R-base, moirai-1.0-R-large
 prediction_length = 10  # Time horizon for forecasting
 num_samples = 10  # Number of forecast to generate. We will take median as our final forecast.
 patch_size = 32  # Patch size: choose from {"auto", 8, 16, 32, 64, 128}
 freq = "D" # Frequency of the time series
 device_count = torch.cuda.device_count()  # Number of GPUs available
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC Let's generate the forecasts.
 
 # COMMAND ----------
 
@@ -147,6 +171,7 @@ display(forecasts)
 
 # MAGIC %md
 # MAGIC ##Register Model
+# MAGIC We will package our model using [`mlflow.pyfunc.PythonModel`](https://mlflow.org/docs/latest/python_api/mlflow.pyfunc.html) and register this in Unity Catalog.
 
 # COMMAND ----------
 
@@ -199,6 +224,7 @@ signature = ModelSignature(inputs=input_schema, outputs=output_schema)
 input_example = np.random.rand(52)
 registered_model_name=f"{catalog}.{db}.moirai-1-r-small"
 
+# Log and register the model
 with mlflow.start_run() as run:
   mlflow.pyfunc.log_model(
     "model",
@@ -215,6 +241,7 @@ with mlflow.start_run() as run:
 
 # MAGIC %md
 # MAGIC ##Reload Model
+# MAGIC Once the registration is complete, we will reload the model and generate forecasts.
 
 # COMMAND ----------
 
@@ -243,7 +270,8 @@ loaded_model.predict(input_data)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Deploy Model on Databricks Model Serving
+# MAGIC ## Deploy Model
+# MAGIC We will deploy our model behind a real-time endpoint of [Databricks Mosaic AI Model Serving](https://www.databricks.com/product/model-serving).
 
 # COMMAND ----------
 
@@ -266,6 +294,7 @@ import requests
 
 model_serving_endpoint_name = "moirai-1-r-small"
 
+# auto_capture_config specifies where the inference logs should be written
 my_json = {
     "name": model_serving_endpoint_name,
     "config": {
@@ -396,6 +425,7 @@ wait_for_endpoint()
 
 # MAGIC %md
 # MAGIC ## Online Forecast
+# MAGIC Once the endpoint is ready, let's send a request to the model and generate an online forecast.
 
 # COMMAND ----------
 
@@ -429,6 +459,7 @@ forecast(input_data)
 
 # COMMAND ----------
 
+# Delete the serving endpoint
 func_delete_model_serving_endpoint(model_serving_endpoint_name)
 
 # COMMAND ----------

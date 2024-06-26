@@ -1,10 +1,19 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC This is an example notebook that shows how to use [chronos](https://github.com/amazon-science/chronos-forecasting/tree/main) models on Databricks. 
+# MAGIC This is an example notebook that shows how to use [chronos](https://github.com/amazon-science/chronos-forecasting/tree/main) models on Databricks. The notebook loads, fine-tunes, and registers the model.
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Cluster setup
+# MAGIC **As of June 17, 2024, Chronos finetuning script works on DBR ML 14.3 and below (do not use DBR ML 15 or above).**
 # MAGIC
-# MAGIC The notebook loads, fine-tunes, and registers the model.
-# MAGIC
-# MAGIC As of June 17, 2024, Chronos finetuning script supports DBR ML 14.3 (not DBR ML 15 above).
+# MAGIC We recommend using a cluster with [Databricks Runtime 14.3 LTS for ML](https://docs.databricks.com/en/release-notes/runtime/14.3lts-ml.html). The cluster can be single-node or multi-node with one or more GPU instances on each worker: e.g. [g5.12xlarge [A10G]](https://aws.amazon.com/ec2/instance-types/g5/) on AWS or [Standard_NV72ads_A10_v5](https://learn.microsoft.com/en-us/azure/virtual-machines/nva10v5-series) on Azure.
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Install package
 
 # COMMAND ----------
 
@@ -14,7 +23,9 @@
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Prepare Data
+# MAGIC ## Prepare data 
+# MAGIC We use [`datasetsforecast`](https://github.com/Nixtla/datasetsforecast/tree/main/) package to download M4 data. M4 dataset contains a set of time series which we use for testing MMF. Below we have written a number of custome functions to convert M4 time series to an expected format.
+# MAGIC
 # MAGIC Make sure that the catalog and the schema already exist.
 
 # COMMAND ----------
@@ -44,7 +55,7 @@ display(df)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC Convert your time series dataset into a GluonTS-compatible file dataset.
+# MAGIC We need to convert our time series dataset into a GluonTS-compatible file dataset.
 
 # COMMAND ----------
 
@@ -81,7 +92,7 @@ def convert_to_arrow(
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC Convert the Pandas dataframe and write the arrow file to UC Volume.  
+# MAGIC Convert the Pandas dataframe to an arrow file and write it to UC Volume.  
 
 # COMMAND ----------
 
@@ -131,7 +142,7 @@ convert_to_arrow(
 
 # MAGIC %md
 # MAGIC ##Register Model
-# MAGIC We get the fine-tuned weights from the latest run from UC volume, wrap the pipeline with `mlflow.pyfunc.PythonModel` and register this on Unity Catalog.
+# MAGIC We get the fine-tuned weights from the latest run from UC volume, wrap the pipeline with [`mlflow.pyfunc.PythonModel`](https://mlflow.org/docs/latest/python_api/mlflow.pyfunc.html) and register this on Unity Catalog.
 
 # COMMAND ----------
 

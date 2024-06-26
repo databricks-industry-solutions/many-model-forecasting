@@ -1,10 +1,20 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC This is an example notebook that shows how to use [TimesFM](https://github.com/google-research/timesfm) models on Databricks. 
+# MAGIC This is an example notebook that shows how to use [TimesFM](https://github.com/google-research/timesfm) models on Databricks. The notebook loads the model, distributes the inference, registers the model, deploys the model and makes online forecasts.
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Cluster setup
 # MAGIC
-# MAGIC The notebook loads the model, distributes the inference, registers the model, deploys the model and makes online forecasts.
+# MAGIC **As of June 5, 2024, TimesFM supports python version below 3.10. So make sure your cluster is below DBR ML 14.3.**
 # MAGIC
-# MAGIC As of June 5, 2024, TimesFM supports python version below [3.10](https://github.com/google-research/timesfm/issues/60). So make sure your cluster is below DBR ML 14.3.
+# MAGIC We recommend using a cluster with [Databricks Runtime 14.3 LTS for ML](https://docs.databricks.com/en/release-notes/runtime/14.3lts-ml.html). The cluster can be single-node or multi-node with one or more GPU instances on each worker: e.g. [g5.12xlarge [A10G]](https://aws.amazon.com/ec2/instance-types/g5/) on AWS or [Standard_NV72ads_A10_v5](https://learn.microsoft.com/en-us/azure/virtual-machines/nva10v5-series) on Azure. MMF leverages [Pandas UDF](https://docs.databricks.com/en/udf/pandas.html) for distributing the inference tasks and utilizing all the available resource.
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Install package
 
 # COMMAND ----------
 
@@ -23,7 +33,9 @@ subprocess.check_call([sys.executable, "-m", "pip", "install", package, "--quiet
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Prepare Data
+# MAGIC ## Prepare data 
+# MAGIC We use [`datasetsforecast`](https://github.com/Nixtla/datasetsforecast/tree/main/) package to download M4 data. M4 dataset contains a set of time series which we use for testing MMF. Below we have written a number of custome functions to convert M4 time series to an expected format.
+# MAGIC
 # MAGIC Make sure that the catalog and the schema already exist.
 
 # COMMAND ----------
@@ -89,6 +101,8 @@ display(forecast_df)
 
 # MAGIC %md
 # MAGIC We should ensure that any non-serializable attributes (like the timesfm model in TimesFMModel class) are not included in the serialization process. One common approach is to override the __getstate__ and __setstate__ methods in the class to manage what gets pickled. This modification ensures that the timesfm model is not included in the serialization process, thus avoiding the error. The load_model method is called to load the model when needed, such as during prediction or after deserialization.
+# MAGIC
+# MAGIC We will package our model using [`mlflow.pyfunc.PythonModel`](https://mlflow.org/docs/latest/python_api/mlflow.pyfunc.html) and register this in Unity Catalog.
 
 # COMMAND ----------
 
@@ -170,6 +184,7 @@ with mlflow.start_run() as run:
 
 # MAGIC %md
 # MAGIC ##Reload Model
+# MAGIC Once the registration is complete, we will reload the model and generate forecasts.
 
 # COMMAND ----------
 
@@ -196,7 +211,8 @@ loaded_model.predict(df)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Deploy Model on Databricks Model Serving
+# MAGIC ## Deploy Model
+# MAGIC We will deploy our model behind a real-time endpoint of [Databricks Mosaic AI Model Serving](https://www.databricks.com/product/model-serving).
 
 # COMMAND ----------
 
@@ -349,6 +365,7 @@ wait_for_endpoint()
 
 # MAGIC %md
 # MAGIC ## Online Forecast
+# MAGIC Once the endpoint is ready, let's send a request to the model and generate an online forecast.
 
 # COMMAND ----------
 
@@ -381,4 +398,5 @@ forecast(df)
 
 # COMMAND ----------
 
-#func_delete_model_serving_endpoint(model_serving_endpoint_name)
+# Delete the serving endpoint
+func_delete_model_serving_endpoint(model_serving_endpoint_name)
