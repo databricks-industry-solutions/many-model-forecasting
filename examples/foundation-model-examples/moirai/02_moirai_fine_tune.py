@@ -1,8 +1,17 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC This is an example notebook that shows how to use [Moirai](https://github.com/SalesforceAIResearch/uni2ts) models on Databricks. 
-# MAGIC
-# MAGIC The notebook loads, fine-tunes, and registers the model.
+# MAGIC This is an example notebook that shows how to use [Moirai](https://github.com/SalesforceAIResearch/uni2ts) models on Databricks. The notebook loads, fine-tunes, and registers the model.
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Cluster setup
+# MAGIC We recommend using a cluster with [Databricks Runtime 14.3 LTS for ML](https://docs.databricks.com/en/release-notes/runtime/14.3lts-ml.html) or above. The cluster can be single-node or multi-node with one or more GPU instances on each worker: e.g. [g5.12xlarge [A10G]](https://aws.amazon.com/ec2/instance-types/g5/) on AWS or [Standard_NV72ads_A10_v5](https://learn.microsoft.com/en-us/azure/virtual-machines/nva10v5-series) on Azure.
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Install package
 
 # COMMAND ----------
 
@@ -13,6 +22,8 @@
 
 # MAGIC %md
 # MAGIC ## Prepare Data
+# MAGIC We are using [`datasetsforecast`](https://github.com/Nixtla/datasetsforecast/tree/main/) package to download M4 data. M4 dataset contains a set of time series which we use for testing MMF. Below we have written a number of custome functions to convert M4 time series to an expected format.
+# MAGIC
 # MAGIC Make sure that the catalog and the schema already exist.
 
 # COMMAND ----------
@@ -34,7 +45,7 @@ _ = spark.sql(f"CREATE VOLUME IF NOT EXISTS {catalog}.{db}.{volume}")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC We synthesize `n` number of time series (randomly sampled) of daily resolution and store it as a csv file in UC Volume. 
+# MAGIC We synthesize `n` number of time series (randomly sampled) at daily resolution and store it as a csv file in UC Volume. 
 
 # COMMAND ----------
 
@@ -70,7 +81,7 @@ pdf
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC This dotenv file is needed to use the `uni2ts.data.builder.simple` function from the `uni2ts` library to build a dataset. 
+# MAGIC This dotenv file is needed to call the [`uni2ts.data.builder.simple`](https://github.com/SalesforceAIResearch/uni2ts/blob/main/src/uni2ts/data/builder/simple.py) function from the [`uni2ts`](https://github.com/SalesforceAIResearch/uni2ts) library to build a dataset. 
 
 # COMMAND ----------
 
@@ -92,7 +103,7 @@ os.environ['CUSTOM_DATA_PATH'] = f"/Volumes/{catalog}/{db}/{volume}"
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC We convert the dataset into the Uni2TS format. `random` is the name of the dataset to use, which we load from our volume's location. See the [README](https://github.com/SalesforceAIResearch/uni2ts/tree/main?tab=readme-ov-file#fine-tuning) of Uni2TS for more information on the parameters. 
+# MAGIC We convert the dataset into the Uni2TS format. `random` is the name we give to the training dataset, which we load from our volume's location. See the [README](https://github.com/SalesforceAIResearch/uni2ts/tree/main?tab=readme-ov-file#fine-tuning) of Uni2TS for more information on the parameters. 
 
 # COMMAND ----------
 
@@ -105,11 +116,11 @@ os.environ['CUSTOM_DATA_PATH'] = f"/Volumes/{catalog}/{db}/{volume}"
 # MAGIC %md
 # MAGIC ##Run Fine-tuning
 # MAGIC
-# MAGIC In this example, we wil fine-tune `moirai-1.0-R-small` for max 100 epochs with early stopping (can be specified here: `examples/foundation-model-examples/moirai/conf/finetune/default.yaml`). The learning rate is set to 1e-3, which you can modify in `examples/foundation-model-examples/moirai/conf/finetune/default.yaml`. 
+# MAGIC In this example, we wil fine-tune `moirai-1.0-R-small` for max 100 epochs with early stopping (can be specified here: [`examples/foundation-model-examples/moirai/conf/finetune/default.yaml`](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/foundation-model-examples/moirai/conf/finetune/default.yaml)). The learning rate is set to 1e-3, which you can modify in the model specific configuration file: [`examples/foundation-model-examples/moirai/conf/finetune/model/moirai_1.0_R_small.yaml`](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/foundation-model-examples/moirai/conf/finetune/model/moirai_1.0_R_small.yaml). 
 # MAGIC
-# MAGIC Make sure that you have the configuration yaml files placed inside the `conf` folder and the `train.py` script in the same directory. These two assets are taken directly from and [cli/conf](https://github.com/SalesforceAIResearch/uni2ts/tree/main/cli/conf) and [cli/train.py](https://github.com/SalesforceAIResearch/uni2ts/blob/main/cli/train.py). They are subject to change as the Moirai' team develops the framework further. Keep your eyes on the latest changes (we will try too) and use the latest versions as needed.
+# MAGIC Make sure that you have the configuration yaml files placed inside the [`conf`](examples/foundation-model-examples/moirai/conf) folder and the [`train.py`](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/foundation-model-examples/moirai/train.py) script in the same directory. These two assets are taken directly from and [cli/conf](https://github.com/SalesforceAIResearch/uni2ts/tree/main/cli/conf) and [cli/train.py](https://github.com/SalesforceAIResearch/uni2ts/blob/main/cli/train.py). They are subject to change as the Moirai' team develops the framework further. Keep your eyes on the latest changes (we will try too) and use the latest versions as needed.
 # MAGIC
-# MAGIC The key configuration files to be customized for you use case are `examples/foundation-model-examples/moirai/conf/finetune/default.yaml`, `examples/foundation-model-examples/moirai/conf/finetune/data/random.yaml` and `examples/foundation-model-examples/moirai/conf/finetune/val_data/random.yaml`. Refer to the Moirai [documentation](https://github.com/SalesforceAIResearch/uni2ts) for more detail.
+# MAGIC The key configuration files to be customized for you use case are [`examples/foundation-model-examples/moirai/conf/finetune/default.yaml`](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/foundation-model-examples/moirai/conf/finetune/default.yaml), [`examples/foundation-model-examples/moirai/conf/finetune/data/random.yaml`](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/foundation-model-examples/moirai/conf/finetune/data/random.yaml) and [`examples/foundation-model-examples/moirai/conf/finetune/val_data/random.yaml`](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/foundation-model-examples/moirai/conf/finetune/val_data/random.yaml). Read through the Moirai [documentation](https://github.com/SalesforceAIResearch/uni2ts) for more detail.
 
 # COMMAND ----------
 
@@ -124,7 +135,7 @@ os.environ['CUSTOM_DATA_PATH'] = f"/Volumes/{catalog}/{db}/{volume}"
 
 # MAGIC %md
 # MAGIC ##Register Model
-# MAGIC We get the fine-tuned weights from the run from the UC volume, wrap the pipeline with `mlflow.pyfunc.PythonModel` and register this on Unity Catalog.
+# MAGIC We get the fine-tuned weights from the run from the UC volume, wrap the pipeline with [`mlflow.pyfunc.PythonModel`](https://mlflow.org/docs/latest/python_api/mlflow.pyfunc.html) and register this on Unity Catalog.
 
 # COMMAND ----------
 
@@ -174,7 +185,7 @@ input_example = np.random.rand(52)
 registered_model_name=f"{catalog}.{db}.moirai-1-r-small_finetuned"
 weights = f"/Volumes/{catalog}/{db}/{volume}/outputs/moirai_1.0_R_small/random/random_run/checkpoints/epoch=0-step=100.ckpt"
 
-
+# Log and register the model
 with mlflow.start_run() as run:
   mlflow.pyfunc.log_model(
     "model",

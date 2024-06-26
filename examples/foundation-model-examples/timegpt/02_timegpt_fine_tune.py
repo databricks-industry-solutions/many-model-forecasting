@@ -1,6 +1,6 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC This is an example notebook that shows how to use Foundational Model Time-Series [TimeGPT](https://docs.nixtla.io/) models on Databricks and fine-tune the model on the fly. The notebook loads the model, distributes the fine-tuning and inference, registers and deploys the model.
+# MAGIC This is an example notebook that shows how to use Foundational Model Time-Series [TimeGPT](https://docs.nixtla.io/) models on Databricks and fine-tune it on the fly.
 
 # COMMAND ----------
 
@@ -18,6 +18,18 @@
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC ## Cluster setup
+# MAGIC
+# MAGIC TimeGPT is accessible through an API as a service, so the actual compute for inference or fine-tuning will not take place on Databricks. For this reason a GPU cluster is not necessary and we recommend using a cluster with [Databricks Runtime 14.3 LTS for ML](https://docs.databricks.com/en/release-notes/runtime/14.3lts-ml.html) or above with CPUs. MMF leverages [Pandas UDF](https://docs.databricks.com/en/udf/pandas.html) for distributing the inference tasks and utilizing all the available resource.
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Install package
+
+# COMMAND ----------
+
 # DBTITLE 1,Import Libraries
 # MAGIC %pip install nixtla --quiet
 # MAGIC %pip install --upgrade mlflow --quiet
@@ -26,7 +38,7 @@
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Adding the API key as a secret to be used 
+# MAGIC ## Add the API key as a secret
 
 # COMMAND ----------
 
@@ -36,7 +48,7 @@ scope_name = f'time-gpt'
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC If this is your first time running the notebook and you still don't have your credential managed in the secret, uncomment and run the following cell.
+# MAGIC If this is your first time running the notebook and you still don't have your credential managed in the secret, uncomment and run the following cell. Read more about Databricks secrets management [here](https://docs.databricks.com/en/security/secrets/index.html).
 
 # COMMAND ----------
 
@@ -57,7 +69,9 @@ scope_name = f'time-gpt'
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Prepare Data
+# MAGIC ## Prepare data 
+# MAGIC We use [`datasetsforecast`](https://github.com/Nixtla/datasetsforecast/tree/main/) package to download M4 data. M4 dataset contains a set of time series which we use for testing MMF. Below we have written a number of custome functions to convert M4 time series to an expected format.
+# MAGIC
 # MAGIC Make sure that the catalog and the schema already exist.
 
 # COMMAND ----------
@@ -86,8 +100,8 @@ display(df)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Distribute Inference
-# MAGIC We use [Pandas UDF](https://docs.databricks.com/en/udf/pandas.html#iterator-of-series-to-iterator-of-series-udf) to distribute the inference.
+# MAGIC ## Distribute Fine-Tuning and Inference
+# MAGIC We use [Pandas UDF](https://docs.databricks.com/en/udf/pandas.html#iterator-of-series-to-iterator-of-series-udf) to distribute fine-tuning and inference.
 
 # COMMAND ----------
 
@@ -98,6 +112,7 @@ from typing import Iterator,Tuple
 from pyspark.sql.functions import pandas_udf
 
 
+## function to create a Pandas UDF to generate fine-tune and generate forecasts given a time series history
 def create_forecast_udf(model_url, api_key, prediction_length=12, ft_steps=10):
 
   @pandas_udf('struct<timestamp:array<string>,forecast:array<double>>')
@@ -133,11 +148,21 @@ def create_forecast_udf(model_url, api_key, prediction_length=12, ft_steps=10):
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC We specify the requirements of our forecasts. 
+
+# COMMAND ----------
+
 model_url = "https://TimeGEN-1-pj-serverless.eastus2.inference.ai.azure.com"
 prediction_length = 10  # Time horizon for forecasting
 ft_steps = 10  # Number of training interations to perform for fientuning
 api_key = dbutils.secrets.get(scope =scope_name,key = key_name)
 freq = "D" # Frequency of the time series
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC Let's fine-tune and generate forecasts.
 
 # COMMAND ----------
 
@@ -157,6 +182,7 @@ display(forecasts)
 
 # MAGIC %md
 # MAGIC ##Register Model
+# MAGIC We will package our model using [`mlflow.pyfunc.PythonModel`](https://mlflow.org/docs/latest/python_api/mlflow.pyfunc.html) and register this in Unity Catalog.
 
 # COMMAND ----------
 
@@ -193,6 +219,8 @@ class TimeGPTPipeline(mlflow.pyfunc.PythonModel):
     return pred
 
 pipeline = TimeGPTPipeline(model_url = model_url,api_key=api_key)
+
+# Need model signature to be able to register the model
 input_schema = Schema([ColSpec.from_json_dict(**{"type": "datetime", "name": "timestamp", "required": True}),
                        ColSpec.from_json_dict(**{"type": "double", "name": "value", "required": True})])
 output_schema = Schema([ColSpec.from_json_dict(**{"type": "datetime", "name": "timestamp", "required": True}),
@@ -209,6 +237,7 @@ pdf = {
 }
 pdf = pd.DataFrame(pdf)
 
+# Log and register the model
 with mlflow.start_run() as run:
   mlflow.pyfunc.log_model(
     "model",
@@ -225,6 +254,7 @@ with mlflow.start_run() as run:
 
 # MAGIC %md
 # MAGIC ##Reload Model
+# MAGIC Once the registration is complete, we will reload the model and generate forecasts.
 
 # COMMAND ----------
 
@@ -258,7 +288,8 @@ loaded_model.predict(pdf,params = {'h' :20})
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Deploy Model on Databricks Model Serving
+# MAGIC ## Deploy Model
+# MAGIC We will deploy our model behind a real-time endpoint of [Databricks Mosaic AI Model Serving](https://www.databricks.com/product/model-serving).
 
 # COMMAND ----------
 
@@ -411,6 +442,7 @@ wait_for_endpoint()
 
 # MAGIC %md
 # MAGIC ## Online Forecast
+# MAGIC Once the endpoint is ready, let's send a request to the model and generate an online forecast.
 
 # COMMAND ----------
 
@@ -444,6 +476,7 @@ forecast(pdf)
 
 # COMMAND ----------
 
+# Delete the serving endpoint
 func_delete_model_serving_endpoint(model_serving_endpoint_name)
 
 # COMMAND ----------
