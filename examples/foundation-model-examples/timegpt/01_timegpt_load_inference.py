@@ -22,7 +22,7 @@
 # MAGIC %md
 # MAGIC ## Cluster setup
 # MAGIC
-# MAGIC TimeGPT is accessible through an API as a service, so the actual compute for inference or fine-tuning will not take place on Databricks. For this reason a GPU cluster is not necessary and we recommend using a cluster with [Databricks Runtime 14.3 LTS for ML](https://docs.databricks.com/en/release-notes/runtime/14.3lts-ml.html) or above with CPUs. MMF leverages [Pandas UDF](https://docs.databricks.com/en/udf/pandas.html) for distributing the inference tasks and utilizing all the available resource.
+# MAGIC TimeGPT is accessible through an API as a service, so the actual compute for inference or fine-tuning will not take place on Databricks. For this reason a GPU cluster is not necessary and we recommend using a cluster with [Databricks Runtime 14.3 LTS for ML](https://docs.databricks.com/en/release-notes/runtime/14.3lts-ml.html) or above with CPUs. This notebook will leverage [Pandas UDF](https://docs.databricks.com/en/udf/pandas.html) for distributing the inference tasks and utilizing all the available resource.
 
 # COMMAND ----------
 
