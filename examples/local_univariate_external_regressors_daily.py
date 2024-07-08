@@ -40,7 +40,7 @@ from mmf_sa import run_forecast
 
 catalog = "mmf" # Name of the catalog we use to manage our assets
 db = "rossmann" # Name of the schema we use to manage our assets (e.g. datasets)
-volume = "csv" # Name of the volume where you have your rossmann dataset csv sotred
+volume = "csv" # Name of the volume where you have your rossmann dataset csv stored
 user = spark.sql('select current_user() as user').collect()[0]['user'] # User email address
 
 # COMMAND ----------

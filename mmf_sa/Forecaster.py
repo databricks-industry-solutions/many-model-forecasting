@@ -222,11 +222,12 @@ class Forecaster:
             evaluate_one_local_model_fn = functools.partial(
                 Forecaster.evaluate_one_local_model, model=model
             )
+
             res_sdf = (
                 src_df.groupby(self.conf["group_id"])
                 .applyInPandas(evaluate_one_local_model_fn, schema=output_schema)
             )
-
+        
             # Write evaluation result to a delta table
             if self.conf.get("evaluation_output", None) is not None:
                 (

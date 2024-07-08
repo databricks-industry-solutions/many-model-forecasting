@@ -195,7 +195,3 @@ display(spark.sql(f"delete from {catalog}.{db}.daily_evaluation_output"))
 # COMMAND ----------
 
 display(spark.sql(f"delete from {catalog}.{db}.daily_scoring_output"))
-
-# COMMAND ----------
-
-

@@ -137,37 +137,25 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
         Returns: metrics (Dict[str, Union[str, float, bytes]]): A dictionary specifying the metrics.
         """
         pred_df, model_fitted = self.predict(hist_df, val_df)
+        
+        actual = val_df[self.params["target"]].to_numpy()
+        forecast = pred_df[self.params["target"]].to_numpy()
 
         if self.params["metric"] == "smape":
             smape = MeanAbsolutePercentageError(symmetric=True)
-            metric_value = smape(
-                val_df[self.params["target"]],
-                pred_df[self.params["target"]],
-            )
+            metric_value = smape(actual, forecast)
         elif self.params["metric"] == "mape":
             mape = MeanAbsolutePercentageError(symmetric=False)
-            metric_value = mape(
-                val_df[self.params["target"]],
-                pred_df[self.params["target"]],
-            )
+            metric_value = mape(actual, forecast)
         elif self.params["metric"] == "mae":
             mae = MeanAbsoluteError()
-            metric_value = mae(
-                val_df[self.params["target"]],
-                pred_df[self.params["target"]],
-            )
+            metric_value = mae(actual, forecast)
         elif self.params["metric"] == "mse":
             mse = MeanSquaredError(square_root=False)
-            metric_value = mse(
-                val_df[self.params["target"]],
-                pred_df[self.params["target"]],
-            )
+            metric_value = mse(actual, forecast)
         elif self.params["metric"] == "rmse":
             rmse = MeanSquaredError(square_root=True)
-            metric_value = rmse(
-                val_df[self.params["target"]],
-                pred_df[self.params["target"]],
-            )
+            metric_value = rmse(actual, forecast)
         else:
             raise Exception(f"Metric {self.params['metric']} not supported!")
 
