@@ -435,7 +435,3 @@ forecast(input_data)
 
 # Delete the serving endpoint
 func_delete_model_serving_endpoint(model_serving_endpoint_name)
-
-# COMMAND ----------
-
-
