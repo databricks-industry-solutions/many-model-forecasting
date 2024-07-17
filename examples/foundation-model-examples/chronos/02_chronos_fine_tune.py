@@ -38,7 +38,7 @@ n = 1000  # Number of time series to sample
 
 # COMMAND ----------
 
-# This cell will create tables: 
+# This cell runs the notebook ../data_preparation and creates the following tables with M4 data: 
 # 1. {catalog}.{db}.m4_daily_train
 # 2. {catalog}.{db}.m4_monthly_train
 dbutils.notebook.run("../data_preparation", timeout_seconds=0, arguments={"catalog": catalog, "db": db, "n": n})
@@ -64,7 +64,6 @@ from pathlib import Path
 from typing import List, Optional, Union
 from gluonts.dataset.arrow import ArrowWriter
 
-
 def convert_to_arrow(
     path: Union[str, Path],
     time_series: Union[List[np.ndarray], np.ndarray],
@@ -72,22 +71,34 @@ def convert_to_arrow(
     compression: str = "lz4",
 ):
     """
-    This function converts time series data into the Apache Arrow format and saves it to a file in UC Volumes.
+    This function converts time series data into the Apache Arrow format and saves it to a file.
+    
+    Parameters:
+    - path (Union[str, Path]): The file path where the Arrow file will be saved.
+    - time_series (Union[List[np.ndarray], np.ndarray]): The time series data to be converted.
+    - start_times (Optional[Union[List[np.datetime64], np.ndarray]]): The start times for each time series. If None, a default start time is used.
+    - compression (str): The compression algorithm to use for the Arrow file. Default is 'lz4'.
     """
-    # Set an arbitrary start time
+    
+    # If start_times is not provided, set all start times to '2000-01-01 00:00:00'
     if start_times is None:
-        # Set an arbitrary start time
         start_times = [np.datetime64("2000-01-01 00:00", "s")] * len(time_series)
 
+    # Ensure there is a start time for each time series
     assert len(time_series) == len(start_times)
 
+    # Create a list of dictionaries where each dictionary represents a time series
+    # Each dictionary contains the start time and the corresponding time series data
     dataset = [
         {"start": start, "target": ts} for ts, start in zip(time_series, start_times)
     ]
+    
+    # Use ArrowWriter to write the dataset to a file in Arrow format with the specified compression
     ArrowWriter(compression=compression).write_to_file(
         dataset,
         path=path,
     )
+
 
 # COMMAND ----------
 
@@ -153,54 +164,86 @@ import torch
 import numpy as np
 from mlflow.models.signature import ModelSignature
 from mlflow.types import DataType, Schema, TensorSpec
+
+# Set the registry URI for MLflow to Databricks Unity Catalog
 mlflow.set_registry_uri("databricks-uc")
 
-
 class FineTunedChronosModel(mlflow.pyfunc.PythonModel):
-  def load_context(self, context):
-      import torch
-      from chronos import ChronosPipeline
-      self.pipeline = ChronosPipeline.from_pretrained(
-          context.artifacts["weights"],
-          device_map="cuda" if torch.cuda.is_available() else "cpu",
-          torch_dtype=torch.bfloat16,
-      )
+    def load_context(self, context):
+        """
+        Load the model context including the pretrained weights.
+        The model is loaded onto a GPU if available, otherwise on CPU.
+        """
+        import torch
+        from chronos import ChronosPipeline
+        
+        # Load the pretrained model pipeline from provided weights
+        self.pipeline = ChronosPipeline.from_pretrained(
+            context.artifacts["weights"],
+            device_map="cuda" if torch.cuda.is_available() else "cpu",
+            torch_dtype=torch.bfloat16,
+        )
 
-  def predict(self, context, input_data, params=None):
-    history = [torch.tensor(list(series)) for series in input_data]
-    forecast = self.pipeline.predict(
-        context=history,
-        prediction_length=10,
-        num_samples=10,
-    )
-    return forecast.numpy()
+    def predict(self, context, input_data, params=None):
+        """
+        Make predictions using the loaded model.
+        
+        Parameters:
+        - context: The context in which the model is being run.
+        - input_data: The input data for prediction, expected to be a list of series.
+        - params: Additional parameters for prediction (not used here).
+        
+        Returns:
+        - forecast: The predicted results as a NumPy array.
+        """
+        # Convert input data to a list of torch tensors
+        history = [torch.tensor(list(series)) for series in input_data]
+        
+        # Make predictions using the model pipeline
+        forecast = self.pipeline.predict(
+            context=history,
+            prediction_length=10,
+            num_samples=10,
+        )
+        
+        # Convert the forecast to a NumPy array and return
+        return forecast.numpy()
 
-# Get the latest run
+# Directory path components for locating the latest run
 files = os.listdir(f"/Volumes/{catalog}/{db}/{volume}/")
+
+# Extract run numbers from the directory names
 runs = [int(file[4:]) for file in files if "run-" in file]
+
+# Identify the latest run based on the highest run number
 latest_run = max(runs)
-registered_model_name=f"{catalog}.{db}.{model}_finetuned"
+
+# Construct the registered model name and weights path
+registered_model_name = f"{catalog}.{db}.{model}_finetuned"
 weights = f"/Volumes/{catalog}/{db}/{volume}/run-{latest_run}/checkpoint-final/"
 
-# Get the model signature for registry
+# Define the model input and output schema for registration
 input_schema = Schema([TensorSpec(np.dtype(np.double), (-1, -1))])
 output_schema = Schema([TensorSpec(np.dtype(np.uint8), (-1, -1, -1))])
 signature = ModelSignature(inputs=input_schema, outputs=output_schema)
+
+# Example input data for model registration
 input_example = np.random.rand(1, 52)
 
-# Register the model
+# Register the fine-tuned model with MLflow
 with mlflow.start_run() as run:
-  mlflow.pyfunc.log_model(
-    "model",
-    python_model=FineTunedChronosModel(),
-    artifacts={"weights": weights},
-    registered_model_name=registered_model_name,
-    signature=signature,
-    input_example=input_example,
-    pip_requirements=[
-      f"chronos[training] @ git+https://github.com/amazon-science/chronos-forecasting.git",
-    ],
-  )
+    mlflow.pyfunc.log_model(
+        "model",
+        python_model=FineTunedChronosModel(),
+        artifacts={"weights": weights},
+        registered_model_name=registered_model_name,
+        signature=signature,
+        input_example=input_example,
+        pip_requirements=[
+            "chronos[training] @ git+https://github.com/amazon-science/chronos-forecasting.git",
+        ],
+    )
+
 
 # COMMAND ----------
 
@@ -211,27 +254,51 @@ with mlflow.start_run() as run:
 # COMMAND ----------
 
 from mlflow import MlflowClient
+
+# Create an instance of the MlflowClient to interact with the MLflow tracking server
 client = MlflowClient()
 
 def get_latest_model_version(client, registered_model_name):
+    """
+    Retrieve the latest version number of a registered model.
+    
+    Parameters:
+    - client (MlflowClient): The MLflow client instance.
+    - registered_model_name (str): The name of the registered model.
+    
+    Returns:
+    - latest_version (int): The latest version number of the registered model.
+    """
+    # Initialize the latest version to 1 (assuming at least one version exists)
     latest_version = 1
+    
+    # Iterate over all model versions for the given registered model
     for mv in client.search_model_versions(f"name='{registered_model_name}'"):
+        # Convert the version to an integer
         version_int = int(mv.version)
+        
+        # Update the latest version if a higher version is found
         if version_int > latest_version:
             latest_version = version_int
+            
+    # Return the latest version number
     return latest_version
 
+# Get the latest version of the registered model
 model_version = get_latest_model_version(client, registered_model_name)
+
+# Construct the URI for the logged model using the registered model name and latest version
 logged_model = f"models:/{registered_model_name}/{model_version}"
 
-# Load model as a PyFuncModel
+# Load the model as a PyFuncModel from the logged model URI
 loaded_model = mlflow.pyfunc.load_model(logged_model)
 
-# Create input data
-input_data = df["y"][:100].to_numpy() # (batch, series)
+# Create input data for prediction from the first 100 elements of the 'y' column in a DataFrame
+input_data = df["y"][:100].to_numpy() # Shape should be (batch, series)
 
-# Generate forecasts
+# Generate forecasts using the loaded model
 loaded_model.predict(input_data)
+
 
 # COMMAND ----------
 
