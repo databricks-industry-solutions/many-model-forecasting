@@ -88,10 +88,21 @@ pdf
 import os
 import site
 
+# Construct the path to the 'uni2ts' directory within the site-packages directory.
+# site.getsitepackages()[0] returns the path to the first directory in the list of site-packages directories.
 uni2ts = os.path.join(site.getsitepackages()[0], "uni2ts")
+
+# Construct the path to the '.env' file within the 'uni2ts' directory.
 dotenv = os.path.join(uni2ts, ".env")
+
+# Set the 'DOTENV' environment variable to the path of the '.env' file.
+# This tells the system where to find the '.env' file.
 os.environ['DOTENV'] = dotenv
+
+# Set the 'CUSTOM_DATA_PATH' environment variable to a path constructed using the provided 'catalog', 'db', and 'volume'.
+# This sets a custom data path for the application to use.
 os.environ['CUSTOM_DATA_PATH'] = f"/Volumes/{catalog}/{db}/{volume}"
+
 
 # COMMAND ----------
 
@@ -142,62 +153,82 @@ os.environ['CUSTOM_DATA_PATH'] = f"/Volumes/{catalog}/{db}/{volume}"
 import mlflow
 import torch
 import numpy as np
-from mlflow.models.signature import ModelSignature
-from mlflow.types import DataType, Schema, TensorSpec
+from mlflow.models.signature import ModelSignature  # Used to define the model input and output schema.
+from mlflow.types import DataType, Schema, TensorSpec  # Used to define the data types and structure for model inputs and outputs.
+
+# Set the MLflow registry URI to Databricks Unity Catalog
 mlflow.set_registry_uri("databricks-uc")
 
-
+# Define a custom MLflow Python model class
 class FineTunedMoiraiModel(mlflow.pyfunc.PythonModel):  
-  def predict(self, context, input_data, params=None):
-    from einops import rearrange
-    from uni2ts.model.moirai import MoiraiForecast, MoiraiModule
-    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-    model = MoiraiForecast.load_from_checkpoint(
-        prediction_length=10,
-        context_length=len(input_data),
-        patch_size=32,
-        num_samples=10,
-        target_dim=1,
-        feat_dynamic_real_dim=0,
-        past_feat_dynamic_real_dim=0,
-        checkpoint_path=context.artifacts["weights"],
+    def predict(self, context, input_data, params=None):
+        from einops import rearrange  # Einops is a library for tensor operations.
+        from uni2ts.model.moirai import MoiraiForecast, MoiraiModule  # Import the required classes from the Moirai model.
+        
+        # Determine the device to run the model on (GPU if available, otherwise CPU)
+        device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        
+        # Load the pre-trained Moirai model from the checkpoint
+        model = MoiraiForecast.load_from_checkpoint(
+            prediction_length=10,
+            context_length=len(input_data),
+            patch_size=32,
+            num_samples=10,
+            target_dim=1,
+            feat_dynamic_real_dim=0,
+            past_feat_dynamic_real_dim=0,
+            checkpoint_path=context.artifacts["weights"],
         ).to(device)
-    
-    # Time series values. Shape: (batch, time, variate)
-    past_target = rearrange(
-        torch.as_tensor(input_data, dtype=torch.float32), "t -> 1 t 1"
-    )
-    # 1s if the value is observed, 0s otherwise. Shape: (batch, time, variate)
-    past_observed_target = torch.ones_like(past_target, dtype=torch.bool)
-    # 1s if the value is padding, 0s otherwise. Shape: (batch, time)
-    past_is_pad = torch.zeros_like(past_target, dtype=torch.bool).squeeze(-1)
-    forecast = model(
-        past_target=past_target.to(device),
-        past_observed_target=past_observed_target.to(device),
-        past_is_pad=past_is_pad.to(device),
-    )
-    return np.median(forecast.cpu()[0], axis=0)
+        
+        # Prepare the input data for the model
+        # Time series values. Shape: (batch, time, variate)
+        past_target = rearrange(
+            torch.as_tensor(input_data, dtype=torch.float32), "t -> 1 t 1"
+        )
+        # 1s if the value is observed, 0s otherwise. Shape: (batch, time, variate)
+        past_observed_target = torch.ones_like(past_target, dtype=torch.bool)
+        # 1s if the value is padding, 0s otherwise. Shape: (batch, time)
+        past_is_pad = torch.zeros_like(past_target, dtype=torch.bool).squeeze(-1)
+        
+        # Generate the forecast using the model
+        forecast = model(
+            past_target=past_target.to(device),
+            past_observed_target=past_observed_target.to(device),
+            past_is_pad=past_is_pad.to(device),
+        )
+        
+        # Return the median forecast
+        return np.median(forecast.cpu()[0], axis=0)
 
+# Define the input schema for the model
 input_schema = Schema([TensorSpec(np.dtype(np.double), (-1,))])
+# Define the output schema for the model
 output_schema = Schema([TensorSpec(np.dtype(np.uint8), (-1,))])
+# Create a ModelSignature object to represent the input and output schema
 signature = ModelSignature(inputs=input_schema, outputs=output_schema)
+# Create an example input to log with the model
 input_example = np.random.rand(52)
-registered_model_name=f"{catalog}.{db}.moirai-1-r-small_finetuned"
+
+# Define the registered model name using variables for catalog, database, and volume
+registered_model_name = f"{catalog}.{db}.moirai-1-r-small_finetuned"
+
+# Define the path to the model weights
 weights = f"/Volumes/{catalog}/{db}/{volume}/outputs/moirai_1.0_R_small/random/random_run/checkpoints/epoch=0-step=100.ckpt"
 
-# Log and register the model
+# Log and register the model with MLflow
 with mlflow.start_run() as run:
-  mlflow.pyfunc.log_model(
-    "model",
-    python_model=FineTunedMoiraiModel(),
-    registered_model_name=registered_model_name,
-    artifacts={"weights": weights},
-    signature=signature,
-    input_example=input_example,
-    pip_requirements=[
-      "git+https://github.com/SalesforceAIResearch/uni2ts.git",
-    ],
-  )
+    mlflow.pyfunc.log_model(
+        "model",  # The artifact path where the model is logged
+        python_model=FineTunedMoiraiModel(),  # The custom Python model to log
+        registered_model_name=registered_model_name,  # The name to register the model under
+        artifacts={"weights": weights},  # The model artifacts to log
+        signature=signature,  # The model signature
+        input_example=input_example,  # An example input to log with the model
+        pip_requirements=[
+            "git+https://github.com/SalesforceAIResearch/uni2ts.git",
+        ],  # The Python packages required to run the model
+    )
+
 
 # COMMAND ----------
 
@@ -210,25 +241,30 @@ with mlflow.start_run() as run:
 from mlflow import MlflowClient
 client = MlflowClient()
 
+# Function to get the latest version number of a registered model
 def get_latest_model_version(client, registered_model_name):
-    latest_version = 1
+    latest_version = 1  # Initialize the latest version number to 1
+    # Iterate through all model versions of the specified registered model
     for mv in client.search_model_versions(f"name='{registered_model_name}'"):
-        version_int = int(mv.version)
-        if version_int > latest_version:
-            latest_version = version_int
-    return latest_version
+        version_int = int(mv.version)  # Convert the version number to an integer
+        if version_int > latest_version:  # Check if the current version is greater than the latest version
+            latest_version = version_int  # Update the latest version number
+    return latest_version  # Return the latest version number
 
+# Get the latest version number of the specified registered model
 model_version = get_latest_model_version(client, registered_model_name)
+# Construct the model URI using the registered model name and the latest version number
 logged_model = f"models:/{registered_model_name}/{model_version}"
 
-# Load model as a PyFuncModel
+# Load the model as a PyFuncModel
 loaded_model = mlflow.pyfunc.load_model(logged_model)
 
-# Create input data
-input_data = np.random.rand(52)
+# Create input data for the model
+input_data = np.random.rand(52)  # Generate random input data of shape (52,)
 
-# Generate forecasts
-loaded_model.predict(input_data)
+# Generate forecasts using the loaded model
+loaded_model.predict(input_data)  # Use the loaded model to make predictions on the input data
+
 
 # COMMAND ----------
 

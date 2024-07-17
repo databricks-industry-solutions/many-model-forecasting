@@ -63,64 +63,75 @@ import torch
 from typing import Iterator
 from pyspark.sql.functions import pandas_udf
 
-
+# Function to create a UDF for generating horizon timestamps for a given frequency and prediction length
 def create_get_horizon_timestamps(freq, prediction_length):
 
+  # Define a Pandas UDF to generate horizon timestamps
   @pandas_udf('array<timestamp>')
-  def get_horizon_timestamps(batch_iterator: Iterator[pd.Series]) -> Iterator[pd.Series]:   
+  def get_horizon_timestamps(batch_iterator: Iterator[pd.Series]) -> Iterator[pd.Series]:
+      # Define the offset based on the frequency
       one_ts_offset = pd.offsets.MonthEnd(1) if freq == "M" else pd.DateOffset(days=1)
-      barch_horizon_timestamps = []
+      barch_horizon_timestamps = []  # Initialize a list to store horizon timestamps for each batch
+      
+      # Iterate over batches of time series
       for batch in batch_iterator:
           for series in batch:
-              timestamp = last = series.max()
-              horizon_timestamps = []
+              timestamp = last = series.max()  # Get the latest timestamp in the series
+              horizon_timestamps = []  # Initialize a list to store horizon timestamps for the series
               for i in range(prediction_length):
-                  timestamp = timestamp + one_ts_offset
-                  horizon_timestamps.append(timestamp.to_numpy())
-              barch_horizon_timestamps.append(np.array(horizon_timestamps))
-      yield pd.Series(barch_horizon_timestamps)
+                  timestamp = timestamp + one_ts_offset  # Increment the timestamp by the offset
+                  horizon_timestamps.append(timestamp.to_numpy())  # Convert timestamp to numpy format and add to list
+              barch_horizon_timestamps.append(np.array(horizon_timestamps))  # Add the list of horizon timestamps to the batch list
+      yield pd.Series(barch_horizon_timestamps)  # Yield the batch of horizon timestamps as a Pandas Series
 
-  return get_horizon_timestamps
+  return get_horizon_timestamps  # Return the UDF
 
 
+# Function to create a UDF for generating forecasts using a pre-trained model
 def create_forecast_udf(repository, prediction_length):
 
+  # Define a Pandas UDF to generate forecasts
   @pandas_udf('array<double>')
   def forecast_udf(batch_iterator: Iterator[pd.Series]) -> Iterator[pd.Series]:
-    ## initialization step
-    from momentfm import MOMENTPipeline
+    ## Initialization step
+    from momentfm import MOMENTPipeline  # Import the MOMENTPipeline class from the momentfm library
+    
+    # Load the pre-trained model from the repository
     model = MOMENTPipeline.from_pretrained(
       repository, 
       model_kwargs={
         "task_name": "forecasting",
         "forecast_horizon": prediction_length},
       )
-    model.init()
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = model.to(device)
+    model.init()  # Initialize the model
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # Set the device to GPU if available, otherwise CPU
+    model = model.to(device)  # Move the model to the selected device
 
-    ## inference
+    ## Inference step
     for batch in batch_iterator:
-      batch_forecast = []
+      batch_forecast = []  # Initialize a list to store forecasts for each batch
       for series in batch:
-        # takes in tensor of shape [batchsize, n_channels, context_length]
+        # Prepare the input context and mask
         context = list(series)
         if len(context) < 512:
-          input_mask = [1] * len(context) + [0] * (512 - len(context))
-          context = context + [0] * (512 - len(context))
+          input_mask = [1] * len(context) + [0] * (512 - len(context))  # Create an input mask with padding
+          context = context + [0] * (512 - len(context))  # Pad the context to the required length
         else:
-          input_mask = [1] * 512
-          context = context[-512:]
+          input_mask = [1] * 512  # Create an input mask without padding
+          context = context[-512:]  # Truncate the context to the required length
         
-        input_mask = torch.reshape(torch.tensor(input_mask),(1, 512)).to(device)
-        context = torch.reshape(torch.tensor(context),(1, 1, 512)).to(dtype=torch.float32).to(device)
+        # Convert context and input mask to PyTorch tensors and move them to the selected device
+        input_mask = torch.reshape(torch.tensor(input_mask), (1, 512)).to(device)
+        context = torch.reshape(torch.tensor(context), (1, 1, 512)).to(dtype=torch.float32).to(device)
+        
+        # Generate the forecast using the model
         output = model(context, input_mask=input_mask)
-        forecast = output.forecast.squeeze().tolist()
-        batch_forecast.append(forecast)
+        forecast = output.forecast.squeeze().tolist()  # Squeeze the output tensor and convert to a list
+        batch_forecast.append(forecast)  # Add the forecast to the batch list
 
-    yield pd.Series(batch_forecast)
+    yield pd.Series(batch_forecast)  # Yield the batch of forecasts as a Pandas Series
 
-  return forecast_udf
+  return forecast_udf  # Return the UDF
 
 # COMMAND ----------
 
@@ -141,20 +152,25 @@ device_count = torch.cuda.device_count()  # Number of GPUs available
 
 # COMMAND ----------
 
+# Create a UDF for generating horizon timestamps using the specified frequency and prediction length
 get_horizon_timestamps = create_get_horizon_timestamps(freq=freq, prediction_length=prediction_length)
 
+# Create a UDF for generating forecasts using the specified model repository and prediction length
 forecast_udf = create_forecast_udf(
-  repository=f"AutonLab/{moment_model}", 
-  prediction_length=prediction_length,
-  )
+  repository=f"AutonLab/{moment_model}",  # Repository where the pre-trained model is stored
+  prediction_length=prediction_length,  # Length of the forecast horizon
+)
 
+# Apply the UDFs to the DataFrame
 forecasts = df.repartition(device_count).select(
-  df.unique_id, 
-  get_horizon_timestamps(df.ds).alias("ds"),
-  forecast_udf(df.y).alias("forecast"),
-  )
+  df.unique_id,  # Select the unique_id column from the DataFrame
+  get_horizon_timestamps(df.ds).alias("ds"),  # Apply the horizon timestamps UDF to the ds column and alias the result as "ds"
+  forecast_udf(df.y).alias("forecast"),  # Apply the forecast UDF to the y column and alias the result as "forecast"
+)
 
+# Display the resulting DataFrame with the forecasts
 display(forecasts)
+
 
 # COMMAND ----------
 
@@ -171,52 +187,64 @@ from mlflow.models import infer_signature
 from mlflow.models.signature import ModelSignature
 from mlflow.types import DataType, Schema, TensorSpec
 
+# Define a custom MLflow Python model class for MomentModel
 class MomentModel(mlflow.pyfunc.PythonModel):
   def __init__(self, repository):
-    from momentfm import MOMENTPipeline
+    from momentfm import MOMENTPipeline  # Import the MOMENTPipeline class from the momentfm library
+    # Load the pre-trained model from the specified repository with the given task and forecast horizon
     self.model = MOMENTPipeline.from_pretrained(
       repository, 
       model_kwargs={
         "task_name": "forecasting",
         "forecast_horizon": 10},
       )
-    self.model.init()
-    self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    self.model = self.model.to(self.device)
+    self.model.init()  # Initialize the model
+    self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # Set the device to GPU if available, otherwise CPU
+    self.model = self.model.to(self.device)  # Move the model to the selected device
 
   def predict(self, context, input_data, params=None):
-    series = list(input_data)
+    series = list(input_data)  # Convert input data to a list
     if len(series) < 512:
+      # If the series is shorter than 512, pad with zeros
       input_mask = [1] * len(series) + [0] * (512 - len(series))
       series = series + [0] * (512 - len(series))
     else:
+      # If the series is longer than or equal to 512, truncate to the last 512 values
       input_mask = [1] * 512
       series = series[-512:]
-    input_mask = torch.reshape(torch.tensor(input_mask),(1, 512)).to(self.device)
-    series = torch.reshape(torch.tensor(series),(1, 1, 512)).to(dtype=torch.float32).to(self.device)
+    # Convert input mask and series to PyTorch tensors and move them to the selected device
+    input_mask = torch.reshape(torch.tensor(input_mask), (1, 512)).to(self.device)
+    series = torch.reshape(torch.tensor(series), (1, 1, 512)).to(dtype=torch.float32).to(self.device)
+    # Generate the forecast using the model
     output = self.model(series, input_mask=input_mask)
-    forecast = output.forecast.squeeze().tolist()
-    return forecast
+    forecast = output.forecast.squeeze().tolist()  # Squeeze the output tensor and convert to a list
+    return forecast  # Return the forecast
 
+# Initialize the custom MomentModel with the specified repository ID
 pipeline = MomentModel(f"AutonLab/{moment_model}")
+# Define the input and output schema for the model
 input_schema = Schema([TensorSpec(np.dtype(np.double), (-1,))])
 output_schema = Schema([TensorSpec(np.dtype(np.uint8), (-1,))])
+# Create a ModelSignature object to represent the input and output schema
 signature = ModelSignature(inputs=input_schema, outputs=output_schema)
+# Create an example input to log with the model
 input_example = np.random.rand(52)
-registered_model_name=f"{catalog}.{db}.{moment_model}"
 
-# Log and register the model
+# Define the registered model name using variables for catalog, database, and model
+registered_model_name = f"{catalog}.{db}.{moment_model}"
+
+# Log and register the model with MLflow
 with mlflow.start_run() as run:
-  mlflow.pyfunc.log_model(
-    "model",
-    python_model=pipeline,
-    registered_model_name=registered_model_name,
-    signature=signature,
-    input_example=input_example,
-    pip_requirements=[
-      "git+https://github.com/moment-timeseries-foundation-model/moment.git",
-    ],
-  )
+    mlflow.pyfunc.log_model(
+      "model",  # The artifact path where the model is logged
+      python_model=pipeline,  # The custom Python model to log
+      registered_model_name=registered_model_name,  # The name to register the model under
+      signature=signature,  # The model signature
+      input_example=input_example,  # An example input to log with the model
+      pip_requirements=[
+        "git+https://github.com/moment-timeseries-foundation-model/moment.git",  # Python package requirements
+      ],
+    )
 
 # COMMAND ----------
 
@@ -229,23 +257,28 @@ with mlflow.start_run() as run:
 from mlflow import MlflowClient
 mlflow_client = MlflowClient()
 
+# Define a function to get the latest version number of a registered model
 def get_latest_model_version(mlflow_client, registered_model_name):
-    latest_version = 1
+    latest_version = 1  # Initialize the latest version number to 1
+    # Iterate through all model versions of the specified registered model
     for mv in mlflow_client.search_model_versions(f"name='{registered_model_name}'"):
-        version_int = int(mv.version)
-        if version_int > latest_version:
-            latest_version = version_int
-    return latest_version
+        version_int = int(mv.version)  # Convert the version number to an integer
+        if version_int > latest_version:  # Check if the current version is greater than the latest version
+            latest_version = version_int  # Update the latest version number
+    return latest_version  # Return the latest version number
 
+# Get the latest version number of the specified registered model
 model_version = get_latest_model_version(mlflow_client, registered_model_name)
+# Construct the model URI using the registered model name and the latest version number
 logged_model = f"models:/{registered_model_name}/{model_version}"
 
-# Load model as a PyFuncModel
+# Load the model as a PyFuncModel using the constructed model URI
 loaded_model = mlflow.pyfunc.load_model(logged_model)
 
-# COMMAND ----------
-
+# Create random input data (52 data points)
 input_data = np.random.rand(52)
+
+# Generate forecasts using the loaded model
 loaded_model.predict(input_data)
 
 # COMMAND ----------
@@ -302,6 +335,7 @@ _ = spark.sql(
 
 # COMMAND ----------
 
+# Function to create an endpoint in Model Serving and deploy the model behind it
 def func_create_endpoint(model_serving_endpoint_name):
     # get endpoint status
     endpoint_url = f"https://{instance}/api/2.0/serving-endpoints"
@@ -355,7 +389,7 @@ def func_create_endpoint(model_serving_endpoint_name):
         re.status_code == 200
     ), f"Expected an HTTP 200 response, received {re.status_code}"
 
-
+# Function to delete the endpoint from Model Serving
 def func_delete_model_serving_endpoint(model_serving_endpoint_name):
     endpoint_url = f"https://{instance}/api/2.0/serving-endpoints"
     url = f"{endpoint_url}/{model_serving_endpoint_name}"
@@ -370,35 +404,43 @@ def func_delete_model_serving_endpoint(model_serving_endpoint_name):
 
 # COMMAND ----------
 
+# Create an endpoint. This may take some time.
 func_create_endpoint(model_serving_endpoint_name)
 
 # COMMAND ----------
 
 import time, mlflow
 
-
+# Define a function to wait for a serving endpoint to be ready
 def wait_for_endpoint():
-    endpoint_url = f"https://{instance}/api/2.0/serving-endpoints"
-    while True:
-        url = f"{endpoint_url}/{model_serving_endpoint_name}"
-        response = requests.get(url, headers=headers)
+    endpoint_url = f"https://{instance}/api/2.0/serving-endpoints"  # Construct the base URL for the serving endpoints API
+    while True:  # Infinite loop to repeatedly check the status of the endpoint
+        url = f"{endpoint_url}/{model_serving_endpoint_name}"  # Construct the URL for the specific model serving endpoint
+        response = requests.get(url, headers=headers)  # Send a GET request to the endpoint URL with the necessary headers
+        
+        # Ensure the response status code is 200 (OK)
         assert (
             response.status_code == 200
         ), f"Expected an HTTP 200 response, received {response.status_code}\n{response.text}"
 
+        # Extract the status of the endpoint from the response JSON
         status = response.json().get("state", {}).get("ready", {})
-        # print("status",status)
+        # print("status",status)  # Optional: Print the status for debugging purposes
+        
+        # Check if the endpoint status is "READY"
         if status == "READY":
-            print(status)
-            print("-" * 80)
-            return
+            print(status)  # Print the status if the endpoint is ready
+            print("-" * 80)  # Print a separator line for clarity
+            return  # Exit the function when the endpoint is ready
         else:
-            print(f"Endpoint not ready ({status}), waiting 5 miutes")
-            time.sleep(300)  # Wait 300 seconds
+            # Print a message indicating the endpoint is not ready and wait for 5 minutes
+            print(f"Endpoint not ready ({status}), waiting 5 minutes")
+            time.sleep(300)  # Wait for 300 seconds before checking again
 
-
+# Get the Databricks web application URL using an MLflow utility function
 api_url = mlflow.utils.databricks_utils.get_webapp_url()
 
+# Call the wait_for_endpoint function to wait for the serving endpoint to be ready
 wait_for_endpoint()
 
 # COMMAND ----------
@@ -434,6 +476,7 @@ def forecast(input_data, url=endpoint_url, databricks_token=token):
 
 # COMMAND ----------
 
+# Send request to the endpoint
 input_data = np.random.rand(52)
 forecast(input_data)
 

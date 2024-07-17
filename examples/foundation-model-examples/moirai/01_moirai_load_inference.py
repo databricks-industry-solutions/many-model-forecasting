@@ -35,7 +35,7 @@ n = 100  # Number of time series to sample
 
 # COMMAND ----------
 
-# This cell will create tables: 
+# This cell runs the notebook ../data_preparation and creates the following tables with M4 data: 
 # 1. {catalog}.{db}.m4_daily_train, 
 # 2. {catalog}.{db}.m4_monthly_train
 dbutils.notebook.run("../data_preparation", timeout_seconds=0, arguments={"catalog": catalog, "db": db, "n": n})
@@ -64,70 +64,103 @@ from einops import rearrange
 from typing import Iterator
 from pyspark.sql.functions import pandas_udf
 
-
 # Function to create a Pandas UDF to generate horizon timestamps
 def create_get_horizon_timestamps(freq, prediction_length):
+    """
+    Creates a Pandas UDF to generate horizon timestamps based on the given frequency and prediction length.
 
-  @pandas_udf('array<timestamp>')
-  def get_horizon_timestamps(batch_iterator: Iterator[pd.Series]) -> Iterator[pd.Series]:   
-      one_ts_offset = pd.offsets.MonthEnd(1) if freq == "M" else pd.DateOffset(days=1)
-      barch_horizon_timestamps = []
-      for batch in batch_iterator:
-          for series in batch:
-              timestamp = last = series.max()
-              horizon_timestamps = []
-              for i in range(prediction_length):
-                  timestamp = timestamp + one_ts_offset
-                  horizon_timestamps.append(timestamp.to_numpy())
-              barch_horizon_timestamps.append(np.array(horizon_timestamps))
-      yield pd.Series(barch_horizon_timestamps)
+    Parameters:
+    - freq (str): The frequency of the time series ('M' for monthly, 'D' for daily, etc.).
+    - prediction_length (int): The number of future timestamps to generate.
 
-  return get_horizon_timestamps
+    Returns:
+    - get_horizon_timestamps (function): A Pandas UDF function that generates horizon timestamps.
+    """
+    
+    @pandas_udf('array<timestamp>')
+    def get_horizon_timestamps(batch_iterator: Iterator[pd.Series]) -> Iterator[pd.Series]:
+        # Determine the offset for timestamp increments based on the frequency
+        one_ts_offset = pd.offsets.MonthEnd(1) if freq == "M" else pd.DateOffset(days=1)
+        
+        barch_horizon_timestamps = []
+        # Iterate over batches of series in the batch iterator
+        for batch in batch_iterator:
+            for series in batch:
+                timestamp = last = series.max()
+                horizon_timestamps = []
+                # Generate future timestamps based on the prediction length
+                for i in range(prediction_length):
+                    timestamp = timestamp + one_ts_offset
+                    horizon_timestamps.append(timestamp.to_numpy())
+                barch_horizon_timestamps.append(np.array(horizon_timestamps))
+        # Yield the generated horizon timestamps as a Pandas Series
+        yield pd.Series(barch_horizon_timestamps)
 
+    return get_horizon_timestamps
 
 # Function to create a Pandas UDF to generate forecasts
 def create_forecast_udf(repository, prediction_length, patch_size, num_samples):
+    """
+    Creates a Pandas UDF to generate forecasts using a pre-trained model.
 
-  @pandas_udf('array<double>')
-  def forecast_udf(bulk_iterator: Iterator[pd.Series]) -> Iterator[pd.Series]:
+    Parameters:
+    - repository (str): The path to the pre-trained model repository.
+    - prediction_length (int): The length of the forecast horizon.
+    - patch_size (int): The size of the patches for the model input.
+    - num_samples (int): The number of samples to generate for each forecast.
+
+    Returns:
+    - forecast_udf (function): A Pandas UDF function that generates forecasts.
+    """
     
-    ## initialization step
-    import torch
-    import numpy as np
-    import pandas as pd
-    from uni2ts.model.moirai import MoiraiForecast, MoiraiModule
-    module = MoiraiModule.from_pretrained(repository)
+    @pandas_udf('array<double>')
+    def forecast_udf(bulk_iterator: Iterator[pd.Series]) -> Iterator[pd.Series]:
+        ## Initialization step
+        import torch
+        import numpy as np
+        import pandas as pd
+        from uni2ts.model.moirai import MoiraiForecast, MoiraiModule
+        
+        # Load the pre-trained model module from the repository
+        module = MoiraiModule.from_pretrained(repository)
 
-    ## inference
-    for bulk in bulk_iterator:
-      median = []
-      for series in bulk:
-        model = MoiraiForecast(
-          module=module,
-          prediction_length=prediction_length,
-          context_length=len(series),
-          patch_size=patch_size,
-          num_samples=num_samples,
-          target_dim=1,
-          feat_dynamic_real_dim=0,
-          past_feat_dynamic_real_dim=0,
-        )
-        # Time series values. Shape: (batch, time, variate)
-        past_target = rearrange(
-            torch.as_tensor(series, dtype=torch.float32), "t -> 1 t 1"
-        )
-        # 1s if the value is observed, 0s otherwise. Shape: (batch, time, variate)
-        past_observed_target = torch.ones_like(past_target, dtype=torch.bool)
-        # 1s if the value is padding, 0s otherwise. Shape: (batch, time)
-        past_is_pad = torch.zeros_like(past_target, dtype=torch.bool).squeeze(-1)
-        forecast = model(
-            past_target=past_target,
-            past_observed_target=past_observed_target,
-            past_is_pad=past_is_pad,
-        )
-        median.append(np.median(forecast[0], axis=0))
-    yield pd.Series(median)  
-  return forecast_udf
+        ## Inference
+        for bulk in bulk_iterator:
+            median = []
+            for series in bulk:
+                # Initialize the forecast model with the loaded module and given parameters
+                model = MoiraiForecast(
+                    module=module,
+                    prediction_length=prediction_length,
+                    context_length=len(series),
+                    patch_size=patch_size,
+                    num_samples=num_samples,
+                    target_dim=1,
+                    feat_dynamic_real_dim=0,
+                    past_feat_dynamic_real_dim=0,
+                )
+                # Prepare the past target tensor. Shape: (batch, time, variate)
+                past_target = rearrange(
+                    torch.as_tensor(series, dtype=torch.float32), "t -> 1 t 1"
+                )
+                # Create a tensor indicating observed values. Shape: (batch, time, variate)
+                past_observed_target = torch.ones_like(past_target, dtype=torch.bool)
+                # Create a tensor indicating padding values. Shape: (batch, time)
+                past_is_pad = torch.zeros_like(past_target, dtype=torch.bool).squeeze(-1)
+                
+                # Generate the forecast
+                forecast = model(
+                    past_target=past_target,
+                    past_observed_target=past_observed_target,
+                    past_is_pad=past_is_pad,
+                )
+                # Append the median forecast of the first sample to the list
+                median.append(np.median(forecast[0], axis=0))
+        # Yield the generated forecasts as a Pandas Series
+        yield pd.Series(median)
+        
+    return forecast_udf
+
 
 # COMMAND ----------
 
@@ -150,22 +183,27 @@ device_count = torch.cuda.device_count()  # Number of GPUs available
 
 # COMMAND ----------
 
+# Create the Pandas UDF for generating horizon timestamps using the specified frequency and prediction length
 get_horizon_timestamps = create_get_horizon_timestamps(freq=freq, prediction_length=prediction_length)
 
+# Create the Pandas UDF for generating forecasts using the specified model repository and forecast parameters
 forecast_udf = create_forecast_udf(
-  repository=f"Salesforce/{model}", 
-  prediction_length=prediction_length,
-  patch_size=patch_size,
-  num_samples=num_samples,
-  )
+  repository=f"Salesforce/{model}",  # Path to the pre-trained model repository
+  prediction_length=prediction_length,  # Length of the forecast horizon
+  patch_size=patch_size,  # Size of the patches for the model input
+  num_samples=num_samples,  # Number of samples to generate for each forecast
+)
 
+# Repartition the DataFrame to match the number of devices (for parallel processing) and select the required columns
 forecasts = df.repartition(device_count).select(
-  df.unique_id, 
-  get_horizon_timestamps(df.ds).alias("ds"),
-  forecast_udf(df.y).alias("forecast"),
-  )
+  df.unique_id,  # Select the unique identifier for each time series
+  get_horizon_timestamps(df.ds).alias("ds"),  # Generate horizon timestamps and alias as 'ds'
+  forecast_udf(df.y).alias("forecast"),  # Generate forecasts and alias as 'forecast'
+)
 
+# Display the resulting DataFrame with unique_id, horizon timestamps, and forecasts
 display(forecasts)
+
 
 # COMMAND ----------
 
@@ -180,62 +218,96 @@ import torch
 import numpy as np
 from mlflow.models.signature import ModelSignature
 from mlflow.types import DataType, Schema, TensorSpec
+
+# Set the MLflow registry URI to Databricks Unity Catalog
 mlflow.set_registry_uri("databricks-uc")
 
-
 class MoiraiModel(mlflow.pyfunc.PythonModel):
-  def __init__(self, repository):
-    import torch
-    from uni2ts.model.moirai import MoiraiForecast, MoiraiModule
-    self.module = MoiraiModule.from_pretrained(repository) 
+    def __init__(self, repository):
+        """
+        Initialize the MoiraiModel class by loading the pre-trained model from the given repository.
+        
+        Parameters:
+        - repository (str): The path to the pre-trained model repository.
+        """
+        import torch
+        from uni2ts.model.moirai import MoiraiForecast, MoiraiModule
+        
+        # Load the pre-trained model module from the repository
+        self.module = MoiraiModule.from_pretrained(repository)
   
-  def predict(self, context, input_data, params=None):
-    from uni2ts.model.moirai import MoiraiForecast, MoiraiModule
-    model = MoiraiForecast(
-          module=self.module,
-          prediction_length=10,
-          context_length=len(input_data),
-          patch_size=32,
-          num_samples=10,
-          target_dim=1,
-          feat_dynamic_real_dim=0,
-          past_feat_dynamic_real_dim=0,
+    def predict(self, context, input_data, params=None):
+        """
+        Generate forecasts using the loaded model.
+        
+        Parameters:
+        - context: The context in which the model is being run.
+        - input_data: The input data for prediction, expected to be a time series.
+        - params: Additional parameters for prediction (not used here).
+        
+        Returns:
+        - forecast: The median forecast result as a NumPy array.
+        """
+        from uni2ts.model.moirai import MoiraiForecast, MoiraiModule
+        
+        # Initialize the forecast model with the loaded module and given parameters
+        model = MoiraiForecast(
+            module=self.module,
+            prediction_length=10,  # Length of the forecast horizon
+            context_length=len(input_data),  # Context length is the length of the input data
+            patch_size=32,  # Size of the patches for the model input
+            num_samples=10,  # Number of samples to generate for each forecast
+            target_dim=1,  # Dimension of the target variable
+            feat_dynamic_real_dim=0,  # No dynamic real features
+            past_feat_dynamic_real_dim=0,  # No past dynamic real features
         )
-    
-    # Time series values. Shape: (batch, time, variate)
-    past_target = rearrange(
-        torch.as_tensor(input_data, dtype=torch.float32), "t -> 1 t 1"
-    )
-    # 1s if the value is observed, 0s otherwise. Shape: (batch, time, variate)
-    past_observed_target = torch.ones_like(past_target, dtype=torch.bool)
-    # 1s if the value is padding, 0s otherwise. Shape: (batch, time)
-    past_is_pad = torch.zeros_like(past_target, dtype=torch.bool).squeeze(-1)
-    forecast = model(
-        past_target=past_target,
-        past_observed_target=past_observed_target,
-        past_is_pad=past_is_pad,
-    )
-    return np.median(forecast[0], axis=0)
+        
+        # Prepare the past target tensor. Shape: (batch, time, variate)
+        past_target = rearrange(
+            torch.as_tensor(input_data, dtype=torch.float32), "t -> 1 t 1"
+        )
+        # Create a tensor indicating observed values. Shape: (batch, time, variate)
+        past_observed_target = torch.ones_like(past_target, dtype=torch.bool)
+        # Create a tensor indicating padding values. Shape: (batch, time)
+        past_is_pad = torch.zeros_like(past_target, dtype=torch.bool).squeeze(-1)
+        
+        # Generate the forecast
+        forecast = model(
+            past_target=past_target,
+            past_observed_target=past_observed_target,
+            past_is_pad=past_is_pad,
+        )
+        
+        # Return the median forecast of the first sample
+        return np.median(forecast[0], axis=0)
 
+# Initialize the MoiraiModel with the specified model repository
 pipeline = MoiraiModel(f"Salesforce/{model}")
+
+# Define the input and output schema for the model
 input_schema = Schema([TensorSpec(np.dtype(np.double), (-1,))])
 output_schema = Schema([TensorSpec(np.dtype(np.uint8), (-1,))])
 signature = ModelSignature(inputs=input_schema, outputs=output_schema)
-input_example = np.random.rand(52)
-registered_model_name=f"{catalog}.{db}.moirai-1-r-small"
 
-# Log and register the model
+# Example input data for model registration
+input_example = np.random.rand(52)
+
+# Define the registered model name
+registered_model_name = f"{catalog}.{db}.moirai-1-r-small"
+
+# Log and register the model with MLflow
 with mlflow.start_run() as run:
-  mlflow.pyfunc.log_model(
-    "model",
-    python_model=pipeline,
-    registered_model_name=registered_model_name,
-    signature=signature,
-    input_example=input_example,
-    pip_requirements=[
-      "git+https://github.com/SalesforceAIResearch/uni2ts.git",
-    ],
-  )
+    mlflow.pyfunc.log_model(
+        "model",
+        python_model=pipeline,  # The custom Python model
+        registered_model_name=registered_model_name,  # The name under which to register the model
+        signature=signature,  # The model signature
+        input_example=input_example,  # An example of the input data
+        pip_requirements=[
+            "git+https://github.com/SalesforceAIResearch/uni2ts.git",
+        ],
+    )
+
 
 # COMMAND ----------
 
@@ -246,25 +318,50 @@ with mlflow.start_run() as run:
 # COMMAND ----------
 
 from mlflow import MlflowClient
+
+# Create an instance of the MlflowClient to interact with the MLflow tracking server
 mlflow_client = MlflowClient()
 
 def get_latest_model_version(mlflow_client, registered_model_name):
+    """
+    Retrieve the latest version number of a registered model.
+    
+    Parameters:
+    - mlflow_client (MlflowClient): The MLflow client instance.
+    - registered_model_name (str): The name of the registered model.
+    
+    Returns:
+    - latest_version (int): The latest version number of the registered model.
+    """
+    # Initialize the latest version to 1 (assuming at least one version exists)
     latest_version = 1
+    
+    # Iterate over all model versions for the given registered model
     for mv in mlflow_client.search_model_versions(f"name='{registered_model_name}'"):
+        # Convert the version to an integer
         version_int = int(mv.version)
+        
+        # Update the latest version if a higher version is found
         if version_int > latest_version:
             latest_version = version_int
+            
+    # Return the latest version number
     return latest_version
 
+# Get the latest version of the registered model
 model_version = get_latest_model_version(mlflow_client, registered_model_name)
+
+# Construct the URI for the logged model using the registered model name and latest version
 logged_model = f"models:/{registered_model_name}/{model_version}"
 
-# Load model as a PyFuncModel
+# Load the model as a PyFuncModel from the logged model URI
 loaded_model = mlflow.pyfunc.load_model(logged_model)
 
-# COMMAND ----------
 
+# Create random input data (52 data points)
 input_data = np.random.rand(52)
+
+# Generate forecasts using the loaded model
 loaded_model.predict(input_data)
 
 # COMMAND ----------
@@ -322,6 +419,7 @@ _ = spark.sql(
 
 # COMMAND ----------
 
+# Function to create an endpoint in Model Serving and deploy the model behind it
 def func_create_endpoint(model_serving_endpoint_name):
     # get endpoint status
     endpoint_url = f"https://{instance}/api/2.0/serving-endpoints"
@@ -375,7 +473,7 @@ def func_create_endpoint(model_serving_endpoint_name):
         re.status_code == 200
     ), f"Expected an HTTP 200 response, received {re.status_code}"
 
-
+# Function to delete the endpoint from Model Serving
 def func_delete_model_serving_endpoint(model_serving_endpoint_name):
     endpoint_url = f"https://{instance}/api/2.0/serving-endpoints"
     url = f"{endpoint_url}/{model_serving_endpoint_name}"
@@ -390,36 +488,56 @@ def func_delete_model_serving_endpoint(model_serving_endpoint_name):
 
 # COMMAND ----------
 
+# Create an endpoint. This may take some time.
 func_create_endpoint(model_serving_endpoint_name)
 
 # COMMAND ----------
 
-import time, mlflow
-
+import time
+import mlflow
+import requests
 
 def wait_for_endpoint():
+    """
+    Waits for a model serving endpoint to become ready.
+
+    This function continuously polls the serving endpoint's status and waits until the endpoint is ready.
+    """
+    # Construct the base URL for the serving endpoint API
     endpoint_url = f"https://{instance}/api/2.0/serving-endpoints"
+    
     while True:
+        # Construct the full URL for the specific model serving endpoint
         url = f"{endpoint_url}/{model_serving_endpoint_name}"
+        
+        # Send a GET request to the endpoint URL with the required headers
         response = requests.get(url, headers=headers)
+        
+        # Assert that the response status code is 200 (OK)
         assert (
             response.status_code == 200
         ), f"Expected an HTTP 200 response, received {response.status_code}\n{response.text}"
-
+        
+        # Extract the 'ready' status from the JSON response
         status = response.json().get("state", {}).get("ready", {})
-        # print("status",status)
+        
+        # Check if the status is "READY"
         if status == "READY":
+            # Print the status and a separator line, then exit the function
             print(status)
             print("-" * 80)
             return
         else:
-            print(f"Endpoint not ready ({status}), waiting 5 miutes")
-            time.sleep(300)  # Wait 300 seconds
+            # Print a message indicating the endpoint is not ready and wait for 5 minutes (300 seconds)
+            print(f"Endpoint not ready ({status}), waiting 5 minutes")
+            time.sleep(300)
 
-
+# Get the API URL for the current Databricks instance
 api_url = mlflow.utils.databricks_utils.get_webapp_url()
 
+# Call the function to wait for the endpoint to become ready
 wait_for_endpoint()
+
 
 # COMMAND ----------
 
@@ -435,25 +553,54 @@ import pandas as pd
 import json
 import matplotlib.pyplot as plt
 
-# Replace URL with the end point invocation url you get from Model Seriving page.
+# Construct the endpoint URL for model invocation using the provided instance and model serving endpoint name.
+# This URL is used to send data to the model and get predictions.
 endpoint_url = f"https://{instance}/serving-endpoints/{model_serving_endpoint_name}/invocations"
+
+# Retrieve the Databricks API token using dbutils (a utility available in Databricks notebooks).
+# This token is used for authentication when making requests to the endpoint.
 token = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiToken().get()
+
 def forecast(input_data, url=endpoint_url, databricks_token=token):
+    """
+    Send input data to the model serving endpoint and retrieve the forecast.
+
+    Parameters:
+    - input_data (numpy.ndarray): The input data to be sent to the model.
+    - url (str): The endpoint URL for model invocation.
+    - databricks_token (str): The Databricks API token for authentication.
+
+    Returns:
+    - dict: The JSON response from the model containing the forecast.
+    """
+    # Set the request headers, including the authorization token and content type.
     headers = {
         "Authorization": f"Bearer {databricks_token}",
         "Content-Type": "application/json",
     }
+    
+    # Convert the input data to a list and create the request body.
     body = {"inputs": input_data.tolist()}
+    
+    # Serialize the request body to a JSON formatted string.
     data = json.dumps(body)
+    
+    # Send a POST request to the endpoint URL with the headers and serialized data.
     response = requests.request(method="POST", headers=headers, url=url, data=data)
+    
+    # Check if the response status code is not 200 (OK), raise an exception if the request failed.
     if response.status_code != 200:
         raise Exception(
             f"Request failed with status {response.status_code}, {response.text}"
         )
+    
+    # Return the JSON response from the model containing the forecast.
     return response.json()
+
 
 # COMMAND ----------
 
+# Send request to the endpoint
 input_data = np.random.rand(52)
 forecast(input_data)
 

@@ -46,7 +46,7 @@ n = 100  # Number of time series to sample
 
 # COMMAND ----------
 
-# This cell will create tables: 
+# This cell runs the notebook ../data_preparation and creates the following tables with M4 data: 
 # 1. {catalog}.{db}.m4_daily_train
 # 2. {catalog}.{db}.m4_monthly_train
 dbutils.notebook.run("../data_preparation", timeout_seconds=0, arguments={"catalog": catalog, "db": db, "n": n})
@@ -71,26 +71,31 @@ display(df)
 
 import timesfm
 
+# Initialize the TimesFm model with specified parameters.
 tfm = timesfm.TimesFm(
-    context_len=512,  # Max context length of the model. It needs to be a multiplier of input_patch_len, i.e. a multiplier of 32.
-    horizon_len=10,  # Horizon length can be set to anything. We recommend setting it to the largest horizon length.
-    input_patch_len=32,
-    output_patch_len=128,
+    context_len=512,  # Max context length of the model. It must be a multiple of input_patch_len, which is 32.
+    horizon_len=10,  # Forecast horizon length. It can be set to any value, recommended to be the largest needed.
+    input_patch_len=32,  # Length of the input patch.
+    output_patch_len=128,  # Length of the output patch.
     num_layers=20,
     model_dims=1280,
-    backend="gpu",
+    backend="gpu",  # Backend for computation, set to use GPU for faster processing.
 )
 
+# Load the pre-trained model from the specified checkpoint.
 tfm.load_from_checkpoint(repo_id="google/timesfm-1.0-200m")
 
+# Generate forecasts on the input DataFrame.
 forecast_df = tfm.forecast_on_df(
-    inputs=df,
-    freq="D",
-    value_name="y",
-    num_jobs=-1,
+    inputs=df,  # The input DataFrame containing the time series data.
+    freq="D",  # Frequency of the time series data, set to daily.
+    value_name="y",  # Column name in the DataFrame containing the values to forecast.
+    num_jobs=-1,  # Number of parallel jobs to run, set to -1 to use all available processors.
 )
 
+# Display the forecast DataFrame.
 display(forecast_df)
+
 
 # COMMAND ----------
 
@@ -112,73 +117,81 @@ import numpy as np
 from mlflow.models import infer_signature
 from mlflow.models.signature import ModelSignature
 from mlflow.types import DataType, Schema, TensorSpec
+
+# Set the MLflow registry URI to Databricks Unity Catalog
 mlflow.set_registry_uri("databricks-uc")
 
-
+# Define a custom MLflow Python model class for TimesFM
 class TimesFMModel(mlflow.pyfunc.PythonModel):
-  def __init__(self, repository):
-    self.repository = repository
-    self.tfm = None
+    def __init__(self, repository):
+        self.repository = repository  # Store the repository ID for the model checkpoint
+        self.tfm = None  # Initialize the model attribute to None
 
-  def load_model(self):
-    import timesfm
-    self.tfm = timesfm.TimesFm(
-        context_len=512,
-        horizon_len=10,
-        input_patch_len=32,
-        output_patch_len=128,
-        num_layers=20,
-        model_dims=1280,
-        backend="gpu",
-    )
-    self.tfm.load_from_checkpoint(repo_id=self.repository)
+    def load_model(self):
+        import timesfm
+        # Initialize the TimesFm model with specified parameters
+        self.tfm = timesfm.TimesFm(
+            context_len=512,  # Max context length of the model, must be a multiple of input_patch_len (32).
+            horizon_len=10,  # Horizon length for the forecast.
+            input_patch_len=32,  # Length of the input patch.
+            output_patch_len=128,  # Length of the output patch.
+            num_layers=20,
+            model_dims=1280,
+            backend="gpu",  # Backend for computation, set to GPU.
+        )
+        # Load the pre-trained model from the specified checkpoint
+        self.tfm.load_from_checkpoint(repo_id=self.repository)
 
-  def predict(self, context, input_df, params=None):
-    if self.tfm is None:
-      self.load_model()
-      
-    forecast_df = self.tfm.forecast_on_df(
-      inputs=input_df,
-      freq="D",
-      value_name="y",
-      num_jobs=-1,
-    )
-    return forecast_df
-  
-  def __getstate__(self):
-    state = self.__dict__.copy()
-    # Remove the tfm attribute from the state, as it's not serializable
-    del state['tfm']
-    return state
+    def predict(self, context, input_df, params=None):
+        # Load the model if it hasn't been loaded yet
+        if self.tfm is None:
+            self.load_model()
+        # Generate forecasts on the input DataFrame
+        forecast_df = self.tfm.forecast_on_df(
+            inputs=input_df,  # Input DataFrame containing the time series data.
+            freq="D",  # Frequency of the time series data, set to daily.
+            value_name="y",  # Column name in the DataFrame containing the values to forecast.
+            num_jobs=-1,  # Number of parallel jobs to run, set to -1 to use all available processors.
+        )
+        return forecast_df  # Return the forecast DataFrame
 
-  def __setstate__(self, state):
-    # Restore instance attributes
-    self.__dict__.update(state)
-    # Reload the model since it was not stored in the state
-    self.load_model()
+    def __getstate__(self):
+        state = self.__dict__.copy()  # Copy the instance's state
+        # Remove the tfm attribute from the state, as it's not serializable
+        del state['tfm']
+        return state
 
+    def __setstate__(self, state):
+        # Restore instance attributes
+        self.__dict__.update(state)
+        # Reload the model since it was not stored in the state
+        self.load_model()
 
+# Initialize the custom TimesFM model with the specified repository ID
 pipeline = TimesFMModel("google/timesfm-1.0-200m")
+# Infer the model signature based on input and output DataFrames
 signature = infer_signature(
-  model_input=df,
-  model_output=pipeline.predict(None, df),
+    model_input=df,  # Input DataFrame for the model
+    model_output=pipeline.predict(None, df),  # Output DataFrame from the model
 )
 
-registered_model_name=f"{catalog}.{db}.timesfm-1-200m"
+# Define the registered model name using variables for catalog and database
+registered_model_name = f"{catalog}.{db}.timesfm-1-200m"
 
+# Start an MLflow run to log and register the model
 with mlflow.start_run() as run:
-  mlflow.pyfunc.log_model(
-    "model",
-    python_model=pipeline,
-    registered_model_name=registered_model_name,
-    signature=signature,
-    input_example=df,
-    pip_requirements=[
-      "jax[cuda12]==0.4.26",
-      "utilsforecast==0.1.10",
-      "git+https://github.com/google-research/timesfm.git",
-    ],
-  )
+    mlflow.pyfunc.log_model(
+        "model",  # The artifact path where the model is logged
+        python_model=pipeline,  # The custom Python model to log
+        registered_model_name=registered_model_name,  # The name to register the model under
+        signature=signature,  # The model signature
+        input_example=df,  # An example input to log with the model
+        pip_requirements=[
+            "jax[cuda12]==0.4.26",  # Required Python packages
+            "utilsforecast==0.1.10",
+            "git+https://github.com/google-research/timesfm.git",
+        ],
+    )
 
 # COMMAND ----------
 
@@ -191,22 +204,26 @@ with mlflow.start_run() as run:
 from mlflow import MlflowClient
 client = MlflowClient()
 
+# Define a function to get the latest version number of a registered model
 def get_latest_model_version(client, registered_model_name):
-    latest_version = 1
+    latest_version = 1  # Initialize the latest version number to 1
+    # Iterate through all model versions of the specified registered model
     for mv in client.search_model_versions(f"name='{registered_model_name}'"):
-        version_int = int(mv.version)
-        if version_int > latest_version:
-            latest_version = version_int
-    return latest_version
+        version_int = int(mv.version)  # Convert the version number to an integer
+        if version_int > latest_version:  # Check if the current version is greater than the latest version
+            latest_version = version_int  # Update the latest version number
+    return latest_version  # Return the latest version number
 
+# Get the latest version number of the specified registered model
 model_version = get_latest_model_version(client, registered_model_name)
+# Construct the model URI using the registered model name and the latest version number
 logged_model = f"models:/{registered_model_name}/{model_version}"
 
-# Load model as a PyFuncModel
+# Load the model as a PyFuncModel
 loaded_model = mlflow.pyfunc.load_model(logged_model)
 
-# Generate forecasts
-loaded_model.predict(df)
+# Generate forecasts using the loaded model on the input DataFrame
+loaded_model.predict(df)  # Use the loaded model to make predictions on the input DataFrame
 
 # COMMAND ----------
 
@@ -262,6 +279,7 @@ _ = spark.sql(
 
 # COMMAND ----------
 
+# Function to create an endpoint in Model Serving and deploy the model behind it
 def func_create_endpoint(model_serving_endpoint_name):
     # get endpoint status
     endpoint_url = f"https://{instance}/api/2.0/serving-endpoints"
@@ -315,7 +333,7 @@ def func_create_endpoint(model_serving_endpoint_name):
         re.status_code == 200
     ), f"Expected an HTTP 200 response, received {re.status_code}"
 
-
+# Function to delete the endpoint from Model Serving
 def func_delete_model_serving_endpoint(model_serving_endpoint_name):
     endpoint_url = f"https://{instance}/api/2.0/serving-endpoints"
     url = f"{endpoint_url}/{model_serving_endpoint_name}"
@@ -330,35 +348,43 @@ def func_delete_model_serving_endpoint(model_serving_endpoint_name):
 
 # COMMAND ----------
 
+# Create an endpoint. This may take some time.
 func_create_endpoint(model_serving_endpoint_name)
 
 # COMMAND ----------
 
 import time, mlflow
 
-
+# Define a function to wait for a serving endpoint to be ready
 def wait_for_endpoint():
-    endpoint_url = f"https://{instance}/api/2.0/serving-endpoints"
-    while True:
-        url = f"{endpoint_url}/{model_serving_endpoint_name}"
-        response = requests.get(url, headers=headers)
+    endpoint_url = f"https://{instance}/api/2.0/serving-endpoints"  # Construct the base URL for the serving endpoints API
+    while True:  # Infinite loop to repeatedly check the status of the endpoint
+        url = f"{endpoint_url}/{model_serving_endpoint_name}"  # Construct the URL for the specific model serving endpoint
+        response = requests.get(url, headers=headers)  # Send a GET request to the endpoint URL with the necessary headers
+        
+        # Ensure the response status code is 200 (OK)
         assert (
             response.status_code == 200
         ), f"Expected an HTTP 200 response, received {response.status_code}\n{response.text}"
 
+        # Extract the status of the endpoint from the response JSON
         status = response.json().get("state", {}).get("ready", {})
-        # print("status",status)
+        # print("status",status)  # Optional: Print the status for debugging purposes
+        
+        # Check if the endpoint status is "READY"
         if status == "READY":
-            print(status)
-            print("-" * 80)
-            return
+            print(status)  # Print the status if the endpoint is ready
+            print("-" * 80)  # Print a separator line for clarity
+            return  # Exit the function when the endpoint is ready
         else:
-            print(f"Endpoint not ready ({status}), waiting 5 miutes")
-            time.sleep(300)  # Wait 300 seconds
+            # Print a message indicating the endpoint is not ready and wait for 5 minutes
+            print(f"Endpoint not ready ({status}), waiting 5 minutes")
+            time.sleep(300)  # Wait for 300 seconds before checking again
 
-
+# Get the Databricks web application URL using MLflow utility function
 api_url = mlflow.utils.databricks_utils.get_webapp_url()
 
+# Call the wait_for_endpoint function to wait for the serving endpoint to be ready
 wait_for_endpoint()
 
 # COMMAND ----------
@@ -394,6 +420,7 @@ def forecast(input_data, url=endpoint_url, databricks_token=token):
 
 # COMMAND ----------
 
+# Send request to the endpoint
 forecast(df)
 
 # COMMAND ----------
