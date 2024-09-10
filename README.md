@@ -230,7 +230,7 @@ We encourage you to read through [examples/foundation_daily.py](https://github.c
 
 If you want to try out time series foundation models on Databricks without MMF, you can find example notebooks in [examples/foundation-model-examples](https://github.com/databricks-industry-solutions/many-model-forecasting/tree/main/examples/foundation-model-examples). These notebooks will show you how you can load, distribute the inference, fine-tune, register, deploy a model and generate online forecasts on it. We have notebooks for [TimeGPT](https://docs.nixtla.io/), [Chronos](https://github.com/amazon-science/chronos-forecasting), [Moirai](https://github.com/SalesforceAIResearch/uni2ts), [Moment](https://github.com/moment-timeseries-foundation-model/moment), and [TimesFM](https://github.com/google-research/timesfm).
 
-## Vector Lab - Many Model Forecasting
+## [Vector Lab](https://www.youtube.com/@VectorLab) - Many Model Forecasting
 
 [![IMAGE ALT TEXT HERE](https://img.youtube.com/vi/wYeuPxtap-8/0.jpg)](https://www.youtube.com/watch?v=wYeuPxtap-8)
 
