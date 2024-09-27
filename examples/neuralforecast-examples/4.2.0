@@ -1,0 +1,14 @@
+Collecting nbformat
+  Downloading nbformat-5.10.4-py3-none-any.whl (78 kB)
+Requirement already satisfied: jsonschema>=2.6 in /Users/scott.mckean/.pyenv/versions/3.10.0/lib/python3.10/site-packages (from nbformat) (4.23.0)
+Requirement already satisfied: jupyter-core!=5.0.*,>=4.12 in /Users/scott.mckean/.pyenv/versions/3.10.0/lib/python3.10/site-packages (from nbformat) (5.7.2)
+Requirement already satisfied: traitlets>=5.1 in /Users/scott.mckean/.pyenv/versions/3.10.0/lib/python3.10/site-packages (from nbformat) (5.14.3)
+Collecting fastjsonschema>=2.15
+  Downloading fastjsonschema-2.20.0-py3-none-any.whl (23 kB)
+Requirement already satisfied: referencing>=0.28.4 in /Users/scott.mckean/.pyenv/versions/3.10.0/lib/python3.10/site-packages (from jsonschema>=2.6->nbformat) (0.35.1)
+Requirement already satisfied: attrs>=22.2.0 in /Users/scott.mckean/.pyenv/versions/3.10.0/lib/python3.10/site-packages (from jsonschema>=2.6->nbformat) (24.2.0)
+Requirement already satisfied: rpds-py>=0.7.1 in /Users/scott.mckean/.pyenv/versions/3.10.0/lib/python3.10/site-packages (from jsonschema>=2.6->nbformat) (0.20.0)
+Requirement already satisfied: jsonschema-specifications>=2023.03.6 in /Users/scott.mckean/.pyenv/versions/3.10.0/lib/python3.10/site-packages (from jsonschema>=2.6->nbformat) (2023.12.1)
+Requirement already satisfied: platformdirs>=2.5 in /Users/scott.mckean/.pyenv/versions/3.10.0/lib/python3.10/site-packages (from jupyter-core!=5.0.*,>=4.12->nbformat) (4.3.6)
+Installing collected packages: fastjsonschema, nbformat
+Successfully installed fastjsonschema-2.20.0 nbformat-5.10.4
