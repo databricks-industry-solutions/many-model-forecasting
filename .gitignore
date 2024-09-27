@@ -139,3 +139,6 @@ examples/lightning_logs
 examples/m5-examples/lightning_logs/*
 examples/neuralforecast-examples/data/*
 examples/neuralforecast-examples/lightning_logs/*
+
+# datasets
+data/*
