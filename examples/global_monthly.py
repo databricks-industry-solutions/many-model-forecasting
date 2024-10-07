@@ -176,11 +176,11 @@ display(spark.sql(f"select * from {catalog}.{db}.monthly_scoring_output order by
 
 # COMMAND ----------
 
-display(spark.sql(f"delete from {catalog}.{db}.monthly_evaluation_output"))
+#display(spark.sql(f"delete from {catalog}.{db}.monthly_evaluation_output"))
 
 # COMMAND ----------
 
-display(spark.sql(f"delete from {catalog}.{db}.monthly_scoring_output"))
+#display(spark.sql(f"delete from {catalog}.{db}.monthly_scoring_output"))
 
 # COMMAND ----------
 
