@@ -166,8 +166,8 @@ display(spark.sql(f"select * from {catalog}.{db}.rossmann_daily_scoring_output o
 
 # COMMAND ----------
 
-display(spark.sql(f"delete from {catalog}.{db}.rossmann_daily_evaluation_output"))
+#display(spark.sql(f"delete from {catalog}.{db}.rossmann_daily_evaluation_output"))
 
 # COMMAND ----------
 
-display(spark.sql(f"delete from {catalog}.{db}.rossmann_daily_scoring_output"))
+#display(spark.sql(f"delete from {catalog}.{db}.rossmann_daily_scoring_output"))
