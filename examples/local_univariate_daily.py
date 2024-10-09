@@ -234,3 +234,7 @@ display(spark.sql(f"select * from {catalog}.{db}.daily_scoring_output order by u
 # COMMAND ----------
 
 #display(spark.sql(f"delete from {catalog}.{db}.daily_scoring_output"))
+
+# COMMAND ----------
+
+
