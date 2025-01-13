@@ -19,7 +19,7 @@
 
 # COMMAND ----------
 
-# MAGIC %pip install -r ../requirements.txt --quiet
+# MAGIC %pip install datasetsforecast==0.0.8 --quiet
 
 # COMMAND ----------
 
@@ -29,14 +29,6 @@ logger = spark._jvm.org.apache.log4j
 logging.getLogger("py4j.java_gateway").setLevel(logging.ERROR)
 logging.getLogger("py4j.clientserver").setLevel(logging.ERROR)
 import uuid
-
-# COMMAND ----------
-
-import uuid
-import pathlib
-import pandas as pd
-from datasetsforecast.m4 import M4
-from mmf_sa import run_forecast
 
 # COMMAND ----------
 

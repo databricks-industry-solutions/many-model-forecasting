@@ -197,8 +197,11 @@ run_forecast(
 # COMMAND ----------
 
 display(
-  spark.sql(f"select * from {catalog}.{db}.monthly_evaluation_output order by unique_id, model, backtest_window_start_date")
-  )
+  spark.sql(f"""
+    select * from {catalog}.{db}.monthly_evaluation_output 
+    where unique_id = 'M1'
+    order by unique_id, model, backtest_window_start_date
+    """))
 
 # COMMAND ----------
 
@@ -207,7 +210,11 @@ display(
 
 # COMMAND ----------
 
-display(spark.sql(f"select * from {catalog}.{db}.monthly_scoring_output order by unique_id, model, date"))
+display(spark.sql(f"""
+    select * from {catalog}.{db}.monthly_scoring_output 
+    where unique_id = 'M1'
+    order by unique_id, model, date
+    """))
 
 # COMMAND ----------
 

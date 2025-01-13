@@ -1,6 +1,6 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Many Models Forecasting
+# MAGIC # Many Models Forecasting (MMF)
 # MAGIC This notebook showcases how to run MMF with local models on multiple univariate time series of daily resolution. We will use [M4 competition](https://www.sciencedirect.com/science/article/pii/S0169207019301128#sec5) data.
 
 # COMMAND ----------
@@ -199,8 +199,11 @@ run_forecast(
 # COMMAND ----------
 
 display(
-  spark.sql(f"select * from {catalog}.{db}.daily_evaluation_output order by unique_id, model, backtest_window_start_date")
-  )
+  spark.sql(f"""
+    select * from {catalog}.{db}.daily_evaluation_output 
+    where unique_id = 'D1'
+    order by unique_id, model, backtest_window_start_date
+    """))
 
 # COMMAND ----------
 

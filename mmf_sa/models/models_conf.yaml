@@ -409,6 +409,12 @@ models:
     framework: TimesFM
     model_type: foundation
 
+  TimesFM_2_0_500m:
+    module: mmf_sa.models.timesfmforecast.TimesFMPipeline
+    model_class: TimesFM_2_0_500m
+    framework: TimesFM
+    model_type: foundation
+
   Moment1Large:
     module: mmf_sa.models.momentforecast.MomentPipeline
     model_class: Moment1Large

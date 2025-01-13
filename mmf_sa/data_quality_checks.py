@@ -98,7 +98,7 @@ class DataQualityChecks:
             months=conf["backtest_months"]
         )
         if (
-            temp_df[temp_df[conf["date_col"]] < split_date].count()[0]
+            temp_df[temp_df[conf["date_col"]] < split_date].count().iloc[0]
             <= conf["train_predict_ratio"] * conf["prediction_length"]
         ):
             # Removing: train_predict_ratio requirement violated
