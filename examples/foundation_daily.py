@@ -18,7 +18,7 @@
 
 # COMMAND ----------
 
-# MAGIC %pip install -r ../requirements.txt --quiet
+# MAGIC %pip install datasetsforecast==0.0.8 --quiet
 # MAGIC dbutils.library.restartPython()
 
 # COMMAND ----------
@@ -34,7 +34,6 @@ import uuid
 import pathlib
 import pandas as pd
 from datasetsforecast.m4 import M4
-from mmf_sa import run_forecast
 
 # COMMAND ----------
 
@@ -124,6 +123,8 @@ active_models = [
     "MoiraiSmall",
     "MoiraiBase",
     "MoiraiLarge",
+    "TimesFM_1_0_200m",
+    "TimesFM_2_0_500m",
     "Moment1Large",
 ]
 
@@ -158,8 +159,11 @@ for model in active_models:
 # COMMAND ----------
 
 display(
-  spark.sql(f"select * from {catalog}.{db}.daily_evaluation_output order by unique_id, model, backtest_window_start_date")
-  )
+  spark.sql(f"""
+    select * from {catalog}.{db}.daily_evaluation_output 
+    where unique_id = 'D1'
+    order by unique_id, model, backtest_window_start_date
+    """))
 
 # COMMAND ----------
 
@@ -181,7 +185,11 @@ display(
 
 # COMMAND ----------
 
-display(spark.sql(f"select * from {catalog}.{db}.daily_scoring_output order by unique_id, model, ds"))
+display(spark.sql(f"""
+    select * from {catalog}.{db}.daily_scoring_output 
+    where unique_id = 'D1'
+    order by unique_id, model, ds
+    """))
 
 # COMMAND ----------
 

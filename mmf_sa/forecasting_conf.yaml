@@ -59,6 +59,7 @@ active_models:
   - MoiraiBase
   - MoiraiLarge
   - TimesFM_1_0_200m
+  - TimesFM_2_0_500m
   - Moment1Large
 
 #Here we can override hyperparameters for built-in models

@@ -1,8 +1,9 @@
-from abc import ABC
-import subprocess
-import sys
 import pandas as pd
+import numpy as np
 import torch
+import mlflow
+from mlflow.types import Schema, TensorSpec
+from mlflow.models.signature import ModelSignature
 from sktime.performance_metrics.forecasting import (
     MeanAbsoluteError,
     MeanSquaredError,
@@ -17,10 +18,24 @@ class TimesFMForecaster(ForecastingRegressor):
         self.params = params
         self.device = None
         self.model = None
-        self.install("git+https://github.com/google-research/timesfm.git")
 
-    def install(self, package: str):
-        subprocess.check_call([sys.executable, "-m", "pip", "install", package, "--quiet"])
+    def register(self, registered_model_name: str):
+        pipeline = TimesFMModel(self.params)
+        input_schema = Schema([TensorSpec(np.dtype(np.double), (-1, -1))])
+        output_schema = Schema([TensorSpec(np.dtype(np.uint8), (-1, -1))])
+        signature = ModelSignature(inputs=input_schema, outputs=output_schema)
+        mlflow.pyfunc.log_model(
+            "model",
+            python_model=pipeline,
+            registered_model_name=registered_model_name,
+            signature=signature,
+            #input_example=input_example,
+            pip_requirements=[
+                "timesfm[torch]",
+                "git+https://github.com/databricks-industry-solutions/many-model-forecasting.git",
+                "pyspark==3.5.0",
+            ],
+        )
 
     def prepare_data(self, df: pd.DataFrame, future: bool = False, spark=None) -> pd.DataFrame:
         df = df[[self.params.group_id, self.params.date_col, self.params.target]]
@@ -42,7 +57,6 @@ class TimesFMForecaster(ForecastingRegressor):
                 spark=None):
 
         hist_df = self.prepare_data(hist_df)
-        self.model.load_from_checkpoint(repo_id=self.repo)
         forecast_df = self.model.forecast_on_df(
             inputs=hist_df,
             freq=self.params["freq"],
@@ -50,6 +64,12 @@ class TimesFMForecaster(ForecastingRegressor):
             num_jobs=-1,
         )
         forecast_df = forecast_df[["unique_id", "ds", "timesfm"]]
+        forecast_df = forecast_df.sort_values(
+            by=["unique_id", "ds"]
+        ).groupby("unique_id").agg(
+            ds=("ds", lambda x: list(x)),
+            timesfm=("timesfm", lambda x: list(x)),
+        ).reset_index()
         forecast_df = forecast_df.reset_index(drop=False).rename(
             columns={
                 "unique_id": self.params.group_id,
@@ -57,6 +77,7 @@ class TimesFMForecaster(ForecastingRegressor):
                 "timesfm": self.params.target,
             }
         )
+
         # Todo
         # forecast_df[self.params.target] = forecast_df[self.params.target].clip(0.01)
         return forecast_df, self.model
@@ -84,7 +105,7 @@ class TimesFMForecaster(ForecastingRegressor):
             raise Exception(f"Metric {self.params['metric']} not supported!")
         for key in keys:
             actual = val_df[val_df[self.params["group_id"]] == key][self.params["target"]].to_numpy()
-            forecast = pred_df[pred_df[self.params["group_id"]] == key][self.params["target"]].to_numpy()[0]
+            forecast = np.array(pred_df[pred_df[self.params["group_id"]] == key][self.params["target"]].iloc[0])
             try:
                 if metric_name == "smape":
                     smape = MeanAbsolutePercentageError(symmetric=True)
@@ -119,17 +140,70 @@ class TimesFMForecaster(ForecastingRegressor):
 class TimesFM_1_0_200m(TimesFMForecaster):
     def __init__(self, params):
         super().__init__(params)
+        import timesfm
         self.params = params
         self.backend = "gpu" if torch.cuda.is_available() else "cpu"
-        self.repo = "google/timesfm-1.0-200m"
-        import timesfm
+        self.repo = "google/timesfm-1.0-200m-pytorch"
         self.model = timesfm.TimesFm(
-            context_len=512,
-            horizon_len=10,
-            input_patch_len=32,
-            output_patch_len=128,
-            num_layers=20,
-            model_dims=1280,
-            backend=self.backend,
+            hparams=timesfm.TimesFmHparams(
+                backend=self.backend,
+                per_core_batch_size=32,
+                horizon_len=self.params.prediction_length,
+            ),
+            checkpoint=timesfm.TimesFmCheckpoint(
+                huggingface_repo_id=self.repo
+            ),
         )
 
+class TimesFM_2_0_500m(TimesFMForecaster):
+    def __init__(self, params):
+        super().__init__(params)
+        import timesfm
+        self.params = params
+        self.backend = "gpu" if torch.cuda.is_available() else "cpu"
+        self.repo = "google/timesfm-2.0-500m-pytorch"
+        self.model = timesfm.TimesFm(
+            hparams=timesfm.TimesFmHparams(
+                backend=self.backend,
+                per_core_batch_size=32,
+                horizon_len=self.params.prediction_length,
+                num_layers=50,
+                use_positional_embedding=False,
+                context_len=2048,
+            ),
+            checkpoint=timesfm.TimesFmCheckpoint(
+                huggingface_repo_id=self.repo
+            ),
+        )
+
+class TimesFMModel(mlflow.pyfunc.PythonModel):
+    def __init__(self, params):
+        self.params = params
+        self.model = None  # Initialize the model attribute to None
+
+    def load_model(self):
+        # Initialize the TimesFm model with specified parameters
+        import timesfm
+        self.model = timesfm.TimesFm(
+            hparams=timesfm.TimesFmHparams(
+                backend=self.params.device,
+                per_core_batch_size=32,
+                horizon_len=self.params.prediction_length,
+            ),
+            checkpoint=timesfm.TimesFmCheckpoint(
+                huggingface_repo_id=self.params.repo
+            ),
+        )
+
+    def predict(self, context, input_df, params=None):
+        # Load the model if it hasn't been loaded yet
+        if self.model is None:
+            self.load_model()
+        # Generate forecasts on the input DataFrame
+        forecast_df = self.model.forecast_on_df(
+            inputs=input_df,  # Input DataFrame containing the time series data.
+            freq=self.params.freq,  # Frequency of the time series data, set to daily.
+            value_name=self.params.target,  # Column name in the DataFrame containing the values to forecast.
+            num_jobs=-1,  # Number of parallel jobs to run, set to -1 to use all available processors.
+        )
+        return forecast_df  # Return the forecast DataFrame

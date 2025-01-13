@@ -18,7 +18,7 @@
 
 # COMMAND ----------
 
-# MAGIC %pip install -r ../requirements.txt --quiet
+# MAGIC %pip install datasetsforecast==0.0.8 --quiet
 # MAGIC dbutils.library.restartPython()
 
 # COMMAND ----------
@@ -34,7 +34,6 @@ import uuid
 import pathlib
 import pandas as pd
 from datasetsforecast.m4 import M4
-from mmf_sa import run_forecast
 
 # COMMAND ----------
 
@@ -158,7 +157,11 @@ for model in active_models:
 
 # COMMAND ----------
 
-display(spark.sql(f"select * from {catalog}.{db}.monthly_evaluation_output order by unique_id, model, backtest_window_start_date"))
+display(spark.sql(f"""
+    select * from {catalog}.{db}.monthly_evaluation_output 
+    where unique_id = 'M1'
+    order by unique_id, model, backtest_window_start_date
+    """))
 
 # COMMAND ----------
 
@@ -167,7 +170,11 @@ display(spark.sql(f"select * from {catalog}.{db}.monthly_evaluation_output order
 
 # COMMAND ----------
 
-display(spark.sql(f"select * from {catalog}.{db}.monthly_scoring_output order by unique_id, model, date"))
+display(spark.sql(f"""
+    select * from {catalog}.{db}.monthly_scoring_output 
+    where unique_id = 'M1'
+    order by unique_id, model, date
+    """))
 
 # COMMAND ----------
 

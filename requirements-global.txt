@@ -1,0 +1,5 @@
+-r requirements.txt
+neuralforecast==1.7.2
+timesfm[torch]
+chronos-forecasting
+uni2ts

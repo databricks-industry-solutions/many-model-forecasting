@@ -421,7 +421,6 @@ class Forecaster:
             .withColumnRenamed("avg(metric_value)", "metric_value")
             .toPandas()
         )
-
         metric_name = None
         metric_value = None
 
@@ -444,7 +443,7 @@ class Forecaster:
             model_name = model_conf["name"]
             model = self.model_registry.get_model(model_name)
             # For now, only support registering chronos, moirai and moment models
-            if model_conf["framework"] in ["Chronos", "Moirai", "Moment"]:
+            if model_conf["framework"] in ["Chronos", "Moirai", "Moment", "TimesFM"]:
                 model.register(
                     registered_model_name=f"{self.conf['model_output']}.{model_conf['name']}_{self.conf['use_case_name']}"
                 )

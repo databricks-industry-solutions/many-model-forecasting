@@ -3,7 +3,6 @@ kaleido==0.2.1
 Jinja2
 omegaconf==2.3.0
 statsforecast==1.7.4
-neuralforecast==1.7.2
 missingno==0.5.2
 tbats==1.1.3
 sktime==0.29.0
