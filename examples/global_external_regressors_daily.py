@@ -139,8 +139,11 @@ for model in active_models:
 # COMMAND ----------
 
 display(
-  spark.sql(f"select * from {catalog}.{db}.rossmann_daily_evaluation_output order by Store, model, backtest_window_start_date")
-  )
+  spark.sql(f"""
+            select * from {catalog}.{db}.rossmann_daily_evaluation_output 
+            where Store=49
+            order by Store, model, backtest_window_start_date
+            """))
 
 # COMMAND ----------
 
@@ -149,7 +152,11 @@ display(
 
 # COMMAND ----------
 
-display(spark.sql(f"select * from {catalog}.{db}.rossmann_daily_scoring_output order by Store, model"))
+display(spark.sql(f"""
+                  select * from {catalog}.{db}.rossmann_daily_scoring_output 
+                  where Store=49 
+                  order by Store, model
+                  """))
 
 # COMMAND ----------
 

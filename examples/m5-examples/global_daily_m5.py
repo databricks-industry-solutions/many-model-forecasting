@@ -1,10 +1,4 @@
 # Databricks notebook source
-# DBTITLE 1,Install the necessary libraries
-# MAGIC %pip install -r ../../requirements.txt --quiet
-# MAGIC dbutils.library.restartPython()
-
-# COMMAND ----------
-
 import logging
 logger = spark._jvm.org.apache.log4j
 logging.getLogger("py4j.java_gateway").setLevel(logging.ERROR)
@@ -15,7 +9,6 @@ logging.getLogger("py4j.clientserver").setLevel(logging.ERROR)
 import uuid
 import pathlib
 import pandas as pd
-from mmf_sa import run_forecast
 
 # COMMAND ----------
 
@@ -62,21 +55,24 @@ for model in active_models:
 # COMMAND ----------
 
 display(
-  spark.sql(f"select * from {catalog}.{db}.daily_evaluation_output order by unique_id, model, backtest_window_start_date limit 1000")
+  spark.sql(f"""
+            select * from {catalog}.{db}.daily_evaluation_output 
+            order by unique_id, model, backtest_window_start_date 
+            limit 1000
+            """)
   )
 
 # COMMAND ----------
 
-display(spark.sql(f"select * from {catalog}.{db}.daily_scoring_output order by unique_id, model, ds limit 1000"))
+display(spark.sql(f"""
+                  select * from {catalog}.{db}.daily_scoring_output 
+                  order by unique_id, model, ds limit 1000
+                  """))
 
 # COMMAND ----------
 
-display(spark.sql(f"delete from {catalog}.{db}.daily_evaluation_output"))
+#display(spark.sql(f"delete from {catalog}.{db}.daily_evaluation_output"))
 
 # COMMAND ----------
 
-display(spark.sql(f"delete from {catalog}.{db}.daily_scoring_output"))
-
-# COMMAND ----------
-
-
+#display(spark.sql(f"delete from {catalog}.{db}.daily_scoring_output"))

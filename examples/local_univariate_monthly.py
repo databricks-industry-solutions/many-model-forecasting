@@ -228,7 +228,3 @@ display(spark.sql(f"""
 # COMMAND ----------
 
 #display(spark.sql(f"delete from {catalog}.{db}.monthly_scoring_output"))
-
-# COMMAND ----------
-
-

@@ -223,7 +223,11 @@ display(
 
 # COMMAND ----------
 
-display(spark.sql(f"select * from {catalog}.{db}.daily_scoring_output order by unique_id, model, ds"))
+display(spark.sql(f"""
+                  select * from {catalog}.{db}.daily_scoring_output 
+                  where unique_id = 'D1'
+                  order by unique_id, model, ds
+                  """))
 
 # COMMAND ----------
 

@@ -28,10 +28,12 @@ taining_table = f"daily_train_{n}"
 # COMMAND ----------
 
 # MAGIC %SQL
-# MAGIC
 # MAGIC display(
-# MAGIC   spark.sql(f"select * from {catalog}.{db}.{taining_table} where unique_id in ('FOODS_1_001_WI_1', 'FOODS_1_004_TX_2', 'FOODS_1_006_WI_1', 'FOODS_1_008_CA_3', 'FOODS_1_012_WI_1') order by unique_id, ds")
-# MAGIC   )
+# MAGIC   spark.sql(f"""
+# MAGIC             select * from {catalog}.{db}.{taining_table} 
+# MAGIC             where unique_id in ('FOODS_1_001_WI_1', 'FOODS_1_004_TX_2', 'FOODS_1_006_WI_1', 'FOODS_1_008_CA_3', 'FOODS_1_012_WI_1') 
+# MAGIC             order by unique_id, ds
+# MAGIC             """))
 
 # COMMAND ----------
 
@@ -90,20 +92,22 @@ run_forecast(
 
 # COMMAND ----------
 
-display(spark.sql(f"select * from {catalog}.{db}.daily_evaluation_output order by unique_id, model, backtest_window_start_date"))
+display(spark.sql(f"""
+                  select * from {catalog}.{db}.daily_evaluation_output 
+                  order by unique_id, model, backtest_window_start_date
+                  """))
 
 # COMMAND ----------
 
-display(spark.sql(f"select * from {catalog}.{db}.daily_scoring_output order by unique_id, model, ds"))
+display(spark.sql(f"""
+                  select * from {catalog}.{db}.daily_scoring_output 
+                  order by unique_id, model, ds
+                  """))
 
 # COMMAND ----------
 
-display(spark.sql(f"delete from {catalog}.{db}.daily_evaluation_output"))
+#display(spark.sql(f"delete from {catalog}.{db}.daily_evaluation_output"))
 
 # COMMAND ----------
 
-display(spark.sql(f"delete from {catalog}.{db}.daily_scoring_output"))
-
-# COMMAND ----------
-
-
+#display(spark.sql(f"delete from {catalog}.{db}.daily_scoring_output"))
