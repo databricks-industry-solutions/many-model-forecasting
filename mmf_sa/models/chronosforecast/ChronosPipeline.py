@@ -26,7 +26,6 @@ class ChronosForecaster(ForecastingRegressor):
         pipeline = ChronosModel(
             self.repo,
             self.params["prediction_length"],
-            self.device,
         )
         input_schema = Schema([TensorSpec(np.dtype(np.double), (-1, -1))])
         output_schema = Schema([TensorSpec(np.dtype(np.uint8), (-1, -1, -1))])
