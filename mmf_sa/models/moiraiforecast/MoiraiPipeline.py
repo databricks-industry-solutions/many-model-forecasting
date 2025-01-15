@@ -1,6 +1,3 @@
-from abc import ABC
-import subprocess
-import sys
 import pandas as pd
 import numpy as np
 import torch
@@ -24,11 +21,6 @@ class MoiraiForecaster(ForecastingRegressor):
         self.params = params
         self.device = None
         self.model = None
-        self.install("git+https://github.com/SalesforceAIResearch/uni2ts.git")
-
-    @staticmethod
-    def install(package: str):
-        subprocess.check_call([sys.executable, "-m", "pip", "install", package, "--quiet"])
 
     def register(self, registered_model_name: str):
         pipeline = MoiraiModel(
@@ -48,7 +40,7 @@ class MoiraiForecaster(ForecastingRegressor):
             signature=signature,
             input_example=input_example,
             pip_requirements=[
-                "git+https://github.com/SalesforceAIResearch/uni2ts.git",
+                "uni2ts",
                 "git+https://github.com/databricks-industry-solutions/many-model-forecasting.git",
                 "pyspark==3.5.0",
             ],
@@ -171,21 +163,37 @@ class MoiraiForecaster(ForecastingRegressor):
             import pandas as pd
             from einops import rearrange
             from uni2ts.model.moirai import MoiraiModule, MoiraiForecast
-            module = MoiraiModule.from_pretrained(self.repo)
+            from uni2ts.model.moirai_moe import MoiraiMoEForecast, MoiraiMoEModule
+            if 'moe' in self.repo:
+                module = MoiraiMoEModule.from_pretrained(self.repo)
+            else:
+                module = MoiraiModule.from_pretrained(self.repo)
             # inference
             for batch in batch_iterator:
                 median = []
                 for series in batch:
-                    model = MoiraiForecast(
-                        module=module,
-                        prediction_length=self.params["prediction_length"],
-                        context_length=len(series),
-                        patch_size=self.params["patch_size"],
-                        num_samples=self.params["num_samples"],
-                        target_dim=1,
-                        feat_dynamic_real_dim=0,
-                        past_feat_dynamic_real_dim=0,
-                    )
+                    if 'moe' in self.repo:
+                        model = MoiraiMoEForecast(
+                            module=module,
+                            prediction_length=self.params["prediction_length"],
+                            context_length=len(series),
+                            patch_size=16,
+                            num_samples=self.params["num_samples"],
+                            target_dim=1,
+                            feat_dynamic_real_dim=0,
+                            past_feat_dynamic_real_dim=0,
+                        )
+                    else:
+                        model = MoiraiForecast(
+                            module=module,
+                            prediction_length=self.params["prediction_length"],
+                            context_length=len(series),
+                            patch_size=self.params["patch_size"],
+                            num_samples=self.params["num_samples"],
+                            target_dim=1,
+                            feat_dynamic_real_dim=0,
+                            past_feat_dynamic_real_dim=0,
+                        )
 
                     # Time series values. Shape: (batch, time, variate)
                     past_target = rearrange(
@@ -210,46 +218,80 @@ class MoiraiSmall(MoiraiForecaster):
     def __init__(self, params):
         super().__init__(params)
         self.params = params
-        self.repo = "Salesforce/moirai-1.0-R-small"
+        self.repo = "Salesforce/moirai-1.1-R-small"
 
 
 class MoiraiBase(MoiraiForecaster):
     def __init__(self, params):
         super().__init__(params)
         self.params = params
-        self.repo = "Salesforce/moirai-1.0-R-base"
+        self.repo = "Salesforce/moirai-1.1-R-base"
 
 
 class MoiraiLarge(MoiraiForecaster):
     def __init__(self, params):
         super().__init__(params)
         self.params = params
-        self.repo = "Salesforce/moirai-1.0-R-base"
+        self.repo = "Salesforce/moirai-1.1-R-large"
 
+class MoiraiMoESmall(MoiraiForecaster):
+    def __init__(self, params):
+        super().__init__(params)
+        self.params = params
+        self.repo = "Salesforce/moirai-moe-1.0-R-small"
+
+class MoiraiMoEBase(MoiraiForecaster):
+    def __init__(self, params):
+        super().__init__(params)
+        self.params = params
+        self.repo = "Salesforce/moirai-moe-1.0-R-base"
+
+class MoiraiMoELarge(MoiraiForecaster):
+    def __init__(self, params):
+        super().__init__(params)
+        self.params = params
+        self.repo = "Salesforce/moirai-moe-1.0-R-large"
 
 class MoiraiModel(mlflow.pyfunc.PythonModel):
     def __init__(self, repository, prediction_length, patch_size, num_samples):
         from uni2ts.model.moirai import MoiraiForecast, MoiraiModule
+        from uni2ts.model.moirai_moe import MoiraiMoEForecast, MoiraiMoEModule
         self.repository = repository
         self.prediction_length = prediction_length
         self.patch_size = patch_size
         self.num_samples = num_samples
-        self.module = MoiraiModule.from_pretrained(self.repository)
+        if 'moe' in self.repository:
+            self.module = MoiraiMoEModule.from_pretrained(self.repository)
+        else:
+            self.module = MoiraiModule.from_pretrained(self.repository)
         self.pipeline = None
 
     def predict(self, context, input_data, params=None):
         from einops import rearrange
         from uni2ts.model.moirai import MoiraiForecast, MoiraiModule
-        self.pipeline = MoiraiForecast(
-            module=self.module,
-            prediction_length=self.prediction_length,
-            context_length=len(input_data),
-            patch_size=self.patch_size,
-            num_samples=self.num_samples,
-            target_dim=1,
-            feat_dynamic_real_dim=0,
-            past_feat_dynamic_real_dim=0,
-        )
+        from uni2ts.model.moirai_moe import MoiraiMoEForecast, MoiraiMoEModule
+        if 'moe' in self.repository:
+            self.pipeline = MoiraiMoEForecast(
+                module=self.module,
+                prediction_length=self.prediction_length,
+                context_length=len(input_data),
+                patch_size=self.patch_size,
+                num_samples=self.num_samples,
+                target_dim=1,
+                feat_dynamic_real_dim=0,
+                past_feat_dynamic_real_dim=0,
+            )
+        else:
+            self.pipeline = MoiraiForecast(
+                module=self.module,
+                prediction_length=self.prediction_length,
+                context_length=len(input_data),
+                patch_size=16,
+                num_samples=self.num_samples,
+                target_dim=1,
+                feat_dynamic_real_dim=0,
+                past_feat_dynamic_real_dim=0,
+            )
         # Time series values. Shape: (batch, time, variate)
         past_target = rearrange(torch.as_tensor(input_data, dtype=torch.float32), "t -> 1 t 1")
         # 1s if the value is observed, 0s otherwise. Shape: (batch, time, variate)
