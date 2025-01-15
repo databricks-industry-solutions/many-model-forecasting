@@ -14,6 +14,7 @@ Get started now!
 
 - Jan 2025: [TimesFM](https://github.com/google-research/timesfm) is available for univariate forecasting. Try the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/foundation_daily.py).
 - Jan 2025: [Chronos Bolt](https://github.com/amazon-science/chronos-forecasting) models are available for univariate forecasting. Try the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/foundation_daily.py).
+- Jan 2025: [Moirai MoE](https://github.com/SalesforceAIResearch/uni2ts) models are available for univariate forecasting. Try the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/foundation_daily.py).
 
 ## Getting started
 
@@ -211,6 +212,9 @@ active_models = [
     "MoiraiSmall",
     "MoiraiBase",
     "MoiraiLarge",
+    "MoiraiMoESmall",
+    "MoiraiMoEBase",
+    "MoiraiMoELarge",
     "TimesFM_1_0_200m",
     "TimesFM_2_0_500m",
 ]
