@@ -26,7 +26,6 @@ class ChronosForecaster(ForecastingRegressor):
         pipeline = ChronosModel(
             self.repo,
             self.params["prediction_length"],
-            self.params["num_samples"],
             self.device,
         )
         input_schema = Schema([TensorSpec(np.dtype(np.double), (-1, -1))])
@@ -189,7 +188,6 @@ class ChronosForecaster(ForecastingRegressor):
                     forecasts = pipeline.predict(
                         context=contexts,
                         prediction_length=self.params["prediction_length"],
-                        #num_samples=self.params["num_samples"],
                     )
                     median.extend([np.median(forecast, axis=0) for forecast in forecasts])
             yield pd.Series(median)
@@ -259,11 +257,10 @@ class ChronosBoltBase(ChronosForecaster):
 
 
 class ChronosModel(mlflow.pyfunc.PythonModel):
-    def __init__(self, repository, prediction_length, num_samples, device):
+    def __init__(self, repository, prediction_length):
         import torch
         self.repository = repository
         self.prediction_length = prediction_length
-        self.num_samples = num_samples
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         # Initialize the ChronosPipeline with a pretrained model from the specified repository
         from chronos import BaseChronosPipeline, ChronosBoltPipeline
@@ -285,7 +282,6 @@ class ChronosModel(mlflow.pyfunc.PythonModel):
         forecast = self.pipeline.predict(
             context=history,
             prediction_length=self.prediction_length,
-            #num_samples=self.num_samples,
         )
         return forecast.numpy()
 
