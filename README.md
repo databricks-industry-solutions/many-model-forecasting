@@ -186,7 +186,7 @@ We encourage you to read through [examples/global_daily.py](https://github.com/d
 
 ### Foundation Models
 
-Foundation time series models are transformer based models pretrained on millions or billions of time points. These models can perform analysis (i.e. forecasting, anomaly detection, classification) on a previously unseen time series without training or tuning. We support open source models from multiple sources: [chronos](https://github.com/amazon-science/chronos-forecasting), [timesfm](https://github.com/google-research/timesfm), [moirai](https://blog.salesforceairesearch.com/moirai/), and [moment](https://github.com/moment-timeseries-foundation-model/moment). Covariates (i.e. exogenous regressors) and fine-tuning are currently not yet supported. This is a rapidly changing field, and we are working on updating the supported models and new features as the field evolves.
+Foundation time series models are mostly transformer based models pretrained on millions or billions of time points. These models can perform analysis (i.e. forecasting, anomaly detection, classification) on a previously unseen time series without training or tuning. We support open source models from multiple sources: [chronos](https://github.com/amazon-science/chronos-forecasting), [timesfm](https://github.com/google-research/timesfm), and [moirai](https://blog.salesforceairesearch.com/moirai/). Covariates (i.e. exogenous regressors) and fine-tuning are currently not yet supported. This is a rapidly changing field, and we are working on updating the supported models and new features as the field evolves.
 
 To get started, attach the [examples/foundation_daily.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/foundation_daily.py) notebook to a cluster running [DBR 14.3 LTS for ML](https://docs.databricks.com/en/release-notes/runtime/index.html) or later versions. We recommend using a single-node cluster with multiple GPU instances such as [g4dn.12xlarge [T4]](https://aws.amazon.com/ec2/instance-types/g4/) on AWS or [Standard_NC64as_T4_v3](https://learn.microsoft.com/en-us/azure/virtual-machines/nct4-v3-series) on Azure. Multi-node setup is currently not supported. 
 
@@ -199,12 +199,15 @@ active_models = [
     "ChronosT5Small",
     "ChronosT5Base",
     "ChronosT5Large",
+    "ChronosBoltTiny",
+    "ChronosBoltMini",
+    "ChronosBoltSmall",
+    "ChronosBoltBase",
     "MoiraiSmall",
     "MoiraiBase",
     "MoiraiLarge",
     "TimesFM_1_0_200m",
     "TimesFM_2_0_500m",
-    "Moment1Large",
 ]
 ```
 
@@ -230,7 +233,7 @@ We encourage you to read through [examples/foundation_daily.py](https://github.c
 
 #### Using Time Series Foundation Models on Databricks
 
-If you want to try out time series foundation models on Databricks without MMF, you can find example notebooks in [examples/foundation-model-examples](https://github.com/databricks-industry-solutions/many-model-forecasting/tree/main/examples/foundation-model-examples). These notebooks will show you how you can load, distribute the inference, fine-tune, register, deploy a model and generate online forecasts on it. We have notebooks for [TimeGPT](https://docs.nixtla.io/), [Chronos](https://github.com/amazon-science/chronos-forecasting), [Moirai](https://github.com/SalesforceAIResearch/uni2ts), [Moment](https://github.com/moment-timeseries-foundation-model/moment), and [TimesFM](https://github.com/google-research/timesfm).
+If you want to try out time series foundation models on Databricks without MMF, you can find example notebooks in [databricks-industry-solutions/transformer_forecasting](https://github.com/databricks-industry-solutions/transformer_forecasting). These notebooks will show you how you can load, distribute the inference, fine-tune, register, deploy a model and generate online forecasts on it. We have notebooks for [TimeGPT](https://docs.nixtla.io/), [Chronos](https://github.com/amazon-science/chronos-forecasting), [Moirai](https://github.com/SalesforceAIResearch/uni2ts), [Moment](https://github.com/moment-timeseries-foundation-model/moment), and [TimesFM](https://github.com/google-research/timesfm).
 
 ## [Vector Lab](https://www.youtube.com/@VectorLab) - Many Model Forecasting
 
