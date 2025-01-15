@@ -126,12 +126,15 @@ active_models = [
     "ChronosT5Small",
     "ChronosT5Base",
     "ChronosT5Large",
+    "ChronosBoltTiny",
+    "ChronosBoltMini",
+    "ChronosBoltSmall",
+    "ChronosBoltBase",
     "MoiraiSmall",
     "MoiraiBase",
     "MoiraiLarge",
     "TimesFM_1_0_200m",
     "TimesFM_2_0_500m",
-    "Moment1Large",
 ]
 
 # COMMAND ----------

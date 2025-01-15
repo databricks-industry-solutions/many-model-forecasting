@@ -376,6 +376,38 @@ models:
     num_samples: 10
     batch_size: 2
 
+  ChronosBoltTiny:
+    module: mmf_sa.models.chronosforecast.ChronosPipeline
+    model_class: ChronosBoltTiny
+    framework: Chronos
+    model_type: foundation
+    num_samples: 10
+    batch_size: 16
+
+  ChronosBoltMini:
+    module: mmf_sa.models.chronosforecast.ChronosPipeline
+    model_class: ChronosBoltMini
+    framework: Chronos
+    model_type: foundation
+    num_samples: 10
+    batch_size: 16
+
+  ChronosBoltSmall:
+    module: mmf_sa.models.chronosforecast.ChronosPipeline
+    model_class: ChronosBoltSmall
+    framework: Chronos
+    model_type: foundation
+    num_samples: 10
+    batch_size: 16
+
+  ChronosBoltBase:
+    module: mmf_sa.models.chronosforecast.ChronosPipeline
+    model_class: ChronosBoltBase
+    framework: Chronos
+    model_type: foundation
+    num_samples: 10
+    batch_size: 16
+
   MoiraiBase:
     module: mmf_sa.models.moiraiforecast.MoiraiPipeline
     model_class: MoiraiBase

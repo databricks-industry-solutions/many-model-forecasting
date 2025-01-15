@@ -1,6 +1,3 @@
-from abc import ABC
-import sys
-import subprocess
 import pandas as pd
 import numpy as np
 import torch
@@ -24,17 +21,13 @@ class ChronosForecaster(ForecastingRegressor):
         self.params = params
         self.device = None
         self.model = None
-        self.install("git+https://github.com/amazon-science/chronos-forecasting.git")
-
-    @staticmethod
-    def install(package: str):
-        subprocess.check_call([sys.executable, "-m", "pip", "install", package, "--quiet"])
 
     def register(self, registered_model_name: str):
         pipeline = ChronosModel(
             self.repo,
             self.params["prediction_length"],
             self.params["num_samples"],
+            self.device,
         )
         input_schema = Schema([TensorSpec(np.dtype(np.double), (-1, -1))])
         output_schema = Schema([TensorSpec(np.dtype(np.uint8), (-1, -1, -1))])
@@ -46,8 +39,12 @@ class ChronosForecaster(ForecastingRegressor):
             registered_model_name=registered_model_name,
             signature=signature,
             input_example=input_example,
-            pip_requirements=[
-                "git+https://github.com/amazon-science/chronos-forecasting.git",
+            pip_requirements=[  # List of pip requirements
+                "torch==2.3.1",
+                "torchvision==0.18.1",
+                "transformers==4.41.2",
+                "cloudpickle==2.2.1",
+                "chronos-forecasting",
                 "git+https://github.com/databricks-industry-solutions/many-model-forecasting.git",
                 "pyspark==3.5.0",
             ],
@@ -169,12 +166,20 @@ class ChronosForecaster(ForecastingRegressor):
             import torch
             import numpy as np
             import pandas as pd
-            from chronos import ChronosPipeline
-            pipeline = ChronosPipeline.from_pretrained(
-                self.repo,
-                device_map="auto",
-                torch_dtype=torch.bfloat16,
-            )
+            # Initialize the ChronosPipeline with a pretrained model from the specified repository
+            from chronos import BaseChronosPipeline, ChronosBoltPipeline
+            if "bolt" in self.repo:
+                pipeline = ChronosBoltPipeline.from_pretrained(
+                    self.repo,
+                    device_map=self.device,
+                    torch_dtype=torch.bfloat16,
+                )
+            else:
+                pipeline = BaseChronosPipeline.from_pretrained(
+                    self.repo,
+                    device_map=self.device,
+                    torch_dtype=torch.bfloat16,
+                )
             # inference
             for bulk in bulk_iterator:
                 median = []
@@ -184,7 +189,7 @@ class ChronosForecaster(ForecastingRegressor):
                     forecasts = pipeline.predict(
                         context=contexts,
                         prediction_length=self.params["prediction_length"],
-                        num_samples=self.params["num_samples"],
+                        #num_samples=self.params["num_samples"],
                     )
                     median.extend([np.median(forecast, axis=0) for forecast in forecasts])
             yield pd.Series(median)
@@ -226,25 +231,61 @@ class ChronosT5Large(ChronosForecaster):
         self.repo = "amazon/chronos-t5-large"
 
 
+class ChronosBoltTiny(ChronosForecaster):
+    def __init__(self, params):
+        super().__init__(params)
+        self.params = params
+        self.repo = "amazon/chronos-bolt-tiny"
+
+
+class ChronosBoltMini(ChronosForecaster):
+    def __init__(self, params):
+        super().__init__(params)
+        self.params = params
+        self.repo = "amazon/chronos-bolt-mini"
+
+
+class ChronosBoltSmall(ChronosForecaster):
+    def __init__(self, params):
+        super().__init__(params)
+        self.params = params
+        self.repo = "amazon/chronos-bolt-small"
+
+class ChronosBoltBase(ChronosForecaster):
+    def __init__(self, params):
+        super().__init__(params)
+        self.params = params
+        self.repo = "amazon/chronos-bolt-base"
+
+
 class ChronosModel(mlflow.pyfunc.PythonModel):
-    def __init__(self, repository, prediction_length, num_samples):
+    def __init__(self, repository, prediction_length, num_samples, device):
         import torch
-        from chronos import ChronosPipeline
         self.repository = repository
         self.prediction_length = prediction_length
         self.num_samples = num_samples
-        self.pipeline = ChronosPipeline.from_pretrained(
-            self.repository,
-            device_map="cuda",
-            torch_dtype=torch.bfloat16,
-        )
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        # Initialize the ChronosPipeline with a pretrained model from the specified repository
+        from chronos import BaseChronosPipeline, ChronosBoltPipeline
+        if "bolt" in self.repository:
+            self.pipeline = ChronosBoltPipeline.from_pretrained(
+                self.repository,
+                device_map=self.device,
+                torch_dtype=torch.bfloat16,
+            )
+        else:
+            self.pipeline = BaseChronosPipeline.from_pretrained(
+                self.repository,
+                device_map=self.device,
+                torch_dtype=torch.bfloat16,
+            )
 
     def predict(self, context, input_data, params=None):
         history = [torch.tensor(list(series)) for series in input_data]
         forecast = self.pipeline.predict(
             context=history,
             prediction_length=self.prediction_length,
-            num_samples=self.num_samples,
+            #num_samples=self.num_samples,
         )
         return forecast.numpy()
 
