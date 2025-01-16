@@ -383,7 +383,6 @@ class Forecaster:
                 spark=self.spark,
                 # backtest_retrain=self.conf["backtest_retrain"],
             ))
-
         group_id_dtype = IntegerType() \
             if train_df[self.conf["group_id"]].dtype == 'int' else StringType()
 
@@ -399,7 +398,6 @@ class Forecaster:
             ]
         )
         res_sdf = self.spark.createDataFrame(res_pdf, schema)
-
         # Write evaluation results to a delta table
         if write:
             if self.conf.get("evaluation_output", None):
@@ -413,7 +411,6 @@ class Forecaster:
                     .write.mode("append")
                     .saveAsTable(self.conf.get("evaluation_output"))
                 )
-
         # Compute aggregated metrics
         res_df = (
             res_sdf.groupby(["metric_name"])
