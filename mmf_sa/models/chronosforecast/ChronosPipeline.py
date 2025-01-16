@@ -90,7 +90,6 @@ class ChronosForecaster(ForecastingRegressor):
                 horizon_timestamps_udf(hist_df.ds).alias("ds"),
                 forecast_udf(hist_df.y).alias("y"))
         ).toPandas()
-
         forecast_df = forecast_df.reset_index(drop=False).rename(
             columns={
                 "unique_id": self.params.group_id,
@@ -98,7 +97,6 @@ class ChronosForecaster(ForecastingRegressor):
                 "y": self.params.target,
             }
         )
-
         # Todo
         # forecast_df[self.params.target] = forecast_df[self.params.target].clip(0.01)
         return forecast_df, self.model
@@ -165,19 +163,13 @@ class ChronosForecaster(ForecastingRegressor):
             import numpy as np
             import pandas as pd
             # Initialize the ChronosPipeline with a pretrained model from the specified repository
-            from chronos import BaseChronosPipeline, ChronosBoltPipeline
-            if "bolt" in self.repo:
-                pipeline = ChronosBoltPipeline.from_pretrained(
-                    self.repo,
-                    device_map=self.device,
-                    torch_dtype=torch.bfloat16,
-                )
-            else:
-                pipeline = BaseChronosPipeline.from_pretrained(
-                    self.repo,
-                    device_map=self.device,
-                    torch_dtype=torch.bfloat16,
-                )
+            from chronos import BaseChronosPipeline
+            pipeline = BaseChronosPipeline.from_pretrained(
+                self.repo,
+                device_map='cuda',
+                torch_dtype=torch.bfloat16,
+            )
+
             # inference
             for bulk in bulk_iterator:
                 median = []
@@ -262,19 +254,12 @@ class ChronosModel(mlflow.pyfunc.PythonModel):
         self.prediction_length = prediction_length
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         # Initialize the ChronosPipeline with a pretrained model from the specified repository
-        from chronos import BaseChronosPipeline, ChronosBoltPipeline
-        if "bolt" in self.repository:
-            self.pipeline = ChronosBoltPipeline.from_pretrained(
-                self.repository,
-                device_map=self.device,
-                torch_dtype=torch.bfloat16,
-            )
-        else:
-            self.pipeline = BaseChronosPipeline.from_pretrained(
-                self.repository,
-                device_map=self.device,
-                torch_dtype=torch.bfloat16,
-            )
+        from chronos import BaseChronosPipeline
+        self.pipeline = BaseChronosPipeline.from_pretrained(
+            self.repository,
+            device_map='cuda',
+            torch_dtype=torch.bfloat16,
+        )
 
     def predict(self, context, input_data, params=None):
         history = [torch.tensor(list(series)) for series in input_data]
