@@ -1,5 +1,5 @@
 -r requirements.txt
-neuralforecast==1.7.2
+neuralforecast==2.0.0
 timesfm[torch]
 chronos-forecasting
 uni2ts

@@ -54,7 +54,7 @@ class NeuralFcForecaster(ForecastingRegressor):
             signature=signature,
             pip_requirements=[
                 "cloudpickle==2.2.1",
-                "neuralforecast==1.7.2",
+                "neuralforecast==2.0.0",
                 "git+https://github.com/databricks-industry-solutions/many-model-forecasting.git",
                 "pyspark==3.5.0",
             ],
