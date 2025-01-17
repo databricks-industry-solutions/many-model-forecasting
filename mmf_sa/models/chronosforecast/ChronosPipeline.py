@@ -248,15 +248,15 @@ class ChronosBoltBase(ChronosForecaster):
 
 
 class ChronosModel(mlflow.pyfunc.PythonModel):
-    def __init__(self, repository, prediction_length):
+    def __init__(self, repo, prediction_length):
         import torch
-        self.repository = repository
+        self.repo = repo
         self.prediction_length = prediction_length
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        # Initialize the ChronosPipeline with a pretrained model from the specified repository
+        # Initialize the BaseChronosPipeline with a pretrained model from the specified repository
         from chronos import BaseChronosPipeline
         self.pipeline = BaseChronosPipeline.from_pretrained(
-            self.repository,
+            self.repo,
             device_map='cuda',
             torch_dtype=torch.bfloat16,
         )

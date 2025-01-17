@@ -1,5 +1,8 @@
 import pandas as pd
 import numpy as np
+import mlflow
+from mlflow.models import ModelSignature, infer_signature
+from mlflow.types.schema import Schema, ColSpec
 from sktime.performance_metrics.forecasting import (
     MeanAbsoluteError,
     MeanSquaredError,
@@ -29,6 +32,38 @@ class NeuralFcForecaster(ForecastingRegressor):
         super().__init__(params)
         self.params = params
         self.model = None
+
+    def register(self, model, registered_model_name: str, input_example, run_id):
+        pipeline = NeuralForecastModel(model)
+        # Prepare model signature for model registry
+        input_schema = infer_signature(model_input=input_example).inputs
+        output_schema = Schema(
+            [
+                ColSpec("integer", "index"),
+                ColSpec("string", self.params.group_id),
+                ColSpec("datetime", self.params.date_col),
+                ColSpec("float", self.params.target),
+            ]
+        )
+        signature = ModelSignature(inputs=input_schema, outputs=output_schema)
+        model_info = mlflow.pyfunc.log_model(
+            "model",
+            python_model=pipeline,
+            registered_model_name=registered_model_name,
+            #input_example=input_example,
+            signature=signature,
+            pip_requirements=[
+                "cloudpickle==2.2.1",
+                "neuralforecast==1.7.2",
+                "git+https://github.com/databricks-industry-solutions/many-model-forecasting.git",
+                "pyspark==3.5.0",
+            ],
+        )
+        mlflow.log_params(model.get_params())
+        mlflow.set_tag("run_id", run_id)
+        mlflow.set_tag("model_name", model.params["name"])
+        print(f"Model registered: {registered_model_name}")
+        return model_info
 
     def prepare_data(self, df: pd.DataFrame, future: bool = False) -> pd.DataFrame:
         if future:
@@ -680,3 +715,12 @@ class NeuralFcAutoPatchTST(NeuralFcForecaster):
             ],
             freq=self.params["freq"]
         )
+
+
+class NeuralForecastModel(mlflow.pyfunc.PythonModel):
+    def __init__(self, pipeline):
+        self.pipeline = pipeline
+
+    def predict(self, context, input_data, params=None):
+        forecast, model = self.pipeline.forecast(input_data)
+        return forecast

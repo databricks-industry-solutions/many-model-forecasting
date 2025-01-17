@@ -11,8 +11,6 @@ import numpy as np
 import cloudpickle
 import mlflow
 from mlflow.tracking import MlflowClient
-from mlflow.models import ModelSignature, infer_signature
-from mlflow.types.schema import Schema, ColSpec
 from omegaconf import OmegaConf
 from omegaconf.basecontainer import BaseContainer
 from pyspark.sql import SparkSession, DataFrame
@@ -313,37 +311,17 @@ class Forecaster:
             train_df, val_df = self.split_df_train_val(hist_df)
 
             # First, we train the model on the entire history (train_df, val_df).
-            # Then we register this model as our final model in Unity Catalog.
+            # Then, we register this model as our final model in Unity Catalog.
             final_model = self.model_registry.get_model(model_name)
             final_model.fit(pd.concat([train_df, val_df]))
             input_example = train_df[train_df[self.conf['group_id']] == train_df[self.conf['group_id']] \
-                .unique()[0]].sort_values(by=[self.conf['date_col']])
-
-            # Prepare model signature for model registry
-            input_schema = infer_signature(model_input=input_example).inputs
-            output_schema = Schema(
-                [
-                    ColSpec("integer", "index"),
-                    ColSpec("string", self.conf['group_id']),
-                    ColSpec("datetime", self.conf['date_col']),
-                    ColSpec("float", self.conf['target']),
-                ]
-            )
-            signature = ModelSignature(inputs=input_schema, outputs=output_schema)
-
-            # Register the model
-            model_info = mlflow.sklearn.log_model(
-                final_model,
-                "model",
+                        .unique()[0]].sort_values(by=[self.conf['date_col']])
+            model_info = final_model.register(
+                model=final_model,
                 registered_model_name=f"{self.conf['model_output']}.{model_conf['name']}_{self.conf['use_case_name']}",
                 input_example=input_example,
-                signature=signature,
-                pip_requirements=[],
+                run_id=self.run_id,
             )
-            mlflow.log_params(final_model.get_params())
-            mlflow.set_tag("run_id", self.run_id)
-            mlflow.set_tag("model_name", final_model.params["name"])
-            print(f"Model registered: {self.conf['model_output']}.{model_conf['name']}_{self.conf['use_case_name']}")
 
             # Next, we train the model only with train_df and run detailed backtesting
             model = self.model_registry.get_model(model_name)
@@ -565,7 +543,7 @@ class Forecaster:
         print(f"Running scoring for {model_conf['name']}...")
         model, model_uri = self.get_model_for_scoring(model_conf)
         score_df, removed = self.prepare_data_for_global_model("scoring")
-        prediction_df, model_fitted = model.forecast(score_df)
+        prediction_df = model.predict(score_df)
         if prediction_df[self.conf["date_col"]].dtype.type != np.datetime64:
             prediction_df[self.conf["date_col"]] = prediction_df[
                 self.conf["date_col"]
@@ -630,7 +608,7 @@ class Forecaster:
         model_version = model_info.version
         model_uri = f"runs:/{model_info.run_id}/model"
         if model_conf.get("model_type", None) == "global":
-            model = mlflow.sklearn.load_model(f"models:/{registered_name}/{model_version}")
+            model = mlflow.pyfunc.load_model(f"models:/{registered_name}/{model_version}")
             return model, model_uri
         elif model_conf.get("model_type", None) == "foundation":
             return None, model_uri
