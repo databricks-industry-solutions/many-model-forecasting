@@ -21,6 +21,7 @@ class MoiraiForecaster(ForecastingRegressor):
         self.params = params
         self.device = None
         self.model = None
+        self.repo = None
 
     def register(self, registered_model_name: str):
         pipeline = MoiraiModel(
@@ -253,24 +254,24 @@ class MoiraiMoELarge(MoiraiForecaster):
         self.repo = "Salesforce/moirai-moe-1.0-R-large"
 
 class MoiraiModel(mlflow.pyfunc.PythonModel):
-    def __init__(self, repository, prediction_length, patch_size, num_samples):
+    def __init__(self, repo, prediction_length, patch_size, num_samples):
         from uni2ts.model.moirai import MoiraiForecast, MoiraiModule
         from uni2ts.model.moirai_moe import MoiraiMoEForecast, MoiraiMoEModule
-        self.repository = repository
+        self.repo = repo
         self.prediction_length = prediction_length
         self.patch_size = patch_size
         self.num_samples = num_samples
-        if 'moe' in self.repository:
-            self.module = MoiraiMoEModule.from_pretrained(self.repository)
+        if 'moe' in self.repo:
+            self.module = MoiraiMoEModule.from_pretrained(self.repo)
         else:
-            self.module = MoiraiModule.from_pretrained(self.repository)
+            self.module = MoiraiModule.from_pretrained(self.repo)
         self.pipeline = None
 
     def predict(self, context, input_data, params=None):
         from einops import rearrange
         from uni2ts.model.moirai import MoiraiForecast, MoiraiModule
         from uni2ts.model.moirai_moe import MoiraiMoEForecast, MoiraiMoEModule
-        if 'moe' in self.repository:
+        if 'moe' in self.repo:
             self.pipeline = MoiraiMoEForecast(
                 module=self.module,
                 prediction_length=self.prediction_length,

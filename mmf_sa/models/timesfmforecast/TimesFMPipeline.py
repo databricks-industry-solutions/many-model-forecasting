@@ -18,9 +18,10 @@ class TimesFMForecaster(ForecastingRegressor):
         self.params = params
         self.device = None
         self.model = None
+        self.repo = None
 
     def register(self, registered_model_name: str):
-        pipeline = TimesFMModel(self.params)
+        pipeline = TimesFMModel(self.params, self.repo)
         input_schema = Schema([TensorSpec(np.dtype(np.double), (-1, -1))])
         output_schema = Schema([TensorSpec(np.dtype(np.uint8), (-1, -1))])
         signature = ModelSignature(inputs=input_schema, outputs=output_schema)
@@ -142,11 +143,11 @@ class TimesFM_1_0_200m(TimesFMForecaster):
         super().__init__(params)
         import timesfm
         self.params = params
-        self.backend = "gpu" if torch.cuda.is_available() else "cpu"
+        #self.backend = "gpu" if torch.cuda.is_available() else "cpu"
         self.repo = "google/timesfm-1.0-200m-pytorch"
         self.model = timesfm.TimesFm(
             hparams=timesfm.TimesFmHparams(
-                backend=self.backend,
+                backend="gpu",
                 per_core_batch_size=32,
                 horizon_len=self.params.prediction_length,
             ),
@@ -160,11 +161,11 @@ class TimesFM_2_0_500m(TimesFMForecaster):
         super().__init__(params)
         import timesfm
         self.params = params
-        self.backend = "gpu" if torch.cuda.is_available() else "cpu"
+        #self.backend = "gpu" if torch.cuda.is_available() else "cpu"
         self.repo = "google/timesfm-2.0-500m-pytorch"
         self.model = timesfm.TimesFm(
             hparams=timesfm.TimesFmHparams(
-                backend=self.backend,
+                backend="gpu",
                 per_core_batch_size=32,
                 horizon_len=self.params.prediction_length,
                 num_layers=50,
@@ -177,28 +178,23 @@ class TimesFM_2_0_500m(TimesFMForecaster):
         )
 
 class TimesFMModel(mlflow.pyfunc.PythonModel):
-    def __init__(self, params):
-        self.params = params
-        self.model = None  # Initialize the model attribute to None
-
-    def load_model(self):
-        # Initialize the TimesFm model with specified parameters
+    def __init__(self, params, repo):
         import timesfm
+        self.params = params
+        self.repo = repo
+        #self.backend = "gpu" if torch.cuda.is_available() else "cpu"
         self.model = timesfm.TimesFm(
             hparams=timesfm.TimesFmHparams(
-                backend=self.params.device,
+                backend="gpu",
                 per_core_batch_size=32,
                 horizon_len=self.params.prediction_length,
             ),
             checkpoint=timesfm.TimesFmCheckpoint(
-                huggingface_repo_id=self.params.repo
+                huggingface_repo_id=self.repo,
             ),
         )
 
     def predict(self, context, input_df, params=None):
-        # Load the model if it hasn't been loaded yet
-        if self.model is None:
-            self.load_model()
         # Generate forecasts on the input DataFrame
         forecast_df = self.model.forecast_on_df(
             inputs=input_df,  # Input DataFrame containing the time series data.
