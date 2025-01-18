@@ -251,3 +251,28 @@ If you want to try out time series foundation models on Databricks without MMF, 
 Please note the code in this project is provided for your exploration only, and are not formally supported by Databricks with Service Level Agreements (SLAs). They are provided AS-IS and we do not make any guarantees of any kind. Please do not submit a support ticket relating to any issues arising from the use of these projects. The source in this project is provided subject to the Databricks License. All included or referenced third party libraries are subject to the licenses set forth below.
 
 Any issues discovered through the use of this project should be filed as GitHub Issues on the Repo. They will be reviewed as time permits, but there are no formal SLAs for support.
+
+| library                                | description             | license    | source                                              |
+|----------------------------------------|-------------------------|------------|-----------------------------------------------------|
+| rpy2 | Python interface to the R language (embedded R) | GNU General Public License v2 or later | https://pypi.org/project/rpy2/
+| kaleido | Static image export for web-based visualization libraries with zero dependencies | MIT | https://pypi.org/project/kaleido/
+| fugue | An abstraction layer for distributed computation | Apache 2.0 | https://pypi.org/project/fugue/
+| Jinja2 | A very fast and expressive template engine | BSD | https://pypi.org/project/Jinja2/
+| omegaconf | A flexible configuration library | BSD | https://pypi.org/project/omegaconf/
+| missingno | Missing data visualization module for Python | MIT | https://pypi.org/project/missingno/
+| datasetsforecast | Datasets for Time series forecasting | MIT | https://pypi.org/project/datasetsforecast/
+| statsforecast | Time series forecasting suite using statistical models | Apache 2.0 | https://pypi.org/project/statsforecast/
+| neuralforecast | Time series forecasting suite using deep learning models | Apache 2.0 | https://pypi.org/project/neuralforecast/
+| fable | Forecasting Models for Tidy Time Series | GPL-3 | https://cran.r-project.org/web/packages/fable/index.html
+| fabletools | Core Tools for Packages in the 'fable' Framework | GPL-3 | https://cran.r-project.org/web/packages/fabletools/index.html
+| feasts | Feature Extraction and Statistics for Time Series | GPL-3 | https://cran.r-project.org/web/packages/feasts/index.html
+| lazyeval | Lazy (Non-Standard) Evaluation | GPL-3 | https://cran.r-project.org/web/packages/lazyeval/index.html
+| tsibble | Tidy Temporal Data Frames and Tools | GPL-3 | https://cran.r-project.org/web/packages/tsibble/index.html
+| urca | Unit Root and Cointegration Tests for Time Series Data | GPL-3 | https://cran.r-project.org/web/packages/urca/index.html
+| sktime | A unified framework for machine learning with time series | BSD 3-Clause | https://pypi.org/project/sktime/
+| tbats | BATS and TBATS for time series forecasting | MIT | https://pypi.org/project/tbats/
+| lightgbm | LightGBM Python Package | MIT | https://pypi.org/project/lightgbm/
+| Chronos | Pretrained (Language) Models for Probabilistic Time Series Forecasting | Apache 2.0 | https://github.com/amazon-science/chronos-forecasting
+| Moirai | Unified Training of Universal Time Series Forecasting Transformers | Apache 2.0 | https://github.com/SalesforceAIResearch/uni2ts
+| Moment | A Family of Open Time-series Foundation Models | MIT | https://github.com/moment-timeseries-foundation-model/moment
+| TimesFM | A pretrained time-series foundation model developed by Google Research for time-series forecasting | Apache 2.0 | https://github.com/google-research/timesfm
