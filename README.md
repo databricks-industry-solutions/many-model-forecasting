@@ -95,7 +95,7 @@ run_forecast(
 - ```group_id``` is a column storing the unique id that groups your dataset to each time series.
 - ```date_col``` is your time column name.
 - ```target``` is your target column name.
-- ```freq``` is your prediction frequency. Currently, "D" for daily and "M" for monthly are supported. Note that ```freq``` supported is as per the model basis, hence check the model documentation carefully.
+- ```freq``` is your prediction frequency. Currently, "D" for daily and "M" for monthly are supported. Note that ```freq``` supported is as per the model basis, hence check the model documentation carefully. Monthly forecasting expects the timestamp column in ```train_data``` and ```scoring_output``` to be the last day of the month.
 - ```prediction_length``` is your forecasting horizon in the number of steps.
 - ```backtest_months``` specifies how many previous months you use for backtesting. 
 - ```stride``` is the number of steps in which you update your backtesting trial start date when going from one trial to the next.

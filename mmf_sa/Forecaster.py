@@ -75,6 +75,9 @@ class Forecaster:
         Parameters: self (Forecaster): A Forecaster object.
         Returns: experiment_id (str): A string specifying the experiment id.
         """
+        parent_dir = os.path.dirname(f'/Workspace{self.conf["experiment_path"]}')
+        if not os.path.exists(parent_dir):
+            os.makedirs(parent_dir)
         mlflow.set_experiment(self.conf["experiment_path"])
         experiment_id = (
             MlflowClient()

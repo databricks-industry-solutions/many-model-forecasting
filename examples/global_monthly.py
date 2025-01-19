@@ -44,7 +44,7 @@ from datasetsforecast.m4 import M4
 # COMMAND ----------
 
 # Number of time series
-n = 100
+n = 1000
 
 
 def create_m4_monthly():
@@ -112,6 +112,11 @@ display(spark.sql(f"select unique_id, count(date) as count from {catalog}.{db}.m
 display(
   spark.sql(f"select * from {catalog}.{db}.m4_monthly_train where unique_id in ('M1', 'M2', 'M3', 'M4', 'M5') order by unique_id, date")
   )
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC Note that monthly forecasting requires the timestamp column to represent the last day of each month.
 
 # COMMAND ----------
 

@@ -51,7 +51,7 @@ from mmf_sa import run_forecast
 # COMMAND ----------
 
 # Number of time series
-n = 100
+n = 1000
 
 
 def create_m4_daily():
@@ -151,8 +151,8 @@ active_models = [
     "RFableNNETAR",
     "RFableEnsemble",
     "RDynamicHarmonicRegression",
-    "SKTimeTBats",
-    "SKTimeLgbmDsDt",
+    #"SKTimeTBats",
+    #"SKTimeLgbmDsDt",
     ]
 
 # COMMAND ----------

@@ -52,7 +52,7 @@ from mmf_sa import run_forecast
 # COMMAND ----------
 
 # Number of time series
-n = 100
+n = 1000
 
 
 def create_m4_monthly():
@@ -130,6 +130,11 @@ if n > sc.defaultParallelism:
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC Note that monthly forecasting requires the timestamp column to represent the last day of each month.
+
+# COMMAND ----------
+
 # MAGIC %md ### Models
 # MAGIC Let's configure a list of models we are going to apply to our time series for evaluation and forecasting. A comprehensive list of all supported models is available in [mmf_sa/models/models_conf.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/models_conf.yaml). Look for the models where `model_type: local`; these are the local models we import from [statsforecast](https://github.com/Nixtla/statsforecast), [r fable](https://cran.r-project.org/web/packages/fable/vignettes/fable.html) and [sktime](https://github.com/sktime/sktime). Check their documentations for the description of each model. 
 
@@ -155,8 +160,8 @@ active_models = [
     "RFableNNETAR",
     "RFableEnsemble",
     "RDynamicHarmonicRegression",
-    "SKTimeTBats",
-    "SKTimeLgbmDsDt",
+    #"SKTimeTBats",
+    #"SKTimeLgbmDsDt",
 ]
 
 # COMMAND ----------

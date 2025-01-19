@@ -32,7 +32,7 @@ class TimesFMForecaster(ForecastingRegressor):
             signature=signature,
             #input_example=input_example,
             pip_requirements=[
-                "timesfm[torch]",
+                "timesfm[torch]==1.2.7",
                 "git+https://github.com/databricks-industry-solutions/many-model-forecasting.git",
                 "pyspark==3.5.0",
             ],
@@ -183,15 +183,30 @@ class TimesFMModel(mlflow.pyfunc.PythonModel):
         self.params = params
         self.repo = repo
         #self.backend = "gpu" if torch.cuda.is_available() else "cpu"
-        self.model = timesfm.TimesFm(
-            hparams=timesfm.TimesFmHparams(
-                backend="gpu",
-                per_core_batch_size=32,
-                horizon_len=self.params.prediction_length,
-            ),
-            checkpoint=timesfm.TimesFmCheckpoint(
-                huggingface_repo_id=self.repo,
-            ),
+        if self.repo == "google/timesfm-1.0-200m-pytorch":
+            self.model = timesfm.TimesFm(
+                hparams=timesfm.TimesFmHparams(
+                    backend="gpu",
+                    per_core_batch_size=32,
+                    horizon_len=self.params.prediction_length,
+                ),
+                checkpoint=timesfm.TimesFmCheckpoint(
+                    huggingface_repo_id=self.repo,
+                ),
+            )
+        else:
+            self.model = timesfm.TimesFm(
+                hparams=timesfm.TimesFmHparams(
+                    backend="gpu",
+                    per_core_batch_size=32,
+                    horizon_len=self.params.prediction_length,
+                    num_layers=50,
+                    use_positional_embedding=False,
+                    context_len=2048,
+                ),
+                checkpoint=timesfm.TimesFmCheckpoint(
+                    huggingface_repo_id=self.repo
+                ),
         )
 
     def predict(self, context, input_df, params=None):

@@ -44,7 +44,7 @@ from datasetsforecast.m4 import M4
 # COMMAND ----------
 
 # Number of time series
-n = 100
+n = 1000
 
 
 def create_m4_daily():
@@ -115,21 +115,21 @@ display(
 # COMMAND ----------
 
 active_models = [
-    "ChronosT5Tiny",
-    "ChronosT5Mini",
-    "ChronosT5Small",
-    "ChronosT5Base",
-    "ChronosT5Large",
-    "ChronosBoltTiny",
-    "ChronosBoltMini",
-    "ChronosBoltSmall",
-    "ChronosBoltBase",
-    "MoiraiSmall",
-    "MoiraiBase",
-    "MoiraiLarge",
-    "MoiraiMoESmall",
-    "MoiraiMoEBase",
-    "TimesFM_1_0_200m",
+    #"ChronosT5Tiny",
+    #"ChronosT5Mini",
+    #"ChronosT5Small",
+    #"ChronosT5Base",
+    #"ChronosT5Large",
+    #"ChronosBoltTiny",
+    #"ChronosBoltMini",
+    #"ChronosBoltSmall",
+    #"ChronosBoltBase",
+    #"MoiraiSmall",
+    #"MoiraiBase",
+    #"MoiraiLarge",
+    #"MoiraiMoESmall",
+    #"MoiraiMoEBase",
+    #"TimesFM_1_0_200m",
     "TimesFM_2_0_500m",
 ]
 

@@ -58,7 +58,7 @@ random.seed(7)
 
 # Number of time series to sample
 sample = True
-size = 100
+size = 1000
 stores = sorted(random.sample(range(0, 1000), size))
 
 train = spark.read.csv(f"/Volumes/{catalog}/{db}/{volume}/train.csv", header=True, inferSchema=True)
@@ -126,8 +126,8 @@ active_models = [
     "RFableNNETAR",
     "RFableEnsemble",
     "RDynamicHarmonicRegression",
-    "SKTimeTBats",
-    "SKTimeLgbmDsDt",
+    #"SKTimeTBats",
+    #"SKTimeLgbmDsDt",
 ]
 
 # COMMAND ----------

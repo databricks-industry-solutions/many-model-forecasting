@@ -44,7 +44,7 @@ from datasetsforecast.m4 import M4
 # COMMAND ----------
 
 # Number of time series
-n = 100
+n = 1000
 
 
 def create_m4_monthly():
@@ -115,27 +115,32 @@ display(
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC Note that monthly forecasting requires the timestamp column to represent the last day of each month.
+
+# COMMAND ----------
+
 # MAGIC %md ### Models
 # MAGIC Let's configure a list of models we are going to apply to our time series for evaluation and forecasting. A comprehensive list of all supported models is available in [mmf_sa/models/models_conf.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/models_conf.yaml). Look for the models where `model_type: foundation`; these are the foundation models we import from [chronos](https://github.com/amazon-science/chronos-forecasting/tree/main), [uni2ts](https://github.com/SalesforceAIResearch/uni2ts) and [moment](https://github.com/moment-timeseries-foundation-model/moment). Check their documentation for the detailed description of each model. 
 
 # COMMAND ----------
 
 active_models = [
-    "ChronosT5Tiny",
-    "ChronosT5Mini",
-    "ChronosT5Small",
-    "ChronosT5Base",
-    "ChronosT5Large",
-    "ChronosBoltTiny",
-    "ChronosBoltMini",
-    "ChronosBoltSmall",
-    "ChronosBoltBase",
-    "MoiraiSmall",
-    "MoiraiBase",
-    "MoiraiLarge",
-    "MoiraiMoESmall",
-    "MoiraiMoEBase",
-    "TimesFM_1_0_200m",
+    #"ChronosT5Tiny",
+    #"ChronosT5Mini",
+    #"ChronosT5Small",
+    #"ChronosT5Base",
+    #"ChronosT5Large",
+    #"ChronosBoltTiny",
+    #"ChronosBoltMini",
+    #"ChronosBoltSmall",
+    #"ChronosBoltBase",
+    #"MoiraiSmall",
+    #"MoiraiBase",
+    #"MoiraiLarge",
+    #"MoiraiMoESmall",
+    #"MoiraiMoEBase",
+    #"TimesFM_1_0_200m",
     "TimesFM_2_0_500m",
 ]
 
