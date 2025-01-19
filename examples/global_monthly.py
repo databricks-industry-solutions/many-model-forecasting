@@ -44,7 +44,7 @@ from datasetsforecast.m4 import M4
 # COMMAND ----------
 
 # Number of time series
-n = 1000
+n = 100
 
 
 def create_m4_monthly():
