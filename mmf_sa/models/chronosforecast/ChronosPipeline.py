@@ -42,7 +42,7 @@ class ChronosForecaster(ForecastingRegressor):
                 "torchvision==0.18.1",
                 "transformers==4.41.2",
                 "cloudpickle==2.2.1",
-                "chronos-forecasting",
+                "chronos-forecasting==1.4.1",
                 "git+https://github.com/databricks-industry-solutions/many-model-forecasting.git",
                 "pyspark==3.5.0",
             ],

@@ -2,6 +2,7 @@ rpy2==3.5.16
 kaleido==0.2.1
 Jinja2
 omegaconf==2.3.0
+numba==0.60.0
 statsforecast==1.7.4
 missingno==0.5.2
 tbats==1.1.3
