@@ -378,6 +378,9 @@ class Forecaster:
                 StructField("model_pickle", BinaryType()),
             ]
         )
+        # Covert to Python-native types before converting to pyspark dataframe
+        res_pdf['forecast'] = res_pdf['forecast'].apply(lambda x: [float(i) for i in x])
+        res_pdf['actual'] = res_pdf['actual'].apply(lambda x: [float(i) for i in x])
         res_sdf = self.spark.createDataFrame(res_pdf, schema)
         # Write evaluation results to a delta table
         if write:
