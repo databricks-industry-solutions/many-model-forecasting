@@ -217,9 +217,9 @@ class NeuralFcForecaster(ForecastingRegressor):
         else:
             raise Exception(f"Metric {self.params['metric']} not supported!")
         for key in keys:
-            actual = val_df[val_df[self.params["group_id"]] == key][self.params["target"]]
+            actual = val_df[val_df[self.params["group_id"]] == key][self.params["target"]].reset_index(drop=True)
             forecast = pred_df[pred_df[self.params["group_id"]] == key][self.params["target"]].\
-                         iloc[-self.params["prediction_length"]:]
+                         iloc[-self.params["prediction_length"]:].reset_index(drop=True)
             try:
                 if metric_name == "smape":
                     smape = MeanAbsolutePercentageError(symmetric=True)
