@@ -68,27 +68,28 @@ class NeuralFcForecaster(ForecastingRegressor):
         if not future:
             # Prepare historical dataframe with or without exogenous regressors for training
             df[self.params.target] = df[self.params.target].clip(0)
-            if 'dynamic_future' in self.params.keys():
+            features = [self.params.group_id, self.params.date_col, self.params.target]
+            if 'dynamic_future_numerical' in self.params.keys():
                 try:
-                    _df = (
-                        df[[self.params.group_id, self.params.date_col, self.params.target]
-                           + self.params.dynamic_future]
-                    )
+                    features = features + self.params.dynamic_future_numerical
                 except Exception as e:
-                    raise Exception(f"Dynamic future regressor columns missing from "
-                                    f"the training dataset: {e}")
-            elif 'dynamic_historical' in self.params.keys():
+                    raise Exception(f"Dynamic future numerical missing: {e}")
+            if 'dynamic_future_categorical' in self.params.keys():
                 try:
-                    _df = (
-                        df[[self.params.group_id, self.params.date_col, self.params.target]
-                           + self.params.dynamic_historical]
-                    )
+                    features = features + self.params.dynamic_future_categorical
                 except Exception as e:
-                    raise Exception(f"Dynamic historical regressor columns missing from "
-                                    f"the training dataset: {e}")
-            else:
-                _df = df[[self.params.group_id, self.params.date_col, self.params.target]]
-
+                    raise Exception(f"Dynamic future categorical missing: {e}")
+            if 'dynamic_historical_numerical' in self.params.keys():
+                try:
+                    features = features + self.params.dynamic_historical_numerical
+                except Exception as e:
+                    raise Exception(f"Dynamic historical numerical missing: {e}")
+            if 'dynamic_historical_categorical' in self.params.keys():
+                try:
+                    features = features + self.params.dynamic_historical_categorical
+                except Exception as e:
+                    raise Exception(f"Dynamic historical categorical missing: {e}")
+            _df = df[features]
             _df = (
                 _df.rename(
                     columns={
@@ -100,16 +101,18 @@ class NeuralFcForecaster(ForecastingRegressor):
             )
         else:
             # Prepare future dataframe with exogenous regressors for forecasting
-            if 'dynamic_future' in self.params.keys():
+            features = [self.params.group_id, self.params.date_col]
+            if 'dynamic_future_numerical' in self.params.keys():
                 try:
-                    _df = (
-                        df[[self.params.group_id, self.params.date_col]
-                           + self.params.dynamic_future]
-                    )
+                    features = features + self.params.dynamic_future_numerical
                 except Exception as e:
-                    raise Exception(f"Dynamic future regressors missing: {e}")
-            else:
-                _df = df[[self.params.group_id, self.params.date_col]]
+                    raise Exception(f"Dynamic future numerical missing: {e}")
+            if 'dynamic_future_categorical' in self.params.keys():
+                try:
+                    features = features + self.params.dynamic_future_categorical
+                except Exception as e:
+                    raise Exception(f"Dynamic future categorical missing: {e}")
+            _df = df[features]
             _df = (
                 _df.rename(
                     columns={
@@ -118,7 +121,6 @@ class NeuralFcForecaster(ForecastingRegressor):
                     }
                 )
             )
-
         return _df
 
     def prepare_static_features(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -284,8 +286,12 @@ class NeuralFcRNN(NeuralFcForecaster):
                     decoder_layers=self.params.decoder_layers,
                     learning_rate=self.params.learning_rate,
                     stat_exog_list=list(self.params.get("static_features", [])),
-                    futr_exog_list=list(self.params.get("dynamic_future", [])),
-                    hist_exog_list=list(self.params.get("dynamic_historical", [])),
+                    futr_exog_list=list(
+                        self.params.get("dynamic_future_numerical", []) + self.params.get("dynamic_future_categorical", [])
+                    ),
+                    hist_exog_list=list(
+                        self.params.get("dynamic_historical_numerical", []) + self.params.get("dynamic_historical_categorical", [])
+                    ),
                     accelerator=self.params.accelerator,
                     devices=self.devices,
                 ),
@@ -317,8 +323,12 @@ class NeuralFcLSTM(NeuralFcForecaster):
                     decoder_layers=self.params.decoder_layers,
                     learning_rate=self.params.learning_rate,
                     stat_exog_list=list(self.params.get("static_features", [])),
-                    futr_exog_list=list(self.params.get("dynamic_future", [])),
-                    hist_exog_list=list(self.params.get("dynamic_historical", [])),
+                    futr_exog_list=list(
+                        self.params.get("dynamic_future_numerical", []) + self.params.get("dynamic_future_categorical", [])
+                    ),
+                    hist_exog_list=list(
+                        self.params.get("dynamic_historical_numerical", []) + self.params.get("dynamic_historical_categorical", [])
+                    ),
                     accelerator=self.params.accelerator,
                     devices=self.devices,
                 ),
@@ -347,8 +357,12 @@ class NeuralFcNBEATSx(NeuralFcForecaster):
                     n_polynomials=self.params.n_polynomials,
                     dropout_prob_theta=self.params.dropout_prob_theta,
                     stat_exog_list=list(self.params.get("static_features", [])),
-                    futr_exog_list=list(self.params.get("dynamic_future", [])),
-                    hist_exog_list=list(self.params.get("dynamic_historical", [])),
+                    futr_exog_list=list(
+                        self.params.get("dynamic_future_numerical", []) + self.params.get("dynamic_future_categorical", [])
+                    ),
+                    hist_exog_list=list(
+                        self.params.get("dynamic_historical_numerical", []) + self.params.get("dynamic_historical_categorical", [])
+                    ),
                     accelerator=self.params.accelerator,
                     devices=self.devices,
                 ),
@@ -381,8 +395,12 @@ class NeuralFcNHITS(NeuralFcForecaster):
                     interpolation_mode=self.params.interpolation_mode,
                     pooling_mode=self.params.pooling_mode,
                     stat_exog_list=list(self.params.get("static_features", [])),
-                    futr_exog_list=list(self.params.get("dynamic_future", [])),
-                    hist_exog_list=list(self.params.get("dynamic_historical", [])),
+                    futr_exog_list=list(
+                        self.params.get("dynamic_future_numerical", []) + self.params.get("dynamic_future_categorical", [])
+                    ),
+                    hist_exog_list=list(
+                        self.params.get("dynamic_historical_numerical", []) + self.params.get("dynamic_historical_categorical", [])
+                    ),
                     accelerator=self.params.accelerator,
                     devices=self.devices,
                 ),
@@ -406,8 +424,12 @@ class NeuralFcAutoRNN(NeuralFcForecaster):
         )
         self.exogs = {
             'stat_exog_list': list(self.params.get("static_features", [])),
-            'futr_exog_list': list(self.params.get("dynamic_future", [])),
-            'hist_exog_list': list(self.params.get("dynamic_historical", [])),
+            'futr_exog_list': list(
+                self.params.get("dynamic_future_numerical", []) + self.params.get("dynamic_future_categorical", [])
+            ),
+            'hist_exog_list': list(
+                self.params.get("dynamic_historical_numerical", []) + self.params.get("dynamic_historical_categorical", [])
+            ),
         }
 
         def config(trial):
@@ -459,8 +481,12 @@ class NeuralFcAutoLSTM(NeuralFcForecaster):
         )
         self.exogs = {
             'stat_exog_list': list(self.params.get("static_features", [])),
-            'futr_exog_list': list(self.params.get("dynamic_future", [])),
-            'hist_exog_list': list(self.params.get("dynamic_historical", [])),
+            'futr_exog_list': list(
+                self.params.get("dynamic_future_numerical", []) + self.params.get("dynamic_future_categorical", [])
+            ),
+            'hist_exog_list': list(
+                self.params.get("dynamic_historical_numerical", []) + self.params.get("dynamic_historical_categorical", [])
+            ),
         }
 
         def config(trial):
@@ -511,8 +537,12 @@ class NeuralFcAutoNBEATSx(NeuralFcForecaster):
         )
         self.exogs = {
             'stat_exog_list': list(self.params.get("static_features", [])),
-            'futr_exog_list': list(self.params.get("dynamic_future", [])),
-            'hist_exog_list': list(self.params.get("dynamic_historical", [])),
+            'futr_exog_list': list(
+                self.params.get("dynamic_future_numerical", []) + self.params.get("dynamic_future_categorical", [])
+            ),
+            'hist_exog_list': list(
+                self.params.get("dynamic_historical_numerical", []) + self.params.get("dynamic_historical_categorical", [])
+            ),
         }
 
         def config(trial):
@@ -558,8 +588,12 @@ class NeuralFcAutoNHITS(NeuralFcForecaster):
         )
         self.exogs = {
             'stat_exog_list': list(self.params.get("static_features", [])),
-            'futr_exog_list': list(self.params.get("dynamic_future", [])),
-            'hist_exog_list': list(self.params.get("dynamic_historical", [])),
+            'futr_exog_list': list(
+                self.params.get("dynamic_future_numerical", []) + self.params.get("dynamic_future_categorical", [])
+            ),
+            'hist_exog_list': list(
+                self.params.get("dynamic_historical_numerical", []) + self.params.get("dynamic_historical_categorical", [])
+            ),
         }
 
         def config(trial):
@@ -608,8 +642,12 @@ class NeuralFcAutoTiDE(NeuralFcForecaster):
         )
         self.exogs = {
             'stat_exog_list': list(self.params.get("static_features", [])),
-            'futr_exog_list': list(self.params.get("dynamic_future", [])),
-            'hist_exog_list': list(self.params.get("dynamic_historical", [])),
+            'futr_exog_list': list(
+                self.params.get("dynamic_future_numerical", []) + self.params.get("dynamic_future_categorical", [])
+            ),
+            'hist_exog_list': list(
+                self.params.get("dynamic_historical_numerical", []) + self.params.get("dynamic_historical_categorical", [])
+            ),
         }
 
         def config(trial):
@@ -669,8 +707,12 @@ class NeuralFcAutoPatchTST(NeuralFcForecaster):
         )
         self.exogs = {
             'stat_exog_list': list(self.params.get("static_features", [])),
-            'futr_exog_list': list(self.params.get("dynamic_future", [])),
-            'hist_exog_list': list(self.params.get("dynamic_historical", [])),
+            'futr_exog_list': list(
+                self.params.get("dynamic_future_numerical", []) + self.params.get("dynamic_future_categorical", [])
+            ),
+            'hist_exog_list': list(
+                self.params.get("dynamic_historical_numerical", []) + self.params.get("dynamic_historical_categorical", [])
+            ),
         }
 
         def config(trial):

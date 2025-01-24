@@ -32,19 +32,20 @@ class StatsFcForecaster(ForecastingRegressor):
             # Prepare historical dataframe with/out exogenous regressors for training
             # Fix here
             df[self.params.target] = df[self.params.target].clip(0)
-            if 'dynamic_future' in self.params.keys():
+            features = [self.params.group_id, self.params.date_col, self.params.target]
+            if 'dynamic_future_numerical' in self.params.keys():
                 try:
-                    df_statsfc = (
-                        df[[self.params.group_id, self.params.date_col, self.params.target]
-                           + self.params.dynamic_future]
-                    )
+                    features = features + self.params.dynamic_future_numerical
                 except Exception as e:
-                    raise Exception(f"Exogenous regressors missing: {e}")
-            else:
-                df_statsfc = df[[self.params.group_id, self.params.date_col, self.params.target]]
-
-            df_statsfc = (
-                df_statsfc.rename(
+                    raise Exception(f"Dynamic future numerical missing: {e}")
+            if 'dynamic_future_categorical' in self.params.keys():
+                try:
+                    features = features + self.params.dynamic_future_categorical
+                except Exception as e:
+                    raise Exception(f"Dynamic future categorical missing: {e}")
+            _df = df[features]
+            _df = (
+                _df.rename(
                     columns={
                         self.params.group_id: "unique_id",
                         self.params.date_col: "ds",
@@ -54,26 +55,27 @@ class StatsFcForecaster(ForecastingRegressor):
             )
         else:
             # Prepare future dataframe with/out exogenous regressors for forecasting
-            if 'dynamic_future' in self.params.keys():
+            features = [self.params.group_id, self.params.date_col]
+            if 'dynamic_future_numerical' in self.params.keys():
                 try:
-                    df_statsfc = (
-                        df[[self.params.group_id, self.params.date_col]
-                           + self.params.dynamic_future]
-                    )
+                    features = features + self.params.dynamic_future_numerical
                 except Exception as e:
-                    raise Exception(f"Exogenous regressors missing: {e}")
-            else:
-                df_statsfc = df[[self.params.group_id, self.params.date_col]]
-
-            df_statsfc = (
-                df_statsfc.rename(
+                    raise Exception(f"Dynamic future numerical missing: {e}")
+            if 'dynamic_future_categorical' in self.params.keys():
+                try:
+                    features = features + self.params.dynamic_future_categorical
+                except Exception as e:
+                    raise Exception(f"Dynamic future categorical missing: {e}")
+            _df = df[features]
+            _df = (
+                _df.rename(
                     columns={
                         self.params.group_id: "unique_id",
                         self.params.date_col: "ds",
                     }
                 )
             )
-        return df_statsfc
+        return _df
 
     def fit(self, x, y=None):
         self.model = StatsForecast(models=[self.model_spec], freq=self.freq, n_jobs=-1)
@@ -104,7 +106,7 @@ class StatsFcForecaster(ForecastingRegressor):
         _df = df[df[self.params.target].notnull()]
         _df = self.prepare_data(_df)
         self.fit(_df)
-        if 'dynamic_future' in self.params.keys():
+        if 'dynamic_future_numerical' in self.params.keys() or 'dynamic_future_categorical' in self.params.keys():
             _last_date = _df["ds"].max()
             _future_df = df[
                 (df[self.params["date_col"]] > np.datetime64(_last_date))
@@ -124,8 +126,7 @@ class StatsFcForecaster(ForecastingRegressor):
         else:
             forecast_df = self.model.predict(self.params["prediction_length"])
 
-        target = [col for col in forecast_df.columns.to_list()
-                       if col not in ["unique_id", "ds"]][0]
+        target = [col for col in forecast_df.columns.to_list() if col not in ["unique_id", "ds"]][0]
         forecast_df = forecast_df.reset_index(drop=True).rename(
             columns={
                 "unique_id": self.params.group_id,

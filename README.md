@@ -89,7 +89,7 @@ run_forecast(
 #### Parameters description:
 
 - ```train_data``` is a delta table name that stores the input dataset.
-- ```scoring_data``` is a delta table name that stores the [dynamic future regressors](https://nixtlaverse.nixtla.io/neuralforecast/examples/exogenous_variables.html#3-training-with-exogenous-variables). If not provided or if the same name as ```train_data``` is provided, the models will ignore the future dynamical regressors. 
+- ```scoring_data``` is a delta table name that stores the [dynamic future regressors](https://nixtlaverse.nixtla.io/statsforecast/docs/how-to-guides/exogenous.html). If not provided or if the same name as ```train_data``` is provided, the models will ignore the future dynamical regressors. 
 - ```scoring_output``` is a delta table where you write your forecasting output. This table will be created if does not exist
 - ```evaluation_output``` is a delta table where you write the evaluation results from all backtesting trials from all time series and all models. This table will be created if does not exist.
 - ```group_id``` is a column storing the unique id that groups your dataset to each time series.

@@ -28,8 +28,10 @@ def run_forecast(
     model_output: str = None,
     use_case_name: str = None,
     static_features: List[str] = None,
-    dynamic_future: List[str] = None,
-    dynamic_historical: List[str] = None,
+    dynamic_future_numerical: List[str] = None,
+    dynamic_future_categorical: List[str] = None,
+    dynamic_historical_numerical: List[str] = None,
+    dynamic_historical_categorical: List[str] = None,
     active_models: List[str] = None,
     accelerator: str = "cpu",
     backtest_retrain: bool = None,
@@ -63,8 +65,10 @@ def run_forecast(
         model_output (str): A string specifying the output path for the model.
         use_case_name (str): A string specifying the use case name.
         static_features (List[str]): A list of strings specifying the static features.
-        dynamic_future (List[str]): A list of strings specifying the dynamic future features.
-        dynamic_historical (List[str]): A list of strings specifying the dynamic historical features.
+        dynamic_future_numerical (List[str]): A list of strings specifying the dynamic future features that are numerical.
+        dynamic_future_categorical (List[str]): A list of strings specifying the dynamic future features that are categorical.
+        dynamic_historical_numerical (List[str]): A list of strings specifying the dynamic historical features that are numerical.
+        dynamic_historical_categorical (List[str]): A list of strings specifying the dynamic historical features that are categorical.
         active_models (List[str]): A list of strings specifying the active models.
         accelerator (str): A string specifying the accelerator to use: cpu or gpu. Default is cpu.
         backtest_retrain (bool): A boolean specifying whether to retrain the model during backtesting. Currently, not supported.
@@ -137,10 +141,14 @@ def run_forecast(
         _conf["data_quality_check"] = data_quality_check
     if static_features is not None:
         _conf["static_features"] = static_features
-    if dynamic_future is not None:
-        _conf["dynamic_future"] = dynamic_future
-    if dynamic_historical is not None:
-        _conf["dynamic_historical"] = dynamic_historical
+    if dynamic_future_numerical is not None:
+        _conf["dynamic_future_numerical"] = dynamic_future_numerical
+    if dynamic_future_categorical is not None:
+        _conf["dynamic_future_categorical"] = dynamic_future_categorical
+    if dynamic_historical_numerical is not None:
+        _conf["dynamic_historical_numerical"] = dynamic_historical_numerical
+    if dynamic_historical_categorical is not None:
+        _conf["dynamic_historical_categorical"] = dynamic_historical_categorical
     if run_id is not None:
         _conf["run_id"] = run_id
 

@@ -36,7 +36,7 @@ run_forecast(
     date_col="Date",
     target="Sales",
     freq="D",
-    dynamic_future=["DayOfWeek", "Open", "Promo", "SchoolHoliday"],
+    dynamic_future_categorical=["DayOfWeek", "Open", "Promo", "SchoolHoliday"],
     prediction_length=10,
     backtest_months=1,
     stride=10,

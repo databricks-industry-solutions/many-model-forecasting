@@ -10,8 +10,10 @@ promoted_props:
   - backtest_months
   - stride
   - static_features
-  - dynamic_future
-  - dynamic_historical
+  - dynamic_future_numerical
+  - dynamic_future_categorical
+  - dynamic_historical_numerical
+  - dynamic_historical_categorical
 
 models:
 

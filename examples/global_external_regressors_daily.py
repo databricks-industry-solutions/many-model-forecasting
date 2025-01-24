@@ -90,7 +90,7 @@ display(spark.sql(f"select * from {catalog}.{db}.rossmann_daily_test where Store
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC Note that in `rossmann_daily_train` we have our target variable `Sales` but not in `rossmann_daily_test`. This is because `rossmann_daily_test` is going to be used as our `scoring_data` that stores `dynamic_future` variables of the future dates. When you adapt this notebook to your use case, make sure to comply with these datasets formats. See neuralforecast's [documentation](https://nixtlaverse.nixtla.io/neuralforecast/examples/exogenous_variables.html) for more detail on exogenous regressors.
+# MAGIC Note that in `rossmann_daily_train` we have our target variable `Sales` but not in `rossmann_daily_test`. This is because `rossmann_daily_test` is going to be used as our `scoring_data` that stores `dynamic_future_categorical` variables of the future dates. When you adapt this notebook to your use case, make sure to comply with these datasets formats. See neuralforecast's [documentation](https://nixtlaverse.nixtla.io/neuralforecast/examples/exogenous_variables.html) for more detail on exogenous regressors.
 
 # COMMAND ----------
 
@@ -118,7 +118,7 @@ active_models = [
 
 # MAGIC %md ### Run MMF
 # MAGIC
-# MAGIC Now, we run the evaluation and forecasting using `run_forecast` function. We are providing the training table and the scoring table names. If `scoring_data` is not provided or if the same name as `train_data` is provided, the models will ignore the `dynamic_future` regressors. Note that we are providing a covariate field (i.e. `dynamic_future`) this time in `run_forecast` function called in [examples/run_external_regressors_daily.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/run_external_regressors_daily.py). There are also other convariate fields, namely `static_features`, and `dynamic_historical`, which you can provide. Read more about these covariates in [neuralforecast's documentation](https://nixtlaverse.nixtla.io/neuralforecast/examples/exogenous_variables.html).
+# MAGIC Now, we run the evaluation and forecasting using `run_forecast` function. We are providing the training table and the scoring table names. If `scoring_data` is not provided or if the same name as `train_data` is provided, the models will ignore the `dynamic_future_numerical` and `dynamic_future_categorical` regressors. Note that we are providing a covariate field (i.e. `dynamic_future_numerical` or `dynamic_future_categorical`) this time in `run_forecast` function called in [examples/run_external_regressors_daily.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/run_external_regressors_daily.py). There are also other convariate fields, namely `static_features`, and `dynamic_historical_numerical` and `dynamic_historical_categorical`, which you can provide. Read more about these covariates in [neuralforecast's documentation](https://nixtlaverse.nixtla.io/neuralforecast/examples/exogenous_variables.html).
 
 # COMMAND ----------
 
