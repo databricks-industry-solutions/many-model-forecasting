@@ -33,7 +33,7 @@ class NeuralFcForecaster(ForecastingRegressor):
         self.params = params
         self.model = None
 
-    def register(self, model, registered_model_name: str, input_example, run_id):
+    def register(self, model, registered_model_name: str, input_example):
         pipeline = NeuralForecastModel(model)
         # Prepare model signature for model registry
         input_schema = infer_signature(model_input=input_example).inputs
@@ -61,33 +61,11 @@ class NeuralFcForecaster(ForecastingRegressor):
             ],
         )
         mlflow.log_params(model.get_params())
-        mlflow.set_tag("run_id", run_id)
-        mlflow.set_tag("model_name", model.params["name"])
         print(f"Model registered: {registered_model_name}")
         return model_info
 
     def prepare_data(self, df: pd.DataFrame, future: bool = False) -> pd.DataFrame:
-        if future:
-            # Prepare future dataframe with exogenous regressors for forecasting
-            if 'dynamic_future' in self.params.keys():
-                try:
-                    _df = (
-                        df[[self.params.group_id, self.params.date_col]
-                           + self.params.dynamic_future]
-                    )
-                except Exception as e:
-                    raise Exception(f"Dynamic future regressors missing: {e}")
-            else:
-                _df = df[[self.params.group_id, self.params.date_col]]
-            _df = (
-                _df.rename(
-                    columns={
-                        self.params.group_id: "unique_id",
-                        self.params.date_col: "ds",
-                    }
-                )
-            )
-        else:
+        if not future:
             # Prepare historical dataframe with or without exogenous regressors for training
             df[self.params.target] = df[self.params.target].clip(0)
             if 'dynamic_future' in self.params.keys():
@@ -120,6 +98,27 @@ class NeuralFcForecaster(ForecastingRegressor):
                     }
                 )
             )
+        else:
+            # Prepare future dataframe with exogenous regressors for forecasting
+            if 'dynamic_future' in self.params.keys():
+                try:
+                    _df = (
+                        df[[self.params.group_id, self.params.date_col]
+                           + self.params.dynamic_future]
+                    )
+                except Exception as e:
+                    raise Exception(f"Dynamic future regressors missing: {e}")
+            else:
+                _df = df[[self.params.group_id, self.params.date_col]]
+            _df = (
+                _df.rename(
+                    columns={
+                        self.params.group_id: "unique_id",
+                        self.params.date_col: "ds",
+                    }
+                )
+            )
+
         return _df
 
     def prepare_static_features(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -150,9 +149,14 @@ class NeuralFcForecaster(ForecastingRegressor):
     def predict(self, hist_df: pd.DataFrame, val_df: pd.DataFrame = None):
         _df = self.prepare_data(hist_df)
         _dynamic_future = self.prepare_data(val_df, future=True)
-        _dynamic_future = None if _dynamic_future.empty else _dynamic_future
+        if _dynamic_future.empty:
+            _dynamic_future = None
         _static_df = self.prepare_static_features(hist_df)
-        forecast_df = self.model.predict(df=_df, static_df=_static_df, futr_df=_dynamic_future)
+        forecast_df = self.model.predict(
+            df=_df,
+            static_df=_static_df,
+            futr_df=_dynamic_future
+        )
         target = [col for col in forecast_df.columns.to_list()
                   if col not in ["unique_id", "ds"]][0]
         forecast_df = forecast_df.reset_index(drop=False).rename(
@@ -163,7 +167,6 @@ class NeuralFcForecaster(ForecastingRegressor):
             }
         )
         forecast_df[self.params.target] = forecast_df[self.params.target].clip(0)
-
         return forecast_df, self.model
 
     def forecast(self, df: pd.DataFrame, spark=None):
@@ -204,38 +207,25 @@ class NeuralFcForecaster(ForecastingRegressor):
         pred_df, model_fitted = self.predict(hist_df, val_df)
         keys = pred_df[self.params["group_id"]].unique()
         metrics = []
-        if self.params["metric"] == "smape":
-            metric_name = "smape"
-        elif self.params["metric"] == "mape":
-            metric_name = "mape"
-        elif self.params["metric"] == "mae":
-            metric_name = "mae"
-        elif self.params["metric"] == "mse":
-            metric_name = "mse"
-        elif self.params["metric"] == "rmse":
-            metric_name = "rmse"
-        else:
+        metric_name = self.params["metric"]
+        if metric_name not in ("smape", "mape", "mae", "mse", "rmse"):
             raise Exception(f"Metric {self.params['metric']} not supported!")
         for key in keys:
             actual = val_df[val_df[self.params["group_id"]] == key][self.params["target"]].reset_index(drop=True)
             forecast = pred_df[pred_df[self.params["group_id"]] == key][self.params["target"]].\
                          iloc[-self.params["prediction_length"]:].reset_index(drop=True)
+            # Mapping metric names to their respective classes
+            metric_classes = {
+                "smape": MeanAbsolutePercentageError(symmetric=True),
+                "mape": MeanAbsolutePercentageError(symmetric=False),
+                "mae": MeanAbsoluteError(),
+                "mse": MeanSquaredError(square_root=False),
+                "rmse": MeanSquaredError(square_root=True),
+            }
             try:
-                if metric_name == "smape":
-                    smape = MeanAbsolutePercentageError(symmetric=True)
-                    metric_value = smape(actual, forecast)
-                elif metric_name == "mape":
-                    mape = MeanAbsolutePercentageError(symmetric=False)
-                    metric_value = mape(actual, forecast)
-                elif metric_name == "mae":
-                    mae = MeanAbsoluteError()
-                    metric_value = mae(actual, forecast)
-                elif metric_name == "mse":
-                    mse = MeanSquaredError(square_root=False)
-                    metric_value = mse(actual, forecast)
-                elif metric_name == "rmse":
-                    rmse = MeanSquaredError(square_root=True)
-                    metric_value = rmse(actual, forecast)
+                if metric_name in metric_classes:
+                    metric_function = metric_classes[metric_name]
+                    metric_value = metric_function(actual, forecast)
                 metrics.extend(
                     [(
                         key,

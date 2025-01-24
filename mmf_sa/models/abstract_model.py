@@ -47,7 +47,6 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
             df: pd.DataFrame,
             start: pd.Timestamp,
             group_id: Union[str, int] = None,
-            stride: int = None,
             # backtest_retrain: bool = False,
             spark=None,
     ) -> pd.DataFrame:
@@ -58,19 +57,18 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
             df (pd.DataFrame): A pandas DataFrame.
             start (pd.Timestamp): A pandas Timestamp object.
             group_id (Union[str, int], optional): A string or an integer specifying the group id. Default is None.
-            stride (int, optional): An integer specifying the stride. Default is None.
             spark (SparkSession, optional): A SparkSession object. Default is None.
         Returns: res_df (pd.DataFrame): A pandas DataFrame.
         """
-        if stride is None:
-            stride = int(self.params.get("stride", 7))
+        stride = int(self.params["stride"]) # Read in stride
         stride_offset = (
             pd.offsets.MonthEnd(stride)
             if self.freq == "M"
             else pd.DateOffset(days=stride)
         )
         df = df.copy().sort_values(by=[self.params["date_col"]])
-        end_date = df[self.params["date_col"]].max()
+        end_date = df[self.params["date_col"]].max() # Last date from the training data
+        # Offsets the timestamp: e.g. if it's in the middle of the month, makes it the end of the month
         curr_date = start + self.one_ts_offset
         # print("end_date = ", end_date)
 

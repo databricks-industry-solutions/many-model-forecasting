@@ -9,6 +9,7 @@ from sktime.performance_metrics.forecasting import (
     MeanSquaredError,
     MeanAbsolutePercentageError,
 )
+from utilsforecast.processing import make_future_dataframe
 from mmf_sa.models.abstract_model import ForecastingRegressor
 
 
@@ -49,7 +50,7 @@ class TimesFMForecaster(ForecastingRegressor):
                 }
             )
         )
-        return df
+        return df.sort_values(by=["unique_id", "ds"])
 
     def predict(self,
                 hist_df: pd.DataFrame,
@@ -58,27 +59,24 @@ class TimesFMForecaster(ForecastingRegressor):
                 spark=None):
 
         hist_df = self.prepare_data(hist_df)
-        forecast_df = self.model.forecast_on_df(
-            inputs=hist_df,
-            freq=self.params["freq"],
-            value_name="y",
-            num_jobs=-1,
-        )
-        forecast_df = forecast_df[["unique_id", "ds", "timesfm"]]
-        forecast_df = forecast_df.sort_values(
-            by=["unique_id", "ds"]
-        ).groupby("unique_id").agg(
-            ds=("ds", lambda x: list(x)),
-            timesfm=("timesfm", lambda x: list(x)),
-        ).reset_index()
-        forecast_df = forecast_df.reset_index(drop=False).rename(
-            columns={
-                "unique_id": self.params.group_id,
-                "ds": self.params.date_col,
-                "timesfm": self.params.target,
-            }
-        )
 
+        # Need if-else here
+        forecast_input = [group['y'].values for _, group in hist_df.groupby('unique_id')]
+        unique_ids = np.array(hist_df["unique_id"].unique())
+        timestamps = make_future_dataframe(
+            uids=unique_ids,
+            last_times=hist_df.groupby("unique_id")["ds"].tail(1),
+            h=self.params.prediction_length,
+            freq=self.params.freq,
+        )
+        timestamps = [group['ds'].values for _, group in timestamps.groupby('unique_id')]
+        freq_index = 0 if self.params.freq in ("H", "D", "B", "U") else 1
+        forecasts, _ = self.model.forecast(forecast_input, freq=[freq_index] * len(forecast_input))
+        forecast_df = pd.DataFrame({
+            self.params.group_id: unique_ids,
+            self.params.date_col: timestamps,
+            self.params.target: list(forecasts.astype(np.float64)),
+        })
         # Todo
         # forecast_df[self.params.target] = forecast_df[self.params.target].clip(0.01)
         return forecast_df, self.model
@@ -92,37 +90,24 @@ class TimesFMForecaster(ForecastingRegressor):
         pred_df, model_pretrained = self.predict(hist_df, val_df, curr_date)
         keys = pred_df[self.params["group_id"]].unique()
         metrics = []
-        if self.params["metric"] == "smape":
-            metric_name = "smape"
-        elif self.params["metric"] == "mape":
-            metric_name = "mape"
-        elif self.params["metric"] == "mae":
-            metric_name = "mae"
-        elif self.params["metric"] == "mse":
-            metric_name = "mse"
-        elif self.params["metric"] == "rmse":
-            metric_name = "rmse"
-        else:
+        metric_name = self.params["metric"]
+        if metric_name not in ("smape", "mape", "mae", "mse", "rmse"):
             raise Exception(f"Metric {self.params['metric']} not supported!")
         for key in keys:
             actual = val_df[val_df[self.params["group_id"]] == key][self.params["target"]].to_numpy()
             forecast = np.array(pred_df[pred_df[self.params["group_id"]] == key][self.params["target"]].iloc[0])
+            # Mapping metric names to their respective classes
+            metric_classes = {
+                "smape": MeanAbsolutePercentageError(symmetric=True),
+                "mape": MeanAbsolutePercentageError(symmetric=False),
+                "mae": MeanAbsoluteError(),
+                "mse": MeanSquaredError(square_root=False),
+                "rmse": MeanSquaredError(square_root=True),
+            }
             try:
-                if metric_name == "smape":
-                    smape = MeanAbsolutePercentageError(symmetric=True)
-                    metric_value = smape(actual, forecast)
-                elif metric_name == "mape":
-                    mape = MeanAbsolutePercentageError(symmetric=False)
-                    metric_value = mape(actual, forecast)
-                elif metric_name == "mae":
-                    mae = MeanAbsoluteError()
-                    metric_value = mae(actual, forecast)
-                elif metric_name == "mse":
-                    mse = MeanSquaredError(square_root=False)
-                    metric_value = mse(actual, forecast)
-                elif metric_name == "rmse":
-                    rmse = MeanSquaredError(square_root=True)
-                    metric_value = rmse(actual, forecast)
+                if metric_name in metric_classes:
+                    metric_function = metric_classes[metric_name]
+                    metric_value = metric_function(actual, forecast)
                 metrics.extend(
                     [(
                         key,
