@@ -71,7 +71,8 @@ class ChronosForecaster(ForecastingRegressor):
             .agg(
                 collect_list(self.params.date_col).alias('ds'),
                 collect_list(self.params.target).alias('y'),
-            ))
+            )).withColumnRenamed(self.params.group_id, "unique_id")
+
         return df
 
     def predict(self,
@@ -110,37 +111,24 @@ class ChronosForecaster(ForecastingRegressor):
         pred_df, model_pretrained = self.predict(hist_df, val_df, curr_date, spark)
         keys = pred_df[self.params["group_id"]].unique()
         metrics = []
-        if self.params["metric"] == "smape":
-            metric_name = "smape"
-        elif self.params["metric"] == "mape":
-            metric_name = "mape"
-        elif self.params["metric"] == "mae":
-            metric_name = "mae"
-        elif self.params["metric"] == "mse":
-            metric_name = "mse"
-        elif self.params["metric"] == "rmse":
-            metric_name = "rmse"
-        else:
+        metric_name = self.params["metric"]
+        if metric_name not in ("smape", "mape", "mae", "mse", "rmse"):
             raise Exception(f"Metric {self.params['metric']} not supported!")
         for key in keys:
             actual = val_df[val_df[self.params["group_id"]] == key][self.params["target"]].to_numpy()
             forecast = pred_df[pred_df[self.params["group_id"]] == key][self.params["target"]].to_numpy()[0]
+            # Mapping metric names to their respective classes
+            metric_classes = {
+                "smape": MeanAbsolutePercentageError(symmetric=True),
+                "mape": MeanAbsolutePercentageError(symmetric=False),
+                "mae": MeanAbsoluteError(),
+                "mse": MeanSquaredError(square_root=False),
+                "rmse": MeanSquaredError(square_root=True),
+            }
             try:
-                if metric_name == "smape":
-                    smape = MeanAbsolutePercentageError(symmetric=True)
-                    metric_value = smape(actual, forecast)
-                elif metric_name == "mape":
-                    mape = MeanAbsolutePercentageError(symmetric=False)
-                    metric_value = mape(actual, forecast)
-                elif metric_name == "mae":
-                    mae = MeanAbsoluteError()
-                    metric_value = mae(actual, forecast)
-                elif metric_name == "mse":
-                    mse = MeanSquaredError(square_root=False)
-                    metric_value = mse(actual, forecast)
-                elif metric_name == "rmse":
-                    rmse = MeanSquaredError(square_root=True)
-                    metric_value = rmse(actual, forecast)
+                if metric_name in metric_classes:
+                    metric_function = metric_classes[metric_name]
+                    metric_value = metric_function(actual, forecast)
                 metrics.extend(
                     [(
                         key,
@@ -240,6 +228,7 @@ class ChronosBoltSmall(ChronosForecaster):
         self.params = params
         self.repo = "amazon/chronos-bolt-small"
 
+
 class ChronosBoltBase(ChronosForecaster):
     def __init__(self, params):
         super().__init__(params)
@@ -268,4 +257,3 @@ class ChronosModel(mlflow.pyfunc.PythonModel):
             prediction_length=self.prediction_length,
         )
         return forecast.numpy()
-

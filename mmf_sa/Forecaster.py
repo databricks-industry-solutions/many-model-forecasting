@@ -114,12 +114,15 @@ class Forecaster:
         """
         src_df = self.resolve_source("train_data")
         src_df, removed = DataQualityChecks(src_df, self.conf, self.spark).run()
+
+        # This block runs when preparing data for scoring
         if (mode == "scoring") \
                 and (self.conf["scoring_data"]) \
                 and (self.conf["scoring_data"] != self.conf["train_data"]):
             score_df = self.resolve_source("scoring_data")
             score_df = score_df.where(~col(self.conf["group_id"]).isin(removed))
             src_df = src_df.unionByName(score_df, allowMissingColumns=True)
+
         src_df = src_df.toPandas()
         return src_df, removed
 
@@ -323,9 +326,7 @@ class Forecaster:
                 model=final_model,
                 registered_model_name=f"{self.conf['model_output']}.{model_conf['name']}_{self.conf['use_case_name']}",
                 input_example=input_example,
-                run_id=self.run_id,
             )
-
             # Next, we train the model only with train_df and run detailed backtesting
             model = self.model_registry.get_model(model_name)
             model.fit(pd.concat([train_df]))
@@ -336,6 +337,8 @@ class Forecaster:
                 model_uri=model_info.model_uri,  # This model_uri is from the final model
                 write=True,
             )
+            mlflow.set_tag("run_id", self.run_id)
+            mlflow.set_tag("model_name", model.params["name"])
 
     def backtest_global_model(
         self,
@@ -423,13 +426,14 @@ class Forecaster:
         with mlflow.start_run(experiment_id=self.experiment_id) as run:
             model_name = model_conf["name"]
             model = self.model_registry.get_model(model_name)
-            # For now, only support registering chronos, moirai and moment models
-            if model_conf["framework"] in ["Chronos", "Moirai", "Moment", "TimesFM"]:
-                model.register(
-                    registered_model_name=f"{self.conf['model_output']}.{model_conf['name']}_{self.conf['use_case_name']}"
-                )
             hist_df, removed = self.prepare_data_for_global_model("evaluating")  # Reuse the same as global
             train_df, val_df = self.split_df_train_val(hist_df)
+            input_example = train_df[train_df[self.conf['group_id']] == train_df[self.conf['group_id']] \
+                .unique()[0]].sort_values(by=[self.conf['date_col']])
+            if model_conf["framework"] in ["Chronos", "Moirai", "Moment", "TimesFM"]:
+                model.register(
+                    registered_model_name=f"{self.conf['model_output']}.{model_conf['name']}_{self.conf['use_case_name']}",
+                )
             model_uri = f"runs:/{run.info.run_id}/model"
             metrics = self.backtest_global_model(  # Reuse the same as global
                 model=model,
