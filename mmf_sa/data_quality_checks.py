@@ -43,8 +43,10 @@ class DataQualityChecks:
         """
         if (
             self.conf.get("static_features", None)
-            or self.conf.get("dynamic_future", None)
-            or self.conf.get("dynamic_historical", None)
+            or self.conf.get("dynamic_future_numerical", None)
+            or self.conf.get("dynamic_future_categorical", None)
+            or self.conf.get("dynamic_historical_numerical", None)
+            or self.conf.get("dynamic_historical_categorical", None)
         ):
             if self.conf.get("resample"):
                 raise Exception(
@@ -77,19 +79,29 @@ class DataQualityChecks:
 
         # 1. Checking for nulls in external regressors
         static_features = conf.get("static_features", None)
-        dynamic_future = conf.get("dynamic_future", None)
-        dynamic_historical = conf.get("dynamic_historical", None)
+        dynamic_future_numerical = conf.get("dynamic_future_numerical", None)
+        dynamic_future_categorical = conf.get("dynamic_future_categorical", None)
+        dynamic_historical_numerical = conf.get("dynamic_historical_numerical", None)
+        dynamic_historical_categorical = conf.get("dynamic_historical_categorical", None)
         if static_features:
             if _df[static_features].isnull().values.any():
-                # Removing: null in static categoricals
+                # Removing: null in static categorical
                 return pd.DataFrame()
-        if dynamic_future:
-            if _df[dynamic_future].isnull().values.any():
-                # Removing: null in dynamic future
+        if dynamic_future_numerical:
+            if _df[dynamic_future_numerical].isnull().values.any():
+                # Removing: null in dynamic future numerical
                 return pd.DataFrame()
-        if dynamic_historical:
-            if _df[dynamic_historical].isnull().values.any():
-                # Removing: null in dynamic historical
+        if dynamic_future_categorical:
+            if _df[dynamic_future_categorical].isnull().values.any():
+                # Removing: null in dynamic future categorical
+                return pd.DataFrame()
+        if dynamic_historical_numerical:
+            if _df[dynamic_historical_numerical].isnull().values.any():
+                # Removing: null in dynamic historical numerical
+                return pd.DataFrame()
+        if dynamic_historical_categorical:
+            if _df[dynamic_historical_categorical].isnull().values.any():
+                # Removing: null in dynamic historical categorical
                 return pd.DataFrame()
 
         # 2. Checking for training period length

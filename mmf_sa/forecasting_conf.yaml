@@ -11,12 +11,16 @@ accelerator: cpu
 static_features:
   #- State
 
-dynamic_future:
+dynamic_future_numerical:
+
+dynamic_future_categorical:
   #- Open
   #- Promo
   #- DayOfWeek
 
-dynamic_historical:
+dynamic_historical_numerical:
+
+dynamic_historical_categorical:
 
 active_models:
   - StatsForecastBaselineWindowAverage
