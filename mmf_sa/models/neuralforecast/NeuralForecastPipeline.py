@@ -148,16 +148,19 @@ class NeuralFcForecaster(ForecastingRegressor):
             static_pdf = self.prepare_static_features(x)
             self.model.fit(df=pdf, static_df=static_pdf)
 
-    def predict(self, hist_df: pd.DataFrame, val_df: pd.DataFrame = None):
-        _df = self.prepare_data(hist_df)
-        _dynamic_future = self.prepare_data(val_df, future=True)
-        if _dynamic_future.empty:
-            _dynamic_future = None
-        _static_df = self.prepare_static_features(hist_df)
+    def predict(self,
+                hist_df: pd.DataFrame,
+                val_df: pd.DataFrame = None):
+
+        df = self.prepare_data(hist_df)
+        dynamic_covariates = self.prepare_data(val_df, future=True)
+        if dynamic_covariates.empty:
+            dynamic_covariates = None
+        static_df = self.prepare_static_features(hist_df)
         forecast_df = self.model.predict(
-            df=_df,
-            static_df=_static_df,
-            futr_df=_dynamic_future
+            df=df,
+            static_df=static_df,
+            futr_df=dynamic_covariates
         )
         target = [col for col in forecast_df.columns.to_list()
                   if col not in ["unique_id", "ds"]][0]
@@ -172,25 +175,25 @@ class NeuralFcForecaster(ForecastingRegressor):
         return forecast_df, self.model
 
     def forecast(self, df: pd.DataFrame, spark=None):
-        _df = df[df[self.params.target].notnull()]
-        _df = self.prepare_data(_df)
-        _last_date = _df["ds"].max()
-        _future_df = df[
-            (df[self.params["date_col"]] > np.datetime64(_last_date))
+        hist_df = df[df[self.params.target].notnull()]
+        hist_df = self.prepare_data(hist_df)
+        last_date = hist_df["ds"].max()
+        future_df = df[
+            (df[self.params["date_col"]] > np.datetime64(last_date))
             & (df[self.params["date_col"]]
-               <= np.datetime64(_last_date + self.prediction_length_offset))
+               <= np.datetime64(last_date + self.prediction_length_offset))
         ]
-        _dynamic_future = self.prepare_data(_future_df, future=True)
-        _dynamic_future = None if _dynamic_future.empty else _dynamic_future
-        _static_df = self.prepare_static_features(_future_df)
+        dynamic_future = self.prepare_data(future_df, future=True)
+        dynamic_future = None if dynamic_future.empty else dynamic_future
+        static_df = self.prepare_static_features(future_df)
 
         # Check if dynamic futures for all unique_id are provided.
         # If not, drop unique_id without dynamic futures from scoring.
-        if (_dynamic_future is not None) and \
-                (not set(_df["unique_id"].unique().flatten())
-                        .issubset(set(_dynamic_future["unique_id"].unique().flatten()))):
-            _df = _df[_df["unique_id"].isin(list(_dynamic_future["unique_id"].unique()))]
-        forecast_df = self.model.predict(df=_df, static_df=_static_df, futr_df=_dynamic_future)
+        if (dynamic_future is not None) and \
+                (not set(hist_df["unique_id"].unique().flatten())
+                        .issubset(set(dynamic_future["unique_id"].unique().flatten()))):
+            hist_df = hist_df[hist_df["unique_id"].isin(list(dynamic_future["unique_id"].unique()))]
+        forecast_df = self.model.predict(df=hist_df, static_df=static_df, futr_df=dynamic_future)
         target = [col for col in forecast_df.columns.to_list()
                   if col not in ["unique_id", "ds"]][0]
         forecast_df = forecast_df.reset_index(drop=False).rename(

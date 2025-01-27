@@ -589,8 +589,8 @@ class Forecaster:
         model_name = model_conf["name"]
         _, model_uri = self.get_model_for_scoring(model_conf)
         model = self.model_registry.get_model(model_name)
-        hist_df, removed = self.prepare_data_for_global_model()
-        prediction_df, model_pretrained = model.forecast(hist_df, spark=self.spark)
+        score_df, removed = self.prepare_data_for_global_model("scoring")
+        prediction_df, model_pretrained = model.forecast(score_df, spark=self.spark)
         sdf = self.spark.createDataFrame(prediction_df).drop('index')
         (
             sdf.withColumn(self.conf["group_id"], col(self.conf["group_id"]).cast(StringType()))
