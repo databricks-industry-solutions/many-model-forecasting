@@ -28,9 +28,9 @@ class DataQualityChecks:
         """
         backtest_days = self.conf["backtest_months"] * 30
         prediction_length_days = (
-            self.conf["prediction_length"]
-            if self.conf["freq"] == "D"
-            else self.conf["prediction_length"] * 30
+            self.conf["prediction_length"] if self.conf["freq"] == "D" else
+            self.conf["prediction_length"] * 7 if self.conf["freq"] == "W" else
+            self.conf["prediction_length"] * 30
         )
         if backtest_days < prediction_length_days:
             raise Exception(f"Backtesting interval is shorter than prediction length!")

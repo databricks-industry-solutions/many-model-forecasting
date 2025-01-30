@@ -640,4 +640,3 @@ class Forecaster:
             if version_int > latest_version:
                 latest_version = version_int
         return client.get_model_version(registered_name, str(latest_version))
-
