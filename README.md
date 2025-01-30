@@ -15,6 +15,7 @@ Get started now!
 - Jan 2025: [TimesFM](https://github.com/google-research/timesfm) is available for univariate and covariate forecasting. Try the notebooks: [univariate](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/foundation_daily.py) and [covariate](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/foundation_external_regressors_daily.py).
 - Jan 2025: [Chronos Bolt](https://github.com/amazon-science/chronos-forecasting) models are available for univariate forecasting. Try the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/foundation_daily.py).
 - Jan 2025: [Moirai MoE](https://github.com/SalesforceAIResearch/uni2ts) models are available for univariate forecasting. Try the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/foundation_daily.py).
+- Jan 2025: Added support weekly (`freq="W"`) time series . See the notebooks for [local](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/local_univariate_weekly.py), [global](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/global_weekly.py) and [foundation](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/foundation_weekly.py) models.
 
 ## Getting started
 
@@ -95,7 +96,7 @@ run_forecast(
 - ```group_id``` is a column storing the unique id that groups your dataset to each time series.
 - ```date_col``` is your time column name.
 - ```target``` is your target column name.
-- ```freq``` is your prediction frequency. Currently, "D" for daily and "M" for monthly are supported. Note that ```freq``` supported is as per the model basis, hence check the model documentation carefully. Monthly forecasting expects the timestamp column in ```train_data``` and ```scoring_output``` to be the last day of the month.
+- ```freq``` is your prediction frequency. Currently, "D" for daily, "W" for weekly and "M" for monthly are supported. Note that ```freq``` supported is as per the model basis, hence check the model documentation carefully. Monthly forecasting expects the timestamp column in ```train_data``` and ```scoring_output``` to be the last day of the month.
 - ```prediction_length``` is your forecasting horizon in the number of steps.
 - ```backtest_months``` specifies how many previous months you use for backtesting. 
 - ```stride``` is the number of steps in which you update your backtesting trial start date when going from one trial to the next.
