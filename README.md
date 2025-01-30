@@ -248,6 +248,10 @@ If you want to try out time series foundation models on Databricks without MMF, 
 
 [![IMAGE ALT TEXT HERE](https://img.youtube.com/vi/wYeuPxtap-8/0.jpg)](https://www.youtube.com/watch?v=wYeuPxtap-8)
 
+## Authors
+
+<ryuta.yoshimatsu@databricks.com>
+
 ## Project support
 Please note the code in this project is provided for your exploration only, and are not formally supported by Databricks with Service Level Agreements (SLAs). They are provided AS-IS and we do not make any guarantees of any kind. Please do not submit a support ticket relating to any issues arising from the use of these projects. The source in this project is provided subject to the Databricks License. All included or referenced third party libraries are subject to the licenses set forth below.
 
