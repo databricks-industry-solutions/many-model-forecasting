@@ -63,6 +63,7 @@ for model in active_models:
 display(spark.sql(f"""
                   select * from {catalog}.{db}.daily_evaluation_output 
                   order by unique_id, model, backtest_window_start_date
+                  limit 10
                   """))
 
 # COMMAND ----------
@@ -70,6 +71,7 @@ display(spark.sql(f"""
 display(spark.sql(f"""
                   select * from {catalog}.{db}.daily_scoring_output 
                   order by unique_id, model, ds
+                  limit 10
                   """))
 
 # COMMAND ----------
