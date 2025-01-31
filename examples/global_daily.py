@@ -170,7 +170,7 @@ display(spark.sql(f"""
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC For global models, we train the model once using the training dataset excluding `backtest_months`. We then use the same fitted model to produce the as-if forecasts for all back testing periods. We do this to make sure that there is no data leakage. See how MMF implements backtesting in `backtest` method in [mmf_sa/models/abstract_model.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/abstract_model.py). But the model that gets registered in Unity Catalog is trained using the full history.
+# MAGIC For global models, we train the model once using the training dataset excluding `backtest_length`. We then use the same fitted model to produce the as-if forecasts for all back testing periods. We do this to make sure that there is no data leakage. See how MMF implements backtesting in `backtest` method in [mmf_sa/models/abstract_model.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/abstract_model.py). But the model that gets registered in Unity Catalog is trained using the full history.
 # MAGIC
 # MAGIC We store the as-if forecasts together with the actuals for each backtesting period, so you can construct any metric of your interest. We provide a few out-of-the-box metrics for you (e.g. smape), but the idea here is that you construct your own metrics reflecting your business requirements and evaluate models based on those. For example, maybe you care more about the accuracy of the near-horizon forecasts than the far-horizon ones. In such case, you can apply a decreasing wieght to compute weighted aggregated metrics.
 # MAGIC

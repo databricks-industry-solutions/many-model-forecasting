@@ -150,7 +150,7 @@ run_forecast(
     freq="D",
     dynamic_future_categorical=["DayOfWeek", "Open", "Promo", "SchoolHoliday"],
     prediction_length=10,
-    backtest_months=1,
+    backtest_length=30,
     stride=10,
     metric="smape",
     train_predict_ratio=1,

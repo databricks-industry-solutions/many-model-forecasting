@@ -37,7 +37,7 @@ run_forecast(
     target="y",
     freq="M",
     prediction_length=3,
-    backtest_months=12,
+    backtest_length=12,
     stride=1,
     metric="smape",
     train_predict_ratio=1,

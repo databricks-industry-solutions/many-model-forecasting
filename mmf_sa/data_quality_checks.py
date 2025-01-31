@@ -22,18 +22,12 @@ class DataQualityChecks:
 
     def _backtest_length_check(self):
         """
-        Checks if backtest_months contains at least one prediction_length.
+        Checks if backtest_length contains at least one prediction_length.
         Mandatory check regardless of data_quality_check set to True or False.
         Parameters: self (Forecaster): A Forecaster object.
         """
-        backtest_days = self.conf["backtest_months"] * 30
-        prediction_length_days = (
-            self.conf["prediction_length"] if self.conf["freq"] == "D" else
-            self.conf["prediction_length"] * 7 if self.conf["freq"] == "W" else
-            self.conf["prediction_length"] * 30
-        )
-        if backtest_days < prediction_length_days:
-            raise Exception(f"Backtesting interval is shorter than prediction length!")
+        if self.conf["backtest_length"] < self.conf["prediction_length"]:
+            raise Exception(f"Backtest length is shorter than prediction length!")
 
     def _external_regressors_check(self):
         """
@@ -106,9 +100,17 @@ class DataQualityChecks:
 
         # 2. Checking for training period length
         temp_df = _df[_df[conf["target"]] > 0]
-        split_date = temp_df[conf["date_col"]].max() - pd.DateOffset(
-            months=conf["backtest_months"]
-        )
+        if conf["freq"] == "H":
+            backtest_offset = pd.DateOffset(hours=conf["backtest_length"])
+        elif conf["freq"] == "D":
+            backtest_offset = pd.DateOffset(days=conf["backtest_length"])
+        elif conf["freq"] == "W":
+            backtest_offset = pd.DateOffset(weeks=conf["backtest_length"])
+        elif conf["freq"] == "M":
+            backtest_offset = pd.DateOffset(months=conf["backtest_length"])
+        else:
+            backtest_offset = None
+        split_date = temp_df[conf["date_col"]].max() - backtest_offset
         if (
             temp_df[temp_df[conf["date_col"]] < split_date].count().iloc[0]
             <= conf["train_predict_ratio"] * conf["prediction_length"]
