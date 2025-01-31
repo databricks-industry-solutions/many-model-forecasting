@@ -67,6 +67,16 @@ class Forecaster:
             raise Exception(
                 "Please set 'experiment_path' parameter in the configuration file!"
             )
+        if self.conf["freq"] == "H":
+            self.backtest_offset = pd.DateOffset(hours=self.conf["backtest_length"])
+        elif self.conf["freq"] == "D":
+            self.backtest_offset = pd.DateOffset(days=self.conf["backtest_length"])
+        elif self.conf["freq"] == "W":
+            self.backtest_offset = pd.DateOffset(weeks=self.conf["backtest_length"])
+        elif self.conf["freq"] == "M":
+            self.backtest_offset = pd.DateOffset(months=self.conf["backtest_length"])
+        else:
+            self.backtest_offset =  None
         self.run_date = datetime.now()
 
     def set_mlflow_experiment(self):
@@ -140,14 +150,12 @@ class Forecaster:
         # Train with data before the backtest months in conf
         train_df = df[
             df[self.conf["date_col"]]
-            <= df[self.conf["date_col"]].max()
-            - pd.DateOffset(months=self.conf["backtest_months"])
+            <= df[self.conf["date_col"]].max() - self.backtest_offset
         ]
         # Validate with data after the backtest months cutoff...
         val_df = df[
             df[self.conf["date_col"]]
-            > df[self.conf["date_col"]].max()
-            - pd.DateOffset(months=self.conf["backtest_months"])
+            > df[self.conf["date_col"]].max() - self.backtest_offset
         ]
         return train_df, val_df
 
@@ -276,9 +284,17 @@ class Forecaster:
         """
         pdf[model.params["date_col"]] = pd.to_datetime(pdf[model.params["date_col"]])
         pdf.sort_values(by=model.params["date_col"], inplace=True)
-        split_date = pdf[model.params["date_col"]].max() - pd.DateOffset(
-            months=model.params["backtest_months"]
-        )
+        if model.params["freq"] == "H":
+            backtest_offset = pd.DateOffset(hours=model.params["backtest_length"])
+        elif model.params["freq"] == "D":
+            backtest_offset = pd.DateOffset(days=model.params["backtest_length"])
+        elif model.params["freq"] == "W":
+            backtest_offset = pd.DateOffset(weeks=model.params["backtest_length"])
+        elif model.params["freq"] == "M":
+            backtest_offset = pd.DateOffset(months=model.params["backtest_length"])
+        else:
+            backtest_offset = None
+        split_date = pdf[model.params["date_col"]].max() - backtest_offset
         group_id = pdf[model.params["group_id"]].iloc[0]
         try:
             pdf = pdf.fillna(0)

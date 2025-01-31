@@ -75,7 +75,7 @@ run_forecast(
     target="y",
     freq="D",
     prediction_length=10,
-    backtest_months=1,
+    backtest_length=30,
     stride=10,
     metric="smape",
     train_predict_ratio=2,
@@ -98,7 +98,7 @@ run_forecast(
 - ```target``` is your target column name.
 - ```freq``` is your prediction frequency. Currently, "D" for daily, "W" for weekly and "M" for monthly are supported. Note that ```freq``` supported is as per the model basis, hence check the model documentation carefully. Monthly forecasting expects the timestamp column in ```train_data``` and ```scoring_output``` to be the last day of the month.
 - ```prediction_length``` is your forecasting horizon in the number of steps.
-- ```backtest_months``` specifies how many previous months you use for backtesting. 
+- ```backtest_length``` specifies how many historical time points you use for backtesting. 
 - ```stride``` is the number of steps in which you update your backtesting trial start date when going from one trial to the next.
 - ```metric``` is the metric to log in the evaluation table and MLFlow. Supported metrics are mae, mse, rmse, mape and smape. Default is smape.
 - ```train_predict_ratio``` specifies the minimum length required for your training dataset with respect to ```prediction_length```. If ```train_predict_ratio```=2, you need to have training dataset that is at least twice as long as ```prediciton_length```.
@@ -164,7 +164,7 @@ run_forecast(
     target="y",
     freq="D",
     prediction_length=10,
-    backtest_months=1,
+    backtest_length=30,
     stride=10,
     metric="smape",
     train_predict_ratio=2,

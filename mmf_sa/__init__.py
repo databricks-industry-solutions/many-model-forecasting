@@ -19,7 +19,7 @@ def run_forecast(
     target: str,
     freq: str,
     prediction_length: int,
-    backtest_months: int,
+    backtest_length: int,
     stride: int,
     metric: str = "smape",
     scoring_data: Union[str, pd.DataFrame, DataFrame] = None,
@@ -56,7 +56,7 @@ def run_forecast(
         target (str): A string specifying the column name of the target variable.
         freq (str): A string specifying the frequency. Currently, "D" for daily, "W" for weekly and "M" for monthly are supported.
         prediction_length (int): An integer specifying the prediction length: i.e. forecasting horizon.
-        backtest_months (int): An integer specifying the number of backtest months.
+        backtest_length (int): An integer specifying the number of time points to be used for backtesting.
         stride (int): An integer specifying the stride length.
         metric (str): A string specifying the metric to use for evaluation. Supported metrics are mae, mse, rmse, mape and smape. Default is smape.
         scoring_data (Union[str, pd.DataFrame, DataFrame]): Scoring data as a string of delta table name, pandas DataFrame, or Spark DataFrame.
@@ -108,7 +108,7 @@ def run_forecast(
     _conf["target"] = target
     _conf["freq"] = freq
     _conf["prediction_length"] = prediction_length
-    _conf["backtest_months"] = backtest_months
+    _conf["backtest_length"] = backtest_length
     _conf["stride"] = stride
     _conf["metric"] = metric
     _conf["resample"] = resample
