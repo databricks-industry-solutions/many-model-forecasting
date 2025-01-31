@@ -27,7 +27,6 @@ taining_table = f"daily_train_{n}"
 
 # COMMAND ----------
 
-# MAGIC %SQL
 # MAGIC display(
 # MAGIC   spark.sql(f"""
 # MAGIC             select * from {catalog}.{db}.{taining_table} 
