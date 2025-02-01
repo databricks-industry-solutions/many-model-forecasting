@@ -94,7 +94,7 @@ class TimesFMForecaster(ForecastingRegressor):
         dynamic_covariates = self.prepare_data(val_df, future=True)
         df_union = pd.concat([df, dynamic_covariates], axis=0, join='outer', ignore_index=True)
         forecast_input = [group['y'].values for _, group in df.groupby('unique_id')]
-        freq_index = 0 if self.params.freq in ("D") else 1
+        freq_index = 0 if self.params.freq in ("H", "D") else 1
         dynamic_numerical_covariates = {}
         if 'dynamic_future_numerical' in self.params.keys():
             for var in self.params.dynamic_future_numerical:

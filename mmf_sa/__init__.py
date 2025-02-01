@@ -54,7 +54,7 @@ def run_forecast(
         group_id (str): A string specifying the column name that groups the training data into individual time series.
         date_col (str): A string specifying the column name that stores the date variable.
         target (str): A string specifying the column name of the target variable.
-        freq (str): A string specifying the frequency. Currently, "D" for daily, "W" for weekly and "M" for monthly are supported.
+        freq (str): A string specifying the frequency. "H" for hourly, "D" for daily, "W" for weekly and "M" for monthly are supported.
         prediction_length (int): An integer specifying the prediction length: i.e. forecasting horizon.
         backtest_length (int): An integer specifying the number of time points to be used for backtesting.
         stride (int): An integer specifying the stride length.
