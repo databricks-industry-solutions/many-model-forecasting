@@ -21,12 +21,14 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
             pd.offsets.MonthEnd(1) if self.freq == "M" else
             pd.DateOffset(weeks=1) if self.freq == "W" else
             pd.DateOffset(days=1) if self.freq == "D" else
+            pd.DateOffset(hours=1) if self.freq == "H" else
             None
         )
         self.prediction_length_offset = (
             pd.offsets.MonthEnd(params["prediction_length"]) if self.freq == "M" else
             pd.DateOffset(weeks=params["prediction_length"]) if self.freq == "W" else
             pd.DateOffset(days=params["prediction_length"]) if self.freq == "D" else
+            pd.DateOffset(hours=params["prediction_length"]) if self.freq == "H" else
             None
         )
 
@@ -69,11 +71,12 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
             pd.offsets.MonthEnd(stride) if self.freq == "M" else
             pd.DateOffset(weeks=stride) if self.freq == "W" else
             pd.DateOffset(days=stride) if self.freq == "D" else
+            pd.DateOffset(hours=stride) if self.freq == "H" else
             None
         )
         df = df.copy().sort_values(by=[self.params["date_col"]])
         end_date = df[self.params["date_col"]].max() # Last date from the training data
-        # Offsets the timestamp: e.g. if it's in the middle of the month, makes it the end of the month
+        # Offsets the timestamp: e.g. if it's in the middle of the month for a monthly time series, makes it the end of the month
         curr_date = start + self.one_ts_offset
         # print("end_date = ", end_date)
 

@@ -219,7 +219,7 @@ class Forecaster:
                     StructField(
                         self.conf["group_id"], src_df.schema[self.conf["group_id"]].dataType
                     ),
-                    StructField("backtest_window_start_date", DateType()),
+                    StructField("backtest_window_start_date", TimestampType()),
                     StructField("metric_name", StringType()),
                     StructField("metric_value", DoubleType()),
                     StructField("forecast", ArrayType(DoubleType())),
@@ -389,7 +389,7 @@ class Forecaster:
         schema = StructType(
             [
                 StructField(self.conf["group_id"], group_id_dtype),
-                StructField("backtest_window_start_date", DateType()),
+                StructField("backtest_window_start_date", TimestampType()),
                 StructField("metric_name", StringType()),
                 StructField("metric_value", DoubleType()),
                 StructField("forecast", ArrayType(DoubleType())),
