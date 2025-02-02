@@ -2,20 +2,20 @@
 # MAGIC %md
 # MAGIC # Many Models Forecasting Demo
 # MAGIC
-# MAGIC This notebook showcases how to run MMF with global models on multiple time series of daily resolution using exogenous regressors. We will use [Rossmann Store](https://www.kaggle.com/competitions/rossmann-store-sales/data) data. To be able to run this notebook, you need to register on [Kaggle](https://www.kaggle.com/) and download the dataset. The descriptions here are mostly the same as the case [without exogenous regressors](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/global_daily.py), so we will skip the redundant parts and focus only on the essentials. 
+# MAGIC This notebook showcases how to run MMF with global models on multiple time series of daily resolution using exogenous regressors. We will use [Rossmann Store](https://www.kaggle.com/competitions/rossmann-store-sales/data) data. To be able to run this notebook, you need to register on [Kaggle](https://www.kaggle.com/) and download the dataset. The descriptions here are mostly the same as the case [without exogenous regressors](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/global_daily.py), so we will skip the redundant parts and focus only on the essentials. 
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ### Cluster setup
 # MAGIC
-# MAGIC We recommend using a cluster with [Databricks Runtime 14.3 LTS for ML](https://docs.databricks.com/en/release-notes/runtime/14.3lts-ml.html) or above. The cluster should be single-node with one or more GPU instances: e.g. [g4dn.12xlarge [T4]](https://aws.amazon.com/ec2/instance-types/g4/) on AWS or [Standard_NC64as_T4_v3](https://learn.microsoft.com/en-us/azure/virtual-machines/nct4-v3-series) on Azure. MMF leverages [neuralforecast](https://nixtlaverse.nixtla.io/neuralforecast/index.html) which is built on top of [pytorch](https://lightning.ai/docs/pytorch/stable/common/trainer.html) and can therefore utilize all the [available resources](https://lightning.ai/docs/pytorch/stable/common/trainer.html). 
+# MAGIC We recommend using a cluster with [Databricks Runtime 15.4 LTS for ML](https://docs.databricks.com/en/release-notes/runtime/15.4lts-ml.html) or above. The cluster should be single-node with one or more GPU instances: e.g. [g4dn.12xlarge [T4]](https://aws.amazon.com/ec2/instance-types/g4/) on AWS or [Standard_NC64as_T4_v3](https://learn.microsoft.com/en-us/azure/virtual-machines/nct4-v3-series) on Azure. MMF leverages [neuralforecast](https://nixtlaverse.nixtla.io/neuralforecast/index.html) which is built on top of [pytorch](https://lightning.ai/docs/pytorch/stable/common/trainer.html) and can therefore utilize all the [available resources](https://lightning.ai/docs/pytorch/stable/common/trainer.html). 
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ### Install and import packages
-# MAGIC Check out [requirements.txt](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/requirements.txt) if you're interested in the libraries we use.
+# MAGIC Check out [requirements-global.txt](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/requirements-global.txt) if you're interested in the libraries we use.
 
 # COMMAND ----------
 
@@ -97,7 +97,7 @@ display(spark.sql(f"select * from {catalog}.{db}.rossmann_daily_test where Store
 # MAGIC %md ### Models
 # MAGIC Let's configure a list of models we are going to apply to our time series for evaluation and forecasting. A comprehensive list of all supported models is available in [mmf_sa/models/models_conf.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/models_conf.yaml). Look for the models where `model_type: global`; these are the global models we import from [neuralforecast](https://github.com/Nixtla/neuralforecast). Check their documentation for the detailed description of each model. 
 # MAGIC
-# MAGIC Exogenous regressors are currently only supported for [some models](https://nixtlaverse.nixtla.io/neuralforecast/models.html) (e.g. `NeuralForecastAutoNBEATSx`). But including non-supported models in the active model list doesn't harm: models that can't use exogenous regressors will simply ignore them.
+# MAGIC Exogenous regressors are currently only supported for [some models](https://nixtlaverse.nixtla.io/neuralforecast/models.html) (e.g. `NeuralForecastAutoNBEATSx`). The following list of models support exogenous regressors.
 
 # COMMAND ----------
 
@@ -126,7 +126,7 @@ run_id = str(uuid.uuid4())
 
 for model in active_models:
   dbutils.notebook.run(
-    "run_external_regressors_daily",
+    "../run_external_regressors_daily",
     timeout_seconds=0,
     arguments={"catalog": catalog, "db": db, "model": model, "run_id": run_id, "user": user})
 

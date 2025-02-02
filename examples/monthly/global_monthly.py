@@ -1,20 +1,20 @@
 # Databricks notebook source
 # MAGIC %md
 # MAGIC # Many Models Forecasting Demo
-# MAGIC This notebook showcases how to run MMF with global models on multiple time series of weekly resolution. We will use [M4 competition](https://www.sciencedirect.com/science/article/pii/S0169207019301128#sec5) data. The descriptions here are mostly the same as the case with the [daily resolution](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/global_daily.py), so we will skip the redundant parts and focus only on the essentials.
+# MAGIC This notebook showcases how to run MMF with global models on multiple time series of monthly resolution. We will use [M4 competition](https://www.sciencedirect.com/science/article/pii/S0169207019301128#sec5) data. The descriptions here are mostly the same as the case with the [daily resolution](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/global_daily.py), so we will skip the redundant parts and focus only on the essentials.
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ### Cluster setup
 # MAGIC
-# MAGIC We recommend using a cluster with [Databricks Runtime 14.3 LTS for ML](https://docs.databricks.com/en/release-notes/runtime/14.3lts-ml.html) or above. The cluster should be single-node with one or more GPU instances: e.g. [g4dn.12xlarge [T4]](https://aws.amazon.com/ec2/instance-types/g4/) on AWS or [Standard_NC64as_T4_v3](https://learn.microsoft.com/en-us/azure/virtual-machines/nct4-v3-series) on Azure.
+# MAGIC We recommend using a cluster with [Databricks Runtime 15.4 LTS for ML](https://docs.databricks.com/en/release-notes/runtime/15.4lts-ml.html) or above. The cluster should be single-node with one or more GPU instances: e.g. [g4dn.12xlarge [T4]](https://aws.amazon.com/ec2/instance-types/g4/) on AWS or [Standard_NC64as_T4_v3](https://learn.microsoft.com/en-us/azure/virtual-machines/nct4-v3-series) on Azure.
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ### Install and import packages
-# MAGIC Check out [requirements.txt](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/requirements.txt) if you're interested in the libraries we use.
+# MAGIC Check out [requirements-global.txt](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/requirements-global.txt) if you're interested in the libraries we use.
 
 # COMMAND ----------
 
@@ -47,9 +47,9 @@ from datasetsforecast.m4 import M4
 n = 100
 
 
-def create_m4_weekly():
-    y_df, _, _ = M4.load(directory=str(pathlib.Path.home()), group="Weekly")
-    _ids = [f"W{i}" for i in range(1, n)]
+def create_m4_monthly():
+    y_df, _, _ = M4.load(directory=str(pathlib.Path.home()), group="Monthly")
+    _ids = [f"M{i}" for i in range(1, n + 1)]
     y_df = (
         y_df.groupby("unique_id")
         .filter(lambda x: x.unique_id.iloc[0] in _ids)
@@ -62,15 +62,19 @@ def create_m4_weekly():
 
 def transform_group(df):
     unique_id = df.unique_id.iloc[0]
-    if len(df) > 260:
-        df = df.iloc[-260:]
-    _start = pd.Timestamp("2020-01-01")
-    _end = _start + pd.DateOffset(days=int(7*len(df)))
-    date_idx = pd.date_range(start=_start, end=_end, freq="W", name="ds")
-    res_df = pd.DataFrame(data=[], index=date_idx).reset_index()
-    res_df["unique_id"] = unique_id
-    res_df["y"] = df.y.values
-    return res_df
+    _cnt = 60  # df.count()[0]
+    _start = pd.Timestamp("2018-01-01")
+    _end = _start + pd.DateOffset(months=_cnt)
+    date_idx = pd.date_range(start=_start, end=_end, freq="M", name="date")
+    _df = (
+        pd.DataFrame(data=[], index=date_idx)
+        .reset_index()
+        .rename(columns={"index": "date"})
+    )
+    _df["unique_id"] = unique_id
+    _df["y"] = df[:60].y.values
+    return _df
+
 
 # COMMAND ----------
 
@@ -90,9 +94,9 @@ _ = spark.sql(f"CREATE CATALOG IF NOT EXISTS {catalog}")
 _ = spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{db}")
 
 (
-    spark.createDataFrame(create_m4_weekly())
+    spark.createDataFrame(create_m4_monthly())
     .write.format("delta").mode("overwrite")
-    .saveAsTable(f"{catalog}.{db}.m4_weekly_train")
+    .saveAsTable(f"{catalog}.{db}.m4_monthly_train")
 )
 
 # COMMAND ----------
@@ -101,13 +105,18 @@ _ = spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{db}")
 
 # COMMAND ----------
 
-display(spark.sql(f"select unique_id, count(ds) as count from {catalog}.{db}.m4_weekly_train group by unique_id order by unique_id"))
+display(spark.sql(f"select unique_id, count(date) as count from {catalog}.{db}.m4_monthly_train group by unique_id order by unique_id"))
 
 # COMMAND ----------
 
 display(
-  spark.sql(f"select * from {catalog}.{db}.m4_weekly_train where unique_id in ('W1', 'W2', 'W3', 'W4', 'W5') order by unique_id, ds")
+  spark.sql(f"select * from {catalog}.{db}.m4_monthly_train where unique_id in ('M1', 'M2', 'M3', 'M4', 'M5') order by unique_id, date")
   )
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC Note that monthly forecasting requires the timestamp column to represent the last day of each month.
 
 # COMMAND ----------
 
@@ -133,7 +142,7 @@ active_models = [
 
 # MAGIC %md ### Run MMF
 # MAGIC
-# MAGIC Now, we can run the evaluation and forecasting using `run_forecast` function defined in [mmf_sa/models/__init__.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/__init__.py). Refer to [README.md](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/README.md#parameters-description) for a comprehensive description of each parameter. Make sure to set `freq="W"` in `run_forecast` function called in [examples/run_weekly.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/run_weekly.py).
+# MAGIC Now, we can run the evaluation and forecasting using `run_forecast` function defined in [mmf_sa/models/__init__.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/__init__.py). Refer to [README.md](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/README.md#parameters-description) for a comprehensive description of each parameter. Make sure to set `freq="M"` in `run_forecast` function called in [examples/run_monthly.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/run_monthly.py).
 
 # COMMAND ----------
 
@@ -142,7 +151,7 @@ run_id = str(uuid.uuid4())
 
 for model in active_models:
   dbutils.notebook.run(
-    "run_weekly",
+    "../run_monthly",
     timeout_seconds=0,
     arguments={"catalog": catalog, "db": db, "model": model, "run_id": run_id, "user": user})
 
@@ -154,8 +163,8 @@ for model in active_models:
 # COMMAND ----------
 
 display(spark.sql(f"""
-    select * from {catalog}.{db}.weekly_evaluation_output 
-    where unique_id = 'W1'
+    select * from {catalog}.{db}.monthly_evaluation_output 
+    where unique_id = 'M1'
     order by unique_id, model, backtest_window_start_date
     """))
 
@@ -167,9 +176,9 @@ display(spark.sql(f"""
 # COMMAND ----------
 
 display(spark.sql(f"""
-    select * from {catalog}.{db}.weekly_scoring_output 
-    where unique_id = 'W1'
-    order by unique_id, model, ds
+    select * from {catalog}.{db}.monthly_scoring_output 
+    where unique_id = 'M1'
+    order by unique_id, model, date
     """))
 
 # COMMAND ----------
@@ -179,8 +188,8 @@ display(spark.sql(f"""
 
 # COMMAND ----------
 
-#display(spark.sql(f"delete from {catalog}.{db}.weekly_evaluation_output"))
+#display(spark.sql(f"delete from {catalog}.{db}.monthly_evaluation_output"))
 
 # COMMAND ----------
 
-#display(spark.sql(f"delete from {catalog}.{db}.weekly_scoring_output"))
+#display(spark.sql(f"delete from {catalog}.{db}.monthly_scoring_output"))

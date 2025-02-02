@@ -8,13 +8,13 @@
 # MAGIC %md
 # MAGIC ### Cluster setup
 # MAGIC
-# MAGIC We recommend using a cluster with [Databricks Runtime 14.3 LTS for ML](https://docs.databricks.com/en/release-notes/runtime/14.3lts-ml.html) or above. The cluster should be single-node with one or more GPU instances: e.g. [g4dn.12xlarge [T4]](https://aws.amazon.com/ec2/instance-types/g4/) on AWS or [Standard_NC64as_T4_v3](https://learn.microsoft.com/en-us/azure/virtual-machines/nct4-v3-series) on Azure. MMF leverages [Pandas UDF](https://docs.databricks.com/en/udf/pandas.html) for distributing the inference tasks and utilizing all the available resource.
+# MAGIC We recommend using a cluster with [Databricks Runtime 15.4 LTS for ML](https://docs.databricks.com/en/release-notes/runtime/15.4lts-ml.html) or above. The cluster should be single-node with one or more GPU instances: e.g. [g4dn.12xlarge [T4]](https://aws.amazon.com/ec2/instance-types/g4/) on AWS or [Standard_NC64as_T4_v3](https://learn.microsoft.com/en-us/azure/virtual-machines/nct4-v3-series) on Azure. MMF leverages [Pandas UDF](https://docs.databricks.com/en/udf/pandas.html) for distributing the inference tasks and utilizing all the available resource.
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ### Install and import packages
-# MAGIC Check out [requirements.txt](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/requirements.txt) if you're interested in the libraries we use. For foundation models, additional dependencies are installed and imported as per demand. See how this is done in `install` function defined in each model pipeline script: e.g. [mmf_sa/models/chronosforecast/ChronosPipeline.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/chronosforecast/ChronosPipeline.py).
+# MAGIC Check out [requirements-global.txt](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/requirements-global.txt) if you're interested in the libraries we use. For foundation models, additional dependencies are installed and imported as per demand. See how this is done in `install` function defined in each model pipeline script: e.g. [mmf_sa/models/chronosforecast/ChronosPipeline.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/chronosforecast/ChronosPipeline.py).
 
 # COMMAND ----------
 
@@ -139,6 +139,8 @@ active_models = [
 # MAGIC
 # MAGIC Now, we can run the evaluation and forecasting using `run_forecast` function defined in [mmf_sa/models/__init__.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/__init__.py). Refer to [README.md](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/README.md#parameters-description) for a comprehensive description of each parameter. 
 # MAGIC
+# MAGIC Note that we are not providing any covariate field (i.e. `static_features`, `dynamic_future_numerical`, `dynamic_future_categorical`, `dynamic_historical_numerical`, or `dynamic_historical_categorical`) yet in this example. We will look into how we can add exogenous regressors to help our models in a different notebook: [examples/external_regressors/foundation_external_regressors_daily.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/external_regressors/foundation_external_regressors_daily.py).
+# MAGIC
 # MAGIC While the following cell is running, you can check the status of your run on Experiments. Make sure you look for the experiments with the path you provided as `experiment_path` within `run_forecast`. On the Experiments page, you see one entry per one model (i.e. ChronosT5Large). The metric provided here is a simple average over all back testing trials and all time series. This is intended to give you an initial feeling of how good each model performs on your entire data mix. But we will look into how you can scrutinize the evaluation using the `evaluation_output` table in a bit. 
 # MAGIC
 # MAGIC If you are interested in how MMF achieves distributed inference on these foundation models using Pandas UDF, have a look at the model pipeline scripts: e.g. [mmf_sa/models/chronosforecast/ChronosPipeline.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/chronosforecast/ChronosPipeline.py).
@@ -152,7 +154,7 @@ run_id = str(uuid.uuid4())
 
 for model in active_models:
   dbutils.notebook.run(
-    "run_daily",
+    "../run_daily",
     timeout_seconds=0, 
     arguments={"catalog": catalog, "db": db, "model": model, "run_id": run_id, "user": user})
 
@@ -181,12 +183,12 @@ display(
 # MAGIC
 # MAGIC We also register the model in Unity Catalog and store each model's URI in this table (`model_uri`). You can use MLFlow to [load the models](https://mlflow.org/docs/latest/python_api/mlflow.pyfunc.html#mlflow.pyfunc.load_model) and access their specifications or produce forecasts.
 # MAGIC
-# MAGIC Once you have your foundation models registered in Unity Catalog, you can deploy them behind a real-time endpoint on [Model Serving](https://docs.databricks.com/en/machine-learning/model-serving/index.html). You can then generate a multi-step ahead forecast at any point in time as long as you provide the history with the right resolution. This could be a game changing feature for applications relying on real-time tracking and monitoring of time series data. See the notebooks in [examples/foundation-model-examples](https://github.com/databricks-industry-solutions/many-model-forecasting/tree/main/examples/foundation-model-examples) for examples of how to register and deploy a model, and make an online forecasting request on that model. 
+# MAGIC Once you have your foundation models registered in Unity Catalog, you can deploy them behind a real-time endpoint on [Model Serving](https://docs.databricks.com/en/machine-learning/model-serving/index.html). You can then generate a multi-step ahead forecast at any point in time as long as you provide the history with the right resolution. This could be a game changing feature for applications relying on real-time tracking and monitoring of time series data. See the notebooks in [databricks-industry-solutions/transformer_forecasting](https://github.com/databricks-industry-solutions/transformer_forecasting) for examples of how to register and deploy a model, and make an online forecasting request on that model. 
 
 # COMMAND ----------
 
 # MAGIC %md ### Forecast
-# MAGIC In `scoring_output` table, forecasts for each time series from each model are stored. Based on the evaluation exercised performed on `evaluation_output` table, you can select the forecasts from the best performing models or a mix of models. We again store each model's URI in this table (`model_uri`). You can use MLFlow to [load the models](https://mlflow.org/docs/latest/python_api/mlflow.pyfunc.html#mlflow.pyfunc.load_model) and access their specifications or produce forecasts. 
+# MAGIC In `scoring_output` table, forecasts for each time series from each model are stored. Based on the evaluation exercised performed on `evaluation_output` table, you can select the forecasts from the best performing models or a mix of models. We again store each model's URI in this table (`model_uri`).
 
 # COMMAND ----------
 

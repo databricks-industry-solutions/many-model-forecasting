@@ -64,10 +64,12 @@ display(
 
 # COMMAND ----------
 
-display(spark.sql(f"""
-                  select * from {catalog}.{db}.daily_scoring_output 
-                  order by unique_id, model, ds limit 10
-                  """))
+display(
+  spark.sql(f"""
+            select * from {catalog}.{db}.daily_scoring_output 
+            order by unique_id, model, ds 
+            limit 10
+            """))
 
 # COMMAND ----------
 

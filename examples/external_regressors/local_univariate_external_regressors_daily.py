@@ -2,19 +2,19 @@
 # MAGIC %md
 # MAGIC # Many Models Forecasting Demo
 # MAGIC
-# MAGIC This notebook showcases how to run MMF with local models on multiple time series of daily resolution using exogenous regressors. We will use [Rossmann Store](https://www.kaggle.com/competitions/rossmann-store-sales/data) data. To be able to run this notebook, you need to register on [Kaggle](https://www.kaggle.com/) and download the dataset. The descriptions here are mostly the same as the case [without exogenous regressors](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/local_univariate_daily.py), so we will skip the redundant parts and focus only on the essentials. 
+# MAGIC This notebook showcases how to run MMF with local models on multiple time series of daily resolution using exogenous regressors. We will use [Rossmann Store](https://www.kaggle.com/competitions/rossmann-store-sales/data) data. To be able to run this notebook, you need to register on [Kaggle](https://www.kaggle.com/) and download the dataset. The descriptions here are mostly the same as the case [without exogenous regressors](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/local_univariate_daily.py), so we will skip the redundant parts and focus only on the essentials. 
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ### Cluster setup
 # MAGIC
-# MAGIC We recommend using a cluster with [Databricks Runtime 14.3 LTS for ML](https://docs.databricks.com/en/release-notes/runtime/14.3lts-ml.html) or above. The cluster can be either a single-node or multi-node CPU cluster. Make sure to set the following Spark configurations before you start your cluster: [`spark.sql.execution.arrow.enabled true`](https://spark.apache.org/docs/3.0.1/sql-pyspark-pandas-with-arrow.html#enabling-for-conversion-tofrom-pandas) and [`spark.sql.adaptive.enabled false`](https://spark.apache.org/docs/latest/sql-performance-tuning.html#adaptive-query-execution). You can do this by specifying [Spark configuration](https://docs.databricks.com/en/compute/configure.html#spark-configuration) in the advanced options on the cluster creation page.
+# MAGIC We recommend using a cluster with [Databricks Runtime 15.4 LTS for ML](https://docs.databricks.com/en/release-notes/runtime/15.4lts-ml.html) or above. The cluster can be either a single-node or multi-node CPU cluster. Make sure to set the following Spark configurations before you start your cluster: [`spark.sql.execution.arrow.enabled true`](https://spark.apache.org/docs/3.0.1/sql-pyspark-pandas-with-arrow.html#enabling-for-conversion-tofrom-pandas) and [`spark.sql.adaptive.enabled false`](https://spark.apache.org/docs/latest/sql-performance-tuning.html#adaptive-query-execution). You can do this by specifying [Spark configuration](https://docs.databricks.com/en/compute/configure.html#spark-configuration) in the advanced options on the cluster creation page.
 
 # COMMAND ----------
 
 # DBTITLE 1,Install the necessary libraries
-# MAGIC %pip install -r ../requirements.txt --quiet
+# MAGIC %pip install -r ../../requirements.txt --quiet
 # MAGIC dbutils.library.restartPython()
 
 # COMMAND ----------
@@ -134,7 +134,7 @@ active_models = [
 
 # MAGIC %md ### Run MMF
 # MAGIC
-# MAGIC Now, we run the evaluation and forecasting using `run_forecast` function. We are providing the training table and the scoring table names. If `scoring_data` is not provided or if the same name as `train_data` is provided, the models will ignore the `dynamic_future_numerical` and `dynamic_future_categorical` regressors. Note that we are providing a covariate field (i.e. `dynamic_future_numerical` or `dynamic_future_categorical`) this time. There are also other convariate fields, namely `static_features`, `dynamic_historical_numerical` and `dynamic_historical_categorical`, but these are only relevant with the global models.
+# MAGIC Now, we run the evaluation and forecasting using `run_forecast` function. We are providing the training table and the scoring table names. If `scoring_data` is not provided or if the same name as `train_data` is provided, the models will ignore the `dynamic_future_numerical` and `dynamic_future_categorical` regressors. Note that we are providing a covariate field (i.e. `dynamic_future_numerical` or `dynamic_future_categorical`) this time. There are also other convariate fields, namely `static_features`, `dynamic_historical_numerical` and `dynamic_historical_categorical`, but these are only relevant with the global and foundation models.
 
 # COMMAND ----------
 

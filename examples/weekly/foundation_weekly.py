@@ -1,20 +1,20 @@
 # Databricks notebook source
 # MAGIC %md
 # MAGIC # Many Models Forecasting Demo
-# MAGIC This notebook showcases how to run MMF with foundation models on multiple time series of weekly resolution. We will use [M4 competition](https://www.sciencedirect.com/science/article/pii/S0169207019301128#sec5) data. The descriptions here are mostly the same as the case with the [daily resolution](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/foundation_daily.py), so we will skip the redundant parts and focus only on the essentials.
+# MAGIC This notebook showcases how to run MMF with foundation models on multiple time series of weekly resolution. We will use [M4 competition](https://www.sciencedirect.com/science/article/pii/S0169207019301128#sec5) data. The descriptions here are mostly the same as the case with the [daily resolution](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/foundation_daily.py), so we will skip the redundant parts and focus only on the essentials.
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ### Cluster setup
 # MAGIC
-# MAGIC We recommend using a cluster with [Databricks Runtime 14.3 LTS for ML](https://docs.databricks.com/en/release-notes/runtime/14.3lts-ml.html) or above. The cluster should be single-node with one or more GPU instances: e.g. [g4dn.12xlarge [T4]](https://aws.amazon.com/ec2/instance-types/g4/) on AWS or [Standard_NC64as_T4_v3](https://learn.microsoft.com/en-us/azure/virtual-machines/nct4-v3-series) on Azure. MMF leverages [Pandas UDF](https://docs.databricks.com/en/udf/pandas.html) for distributing the inference tasks and utilizing all the available resource.
+# MAGIC We recommend using a cluster with [Databricks Runtime 15.4 LTS for ML](https://docs.databricks.com/en/release-notes/runtime/15.4lts-ml.html) or above. The cluster should be single-node with one or more GPU instances: e.g. [g4dn.12xlarge [T4]](https://aws.amazon.com/ec2/instance-types/g4/) on AWS or [Standard_NC64as_T4_v3](https://learn.microsoft.com/en-us/azure/virtual-machines/nct4-v3-series) on Azure. MMF leverages [Pandas UDF](https://docs.databricks.com/en/udf/pandas.html) for distributing the inference tasks and utilizing all the available resource.
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ### Install and import packages
-# MAGIC Check out [requirements.txt](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/requirements.txt) if you're interested in the libraries we use.
+# MAGIC Check out [requirements-global.txt](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/requirements-global.txt) if you're interested in the libraries we use.
 
 # COMMAND ----------
 
@@ -75,7 +75,7 @@ def transform_group(df):
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC We are going to save this data in a delta lake table. Provide catalog and database names where you want to store the data.__
+# MAGIC We are going to save this data in a delta lake table. Provide catalog and database names where you want to store the data.
 
 # COMMAND ----------
 
@@ -148,7 +148,7 @@ run_id = str(uuid.uuid4())
 
 for model in active_models:
   dbutils.notebook.run(
-    "run_weekly",
+    "../run_weekly",
     timeout_seconds=0,
     arguments={"catalog": catalog, "db": db, "model": model, "run_id": run_id, "user": user})
 

@@ -8,13 +8,13 @@
 # MAGIC %md
 # MAGIC ### Cluster setup
 # MAGIC
-# MAGIC We recommend using a cluster with [Databricks Runtime 14.3 LTS for ML](https://docs.databricks.com/en/release-notes/runtime/14.3lts-ml.html) or above. The cluster should be single-node with one or more GPU instances: e.g. [g4dn.12xlarge [T4]](https://aws.amazon.com/ec2/instance-types/g4/) on AWS or [Standard_NC64as_T4_v3](https://learn.microsoft.com/en-us/azure/virtual-machines/nct4-v3-series) on Azure. MMF leverages [neuralforecast](https://nixtlaverse.nixtla.io/neuralforecast/index.html) which is built on top of [pytorch](https://lightning.ai/docs/pytorch/stable/common/trainer.html) and can therefore utilize all the [available resources](https://lightning.ai/docs/pytorch/stable/common/trainer.html). 
+# MAGIC We recommend using a cluster with [Databricks Runtime 15.4 LTS for ML](https://docs.databricks.com/en/release-notes/runtime/15.4lts-ml.html) or above. The cluster should be single-node with one or more GPU instances: e.g. [g4dn.12xlarge [T4]](https://aws.amazon.com/ec2/instance-types/g4/) on AWS or [Standard_NC64as_T4_v3](https://learn.microsoft.com/en-us/azure/virtual-machines/nct4-v3-series) on Azure. MMF leverages [neuralforecast](https://nixtlaverse.nixtla.io/neuralforecast/index.html) which is built on top of [pytorch](https://lightning.ai/docs/pytorch/stable/common/trainer.html) and can therefore utilize all the [available resources](https://lightning.ai/docs/pytorch/stable/common/trainer.html). 
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ### Install and import packages
-# MAGIC Check out [requirements.txt](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/requirements.txt) if you're interested in the libraries we use.
+# MAGIC Check out [requirements-global.txt](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/requirements-global.txt) if you're interested in the libraries we use.
 
 # COMMAND ----------
 
@@ -135,7 +135,7 @@ active_models = [
 # MAGIC
 # MAGIC Now, we can run the evaluation and forecasting using `run_forecast` function defined in [mmf_sa/models/__init__.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/__init__.py). Refer to [README.md](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/README.md#parameters-description) for a comprehensive description of each parameter. 
 # MAGIC
-# MAGIC Note that we are not providing any covariate field (i.e. `static_features`, `dynamic_future` or `dynamic_historical`) yet in this example. We will look into how we can add exogenous regressors to help our models in a different notebook: [examples/global_external_regressors_daily.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/global_external_regressors_daily.py).
+# MAGIC Note that we are not providing any covariate field (i.e. `static_features`, `dynamic_future` or `dynamic_historical`) yet in this example. We will look into how we can add exogenous regressors to help our models in a different notebook: [examples/external_regressors/global_external_regressors_daily.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/external_regressors/global_external_regressors_daily.py).
 # MAGIC
 # MAGIC While the following cell is running, you can check the status of your run on Experiments. Make sure you look for the experiments with the path you provided as `experiment_path` within `run_forecast`. On the Experiments page, you see one entry per one model (i.e. NeuralForecastAutoNBEATSx). The metric provided here is a simple average over all back testing trials and all time series. This is intended to give you an initial feeling of how good each model performs on your entire data mix. But we will look into how you can scrutinize the evaluation using the `evaluation_output` table in a bit. 
 # MAGIC
@@ -150,7 +150,7 @@ run_id = str(uuid.uuid4())
 
 for model in active_models:
   dbutils.notebook.run(
-    "run_daily",
+    "../run_daily",
     timeout_seconds=0, 
     arguments={"catalog": catalog, "db": db, "model": model, "run_id": run_id, "user": user})
 
@@ -176,12 +176,12 @@ display(spark.sql(f"""
 # MAGIC
 # MAGIC Note that if you run local and/or global models against the same time series with the same input parameters (except for those specifying global and foundation models), you will get the entries from those models in the same table and will be able to compare across all types models, which is the biggest benefit of having all models integrated in one solution.
 # MAGIC
-# MAGIC We also register the model in Unity Catalog and store each model's URI in this table (`model_uri`). You can use MLFlow to [load the models](https://mlflow.org/docs/latest/python_api/mlflow.sklearn.html#mlflow.sklearn.load_model) and access their specifications or produce forecasts. 
+# MAGIC We also register the model in Unity Catalog and store each model's URI in this table (`model_uri`). You can use MLFlow to [load the models](https://mlflow.org/docs/latest/python_api/mlflow.pyfunc.html#mlflow.pyfunc.load_model) and access their specifications or produce forecasts. 
 
 # COMMAND ----------
 
 # MAGIC %md ### Forecast
-# MAGIC In `scoring_output` table, forecasts for each time series from each model are stored. Based on the evaluation exercised performed on `evaluation_output` table, you can select the forecasts from the best performing models or a mix of models. We again store each model's URI in this table (`model_uri`). You can use MLFlow to [load the models](https://mlflow.org/docs/latest/python_api/mlflow.sklearn.html#mlflow.sklearn.load_model) and access their specifications or produce forecasts. 
+# MAGIC In `scoring_output` table, forecasts for each time series from each model are stored. Based on the evaluation exercised performed on `evaluation_output` table, you can select the forecasts from the best performing models or a mix of models. We again store each model's URI in this table (`model_uri`).
 
 # COMMAND ----------
 

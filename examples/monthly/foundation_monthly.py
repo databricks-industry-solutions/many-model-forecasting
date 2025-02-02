@@ -1,20 +1,20 @@
 # Databricks notebook source
 # MAGIC %md
 # MAGIC # Many Models Forecasting Demo
-# MAGIC This notebook showcases how to run MMF with global models on multiple time series of monthly resolution. We will use [M4 competition](https://www.sciencedirect.com/science/article/pii/S0169207019301128#sec5) data. The descriptions here are mostly the same as the case with the [daily resolution](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/global_daily.py), so we will skip the redundant parts and focus only on the essentials.
+# MAGIC This notebook showcases how to run MMF with foundation models on multiple time series of monthly resolution. We will use [M4 competition](https://www.sciencedirect.com/science/article/pii/S0169207019301128#sec5) data. The descriptions here are mostly the same as the case with the [daily resolution](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/foundation_daily.py), so we will skip the redundant parts and focus only on the essentials.
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ### Cluster setup
 # MAGIC
-# MAGIC We recommend using a cluster with [Databricks Runtime 14.3 LTS for ML](https://docs.databricks.com/en/release-notes/runtime/14.3lts-ml.html) or above. The cluster should be single-node with one or more GPU instances: e.g. [g4dn.12xlarge [T4]](https://aws.amazon.com/ec2/instance-types/g4/) on AWS or [Standard_NC64as_T4_v3](https://learn.microsoft.com/en-us/azure/virtual-machines/nct4-v3-series) on Azure.
+# MAGIC We recommend using a cluster with [Databricks Runtime 15.4 LTS for ML](https://docs.databricks.com/en/release-notes/runtime/15.4lts-ml.html) or above. The cluster should be single-node with one or more GPU instances: e.g. [g4dn.12xlarge [T4]](https://aws.amazon.com/ec2/instance-types/g4/) on AWS or [Standard_NC64as_T4_v3](https://learn.microsoft.com/en-us/azure/virtual-machines/nct4-v3-series) on Azure. MMF leverages [Pandas UDF](https://docs.databricks.com/en/udf/pandas.html) for distributing the inference tasks and utilizing all the available resource.
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ### Install and import packages
-# MAGIC Check out [requirements.txt](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/requirements.txt) if you're interested in the libraries we use.
+# MAGIC Check out [requirements-global.txt](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/requirements-global.txt) if you're interested in the libraries we use.
 
 # COMMAND ----------
 
@@ -79,7 +79,7 @@ def transform_group(df):
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC We are going to save this data in a delta lake table. Provide catalog and database names where you want to store the data.__
+# MAGIC We are going to save this data in a delta lake table. Provide catalog and database names where you want to store the data.
 
 # COMMAND ----------
 
@@ -121,28 +121,34 @@ display(
 # COMMAND ----------
 
 # MAGIC %md ### Models
-# MAGIC Let's configure a list of models we are going to apply to our time series for evaluation and forecasting. A comprehensive list of all supported models is available in [mmf_sa/models/models_conf.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/models_conf.yaml). Look for the models where `model_type: global`; these are the global models we import from [neuralforecast](https://github.com/Nixtla/neuralforecast). Check their documentation for the detailed description of each model. 
+# MAGIC Let's configure a list of models we are going to apply to our time series for evaluation and forecasting. A comprehensive list of all supported models is available in [mmf_sa/models/models_conf.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/models_conf.yaml). Look for the models where `model_type: foundation`; these are the foundation models we install from [chronos](https://pypi.org/project/chronos-forecasting/), [uni2ts](https://pypi.org/project/uni2ts/) and [timesfm](https://pypi.org/project/timesfm/). Check their documentation for the detailed description of each model.
 
 # COMMAND ----------
 
 active_models = [
-    "NeuralForecastRNN",
-    "NeuralForecastLSTM",
-    "NeuralForecastNBEATSx",
-    "NeuralForecastNHITS",
-    "NeuralForecastAutoRNN",
-    "NeuralForecastAutoLSTM",
-    "NeuralForecastAutoNBEATSx",
-    "NeuralForecastAutoNHITS",
-    "NeuralForecastAutoTiDE",
-    "NeuralForecastAutoPatchTST",
+    "ChronosT5Tiny",
+    "ChronosT5Mini",
+    "ChronosT5Small",
+    "ChronosT5Base",
+    "ChronosT5Large",
+    "ChronosBoltTiny",
+    "ChronosBoltMini",
+    "ChronosBoltSmall",
+    "ChronosBoltBase",
+    "MoiraiSmall",
+    "MoiraiBase",
+    "MoiraiLarge",
+    "MoiraiMoESmall",
+    "MoiraiMoEBase",
+    "TimesFM_1_0_200m",
+    "TimesFM_2_0_500m",
 ]
 
 # COMMAND ----------
 
 # MAGIC %md ### Run MMF
 # MAGIC
-# MAGIC Now, we can run the evaluation and forecasting using `run_forecast` function defined in [mmf_sa/models/__init__.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/__init__.py). Refer to [README.md](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/README.md#parameters-description) for a comprehensive description of each parameter. Make sure to set `freq="M"` in `run_forecast` function called in [examples/run_monthly.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/run_monthly.py).
+# MAGIC Now, we can run the evaluation and forecasting using `run_forecast` function defined in [mmf_sa/models/__init__.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/__init__.py). Refer to [README.md](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/README.md#parameters-description) for a comprehensive description of each parameter.
 
 # COMMAND ----------
 
@@ -151,14 +157,14 @@ run_id = str(uuid.uuid4())
 
 for model in active_models:
   dbutils.notebook.run(
-    "run_monthly",
+    "../run_monthly",
     timeout_seconds=0,
     arguments={"catalog": catalog, "db": db, "model": model, "run_id": run_id, "user": user})
 
 # COMMAND ----------
 
 # MAGIC %md ### Evaluate
-# MAGIC In `evaluation_output` table, the we store all evaluation results for all backtesting trials from all models.
+# MAGIC In `evaluation_output` table, the we store all evaluation results for all backtesting trials from all models. This information can be used to understand which models performed well on which time series on which periods of backtesting. This is very important for selecting the final model for forecasting or models for ensembling. Maybe, it's faster to take a look at the table:
 
 # COMMAND ----------
 

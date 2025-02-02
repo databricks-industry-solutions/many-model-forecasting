@@ -27,12 +27,12 @@ taining_table = f"daily_train_{n}"
 
 # COMMAND ----------
 
-# MAGIC display(
-# MAGIC   spark.sql(f"""
-# MAGIC             select * from {catalog}.{db}.{taining_table} 
-# MAGIC             where unique_id in ('FOODS_1_001_WI_1', 'FOODS_1_004_TX_2', 'FOODS_1_006_WI_1', 'FOODS_1_008_CA_3', 'FOODS_1_012_WI_1') 
-# MAGIC             order by unique_id, ds
-# MAGIC             """))
+display(
+  spark.sql(f"""
+            select * from {catalog}.{db}.{taining_table} 
+            where unique_id in ('FOODS_1_001_WI_1', 'FOODS_1_004_TX_2', 'FOODS_1_006_WI_1', 'FOODS_1_008_CA_3', 'FOODS_1_012_WI_1') 
+            order by unique_id, ds
+            """))
 
 # COMMAND ----------
 
@@ -56,8 +56,8 @@ active_models = [
     "RFableNNETAR",
     "RFableEnsemble",
     "RDynamicHarmonicRegression",
-    #"SKTimeTBats",
-    #"SKTimeLgbmDsDt",
+    "SKTimeTBats",
+    "SKTimeLgbmDsDt",
 ]
 
 # COMMAND ----------

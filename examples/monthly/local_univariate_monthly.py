@@ -1,30 +1,31 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Many Models Forecasting (MMF)
-# MAGIC This notebook showcases how to run MMF with local models on multiple univariate time series of weekly resolution. We will use [M4 competition](https://www.sciencedirect.com/science/article/pii/S0169207019301128#sec5) data.
+# MAGIC # Many Models Forecasting Demo
+# MAGIC
+# MAGIC This notebook showcases how to run MMF with local models on multiple univariate time series of monthly resolution. We will use [M4 competition](https://www.sciencedirect.com/science/article/pii/S0169207019301128#sec5) data. The descriptions here are mostly the same as the case with the [daily resolution](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/local_univariate_daily.py), so we will skip the redundant parts and focus only on the essentials.
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ### Cluster setup
 # MAGIC
-# MAGIC We recommend using a cluster with [Databricks Runtime 14.3 LTS for ML](https://docs.databricks.com/en/release-notes/runtime/14.3lts-ml.html) or above. The cluster can be either a single-node or multi-node CPU cluster. MMF leverages [Pandas UDF](https://docs.databricks.com/en/udf/pandas.html) under the hood and utilizes all the available resource. Make sure to set the following Spark configurations before you start your cluster: [`spark.sql.execution.arrow.enabled true`](https://spark.apache.org/docs/3.0.1/sql-pyspark-pandas-with-arrow.html#enabling-for-conversion-tofrom-pandas) and [`spark.sql.adaptive.enabled false`](https://spark.apache.org/docs/latest/sql-performance-tuning.html#adaptive-query-execution). You can do this by specifying [Spark configuration](https://docs.databricks.com/en/compute/configure.html#spark-configuration) in the advanced options on the cluster creation page.
+# MAGIC We recommend using a cluster with [Databricks Runtime 15.4 LTS for ML](https://docs.databricks.com/en/release-notes/runtime/15.4lts-ml.html) or above. The cluster can be either a single-node or multi-node CPU cluster. Make sure to set the following Spark configurations before you start your cluster: [`spark.sql.execution.arrow.enabled true`](https://spark.apache.org/docs/3.0.1/sql-pyspark-pandas-with-arrow.html#enabling-for-conversion-tofrom-pandas) and [`spark.sql.adaptive.enabled false`](https://spark.apache.org/docs/latest/sql-performance-tuning.html#adaptive-query-execution). You can do this by specifying [Spark configuration](https://docs.databricks.com/en/compute/configure.html#spark-configuration) in the advanced options on the cluster creation page.
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ### Install and import packages
-# MAGIC Check out [requirements.txt](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/requirements.txt) if you're interested in the libraries we use.
 
 # COMMAND ----------
 
 # DBTITLE 1,Install the necessary libraries
-# MAGIC %pip install -r ../requirements.txt --quiet
+# MAGIC %pip install -r ../../requirements.txt --quiet
 # MAGIC dbutils.library.restartPython()
 
 # COMMAND ----------
 
 import logging
+from tqdm.autonotebook import tqdm
 logger = spark._jvm.org.apache.log4j
 logging.getLogger("py4j.java_gateway").setLevel(logging.ERROR)
 logging.getLogger("py4j.clientserver").setLevel(logging.ERROR)
@@ -46,7 +47,7 @@ from mmf_sa import run_forecast
 
 # MAGIC %md
 # MAGIC ### Prepare data 
-# MAGIC We are using [`datasetsforecast`](https://github.com/Nixtla/datasetsforecast/tree/main/) package to download M4 data. M4 dataset contains a set of time series which we use for testing MMF. Below we have written a number of custome functions to convert M4 time series to an expected format.
+# MAGIC We are using [`datasetsforecast`](https://github.com/Nixtla/datasetsforecast/tree/main/) package to download M4 data.
 
 # COMMAND ----------
 
@@ -54,9 +55,9 @@ from mmf_sa import run_forecast
 n = 100
 
 
-def create_m4_weekly():
-    y_df, _, _ = M4.load(directory=str(pathlib.Path.home()), group="Weekly")
-    _ids = [f"W{i}" for i in range(1, n)]
+def create_m4_monthly():
+    y_df, _, _ = M4.load(directory=str(pathlib.Path.home()), group="Monthly")
+    _ids = [f"M{i}" for i in range(1, n + 1)]
     y_df = (
         y_df.groupby("unique_id")
         .filter(lambda x: x.unique_id.iloc[0] in _ids)
@@ -69,15 +70,19 @@ def create_m4_weekly():
 
 def transform_group(df):
     unique_id = df.unique_id.iloc[0]
-    if len(df) > 260:
-        df = df.iloc[-260:]
-    _start = pd.Timestamp("2020-01-01")
-    _end = _start + pd.DateOffset(days=int(7*len(df)))
-    date_idx = pd.date_range(start=_start, end=_end, freq="W", name="ds")
-    res_df = pd.DataFrame(data=[], index=date_idx).reset_index()
-    res_df["unique_id"] = unique_id
-    res_df["y"] = df.y.values
-    return res_df
+    _cnt = 60  # df.count()[0]
+    _start = pd.Timestamp("2018-01-01")
+    _end = _start + pd.DateOffset(months=_cnt)
+    date_idx = pd.date_range(start=_start, end=_end, freq="M", name="date")
+    _df = (
+        pd.DataFrame(data=[], index=date_idx)
+        .reset_index()
+        .rename(columns={"index": "date"})
+    )
+    _df["unique_id"] = unique_id
+    _df["y"] = df[:60].y.values
+    return _df
+
 
 # COMMAND ----------
 
@@ -86,8 +91,8 @@ def transform_group(df):
 
 # COMMAND ----------
 
-catalog = "mmf" # Name of the catalog we use to manage our assets
-db = "m4" # Name of the schema we use to manage our assets (e.g. datasets)
+catalog = "mmf"  # Name of the catalog we use to manage our assets
+db = "m4"  # Name of the schema we use to manage our assets (e.g. datasets)
 user = spark.sql('select current_user() as user').collect()[0]['user'] # User email address
 
 # COMMAND ----------
@@ -97,9 +102,9 @@ _ = spark.sql(f"CREATE CATALOG IF NOT EXISTS {catalog}")
 _ = spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{db}")
 
 (
-    spark.createDataFrame(create_m4_weekly())
+    spark.createDataFrame(create_m4_monthly())
     .write.format("delta").mode("overwrite")
-    .saveAsTable(f"{catalog}.{db}.m4_weekly_train")
+    .saveAsTable(f"{catalog}.{db}.m4_monthly_train")
 )
 
 # COMMAND ----------
@@ -109,18 +114,24 @@ _ = spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{db}")
 # COMMAND ----------
 
 display(
-  spark.sql(f"select * from {catalog}.{db}.m4_weekly_train where unique_id in ('W1', 'W2', 'W3', 'W4', 'W5') order by unique_id, ds")
+  spark.sql(f"select unique_id, count(date) as count from {catalog}.{db}.m4_monthly_train group by unique_id order by unique_id")
   )
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC If the number of time series is larger than the number of total cores, we set `spark.sql.shuffle.partitions` to the number of cores (can also be a multiple) so that we don't under-utilize the resource.
+display(
+  spark.sql(f"select * from {catalog}.{db}.m4_monthly_train where unique_id in ('M1', 'M2', 'M3', 'M4', 'M5') order by unique_id, date")
+  )
 
 # COMMAND ----------
 
 if n > sc.defaultParallelism:
     sqlContext.setConf("spark.sql.shuffle.partitions", sc.defaultParallelism)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC Note that monthly forecasting requires the timestamp column to represent the last day of each month.
 
 # COMMAND ----------
 
@@ -151,27 +162,27 @@ active_models = [
     "RDynamicHarmonicRegression",
     "SKTimeTBats",
     "SKTimeLgbmDsDt",
-    ]
+]
 
 # COMMAND ----------
 
 # MAGIC %md ### Run MMF
 # MAGIC
-# MAGIC Now, we can run the evaluation and forecasting using `run_forecast` function defined in [mmf_sa/models/__init__.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/__init__.py). Make sure to set `freq="W"` in `run_forecast` function.
+# MAGIC Now, we can run the evaluation and forecasting using `run_forecast` function defined in [mmf_sa/models/__init__.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/__init__.py). Make sure to set `freq="M"` in `run_forecast` function.
 
 # COMMAND ----------
 
 run_forecast(
     spark=spark,
-    train_data=f"{catalog}.{db}.m4_weekly_train",
-    scoring_data=f"{catalog}.{db}.m4_weekly_train",
-    scoring_output=f"{catalog}.{db}.weekly_scoring_output",
-    evaluation_output=f"{catalog}.{db}.weekly_evaluation_output",
+    train_data=f"{catalog}.{db}.m4_monthly_train",
+    scoring_data=f"{catalog}.{db}.m4_monthly_train",
+    scoring_output=f"{catalog}.{db}.monthly_scoring_output",
+    evaluation_output=f"{catalog}.{db}.monthly_evaluation_output",
     group_id="unique_id",
-    date_col="ds",
+    date_col="date",
     target="y",
-    freq="W",
-    prediction_length=4,
+    freq="M",
+    prediction_length=3,
     backtest_length=12,
     stride=1,
     metric="smape",
@@ -179,8 +190,8 @@ run_forecast(
     data_quality_check=True,
     resample=False,
     active_models=active_models,
-    experiment_path=f"/Users/{user}/mmf/m4_weekly",
-    use_case_name="m4_weekly",
+    experiment_path=f"/Users/{user}/mmf/m4_monthly",
+    use_case_name="m4_monthly",
 )
 
 # COMMAND ----------
@@ -192,8 +203,8 @@ run_forecast(
 
 display(
   spark.sql(f"""
-    select * from {catalog}.{db}.weekly_evaluation_output 
-    where unique_id = 'W1'
+    select * from {catalog}.{db}.monthly_evaluation_output 
+    where unique_id = 'M1'
     order by unique_id, model, backtest_window_start_date
     """))
 
@@ -205,10 +216,10 @@ display(
 # COMMAND ----------
 
 display(spark.sql(f"""
-                  select * from {catalog}.{db}.weekly_scoring_output 
-                  where unique_id = 'W1'
-                  order by unique_id, model, ds
-                  """))
+    select * from {catalog}.{db}.monthly_scoring_output 
+    where unique_id = 'M1'
+    order by unique_id, model, date
+    """))
 
 # COMMAND ----------
 
@@ -217,8 +228,8 @@ display(spark.sql(f"""
 
 # COMMAND ----------
 
-#display(spark.sql(f"delete from {catalog}.{db}.weekly_evaluation_output"))
+#display(spark.sql(f"delete from {catalog}.{db}.monthly_evaluation_output"))
 
 # COMMAND ----------
 
-#display(spark.sql(f"delete from {catalog}.{db}.weekly_scoring_output"))
+#display(spark.sql(f"delete from {catalog}.{db}.monthly_scoring_output"))
