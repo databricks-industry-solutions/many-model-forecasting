@@ -190,6 +190,11 @@ display(spark.sql(f"""
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC Refer to the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/post-evaluation-analysis.py) for guidance on performing fine-grained model selection after running `run_forecast`.
+
+# COMMAND ----------
+
 # MAGIC %md ### Delete Tables
 # MAGIC Let's clean up the tables.
 
