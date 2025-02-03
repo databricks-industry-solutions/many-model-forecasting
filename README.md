@@ -52,8 +52,8 @@ active_models = [
     "RFableNNETAR",
     "RFableEnsemble",
     "RDynamicHarmonicRegression",
-    "SKTimeProphet",
     "SKTimeTBats",
+    "SKTimeProphet",
     "SKTimeLgbmDsDt",
 ]
 ```
