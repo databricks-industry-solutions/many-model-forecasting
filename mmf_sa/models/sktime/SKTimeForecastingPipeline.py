@@ -8,6 +8,7 @@ from sktime.forecasting.model_selection import (
     ForecastingGridSearchCV,
 )
 from sktime.forecasting.tbats import TBATS
+from sktime.forecasting.fbprophet import Prophet
 from sktime.forecasting.compose import make_reduction
 from sktime.forecasting.compose import TransformedTargetForecaster
 from sktime.transformations.series.detrend import Detrender, ConditionalDeseasonalizer
@@ -47,7 +48,9 @@ class SKTimeForecastingPipeline(ForecastingRegressor):
         return df
 
     def fit(self, x, y=None):
-        if self.params.get("enable_gcv", False) and self.model is None and self.param_grid:
+        if (self.params.get("enable_gcv", False)
+                and self.model is None
+                and self.param_grid):
             _model = self.create_model()
             cv = SlidingWindowSplitter(
                 initial_window=int(len(x) - self.params.prediction_length * 4),
@@ -68,8 +71,8 @@ class SKTimeForecastingPipeline(ForecastingRegressor):
             ForecastingHorizon(np.arange(1, self.params.prediction_length + 1))
         )
         date_idx = pd.date_range(
-            _df.index.max().to_timestamp(freq=self.params.freq) + pd.DateOffset(days=1),
-            _df.index.max().to_timestamp(freq=self.params.freq) + pd.DateOffset(days=self.params.prediction_length),
+            _df.index.max().to_timestamp(freq=self.params.freq) + self.one_ts_offset,
+            _df.index.max().to_timestamp(freq=self.params.freq) + self.prediction_length_offset,
             freq=self.params.freq,
             name=self.params.date_col,
         )
@@ -80,6 +83,48 @@ class SKTimeForecastingPipeline(ForecastingRegressor):
 
     def forecast(self, x, spark=None):
         return self.predict(x)
+
+
+class SKTimeTBats(SKTimeForecastingPipeline):
+    def __init__(self, params):
+        super().__init__(params)
+
+    def create_model(self) -> BaseForecaster:
+        model = TBATS(
+            sp=int(self.model_spec.get("season_length")),
+            use_trend=self.model_spec.get("use_trend"),
+            use_box_cox=self.model_spec.get("box_cox"),
+            n_jobs=-1,
+        )
+        return model
+
+    def create_param_grid(self):
+        return {
+            "use_trend": [True, False],
+            "use_box_cox": [True, False],
+            "sp": [1, 7, 14],
+        }
+
+class SKTimeProphet(SKTimeForecastingPipeline):
+    def __init__(self, params):
+        super().__init__(params)
+
+    def create_model(self) -> BaseForecaster:
+        model = Prophet(
+            freq=self.params.freq,
+            growth = self.model_spec.get("growth"),
+            yearly_seasonality=self.model_spec.get("yearly_seasonality"),
+            weekly_seasonality=self.model_spec.get("weekly_seasonality"),
+            daily_seasonality=self.model_spec.get("daily_seasonality"),
+            seasonality_mode=self.model_spec.get("seasonality_mode"),
+        )
+        return model
+
+    def create_param_grid(self):
+        return {
+            "growth": ['linear', 'logarithmic'],
+            "seasonality_mode": ['additive', 'multiplicative'],
+        }
 
 
 class SKTimeLgbmDsDt(SKTimeForecastingPipeline):
@@ -125,25 +170,4 @@ class SKTimeLgbmDsDt(SKTimeForecastingPipeline):
                 self.params.prediction_length,
                 self.params.prediction_length * 2,
             ],
-        }
-
-
-class SKTimeTBats(SKTimeForecastingPipeline):
-    def __init__(self, params):
-        super().__init__(params)
-
-    def create_model(self) -> BaseForecaster:
-        model = TBATS(
-            sp=int(self.model_spec.get("season_length")),
-            use_trend=self.model_spec.get("use_trend"),
-            use_box_cox=self.model_spec.get("box_cox"),
-            n_jobs=-1,
-        )
-        return model
-
-    def create_param_grid(self):
-        return {
-            "use_trend": [True, False],
-            "use_box_cox": [True, False],
-            "sp": [1, 7, 14],
         }
