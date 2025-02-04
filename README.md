@@ -58,7 +58,7 @@ active_models = [
 ]
 ```
 
-A comprehensive list of local models currently supported by MMF is available in the [mmf_sa/models/models_conf.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/models_conf.yaml). 
+A comprehensive list of local models currently supported by MMF is available [here](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/README.md). 
 
 Now, run the forecasting using ```run_forecast``` function with the ```active_models``` list specified above:
 
@@ -140,7 +140,7 @@ active_models = [
 ]
 ```
 
-The models prefixed with "Auto" perform hyperparameter optimization within a specified range (see below for more detail). A comprehensive list of models currently supported by MMF is available in the [models_conf.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/models_conf.yaml).
+The models prefixed with "Auto" perform hyperparameter optimization within a specified range (see below for more detail). A comprehensive list of models currently supported by MMF is available [here](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/README.md).
 
 Now, with the following command, we run the [examples/run_daily.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/run_daily.py) notebook that will in turn call ```run_forecast``` function and loop through the ```active_models``` list. 
 
@@ -223,7 +223,7 @@ active_models = [
 ]
 ```
 
-A comprehensive list of models currently supported by MMF is available in the [models_conf.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/models_conf.yaml). 
+A comprehensive list of models currently supported by MMF is available [here](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/README.md). 
 
 Now, with the following command, we run [examples/run_daily.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/run_daily.py) notebook that will in turn run ```run_forecast``` function. We loop through the ```active_models``` list for the same reason mentioned above (see the global model section).
 
