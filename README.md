@@ -12,13 +12,14 @@ Get started now!
 
 ## What's New
 
-- Feb 2025: [Prophet](https://www.sktime.net/en/stable/api_reference/auto_generated/sktime.forecasting.fbprophet.Prophet.html) is available for univariate forecasting via `SKTimeProphet`. Try the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/local_univariate_daily.py).
+- Feb 2025: [AutoTBATS](https://nixtlaverse.nixtla.io/statsforecast/src/core/models.html#autotbats) and [AutoMFLES](https://nixtlaverse.nixtla.io/statsforecast/src/core/models.html#automfles) from statsforecast are available. Try the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/local_univariate_daily.py).
+- Feb 2025: [Prophet](https://www.sktime.net/en/stable/api_reference/auto_generated/sktime.forecasting.fbprophet.Prophet.html) is available for univariate forecasting via sktime. Try the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/local_univariate_daily.py).
 - Feb 2025: Added a post evaluation [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/post-evaluation-analysis.ipynb) for fine-grained model selection.
-- Feb 2025: Added [README](https://github.com/databricks-industry-solutions/many-model-forecasting/tree/main/mmf_sa/models) for a list of supported models.
-- Jan 2025: [TimesFM](https://github.com/google-research/timesfm) is available for univariate and covariate forecasting. Try the notebooks: [univariate](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/foundation_daily.py) and [covariate](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/external_regressors/foundation_external_regressors_daily.py).
+- Feb 2025: Added [README](https://github.com/databricks-industry-solutions/many-model-forecasting/tree/main/mmf_sa/models) for a comprehensive list of supported models.
+- Jan 2025: [TimesFM](https://github.com/google-research/timesfm) is available for univariate and covariate forecasting. Try the [univariate](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/foundation_daily.py) and [covariate](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/external_regressors/foundation_external_regressors_daily.py) notebooks.
 - Jan 2025: [Chronos Bolt](https://github.com/amazon-science/chronos-forecasting) models are available for univariate forecasting. Try the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/foundation_daily.py).
 - Jan 2025: [Moirai MoE](https://github.com/SalesforceAIResearch/uni2ts) models are available for univariate forecasting. Try the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/foundation_daily.py).
-- Jan 2025: Added support for hourly (`freq="H"`) and weekly (`freq="W"`) time series . Try the notebooks: [hourly](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/hourly) and [weekly](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/weekly).
+- Jan 2025: Added support for hourly (`freq="H"`) and weekly (`freq="W"`) time series . Try the [hourly](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/hourly) and [weekly](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/weekly) notebooks.
 
 ## Getting started
 
@@ -42,6 +43,8 @@ active_models = [
     "StatsForecastAutoETS",
     "StatsForecastAutoCES",
     "StatsForecastAutoTheta",
+    "StatsForecastAutoTbats",
+    "StatsForecastAutoMfles",
     "StatsForecastTSB",
     "StatsForecastADIDA",
     "StatsForecastIMAPA",

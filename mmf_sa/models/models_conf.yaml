@@ -84,6 +84,28 @@ models:
       season_length: 7
       decomposition_type: "multiplicative"
 
+  StatsForecastAutoTbats:
+    module: mmf_sa.models.statsforecast.StatsFcForecastingPipeline
+    model_class: StatsFcAutoTbats
+    framework: StatsForecast
+    model_type: local
+    model_spec:
+      season_length: 7
+      use_boxcox: true
+      bc_lower_bound: 0.0
+      bc_upper_bound: 1.0
+      use_trend: true
+      use_damped_trend: true
+      use_arma_errors: true
+
+  StatsForecastAutoMfles:
+    module: mmf_sa.models.statsforecast.StatsFcForecastingPipeline
+    model_class: StatsFcAutoMfles
+    framework: StatsForecast
+    model_type: local
+    model_spec:
+      season_length: 7
+
   StatsForecastTSB:
     module: mmf_sa.models.statsforecast.StatsFcForecastingPipeline
     model_class: StatsFcTSB

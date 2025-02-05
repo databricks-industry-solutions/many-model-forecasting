@@ -9,6 +9,8 @@ from statsforecast.models import (
     TSB,
     AutoCES,
     AutoTheta,
+    AutoTBATS,
+    AutoMFLES,
     CrostonClassic,
     CrostonOptimized,
     CrostonSBA,
@@ -203,6 +205,29 @@ class StatsFcAutoTheta(StatsFcForecaster):
         self.model_spec = AutoTheta(
             season_length=self.params.model_spec.season_length,
             decomposition_type=self.params.model_spec.decomposition_type,
+        )
+
+
+class StatsFcAutoTbats(StatsFcForecaster):
+    def __init__(self, params):
+        super().__init__(params)
+        self.model_spec = AutoTBATS(
+            season_length=self.params.model_spec.season_length,
+            use_boxcox=self.params.model_spec.use_boxcox,
+            bc_lower_bound=self.params.model_spec.bc_lower_bound,
+            bc_upper_bound=self.params.model_spec.bc_upper_bound,
+            use_trend=self.params.model_spec.use_trend,
+            use_damped_trend=self.params.model_spec.use_damped_trend,
+            use_arma_errors=self.params.model_spec.use_arma_errors,
+        )
+
+
+class StatsFcAutoMfles(StatsFcForecaster):
+    def __init__(self, params):
+        super().__init__(params)
+        self.model_spec = AutoMFLES(
+            test_size=self.params.prediction_length,
+            season_length=self.params.model_spec.season_length,
         )
 
 

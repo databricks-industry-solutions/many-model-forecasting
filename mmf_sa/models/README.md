@@ -3,30 +3,32 @@
 Model hyperparameters can be modified under [mmf_sa/models/models_conf.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/models_conf.yaml).
 
 ## Local
-| model | source | covariate support |
-|----------------------------------------|-------------------------|------------|
-| StatsForecastBaselineWindowAverage | [Statsforecast Window Average](https://nixtlaverse.nixtla.io/statsforecast/src/core/models.html#windowaverage) |  | 
-| StatsForecastBaselineSeasonalWindowAverage | [Statsforecast Seasonal Window Average](https://nixtlaverse.nixtla.io/statsforecast/src/core/models.html#seasonalwindowaverage) |  | 
-| StatsForecastBaselineNaive | [Statsforecast Naive](https://nixtlaverse.nixtla.io/statsforecast/src/core/models.html#naive) |  | 
-| StatsForecastBaselineSeasonalNaive | [Statsforecast Seasonal Naive](https://nixtlaverse.nixtla.io/statsforecast/src/core/models.html#seasonalnaive) |  | 
-| StatsForecastAutoArima | [Statsforecast AutoARIMA](https://nixtlaverse.nixtla.io/statsforecast/src/core/models.html#autoarima) | ✅ | 
-| StatsForecastAutoETS | [Statsforecast AutoETS](https://nixtlaverse.nixtla.io/statsforecast/src/core/models.html#autoets) |  | 
-| StatsForecastAutoCES | [Statsforecast AutoCES](https://nixtlaverse.nixtla.io/statsforecast/src/core/models.html#autoces) |  | 
-| StatsForecastAutoTheta | [Statsforecast AutoTheta](https://nixtlaverse.nixtla.io/statsforecast/src/core/models.html#autotheta) |  | 
-| StatsForecastTSB | [Statsforecast TSB](https://nixtlaverse.nixtla.io/statsforecast/src/core/models.html#tsb) |  | 
-| StatsForecastADIDA | [Statsforecast ADIDA](https://nixtlaverse.nixtla.io/statsforecast/src/core/models.html#adida) |  | 
-| StatsForecastIMAPA | [Statsforecast IMAPA](https://nixtlaverse.nixtla.io/statsforecast/src/core/models.html#imapa) |  | 
-| StatsForecastCrostonClassic | [Statsforecast Croston Classic](https://nixtlaverse.nixtla.io/statsforecast/src/core/models.html#crostonclassic) |  | 
-| StatsForecastCrostonOptimized | [Statsforecast Croston Optimized](https://nixtlaverse.nixtla.io/statsforecast/src/core/models.html#crostonoptimized) |  | 
-| StatsForecastCrostonSBA | [Statsforecast Croston SBA](https://nixtlaverse.nixtla.io/statsforecast/src/core/models.html#crostonsba) |  | 
-| RFableArima | [fable ARIMA](https://fable.tidyverts.org/reference/ARIMA.html) |  | 
-| RFableETS | [fable ETS](https://fable.tidyverts.org/reference/ETS.html) |  | 
-| RFableNNETAR | [fable NNETAR](https://fable.tidyverts.org/reference/NNETAR.html) |  | 
-| RFableEnsemble | [RFableEnsemble ](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/r_fable/RFableForecastingPipeline.py) |  | 
+| model | source                                                                                                                                                              | covariate support |
+|----------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------|
+| StatsForecastBaselineWindowAverage | [Statsforecast Window Average](https://nixtlaverse.nixtla.io/statsforecast/src/core/models.html#windowaverage)                                                      |  | 
+| StatsForecastBaselineSeasonalWindowAverage | [Statsforecast Seasonal Window Average](https://nixtlaverse.nixtla.io/statsforecast/src/core/models.html#seasonalwindowaverage)                                     |  | 
+| StatsForecastBaselineNaive | [Statsforecast Naive](https://nixtlaverse.nixtla.io/statsforecast/src/core/models.html#naive)                                                                       |  | 
+| StatsForecastBaselineSeasonalNaive | [Statsforecast Seasonal Naive](https://nixtlaverse.nixtla.io/statsforecast/src/core/models.html#seasonalnaive)                                                      |  | 
+| StatsForecastAutoArima | [Statsforecast AutoARIMA](https://nixtlaverse.nixtla.io/statsforecast/src/core/models.html#autoarima)                                                               | ✅ | 
+| StatsForecastAutoETS | [Statsforecast AutoETS](https://nixtlaverse.nixtla.io/statsforecast/src/core/models.html#autoets)                                                                   |  | 
+| StatsForecastAutoCES | [Statsforecast AutoCES](https://nixtlaverse.nixtla.io/statsforecast/src/core/models.html#autoces)                                                                   |  | 
+| StatsForecastAutoTheta | [Statsforecast AutoTheta](https://nixtlaverse.nixtla.io/statsforecast/src/core/models.html#autotheta)                                                               |  | 
+| StatsForecastAutoTbats | [Statsforecast AutoTBATS](https://nixtlaverse.nixtla.io/statsforecast/src/core/models.html#autotbats) |  | 
+| StatsForecastAutoMfles | [Statsforecast AutoMFLES](https://nixtlaverse.nixtla.io/statsforecast/src/core/models.html#automfles) | ✅ | 
+| StatsForecastTSB | [Statsforecast TSB](https://nixtlaverse.nixtla.io/statsforecast/src/core/models.html#tsb)                                                                           |  | 
+| StatsForecastADIDA | [Statsforecast ADIDA](https://nixtlaverse.nixtla.io/statsforecast/src/core/models.html#adida)                                                                       |  | 
+| StatsForecastIMAPA | [Statsforecast IMAPA](https://nixtlaverse.nixtla.io/statsforecast/src/core/models.html#imapa)                                                                       |  | 
+| StatsForecastCrostonClassic | [Statsforecast Croston Classic](https://nixtlaverse.nixtla.io/statsforecast/src/core/models.html#crostonclassic)                                                    |  | 
+| StatsForecastCrostonOptimized | [Statsforecast Croston Optimized](https://nixtlaverse.nixtla.io/statsforecast/src/core/models.html#crostonoptimized)                                                |  | 
+| StatsForecastCrostonSBA | [Statsforecast Croston SBA](https://nixtlaverse.nixtla.io/statsforecast/src/core/models.html#crostonsba)                                                            |  | 
+| RFableArima | [fable ARIMA](https://fable.tidyverts.org/reference/ARIMA.html)                                                                                                     |  | 
+| RFableETS | [fable ETS](https://fable.tidyverts.org/reference/ETS.html)                                                                                                         |  | 
+| RFableNNETAR | [fable NNETAR](https://fable.tidyverts.org/reference/NNETAR.html)                                                                                                   |  | 
+| RFableEnsemble | [RFableEnsemble ](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/r_fable/RFableForecastingPipeline.py)             |  | 
 | RDynamicHarmonicRegression | [RDynamicHarmonicRegression ](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/r_fable/RFableForecastingPipeline.py) |  | 
-| SKTimeTBats | [sktime TBATS](https://www.sktime.net/en/latest/api_reference/auto_generated/sktime.forecasting.tbats.TBATS.html) |  | 
-| SKTimeProphet | [sktime Prophet](https://www.sktime.net/en/latest/api_reference/auto_generated/sktime.forecasting.fbprophet.Prophet.html) |  | 
-| SKTimeLgbmDsDt | [SKTimeLgbmDsDt](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/sktime/SKTimeForecastingPipeline.py) |  | 
+| SKTimeTBats | [sktime TBATS](https://www.sktime.net/en/latest/api_reference/auto_generated/sktime.forecasting.tbats.TBATS.html)                                                   |  | 
+| SKTimeProphet | [sktime Prophet](https://www.sktime.net/en/latest/api_reference/auto_generated/sktime.forecasting.fbprophet.Prophet.html)                                           |  | 
+| SKTimeLgbmDsDt | [SKTimeLgbmDsDt](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/sktime/SKTimeForecastingPipeline.py)               |  | 
 
 ## Global
 | model | source | covariate support |
