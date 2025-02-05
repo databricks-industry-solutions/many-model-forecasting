@@ -138,6 +138,8 @@ active_models = [
     "StatsForecastAutoETS",
     "StatsForecastAutoCES",
     "StatsForecastAutoTheta",
+    "StatsForecastAutoTbats",
+    "StatsForecastAutoMfles",
     "StatsForecastTSB",
     "StatsForecastADIDA",
     "StatsForecastIMAPA",
