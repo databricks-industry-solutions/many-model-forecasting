@@ -142,9 +142,7 @@ active_models = [
     "StatsForecastCrostonClassic",
     "StatsForecastCrostonOptimized",
     "StatsForecastCrostonSBA",
-    "SKTimeTBats",
     "SKTimeProphet",
-    "SKTimeLgbmDsDt",
     ]
 
 # COMMAND ----------

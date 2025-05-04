@@ -1,14 +1,17 @@
 # Databricks notebook source
-# MAGIC %pip install -r ../requirements-global.txt --quiet
-# MAGIC dbutils.library.restartPython()
-
-# COMMAND ----------
-
 dbutils.widgets.text("catalog", "")
 dbutils.widgets.text("db", "")
 dbutils.widgets.text("model", "")
 dbutils.widgets.text("run_id", "")
 dbutils.widgets.text("user", "")
+
+# COMMAND ----------
+
+model_class = "global" if "NeuralForecast" in dbutils.widgets.get("model") else "foundation" 
+%pip install -r ../requirements-{model_class}.txt --quiet
+dbutils.library.restartPython()
+
+# COMMAND ----------
 
 catalog = dbutils.widgets.get("catalog")
 db = dbutils.widgets.get("db")
