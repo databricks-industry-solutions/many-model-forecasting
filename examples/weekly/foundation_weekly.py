@@ -14,7 +14,7 @@
 
 # MAGIC %md
 # MAGIC ### Install and import packages
-# MAGIC Check out [requirements-global.txt](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/requirements-global.txt) if you're interested in the libraries we use.
+# MAGIC Check out [requirements-foundation.txt](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/requirements-foundation.txt) if you're interested in the libraries we use.
 
 # COMMAND ----------
 
