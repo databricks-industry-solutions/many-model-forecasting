@@ -1,0 +1,4 @@
+-r requirements.txt
+chronos-forecasting==1.4.1
+uni2ts==1.2.0
+timesfm[torch]
