@@ -7,6 +7,6 @@ statsforecast==2.0.0
 missingno==0.5.2
 tbats==1.1.3
 sktime==0.29.0
-lightgbm==4.3.0
+lightgbm==4.6.0
 datasetsforecast==0.0.8
 fugue==0.9.0
