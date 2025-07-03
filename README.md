@@ -27,7 +27,7 @@ To run this solution on a public [M4](https://www.kaggle.com/datasets/yogesh94/m
 
 ### Local Models
 
-Local models are used to model individual time series. They could be advantageous over other types of model for their capabilities to tailor fit to individual series, offer greater interpretability, and require lower data requirements. We support models from [statsforecast](https://github.com/Nixtla/statsforecast), [r fable](https://cran.r-project.org/web/packages/fable/vignettes/fable.html) and [sktime](https://www.sktime.net/en/stable/). Covariates (i.e. exogenous regressors) are currently only supported for some models from statsforecast. 
+Local models are used to model individual time series. They could be advantageous over other types of model for their capabilities to tailor fit to individual series, offer greater interpretability, and require lower data requirements. We support models from [statsforecast](https://github.com/Nixtla/statsforecast), and [sktime](https://www.sktime.net/en/stable/). Covariates (i.e. exogenous regressors) are currently only supported for some models from statsforecast. 
 
 To get started, attach the [examples/daily/local_univariate_daily.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/local_univariate_daily.py) notebook to a cluster running [DBR 15.4LTS for ML](https://docs.databricks.com/en/release-notes/runtime/15.4lts-ml.html) or later versions. The cluster can be either a single-node or multi-node CPU cluster. Make sure to set the following [Spark configurations](https://spark.apache.org/docs/latest/configuration.html) on the cluster before you start using MMF: ```spark.sql.execution.arrow.enabled true``` and ```spark.sql.adaptive.enabled false``` (more detailed explanation can be found [here](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/local_univariate_daily.py)). 
 
@@ -51,11 +51,6 @@ active_models = [
     "StatsForecastCrostonClassic",
     "StatsForecastCrostonOptimized",
     "StatsForecastCrostonSBA",
-    "RFableArima",
-    "RFableETS",
-    "RFableNNETAR",
-    "RFableEnsemble",
-    "RDynamicHarmonicRegression",
     "SKTimeTBats",
     "SKTimeProphet",
     "SKTimeLgbmDsDt",
@@ -249,7 +244,7 @@ We encourage you to read through [examples/daily/foundation_daily.py](https://gi
 
 #### Using Time Series Foundation Models on Databricks
 
-If you want to try out time series foundation models on Databricks without MMF, you can find example notebooks in [databricks-industry-solutions/transformer_forecasting](https://github.com/databricks-industry-solutions/transformer_forecasting). These notebooks will show you how you can load, distribute the inference, fine-tune, register, deploy a model and generate online forecasts on it. We have notebooks for [TimeGPT](https://docs.nixtla.io/), [Chronos](https://github.com/amazon-science/chronos-forecasting), [Moirai](https://github.com/SalesforceAIResearch/uni2ts), [Moment](https://github.com/moment-timeseries-foundation-model/moment), and [TimesFM](https://github.com/google-research/timesfm).
+If you want to try out time series foundation models on Databricks without MMF, you can find example notebooks in [databricks-industry-solutions/transformer_forecasting](https://github.com/databricks-industry-solutions/transformer_forecasting). These notebooks will show you how you can load, distribute the inference, fine-tune, register, deploy a model and generate online forecasts on it. We have notebooks for [TimeGPT](https://docs.nixtla.io/), [Chronos](https://github.com/amazon-science/chronos-forecasting), [Moirai](https://github.com/SalesforceAIResearch/uni2ts), and [TimesFM](https://github.com/google-research/timesfm).
 
 ## [Vector Lab](https://www.youtube.com/@VectorLab) - Many Model Forecasting
 
@@ -266,25 +261,13 @@ Any issues discovered through the use of this project should be filed as GitHub 
 
 | library                                | description             | license    | source                                              |
 |----------------------------------------|-------------------------|------------|-----------------------------------------------------|
-| rpy2 | Python interface to the R language (embedded R) | GNU General Public License v2 or later | https://pypi.org/project/rpy2/
-| kaleido | Static image export for web-based visualization libraries with zero dependencies | MIT | https://pypi.org/project/kaleido/
-| fugue | An abstraction layer for distributed computation | Apache 2.0 | https://pypi.org/project/fugue/
-| Jinja2 | A very fast and expressive template engine | BSD | https://pypi.org/project/Jinja2/
 | omegaconf | A flexible configuration library | BSD | https://pypi.org/project/omegaconf/
-| missingno | Missing data visualization module for Python | MIT | https://pypi.org/project/missingno/
 | datasetsforecast | Datasets for Time series forecasting | MIT | https://pypi.org/project/datasetsforecast/
 | statsforecast | Time series forecasting suite using statistical models | Apache 2.0 | https://pypi.org/project/statsforecast/
 | neuralforecast | Time series forecasting suite using deep learning models | Apache 2.0 | https://pypi.org/project/neuralforecast/
-| fable | Forecasting Models for Tidy Time Series | GPL-3 | https://cran.r-project.org/web/packages/fable/index.html
-| fabletools | Core Tools for Packages in the 'fable' Framework | GPL-3 | https://cran.r-project.org/web/packages/fabletools/index.html
-| feasts | Feature Extraction and Statistics for Time Series | GPL-3 | https://cran.r-project.org/web/packages/feasts/index.html
-| lazyeval | Lazy (Non-Standard) Evaluation | GPL-3 | https://cran.r-project.org/web/packages/lazyeval/index.html
-| tsibble | Tidy Temporal Data Frames and Tools | GPL-3 | https://cran.r-project.org/web/packages/tsibble/index.html
-| urca | Unit Root and Cointegration Tests for Time Series Data | GPL-3 | https://cran.r-project.org/web/packages/urca/index.html
 | sktime | A unified framework for machine learning with time series | BSD 3-Clause | https://pypi.org/project/sktime/
 | tbats | BATS and TBATS for time series forecasting | MIT | https://pypi.org/project/tbats/
 | lightgbm | LightGBM Python Package | MIT | https://pypi.org/project/lightgbm/
 | Chronos | Pretrained (Language) Models for Probabilistic Time Series Forecasting | Apache 2.0 | https://github.com/amazon-science/chronos-forecasting
 | Moirai | Unified Training of Universal Time Series Forecasting Transformers | Apache 2.0 | https://github.com/SalesforceAIResearch/uni2ts
-| Moment | A Family of Open Time-series Foundation Models | MIT | https://github.com/moment-timeseries-foundation-model/moment
 | TimesFM | A pretrained time-series foundation model developed by Google Research for time-series forecasting | Apache 2.0 | https://github.com/google-research/timesfm

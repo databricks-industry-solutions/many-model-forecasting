@@ -157,8 +157,8 @@ class MoiraiForecaster(ForecastingRegressor):
             else:
                 module = MoiraiModule.from_pretrained(self.repo)
             # inference
+            median = []
             for batch in batch_iterator:
-                median = []
                 for series in batch:
                     if 'moe' in self.repo:
                         model = MoiraiMoEForecast(

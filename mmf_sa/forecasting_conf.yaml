@@ -37,11 +37,7 @@ active_models:
   - StatsForecastCrostonClassic
   - StatsForecastCrostonOptimized
   - StatsForecastCrostonSBA
-  - RFableArima
-  - RFableETS
-  - RDynamicHarmonicRegression
-  - RFableNNETAR
-  - RFableEnsemble
+  - SKTimeProphet
   - SKTimeLgbmDsDt
   - SKTimeTBats
   - NeuralForecastRNN
@@ -64,7 +60,6 @@ active_models:
   - MoiraiLarge
   - TimesFM_1_0_200m
   - TimesFM_2_0_500m
-  - Moment1Large
 
 #Here we can override hyperparameters for built-in models
 models:
@@ -102,43 +97,5 @@ models:
     model_spec:
       season_length: 7
       decomposition_type: "multiplicative"
-
-  RFableArima:
-    model_spec:
-      season_length: 7
-
-  RFableETS:
-    model_spec:
-      season_length: 7
-
-  RFableNNETAR:
-    model_spec:
-      season_length: 7
-
-  RDynamicHarmonicRegression:
-    model_spec:
-      fourier_terms:
-        - weekly:
-            season_length: 7
-            fourier_order: 3
-        - yearly:
-            season_length: 52
-            fourier_order: 5
-
-  RFableEnsemble:
-    model_spec:
-      models:
-        - model:
-            name: RFableArima
-            model_spec:
-              season_length: 7
-        - model:
-            name: RFableETS
-            model_spec:
-              season_length: 7
-        - model:
-            name: RFableNNETAR
-            model_spec:
-              season_length: 7
 
 temp_path: /Volumes/mmf/tmp/partitions

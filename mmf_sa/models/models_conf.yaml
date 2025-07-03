@@ -150,44 +150,6 @@ models:
     model_type: local
     model_spec:
 
-  RFableArima:
-    module: mmf_sa.models.r_fable.RFableForecastingPipeline
-    model_class: RFableModel
-    framework: RFable
-    model_type: local
-    model_spec:
-      season_length: 7
-
-  RFableETS:
-    module: mmf_sa.models.r_fable.RFableForecastingPipeline
-    model_class: RFableModel
-    framework: RFable
-    model_type: local
-    model_spec:
-      season_length: 7
-
-  RFableNNETAR:
-    module: mmf_sa.models.r_fable.RFableForecastingPipeline
-    model_class: RFableModel
-    framework: RFable
-    model_type: local
-    model_spec:
-      season_length: 7
-
-  RFableEnsemble:
-    module: mmf_sa.models.r_fable.RFableForecastingPipeline
-    model_class: RFableModel
-    framework: RFable
-    model_type: local
-
-  RDynamicHarmonicRegression:
-    module: mmf_sa.models.r_fable.RFableForecastingPipeline
-    model_class: RFableModel
-    framework: RFable
-    model_type: local
-    model_spec:
-      fourier_terms:
-
   SKTimeTBats:
     module: mmf_sa.models.sktime.SKTimeForecastingPipeline
     model_class: SKTimeTBats
@@ -510,11 +472,3 @@ models:
     model_class: TimesFM_2_0_500m
     framework: TimesFM
     model_type: foundation
-
-  Moment1Large:
-    module: mmf_sa.models.momentforecast.MomentPipeline
-    model_class: Moment1Large
-    framework: Moment
-    model_type: foundation
-    num_samples: 10
-    batch_size: 10

@@ -159,8 +159,8 @@ class ChronosForecaster(ForecastingRegressor):
             )
 
             # inference
+            median = []
             for bulk in bulk_iterator:
-                median = []
                 for i in range(0, len(bulk), self.params["batch_size"]):
                     batch = bulk[i:i+self.params["batch_size"]]
                     contexts = [torch.tensor(list(series)) for series in batch]
