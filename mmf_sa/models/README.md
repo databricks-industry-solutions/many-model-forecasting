@@ -21,11 +21,6 @@ Model hyperparameters can be modified under [mmf_sa/models/models_conf.yaml](htt
 | StatsForecastCrostonClassic | [Statsforecast Croston Classic](https://nixtlaverse.nixtla.io/statsforecast/src/core/models.html#crostonclassic)                                                    |  | 
 | StatsForecastCrostonOptimized | [Statsforecast Croston Optimized](https://nixtlaverse.nixtla.io/statsforecast/src/core/models.html#crostonoptimized)                                                |  | 
 | StatsForecastCrostonSBA | [Statsforecast Croston SBA](https://nixtlaverse.nixtla.io/statsforecast/src/core/models.html#crostonsba)                                                            |  | 
-| RFableArima | [fable ARIMA](https://fable.tidyverts.org/reference/ARIMA.html)                                                                                                     |  | 
-| RFableETS | [fable ETS](https://fable.tidyverts.org/reference/ETS.html)                                                                                                         |  | 
-| RFableNNETAR | [fable NNETAR](https://fable.tidyverts.org/reference/NNETAR.html)                                                                                                   |  | 
-| RFableEnsemble | [RFableEnsemble ](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/r_fable/RFableForecastingPipeline.py)             |  | 
-| RDynamicHarmonicRegression | [RDynamicHarmonicRegression ](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/r_fable/RFableForecastingPipeline.py) |  | 
 | SKTimeTBats | [sktime TBATS](https://www.sktime.net/en/latest/api_reference/auto_generated/sktime.forecasting.tbats.TBATS.html)                                                   |  | 
 | SKTimeProphet | [sktime Prophet](https://www.sktime.net/en/latest/api_reference/auto_generated/sktime.forecasting.fbprophet.Prophet.html)                                           |  | 
 | SKTimeLgbmDsDt | [SKTimeLgbmDsDt](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/sktime/SKTimeForecastingPipeline.py)               |  | 

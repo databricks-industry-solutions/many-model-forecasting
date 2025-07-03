@@ -45,15 +45,6 @@ job_json = {
                 "notebook_task": {
                     "notebook_path": f"tests/integration_test"
                 },
-                "libraries": [
-                  { "cran": {"package": "fable", "repo": "https://packagemanager.posit.co/cran/2022-12-01/"}},
-                  { "cran": {"package": "fabletools", "repo": "https://packagemanager.posit.co/cran/2022-12-01/"}},
-                  { "cran": {"package": "urca", "repo": "https://packagemanager.posit.co/cran/2022-12-01/"}},
-                  { "cran": {"package": "feasts", "repo": "https://packagemanager.posit.co/cran/2022-12-01/"}},
-                  { "cran": {"package": "lazyeval", "repo": "https://packagemanager.posit.co/cran/2022-12-01/"}},
-                  { "cran": {"package": "tsibble", "repo": "https://packagemanager.posit.co/cran/2022-12-01/"}},
-                  { "cran": {"package": "distributional", "repo": "https://packagemanager.posit.co/cran/2022-12-01/"}}
-                ],
                 "task_key": "mmf_01"
             }
         ],

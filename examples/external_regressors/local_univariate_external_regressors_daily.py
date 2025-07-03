@@ -100,7 +100,7 @@ if sample and size > sc.defaultParallelism:
 # COMMAND ----------
 
 # MAGIC %md ### Models
-# MAGIC Let's configure a list of models we are going to apply to our time series for evaluation and forecasting. A comprehensive list of all supported models is available in [mmf_sa/models/README.md](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/README.md). Look for the models where `model_type: local`; these are the local models we import from [statsforecast](https://github.com/Nixtla/statsforecast), [r fable](https://cran.r-project.org/web/packages/fable/vignettes/fable.html) and [sktime](https://github.com/sktime/sktime). Check their documentations for the description of each model. 
+# MAGIC Let's configure a list of models we are going to apply to our time series for evaluation and forecasting. A comprehensive list of all supported models is available in [mmf_sa/models/README.md](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/README.md). Look for the models where `model_type: local`; these are the local models we import from [statsforecast](https://github.com/Nixtla/statsforecast) and [sktime](https://github.com/sktime/sktime). Check their documentations for the description of each model. 
 # MAGIC
 # MAGIC Exogenous regressors are currently only supported for [some models](https://nixtlaverse.nixtla.io/statsforecast/index.html#models) from statsforecast (e.g. `StatsForecastAutoArima`). But including non-supported models in the active model list doesn't harm: models that can't use exogenous regressors will simply ignore them.
 
@@ -123,11 +123,6 @@ active_models = [
     "StatsForecastCrostonClassic",
     "StatsForecastCrostonOptimized",
     "StatsForecastCrostonSBA",
-    "RFableArima",
-    "RFableETS",
-    "RFableNNETAR",
-    "RFableEnsemble",
-    "RDynamicHarmonicRegression",
     "SKTimeProphet",
 ]
 
