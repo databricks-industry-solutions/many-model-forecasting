@@ -9,7 +9,7 @@
 # MAGIC %md
 # MAGIC ### Cluster setup
 # MAGIC
-# MAGIC We recommend using a cluster with [Databricks Runtime 15.4 LTS for ML](https://docs.databricks.com/en/release-notes/runtime/15.4lts-ml.html) or above. The cluster should be single-node with one or more GPU instances: e.g. [g4dn.12xlarge [T4]](https://aws.amazon.com/ec2/instance-types/g4/) on AWS or [Standard_NC64as_T4_v3](https://learn.microsoft.com/en-us/azure/virtual-machines/nct4-v3-series) on Azure. MMF leverages [neuralforecast](https://nixtlaverse.nixtla.io/neuralforecast/index.html) which is built on top of [pytorch](https://lightning.ai/docs/pytorch/stable/common/trainer.html) and can therefore utilize all the [available resources](https://lightning.ai/docs/pytorch/stable/common/trainer.html). 
+# MAGIC We recommend using a cluster with [Databricks Runtime 16.4 LTS for ML](https://docs.databricks.com/en/release-notes/runtime/16.4lts-ml.html). The cluster should be single-node with one or more GPU instances: e.g. [g4dn.12xlarge [T4]](https://aws.amazon.com/ec2/instance-types/g4/) on AWS or [Standard_NC64as_T4_v3](https://learn.microsoft.com/en-us/azure/virtual-machines/nct4-v3-series) on Azure. MMF leverages [neuralforecast](https://nixtlaverse.nixtla.io/neuralforecast/index.html) which is built on top of [pytorch](https://lightning.ai/docs/pytorch/stable/common/trainer.html) and can therefore utilize all the [available resources](https://lightning.ai/docs/pytorch/stable/common/trainer.html). 
 
 # COMMAND ----------
 
