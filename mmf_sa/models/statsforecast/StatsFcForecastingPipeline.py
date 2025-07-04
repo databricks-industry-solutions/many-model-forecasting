@@ -20,6 +20,7 @@ from statsforecast.models import (
     SeasonalNaive,
 )
 from mmf_sa.models.abstract_model import ForecastingRegressor
+from mmf_sa.exceptions import MissingFeatureError, DataPreparationError
 
 
 class StatsFcForecaster(ForecastingRegressor):
@@ -39,12 +40,12 @@ class StatsFcForecaster(ForecastingRegressor):
                 try:
                     features = features + self.params.dynamic_future_numerical
                 except Exception as e:
-                    raise Exception(f"Dynamic future numerical missing: {e}")
+                    raise MissingFeatureError(f"Dynamic future numerical missing: {e}")
             if 'dynamic_future_categorical' in self.params.keys():
                 try:
                     features = features + self.params.dynamic_future_categorical
                 except Exception as e:
-                    raise Exception(f"Dynamic future categorical missing: {e}")
+                    raise MissingFeatureError(f"Dynamic future categorical missing: {e}")
             _df = df[features]
             _df = (
                 _df.rename(
@@ -62,12 +63,12 @@ class StatsFcForecaster(ForecastingRegressor):
                 try:
                     features = features + self.params.dynamic_future_numerical
                 except Exception as e:
-                    raise Exception(f"Dynamic future numerical missing: {e}")
+                    raise MissingFeatureError(f"Dynamic future numerical missing: {e}")
             if 'dynamic_future_categorical' in self.params.keys():
                 try:
                     features = features + self.params.dynamic_future_categorical
                 except Exception as e:
-                    raise Exception(f"Dynamic future categorical missing: {e}")
+                    raise MissingFeatureError(f"Dynamic future categorical missing: {e}")
             _df = df[features]
             _df = (
                 _df.rename(

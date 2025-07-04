@@ -29,6 +29,17 @@ from pyspark.sql.functions import lit, avg, min, max, col, posexplode, collect_l
 from mmf_sa.models.abstract_model import ForecastingRegressor
 from mmf_sa.models import ModelRegistry
 from mmf_sa.data_quality_checks import DataQualityChecks
+from mmf_sa.exceptions import (
+    ConfigurationError,
+    ExperimentError,
+    ModelError,
+    EvaluationError,
+    ScoringError,
+    ModelRegistryError,
+    SparkError,
+    DataError,
+    UnsupportedFrequencyError
+)
 _logger = logging.getLogger(__name__)
 os.environ['NIXTLA_ID_AS_COL'] = '1'
 mlflow.set_registry_uri("databricks-uc")
@@ -51,7 +62,7 @@ class Forecaster:
             _yaml_conf = yaml.safe_load(pathlib.Path(conf).read_text())
             self.conf = OmegaConf.create(_yaml_conf)
         else:
-            raise Exception("No configuration provided!")
+            raise ConfigurationError("No configuration provided!")
         if run_id:
             self.run_id = run_id
         else:
@@ -64,8 +75,8 @@ class Forecaster:
         elif self.conf.get("experiment_path"):
             self.experiment_id = self.set_mlflow_experiment()
         else:
-            raise Exception(
-                "Please set 'experiment_path' parameter in the configuration file!"
+            raise ExperimentError(
+                "Set 'experiment_path' parameter in the configuration file!"
             )
         if self.conf["freq"] == "H":
             self.backtest_offset = pd.DateOffset(hours=self.conf["backtest_length"])
@@ -193,9 +204,14 @@ class Forecaster:
                     self.evaluate_global_model(model_conf)
                 elif model_conf["model_type"] == "foundation":
                     self.evaluate_foundation_model(model_conf)
-            except Exception as err:
+            except (ModelError, EvaluationError, DataError, ConfigurationError) as err:
                 _logger.error(
                     f"Error has occurred while evaluating model {model_name}: {repr(err)}",
+                    exc_info=err,
+                )
+            except Exception as err:
+                _logger.error(
+                    f"Unexpected error while evaluating model {model_name}: {repr(err)}",
                     exc_info=err,
                 )
             print(f"Finished evaluating {model_name}")
@@ -302,9 +318,15 @@ class Forecaster:
             pdf[model.params["target"]] = pdf[model.params["target"]].clip(0)
             metrics_df = model.backtest(pdf, start=split_date, group_id=group_id)
             return metrics_df
-        except Exception as err:
+        except (ModelError, EvaluationError, DataError) as err:
             _logger.error(
                 f"Error evaluating group {group_id} using model {repr(model)}: {err}",
+                exc_info=err,
+                stack_info=True,
+            )
+        except Exception as err:
+            _logger.error(
+                f"Unexpected error evaluating group {group_id} using model {repr(model)}: {err}",
                 exc_info=err,
                 stack_info=True,
             )
@@ -554,7 +576,19 @@ class Forecaster:
                 res_df[model.params["date_col"]].to_numpy(),
                 res_df[model.params["target"]].to_numpy(),
                 cloudpickle.dumps(model_fitted)]
-        except:
+        except (ModelError, ScoringError, DataError) as err:
+            _logger.error(
+                f"Error scoring group {group_id} using model {repr(model)}: {err}",
+                exc_info=err,
+                stack_info=True,
+            )
+            data = [group_id, None, None, None]
+        except Exception as err:
+            _logger.error(
+                f"Unexpected error scoring group {group_id} using model {repr(model)}: {err}",
+                exc_info=err,
+                stack_info=True,
+            )
             data = [group_id, None, None, None]
         res_df = pd.DataFrame(
             columns=[

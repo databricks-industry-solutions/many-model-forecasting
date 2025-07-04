@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import logging
 import mlflow
 from mlflow.types import Schema, TensorSpec
 from mlflow.models.signature import ModelSignature
@@ -10,6 +11,9 @@ from sktime.performance_metrics.forecasting import (
 )
 from utilsforecast.processing import make_future_dataframe
 from mmf_sa.models.abstract_model import ForecastingRegressor
+from mmf_sa.exceptions import MissingFeatureError, UnsupportedMetricError, ModelPredictionError, DataPreparationError
+
+_logger = logging.getLogger(__name__)
 
 
 class TimesFMForecaster(ForecastingRegressor):
@@ -32,7 +36,7 @@ class TimesFMForecaster(ForecastingRegressor):
             signature=signature,
             #input_example=input_example,
             pip_requirements=[
-                "timesfm[torch]==1.2.7",
+                "timesfm[torch]==1.2.6",
                 "git+https://github.com/databricks-industry-solutions/many-model-forecasting.git",
                 "pyspark==3.5.0",
             ],
@@ -46,12 +50,12 @@ class TimesFMForecaster(ForecastingRegressor):
                 try:
                     features = features + self.params.dynamic_future_numerical
                 except Exception as e:
-                    raise Exception(f"Dynamic future numerical missing: {e}")
+                    raise MissingFeatureError(f"Dynamic future numerical missing: {e}")
             if 'dynamic_future_categorical' in self.params.keys():
                 try:
                     features = features + self.params.dynamic_future_categorical
                 except Exception as e:
-                    raise Exception(f"Dynamic future categorical missing: {e}")
+                    raise MissingFeatureError(f"Dynamic future categorical missing: {e}")
             _df = df[features]
             _df = (
                 _df.rename(
@@ -69,12 +73,12 @@ class TimesFMForecaster(ForecastingRegressor):
                 try:
                     features = features + self.params.dynamic_future_numerical
                 except Exception as e:
-                    raise Exception(f"Dynamic future numerical missing: {e}")
+                    raise MissingFeatureError(f"Dynamic future numerical missing: {e}")
             if 'dynamic_future_categorical' in self.params.keys():
                 try:
                     features = features + self.params.dynamic_future_categorical
                 except Exception as e:
-                    raise Exception(f"Dynamic future categorical missing: {e}")
+                    raise MissingFeatureError(f"Dynamic future categorical missing: {e}")
             _df = df[features]
             _df = (
                 _df.rename(
@@ -170,7 +174,7 @@ class TimesFMForecaster(ForecastingRegressor):
         metrics = []
         metric_name = self.params["metric"]
         if metric_name not in ("smape", "mape", "mae", "mse", "rmse"):
-            raise Exception(f"Metric {self.params['metric']} not supported!")
+            raise UnsupportedMetricError(f"Metric {self.params['metric']} not supported!")
         for key in keys:
             actual = val_df[val_df[self.params["group_id"]] == key][self.params["target"]].to_numpy()
             forecast = np.array(pred_df[pred_df[self.params["group_id"]] == key][self.params["target"]].iloc[0])
@@ -196,8 +200,10 @@ class TimesFMForecaster(ForecastingRegressor):
                         actual,
                         b'',
                     )])
-            except:
-                pass
+            except (ModelPredictionError, DataPreparationError) as err:
+                _logger.warning(f"Failed to calculate metric for key {key}: {err}")
+            except Exception as err:
+                _logger.warning(f"Unexpected error calculating metric for key {key}: {err}")
         return metrics
 
 
