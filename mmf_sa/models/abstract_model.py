@@ -10,6 +10,7 @@ from sktime.performance_metrics.forecasting import (
     MeanAbsolutePercentageError,
 )
 import mlflow
+from mmf_sa.exceptions import UnsupportedMetricError
 mlflow.set_registry_uri("databricks-uc")
 
 
@@ -163,7 +164,7 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
             rmse = MeanSquaredError(square_root=True)
             metric_value = rmse(actual, forecast)
         else:
-            raise Exception(f"Metric {self.params['metric']} not supported!")
+            raise UnsupportedMetricError(f"Metric {self.params['metric']} not supported!")
 
         return {
             "curr_date": curr_date,

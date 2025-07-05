@@ -4,6 +4,12 @@ from omegaconf import DictConfig
 import pandas as pd
 import pyspark
 from pyspark.sql import SparkSession
+from mmf_sa.exceptions import (
+    DataQualityError,
+    ParameterValidationError,
+    EmptyDatasetError,
+    InvalidConfigurationError
+)
 
 
 class DataQualityChecks:
@@ -27,7 +33,7 @@ class DataQualityChecks:
         Parameters: self (Forecaster): A Forecaster object.
         """
         if self.conf["backtest_length"] < self.conf["prediction_length"]:
-            raise Exception(f"Backtest length is shorter than prediction length!")
+            raise ParameterValidationError(f"Backtest length is shorter than prediction length!")
 
     def _external_regressors_check(self):
         """
@@ -43,7 +49,7 @@ class DataQualityChecks:
             or self.conf.get("dynamic_historical_categorical", None)
         ):
             if self.conf.get("resample"):
-                raise Exception(
+                raise InvalidConfigurationError(
                     f"Disable resampling when an external regressor is given!"
                 )
 
@@ -201,7 +207,7 @@ class DataQualityChecks:
             clean_df = self.df
 
         if clean_df.empty:
-            raise Exception("None of the time series passed the data quality checks.")
+            raise EmptyDatasetError("None of the time series passed the data quality checks.")
         print(f"Finished data quality checks...")
         clean_df = self.spark.createDataFrame(clean_df)
         return clean_df, removed

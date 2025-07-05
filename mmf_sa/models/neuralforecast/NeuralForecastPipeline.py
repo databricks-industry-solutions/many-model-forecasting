@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import logging
 import mlflow
 from mlflow.models import ModelSignature, infer_signature
 from mlflow.types.schema import Schema, ColSpec
@@ -25,6 +26,14 @@ from neuralforecast.auto import (
 from neuralforecast.losses.pytorch import (
     MAE, MSE, RMSE, MAPE, SMAPE, MASE,
 )
+from mmf_sa.exceptions import (
+    MissingFeatureError,
+    UnsupportedMetricError,
+    ModelPredictionError,
+    DataPreparationError
+)
+
+_logger = logging.getLogger(__name__)
 
 
 class NeuralFcForecaster(ForecastingRegressor):
@@ -73,22 +82,22 @@ class NeuralFcForecaster(ForecastingRegressor):
                 try:
                     features = features + self.params.dynamic_future_numerical
                 except Exception as e:
-                    raise Exception(f"Dynamic future numerical missing: {e}")
+                    raise MissingFeatureError(f"Dynamic future numerical missing: {e}")
             if 'dynamic_future_categorical' in self.params.keys():
                 try:
                     features = features + self.params.dynamic_future_categorical
                 except Exception as e:
-                    raise Exception(f"Dynamic future categorical missing: {e}")
+                    raise MissingFeatureError(f"Dynamic future categorical missing: {e}")
             if 'dynamic_historical_numerical' in self.params.keys():
                 try:
                     features = features + self.params.dynamic_historical_numerical
                 except Exception as e:
-                    raise Exception(f"Dynamic historical numerical missing: {e}")
+                    raise MissingFeatureError(f"Dynamic historical numerical missing: {e}")
             if 'dynamic_historical_categorical' in self.params.keys():
                 try:
                     features = features + self.params.dynamic_historical_categorical
                 except Exception as e:
-                    raise Exception(f"Dynamic historical categorical missing: {e}")
+                    raise MissingFeatureError(f"Dynamic historical categorical missing: {e}")
             _df = df[features]
             _df = (
                 _df.rename(
@@ -106,12 +115,12 @@ class NeuralFcForecaster(ForecastingRegressor):
                 try:
                     features = features + self.params.dynamic_future_numerical
                 except Exception as e:
-                    raise Exception(f"Dynamic future numerical missing: {e}")
+                    raise MissingFeatureError(f"Dynamic future numerical missing: {e}")
             if 'dynamic_future_categorical' in self.params.keys():
                 try:
                     features = features + self.params.dynamic_future_categorical
                 except Exception as e:
-                    raise Exception(f"Dynamic future categorical missing: {e}")
+                    raise MissingFeatureError(f"Dynamic future categorical missing: {e}")
             _df = df[features]
             _df = (
                 _df.rename(
@@ -214,7 +223,7 @@ class NeuralFcForecaster(ForecastingRegressor):
         metrics = []
         metric_name = self.params["metric"]
         if metric_name not in ("smape", "mape", "mae", "mse", "rmse"):
-            raise Exception(f"Metric {self.params['metric']} not supported!")
+            raise UnsupportedMetricError(f"Metric {self.params['metric']} not supported!")
         for key in keys:
             actual = val_df[val_df[self.params["group_id"]] == key][self.params["target"]].reset_index(drop=True)
             forecast = pred_df[pred_df[self.params["group_id"]] == key][self.params["target"]].\
@@ -241,8 +250,10 @@ class NeuralFcForecaster(ForecastingRegressor):
                         actual.to_numpy(),
                         b'',
                     )])
-            except:
-                pass
+            except (ModelPredictionError, DataPreparationError) as err:
+                _logger.warning(f"Failed to calculate metric for key {key}: {err}")
+            except Exception as err:
+                _logger.warning(f"Unexpected error calculating metric for key {key}: {err}")
         return metrics
 
 
@@ -260,7 +271,7 @@ def get_loss_function(loss):
     elif loss == "mase":
         return MASE()
     else:
-        raise Exception(
+        raise UnsupportedMetricError(
             f"Provided loss {loss} not supported!"
         )
 
