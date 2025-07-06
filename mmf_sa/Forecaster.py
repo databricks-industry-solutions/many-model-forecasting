@@ -180,6 +180,10 @@ class Forecaster:
             score (bool, optional): A boolean specifying whether to score the models. Default is True.
         Returns: run_id (str): A string specifying the run id.
         """
+        print("Run quality checks")
+        src_df = self.resolve_source("train_data")
+        clean_df, removed = DataQualityChecks(src_df, self.conf, self.spark).run(verbose=True)
+        print("Finished quality checks")
         print("Starting evaluate_score")
         if evaluate:
             self.evaluate_models()
