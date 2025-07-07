@@ -318,13 +318,14 @@ class DataQualityChecks:
             ValidationResult with check outcome and processed data
         """
         # Use group's own max date for detecting missing entries within the group
-        group_max_date = df[self.conf["date_col"]].max()
-        
+        if max_date is None:
+            max_date = df[self.conf["date_col"]].max()
+    
         # Create complete date range and resample
         df_indexed = df.set_index(self.conf["date_col"])
         date_idx = pd.date_range(
             start=df[self.conf["date_col"]].min(),
-            end=group_max_date,
+            end=max_date,
             freq=self.conf["freq"],
             name=self.conf["date_col"],
         )
@@ -389,7 +390,7 @@ class DataQualityChecks:
             return pd.DataFrame()
         
         group_id = df[self.conf["group_id"]].iloc[0]
-        
+            
         # Track metrics for this group
         self.metrics.total_groups += 1
         
@@ -475,6 +476,7 @@ class DataQualityChecks:
             
             # Create partial function for group checks
             max_date = self.df[self.conf["date_col"]].max()
+
             group_check_func = functools.partial(
                 self._run_group_checks,
                 max_date=max_date,
