@@ -2,7 +2,7 @@
 
 ## Overview
 
-The **MMF** (Many-Model Forecasting) is a comprehensive time series forecasting framework that enables evaluation and deployment of multiple forecasting models across different time series datasets. The framework is designed to handle various types of models (local, global, and foundation models) and provides unified APIs for training, evaluation, and scoring.
+The **MMF** (Many-Model Forecasting) is a comprehensive time series forecasting framework that enables evaluation and deployment of multiple forecasting models across many time series. The framework is designed to handle various types of models (local, global, and foundation models) and provides unified APIs for training, evaluation, and scoring.
 
 ## Entry Point: `run_forecast` Function
 
@@ -18,6 +18,9 @@ The primary entry point to the MMF is the `run_forecast` function located in `mm
 def run_forecast(
     spark: SparkSession,
     train_data: Union[str, pd.DataFrame, DataFrame],
+    scoring_data: Union[str, pd.DataFrame, DataFrame] = None,
+    evaluation_output: str = None,
+    scoring_output: str = None,
     group_id: str,
     date_col: str,
     target: str,
@@ -26,10 +29,6 @@ def run_forecast(
     backtest_length: int,
     stride: int,
     metric: str = "smape",
-    scoring_data: Union[str, pd.DataFrame, DataFrame] = None,
-    scoring_output: str = None,
-    evaluation_output: str = None,
-    model_output: str = None,
     use_case_name: str = None,
     static_features: List[str] = None,
     dynamic_future_numerical: List[str] = None,
@@ -38,7 +37,6 @@ def run_forecast(
     dynamic_historical_categorical: List[str] = None,
     active_models: List[str] = None,
     accelerator: str = "cpu",
-    backtest_retrain: bool = None,
     train_predict_ratio: int = None,
     data_quality_check: bool = False,
     resample: bool = False,
@@ -48,18 +46,9 @@ def run_forecast(
 ) -> str:
 ```
 
-### Configuration Processing Flow
-
-The `run_forecast` function follows a configuration processing pipeline:
-
-1. **Base Configuration Loading**: Loads default configuration from `forecasting_conf.yaml`
-2. **Configuration Merging**: Combines base configuration with `conf` parameter if provided
-3. **Parameter Assignment**: Maps function parameters to configuration keys
-
-
 ### Configuration Hierarchy
 
-The system uses a hierarchical configuration approach:
+The system uses a hierarchical configuration approach. The latter steps override the former steps:
 
 ```
 Base Configuration (forecasting_conf.yaml)
@@ -73,35 +62,23 @@ Function Parameters (direct arguments)
 
 The `Forecaster` class (`mmf_sa/Forecaster.py`) is the central orchestrator that manages the entire forecasting pipeline.
 
-### Key Components
-
-#### 1. MLflow Experiment Setup
-- Creates experiment directories in the MLflow tracking server
-- Configures experiment paths for model versioning
-- Sets up Unity Catalog integration for model registration
-
-#### 2. Model Registry (`ModelRegistry`)
-- Loads model configurations / hyperparameters from `models/models_conf.yaml`
-- Merges user-defined model configurations with base configurations
-- Manages active model selection based on configuration
-
-
 ## Main Execution Flow: `evaluate_score` Method
 
-The `evaluate_score` method is the main execution entry point that orchestrates the entire forecasting pipeline:
+The `evaluate_score` method is the main method of the `Forecaster` class. It runs data quality checks, performs backtesting (evaluation) for all models in the `active_models` list, and executes forecasting (scoring) for all models in the `active_models` list.
 
 ```python
 def evaluate_score(self, evaluate: bool = True, score: bool = True) -> str:
+
     # 1. Data Quality Checks
     print("Run quality checks")
     src_df = self.resolve_source("train_data")
     clean_df, removed = DataQualityChecks(src_df, self.conf, self.spark).run(verbose=True)
     
-    # 2. Model Evaluation
+    # 2. Evaluation
     if evaluate:
         self.evaluate_models()
     
-    # 3. Model Scoring
+    # 3. Scoring
     if score:
         self.score_models()
     
@@ -115,15 +92,11 @@ def evaluate_score(self, evaluate: bool = True, score: bool = True) -> str:
 The `DataQualityChecks` class (`mmf_sa/data_quality_checks.py`) provides comprehensive data validation. Checks consistes of mandatory and optional ones. See `mmf_sa/data_quality_checks.py` for details.
 
 #### Key Features:
-1. **External Regressor Validation**: Validates external features consistency (mandatory)
-2. **Training Period Validation**: Ensures sufficient training data length (mandatory)
+1. **External Regressor Validation**: Validates that resampling is disabled when external regressors are provided (mandatory)
+2. **Training Period Validation**: Ensures that backtest_length contains at least one prediction_length (mandatory)
 3. **Missing Data Detection**: Identifies and handles missing values (optional)
-4. **Negative Value Validation**: Detects and processes negative target values (optional)
+4. **Negative Value Validation**: Detects negative target values (optional)
 
-#### Data Quality Workflow:
-```
-Raw Data → Parameter Validation → Group-wise Checks → Quality Metrics → Clean Data
-```
 
 ## Model Management System
 
@@ -207,13 +180,13 @@ def evaluate_models(self):
 Local models are evaluated using Spark's `applyInPandas` for distributed processing:
 
 1. **Data Preparation**: Resolves data sources and applies quality checks
-2. **Parallel Processing**: Applies `evaluate_one_local_model` to each group
-3. **Results Aggregation**: Combines results from all time series
-4. **MLflow Logging**: Records metrics and model artifacts
+2. **Parallel Processing**: Applies `evaluate_one_local_model` and performs backtesting for each group
+3. **Results Aggregation**: Combines results from all time series and writes to the `evaluation_output` table
+4. **MLflow Logging**: Records metrics per model aggregated over all time series
 
 #### Backtest Process for Local Models:
 ```
-Historical Data → Split by Group → Split by Backtesting Start Date → Fit Model → Generate Forecasts → Calculate Metrics → Store Results
+Historical Data → Split by Group (Parallelization) → Split by Backtesting Start Date → Fit Model → Generate Forecasts → Calculate Metrics → Store Results
 ```
 
 ### Global Model Evaluation
@@ -222,13 +195,13 @@ Global models follow a two-phase training approach:
 
 1. **Phase 1 - Final Model Training**:
    - Trains on complete dataset (train + validation)
+   - Creates model artifacts
    - Registers model in Unity Catalog
-   - Creates model artifacts for deployment
-
+   
 2. **Phase 2 - Evaluation Training**:
-   - Trains only on training data
+   - Trains only on training data: i.e., all data excluding the `backtest_length`
    - Performs detailed backtesting using the same model
-   - Calculates performance metrics
+   - Calculates performance metrics and writes the results to the `evaluation_output` table
 
 ### Foundation Model Evaluation
 
@@ -236,14 +209,14 @@ Foundation models leverage pre-trained weights:
 
 1. **Model Loading**: Loads pre-trained foundation model
 2. **Adaptation**: Applies model to specific time series format
-3. **Evaluation**: Performs inference-based evaluation
+3. **Evaluation**: Performs inference-based evaluation and writes the results to the `evaluation_output` table
 4. **Registration**: Registers adapted model for deployment
 
 ## Backtesting Framework
 
 ### Backtesting Algorithm
 
-The `backtest` method in `ForecastingRegressor` implements walk-forward validation:
+The `backtest` method in `ForecastingRegressor` implements extending window validation:
 
 ```python
 def backtest(self, df: pd.DataFrame, start: pd.Timestamp, ...) -> pd.DataFrame:
@@ -279,29 +252,29 @@ The system supports multiple out-of-the-box evaluation metrics:
 
 ### Scoring Workflow
 
-The scoring pipeline generates predictions for new data:
+The scoring pipeline generates forecasts:
 
-1. **Model Retrieval**: Loads trained models from MLflow registry for global and foundation models
+1. **Model Retrieval**: Loads trained models from MLflow registry (only for global and foundation models)
 2. **Data Preparation**: Prepares scoring data with quality checks
 3. **Prediction Generation**: Generates forecasts using trained models
-4. **Result Storage**: Saves predictions to specified output tables
+4. **Result Storage**: Saves predictions to specified output (`scoring_output`) tables
 
 ### Scoring Methods by Model Type
 
 #### Local Model Scoring:
 - Uses Pandas UDF for parallel processing
 - Generates predictions per time series group
-- Saves serialized model artifacts in a Delta table
+- Saves serialized model artifacts in a Delta table for reproducibility and auditability
 
 #### Global Model Scoring:
 - Loads centralized model from MLflow
 - Applies model to entire scoring dataset
-- Generates predictions for all time series
+- Generates predictions for all time series and writes to `scoring_output` tables
 
 #### Foundation Model Scoring:
 - Loads pre-trained foundation model
 - Applies zero-shot inference
-- Generates predictions without additional training
+- Generates predictions without additional training and writes to `scoring_output` tables
 
 ## Data Flow Architecture
 
@@ -338,8 +311,7 @@ The system integrates extensively with MLflow for:
 
 1. **Experiment Tracking**: Logs all runs with parameters and metrics
 2. **Model Registration**: Stores trained models in Unity Catalog
-3. **Artifact Management**: Manages model artifacts and metadata
-4. **Version Control**: Tracks model versions and lineage
+3. **Version Control**: Tracks model versions and lineage
 
 ### Spark Integration
 
@@ -348,7 +320,6 @@ Spark is used for:
 1. **Data Processing**: Handles large-scale data operations
 2. **Distributed Computing**: Parallel model training and evaluation
 3. **Table Operations**: Reads from and writes to Delta tables
-4. **UDF Processing**: Applies Python functions at scale
 
 ## Configuration Management
 
@@ -357,18 +328,6 @@ Spark is used for:
 1. **`forecasting_conf.yaml`**: Base configuration with default settings
 2. **`models/models_conf.yaml`**: Model definitions and specifications
 3. **User Configuration**: Custom overrides and specific settings
-
-### Configuration Precedence
-
-```
-Default (forecasting_conf.yaml)
-    ↓
-User Configuration File
-    ↓
-Function Parameters
-    ↓
-Runtime Overrides
-```
 
 ## Error Handling and Logging
 
@@ -381,30 +340,6 @@ The system defines custom exceptions for different error scenarios:
 - `DataError`: Data quality and processing issues
 - `EvaluationError`: Evaluation pipeline errors
 - `ScoringError`: Scoring pipeline errors
-
-## Usage Examples
-
-### Basic Usage
-
-```python
-from mmf_sa import run_forecast
-
-# Run forecasting pipeline
-run_id = run_forecast(
-    spark=spark,
-    train_data="catalog.database.train_table",
-    group_id="unique_id",
-    date_col="ds",
-    target="y",
-    freq="D",
-    prediction_length=14,
-    backtest_length=30,
-    stride=7,
-    active_models=["StatsForecastAutoArima", "NeuralForecastLSTM"],
-    experiment_path="/Users/user/experiments/forecasting",
-    use_case_name="demand_forecasting"
-)
-```
 
 ### Advanced Configuration
 
@@ -446,7 +381,7 @@ run_id = run_forecast(
 1. **Create Model Class**: Inherit from `ForecastingRegressor`
 2. **Implement Required Methods**: `fit`, `predict`, `forecast`, `prepare_data`
 3. **Add Configuration**: Update `models_conf.yaml`
-4. **Register Model**: Add to active models list
+4. **Activate**: Add to active models list
 
 ### Custom Metrics
 
@@ -458,10 +393,9 @@ run_id = run_forecast(
 ## Best Practices
 
 ### Data Management
-- Implement data quality checks 
+- Implement data quality checks prior to using MMF
 - Address missing values and anomalies prior to using MMF
-- Use appropriate data formats
-
+- Obtain sufficient history
 
 ### Configuration Management
 - Use version control for configuration files
