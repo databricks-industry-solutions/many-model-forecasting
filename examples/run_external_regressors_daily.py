@@ -9,6 +9,7 @@ dbutils.widgets.text("user", "")
 
 model_class = "global" if "NeuralForecast" in dbutils.widgets.get("model") else "foundation" 
 %pip install -r ../requirements-{model_class}.txt --quiet
+%pip install "jax[cuda12]==0.6.1" "jaxlib==0.6.1" --quiet # Needed only for timesfm with external regressors, remove if not using timesfm with external regressors
 dbutils.library.restartPython()
 
 # COMMAND ----------
