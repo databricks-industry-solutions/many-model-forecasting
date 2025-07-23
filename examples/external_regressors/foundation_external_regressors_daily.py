@@ -58,7 +58,7 @@ random.seed(7)
 
 # Number of time series to sample
 sample = True
-size = 100
+size = 1000
 stores = sorted(random.sample(range(0, 1000), size))
 
 train = spark.read.csv(f"/Volumes/{catalog}/{db}/{volume}/train.csv", header=True, inferSchema=True)
@@ -100,8 +100,8 @@ display(spark.sql(f"select * from {catalog}.{db}.rossmann_daily_test where Store
 # COMMAND ----------
 
 active_models = [
-    "ChronosT5Tiny",
-    "MoiraiSmall",
+    #"ChronosT5Tiny",
+    #"MoiraiSmall",
     "TimesFM_1_0_200m",
     "TimesFM_2_0_500m",
 ]

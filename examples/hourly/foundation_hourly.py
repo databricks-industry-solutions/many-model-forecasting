@@ -44,7 +44,7 @@ from datasetsforecast.m4 import M4
 # COMMAND ----------
 
 # Number of time series
-n = 100
+n = 1000
 
 
 def create_m4_hourly():
