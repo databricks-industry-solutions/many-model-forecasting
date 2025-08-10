@@ -1,0 +1,101 @@
+freq: H
+
+metric: smape
+
+resample: false
+
+train_predict_ratio: 1
+
+accelerator: cpu
+
+static_features:
+  #- State
+
+dynamic_future_numerical:
+
+dynamic_future_categorical:
+  #- Open
+  #- Promo
+  #- DayOfWeek
+
+dynamic_historical_numerical:
+
+dynamic_historical_categorical:
+
+active_models:
+  - StatsForecastBaselineWindowAverage
+  - StatsForecastBaselineSeasonalWindowAverage
+  - StatsForecastBaselineNaive
+  - StatsForecastBaselineSeasonalNaive
+  - StatsForecastAutoArima
+  - StatsForecastAutoETS
+  - StatsForecastAutoCES
+  - StatsForecastAutoTheta
+  - StatsForecastTSB
+  - StatsForecastADIDA
+  - StatsForecastIMAPA
+  - StatsForecastCrostonClassic
+  - StatsForecastCrostonOptimized
+  - StatsForecastCrostonSBA
+  - SKTimeProphet
+  - SKTimeLgbmDsDt
+  - SKTimeTBats
+  - NeuralForecastRNN
+  - NeuralForecastLSTM
+  - NeuralForecastNBEATSx
+  - NeuralForecastNHITS
+  - NeuralForecastAutoRNN
+  - NeuralForecastAutoLSTM
+  - NeuralForecastAutoNBEATSx
+  - NeuralForecastAutoNHITS
+  - NeuralForecastAutoTiDE
+  - NeuralForecastAutoPatchTST
+  - ChronosT5Tiny
+  - ChronosT5Mini
+  - ChronosT5Small
+  - ChronosT5Base
+  - ChronosT5Large
+  - MoiraiSmall
+  - MoiraiBase
+  - MoiraiLarge
+  - TimesFM_1_0_200m
+  - TimesFM_2_0_500m
+
+#Here we can override hyperparameters for built-in models
+models:
+
+  StatsForecastBaselineWindowAverage:
+    model_spec:
+      window_size: 24
+
+  StatsForecastBaselineSeasonalWindowAverage:
+    model_spec:
+      season_length: 24
+      window_size: 24
+
+  StatsForecastBaselineSeasonalNaive:
+    model_spec:
+      season_length: 24
+
+  StatsForecastAutoArima:
+    model_spec:
+      season_length: 24
+      approximation:
+      level:
+
+  StatsForecastAutoETS:
+    model_spec:
+      season_length: 24
+      model: "ZNZ"
+
+  StatsForecastAutoCES:
+    model_spec:
+      season_length: 24
+      model: "Z"
+
+  StatsForecastAutoTheta:
+    model_spec:
+      season_length: 24
+      decomposition_type: "multiplicative"
+
+temp_path: /Volumes/mmf/tmp/partitions

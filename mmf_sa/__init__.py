@@ -93,9 +93,23 @@ def run_forecast(
     else:
         _conf = OmegaConf.create()
 
-    base_conf = OmegaConf.create(
-        pkg_resources.read_text(sys.modules[__name__], "forecasting_conf.yaml")
-    )
+    if freq == "H":
+        base_conf = OmegaConf.create(
+            pkg_resources.read_text(sys.modules[__name__], "forecasting_conf_hourly.yaml")
+        )
+    elif freq == "D":
+        base_conf = OmegaConf.create(
+            pkg_resources.read_text(sys.modules[__name__], "forecasting_conf_daily.yaml")
+        )
+    elif freq == "W":
+        base_conf = OmegaConf.create(
+            pkg_resources.read_text(sys.modules[__name__], "forecasting_conf_weekly.yaml")
+        )
+    elif freq == "M":
+        base_conf = OmegaConf.create(
+            pkg_resources.read_text(sys.modules[__name__], "forecasting_conf_monthly.yaml")
+        )
+        
     _conf = OmegaConf.merge(base_conf, _conf)
 
     _data_conf = {}
