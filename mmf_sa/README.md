@@ -51,7 +51,7 @@ def run_forecast(
 The system uses a hierarchical configuration approach. The latter steps override the former steps:
 
 ```
-Base Configuration (forecasting_conf.yaml)
+Base Configuration (e.g., forecasting_conf_daily.yaml)
     ↓
 User Configuration (conf parameter)
     ↓
@@ -325,7 +325,7 @@ Spark is used for:
 
 ### Configuration Files
 
-1. **`forecasting_conf.yaml`**: Base configuration with default settings
+1. **`forecasting_conf_<frequency>.yaml`**: Base configuration with default settings
 2. **`models/models_conf.yaml`**: Model definitions and specifications
 3. **User Configuration**: Custom overrides and specific settings
 
