@@ -17,6 +17,7 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
     def __init__(self, params):
         self.params = params
         self.freq = params["freq"].upper()[0]
+        self.allow_varying_test_sizes = True
         self.one_ts_offset = (
             pd.offsets.MonthEnd(1) if self.freq == "M" else pd.DateOffset(days=1)
         )
@@ -74,39 +75,120 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
 
         results = []
 
-        while curr_date + self.prediction_length_offset <= end_date + self.one_ts_offset:
-            # print("start_date = ", curr_date)
-            _df = df[df[self.params["date_col"]] < np.datetime64(curr_date)]
-            actuals_df = df[
-                (df[self.params["date_col"]] >= np.datetime64(curr_date))
-                & (
-                        df[self.params["date_col"]]
-                        < np.datetime64(curr_date + self.prediction_length_offset)
-                )]
+        # while curr_date + self.prediction_length_offset <= end_date + self.one_ts_offset:
+        #     # print("start_date = ", curr_date)
+        #     _df = df[df[self.params["date_col"]] < np.datetime64(curr_date)]
+        #     actuals_df = df[
+        #         (df[self.params["date_col"]] >= np.datetime64(curr_date))
+        #         & (
+        #                 df[self.params["date_col"]]
+        #                 < np.datetime64(curr_date + self.prediction_length_offset)
+        #         )]
 
-            # backtest_retrain for global models is currently not supported
-            # if backtest_retrain and self.params["model_type"] == "global":
-            #    self.fit(_df)
+        #     # backtest_retrain for global models is currently not supported
+        #     # if backtest_retrain and self.params["model_type"] == "global":
+        #     #    self.fit(_df)
 
-            metrics = self.calculate_metrics(_df, actuals_df, curr_date, spark)
+        #     metrics = self.calculate_metrics(_df, actuals_df, curr_date, spark)
 
-            if isinstance(metrics, dict):
-                evaluation_results = [
-                    (
-                        group_id,
-                        metrics["curr_date"],
-                        metrics["metric_name"],
-                        metrics["metric_value"],
-                        metrics["forecast"],
-                        metrics["actual"],
-                        metrics["model_pickle"],
-                    )
+        #     if isinstance(metrics, dict):
+        #         evaluation_results = [
+        #             (
+        #                 group_id,
+        #                 metrics["curr_date"],
+        #                 metrics["metric_name"],
+        #                 metrics["metric_value"],
+        #                 metrics["forecast"],
+        #                 metrics["actual"],
+        #                 metrics["model_pickle"],
+        #             )
+        #         ]
+        #         results.extend(evaluation_results)
+        #     elif isinstance(metrics, list):
+        #         results.extend(metrics)
+
+        #     curr_date += stride_offset
+
+        if self.allow_varying_test_sizes:
+            print("using new logic for backtesting")
+            while curr_date <= end_date:
+                # Training data (everything before current date)
+                _df = df[df[self.params["date_col"]] < np.datetime64(curr_date)]
+                
+                # TEST DATA: Use all available data from curr_date to end_date
+                actuals_df = df[
+                    (df[self.params["date_col"]] >= np.datetime64(curr_date)) &
+                    (df[self.params["date_col"]] < np.datetime64(curr_date + self.prediction_length_offset))
                 ]
-                results.extend(evaluation_results)
-            elif isinstance(metrics, list):
-                results.extend(metrics)
 
-            curr_date += stride_offset
+                print(
+                    f"[LOOP] curr_date={curr_date}, "
+                    f"_df_max={_df[self.params['date_col']].max() if not _df.empty else None}, "
+                    f"actuals_min={actuals_df[self.params['date_col']].min() if not actuals_df.empty else None}, "
+                    f"actuals_rows={len(actuals_df)}"
+                )
+
+
+                
+                # Skip if no test data available
+                if len(actuals_df) == 0:
+                    curr_date += stride_offset
+                    continue
+                
+                
+                # Calculate metrics with potentially shorter test window
+                metrics = self.calculate_metrics(_df, actuals_df, curr_date, spark)
+                
+                if isinstance(metrics, dict):
+                    evaluation_results = [
+                        (
+                            group_id,
+                            metrics["curr_date"],
+                            metrics["metric_name"],
+                            metrics["metric_value"],
+                            metrics["forecast"],
+                            metrics["actual"],
+                            metrics["model_pickle"],
+                        )
+                    ]
+                    results.extend(evaluation_results)
+                elif isinstance(metrics, list):
+                    results.extend(metrics)
+                    
+                curr_date += stride_offset
+        else:
+            # ORIGINAL LOGIC: Fixed prediction_length windows only
+            while curr_date + self.prediction_length_offset <= end_date + self.one_ts_offset:
+                # Training data
+                _df = df[df[self.params["date_col"]] < np.datetime64(curr_date)]
+                
+                # TEST DATA: Fixed window of prediction_length
+                actuals_df = df[
+                    (df[self.params["date_col"]] >= np.datetime64(curr_date)) &
+                    (df[self.params["date_col"]] < np.datetime64(curr_date + self.prediction_length_offset))
+                ]
+                
+                # Calculate metrics (same as before)
+                metrics = self.calculate_metrics(_df, actuals_df, curr_date, spark)
+                
+                # Process results (same as before)
+                if isinstance(metrics, dict):
+                    evaluation_results = [
+                        (
+                            group_id,
+                            metrics["curr_date"],
+                            metrics["metric_name"],
+                            metrics["metric_value"],
+                            metrics["forecast"],
+                            metrics["actual"],
+                            metrics["model_pickle"],
+                        )
+                    ]
+                    results.extend(evaluation_results)
+                elif isinstance(metrics, list):
+                    results.extend(results)
+                    
+                curr_date += stride_offset
 
         res_df = pd.DataFrame(
             results,
@@ -138,7 +220,6 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
         
         actual = val_df[self.params["target"]].to_numpy()
         forecast = pred_df[self.params["target"]].to_numpy()
-
         if self.params["metric"] == "smape":
             smape = MeanAbsolutePercentageError(symmetric=True)
             metric_value = smape(actual, forecast)

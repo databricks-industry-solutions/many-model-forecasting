@@ -8,6 +8,7 @@ from sktime.performance_metrics.forecasting import (
     MeanSquaredError,
     MeanAbsolutePercentageError,
 )
+import utilsforecast.processing as ufp # adding this new package
 from neuralforecast import NeuralForecast
 from mmf_sa.models.abstract_model import ForecastingRegressor
 from neuralforecast.auto import (
@@ -65,6 +66,7 @@ class NeuralFcForecaster(ForecastingRegressor):
         return model_info
 
     def prepare_data(self, df: pd.DataFrame, future: bool = False) -> pd.DataFrame:
+        df = df.copy()
         if not future:
             # Prepare historical dataframe with or without exogenous regressors for training
             df[self.params.target] = df[self.params.target].clip(0)
@@ -148,19 +150,50 @@ class NeuralFcForecaster(ForecastingRegressor):
             static_pdf = self.prepare_static_features(x)
             self.model.fit(df=pdf, static_df=static_pdf)
 
+    # def predict(self, hist_df: pd.DataFrame, val_df: pd.DataFrame = None):
+    #     _df = self.prepare_data(hist_df)
+    #     _dynamic_future = self.prepare_data(val_df, future=True)
+    #     if _dynamic_future.empty:
+    #         _dynamic_future = None
+    #     _static_df = self.prepare_static_features(hist_df)
+    #     forecast_df = self.model.predict(
+    #         df=_df,
+    #         static_df=_static_df,
+    #         futr_df=_dynamic_future
+    #     )
+    #     target = [col for col in forecast_df.columns.to_list()
+    #               if col not in ["unique_id", "ds"]][0]
+    #     forecast_df = forecast_df.reset_index(drop=False).rename(
+    #         columns={
+    #             "unique_id": self.params.group_id,
+    #             "ds": self.params.date_col,
+    #             target: self.params.target,
+    #         }
+    #     )
+    #     forecast_df[self.params.target] = forecast_df[self.params.target].clip(0)
+    #     return forecast_df, self.model
+
     def predict(self, hist_df: pd.DataFrame, val_df: pd.DataFrame = None):
         _df = self.prepare_data(hist_df)
-        _dynamic_future = self.prepare_data(val_df, future=True)
-        if _dynamic_future.empty:
-            _dynamic_future = None
         _static_df = self.prepare_static_features(hist_df)
+        
+        # Always use expected future structure - ignore val_df dates
+        _dynamic_future = self.model.make_future_dataframe(_df)
+
+        # missing = self.model.get_missing_future(futr_df=_dynamic_future, df=_df)
+        # print("Missing future combos:\n", missing)
+        
+        # Make prediction
         forecast_df = self.model.predict(
             df=_df,
             static_df=_static_df,
             futr_df=_dynamic_future
         )
+        
+        # Process and return results
         target = [col for col in forecast_df.columns.to_list()
-                  if col not in ["unique_id", "ds"]][0]
+                if col not in ["unique_id", "ds"]][0]
+        
         forecast_df = forecast_df.reset_index(drop=False).rename(
             columns={
                 "unique_id": self.params.group_id,
@@ -168,8 +201,14 @@ class NeuralFcForecaster(ForecastingRegressor):
                 target: self.params.target,
             }
         )
+        
+        forecast_df = forecast_df.copy()
         forecast_df[self.params.target] = forecast_df[self.params.target].clip(0)
         return forecast_df, self.model
+
+
+
+
 
     def forecast(self, df: pd.DataFrame, spark=None):
         _df = df[df[self.params.target].notnull()]
