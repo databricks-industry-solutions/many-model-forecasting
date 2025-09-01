@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-import torch
+import logging
 import mlflow
 from mlflow.types import Schema, TensorSpec
 from mlflow.models.signature import ModelSignature
@@ -11,6 +11,9 @@ from sktime.performance_metrics.forecasting import (
 )
 from utilsforecast.processing import make_future_dataframe
 from mmf_sa.models.abstract_model import ForecastingRegressor
+from mmf_sa.exceptions import MissingFeatureError, UnsupportedMetricError, ModelPredictionError, DataPreparationError
+
+_logger = logging.getLogger(__name__)
 
 
 class TimesFMForecaster(ForecastingRegressor):
@@ -33,66 +36,145 @@ class TimesFMForecaster(ForecastingRegressor):
             signature=signature,
             #input_example=input_example,
             pip_requirements=[
-                "timesfm[torch]==1.2.7",
+                "timesfm[torch]==1.2.6",
                 "git+https://github.com/databricks-industry-solutions/many-model-forecasting.git",
                 "pyspark==3.5.0",
             ],
         )
 
     def prepare_data(self, df: pd.DataFrame, future: bool = False, spark=None) -> pd.DataFrame:
-        df = df[[self.params.group_id, self.params.date_col, self.params.target]]
-        df = (
-            df.rename(
-                columns={
-                    self.params.group_id: "unique_id",
-                    self.params.date_col: "ds",
-                    self.params.target: "y",
-                }
+        if not future:
+            # Prepare historical dataframe with or without exogenous regressors for training
+            features = [self.params.group_id, self.params.date_col, self.params.target]
+            if 'dynamic_future_numerical' in self.params.keys():
+                try:
+                    features = features + self.params.dynamic_future_numerical
+                except Exception as e:
+                    raise MissingFeatureError(f"Dynamic future numerical missing: {e}")
+            if 'dynamic_future_categorical' in self.params.keys():
+                try:
+                    features = features + self.params.dynamic_future_categorical
+                except Exception as e:
+                    raise MissingFeatureError(f"Dynamic future categorical missing: {e}")
+            _df = df[features]
+            _df = (
+                _df.rename(
+                    columns={
+                        self.params.group_id: "unique_id",
+                        self.params.date_col: "ds",
+                        self.params.target: "y",
+                    }
+                )
             )
-        )
-        return df.sort_values(by=["unique_id", "ds"])
+        else:
+            # Prepare future dataframe with exogenous regressors for forecasting
+            features = [self.params.group_id, self.params.date_col]
+            if 'dynamic_future_numerical' in self.params.keys():
+                try:
+                    features = features + self.params.dynamic_future_numerical
+                except Exception as e:
+                    raise MissingFeatureError(f"Dynamic future numerical missing: {e}")
+            if 'dynamic_future_categorical' in self.params.keys():
+                try:
+                    features = features + self.params.dynamic_future_categorical
+                except Exception as e:
+                    raise MissingFeatureError(f"Dynamic future categorical missing: {e}")
+            _df = df[features]
+            _df = (
+                _df.rename(
+                    columns={
+                        self.params.group_id: "unique_id",
+                        self.params.date_col: "ds",
+                    }
+                )
+            )
+        return _df.sort_values(by=["unique_id", "ds"])
 
     def predict(self,
                 hist_df: pd.DataFrame,
                 val_df: pd.DataFrame = None,
-                curr_date=None,
                 spark=None):
+        df = self.prepare_data(hist_df)
+        dynamic_covariates = self.prepare_data(val_df, future=True)
+        df_union = pd.concat([df, dynamic_covariates], axis=0, join='outer', ignore_index=True)
+        forecast_input = [group['y'].values for _, group in df.groupby('unique_id')]
+        freq_index = 0 if self.params.freq in ("H", "D") else 1
+        dynamic_numerical_covariates = {}
+        if 'dynamic_future_numerical' in self.params.keys():
+            for var in self.params.dynamic_future_numerical:
+                dynamic_numerical_covariates[var] = [group[var].values for _, group in df_union.groupby('unique_id')]
+        dynamic_categorical_covariates = {}
+        if 'dynamic_future_categorical' in self.params.keys():
+            for var in self.params.dynamic_future_categorical:
+                dynamic_categorical_covariates[var] = [group[var].values for _, group in df_union.groupby('unique_id')]
+        static_numerical_covariates = {}
+        static_categorical_covariates = {}
+        if 'static_features' in self.params.keys():
+            for var in self.params.static_features:
+                if pd.api.types.is_numeric_dtype(df[var]):
+                    static_numerical_covariates[var] = [group[var].iloc[0] for _, group in df.groupby('unique_id')]
+                else:
+                    static_categorical_covariates[var] = [group[var].iloc[0] for _, group in df.groupby('unique_id')]
+        if not dynamic_numerical_covariates \
+            and not dynamic_categorical_covariates \
+            and not static_numerical_covariates \
+            and not static_categorical_covariates:
+            forecasts, _ = self.model.forecast(
+                inputs=forecast_input,
+                freq=[freq_index] * len(forecast_input)
+            )
+        else:
+            forecasts, _ = self.model.forecast_with_covariates(
+                inputs=forecast_input,
+                dynamic_numerical_covariates=dynamic_numerical_covariates,
+                dynamic_categorical_covariates=dynamic_categorical_covariates,
+                static_numerical_covariates=static_numerical_covariates,
+                static_categorical_covariates=static_categorical_covariates,
+                freq=[freq_index] * len(forecast_input),
+                xreg_mode="xreg + timesfm",  # default
+                ridge=0.0,
+                force_on_cpu=False,
+                normalize_xreg_target_per_input=True,  # default
+            )
 
-        hist_df = self.prepare_data(hist_df)
-
-        # Need if-else here
-        forecast_input = [group['y'].values for _, group in hist_df.groupby('unique_id')]
-        unique_ids = np.array(hist_df["unique_id"].unique())
+        unique_ids = np.array(df["unique_id"].unique())
         timestamps = make_future_dataframe(
             uids=unique_ids,
-            last_times=hist_df.groupby("unique_id")["ds"].tail(1),
+            last_times=df.groupby("unique_id")["ds"].tail(1),
             h=self.params.prediction_length,
             freq=self.params.freq,
         )
         timestamps = [group['ds'].values for _, group in timestamps.groupby('unique_id')]
-        freq_index = 0 if self.params.freq in ("H", "D", "B", "U") else 1
-        forecasts, _ = self.model.forecast(forecast_input, freq=[freq_index] * len(forecast_input))
         forecast_df = pd.DataFrame({
             self.params.group_id: unique_ids,
             self.params.date_col: timestamps,
-            self.params.target: list(forecasts.astype(np.float64)),
+            self.params.target: [arr.astype(np.float64) for arr in forecasts],
         })
+
         # Todo
         # forecast_df[self.params.target] = forecast_df[self.params.target].clip(0.01)
         return forecast_df, self.model
 
     def forecast(self, df: pd.DataFrame, spark=None):
-        return self.predict(df, spark=spark)
+        hist_df = df[df[self.params.target].notnull()]
+        last_date = hist_df[self.params.date_col].max()
+        future_df = df[
+            (df[self.params.date_col] > np.datetime64(last_date))
+            & (df[self.params.date_col]
+               <= np.datetime64(last_date + self.prediction_length_offset))
+            ]
+        forecast_df, model = self.predict(hist_df=hist_df, val_df=future_df)
+        return forecast_df, model
 
     def calculate_metrics(
         self, hist_df: pd.DataFrame, val_df: pd.DataFrame, curr_date, spark=None
     ) -> list:
-        pred_df, model_pretrained = self.predict(hist_df, val_df, curr_date)
+        pred_df, model_pretrained = self.predict(hist_df, val_df)
         keys = pred_df[self.params["group_id"]].unique()
         metrics = []
         metric_name = self.params["metric"]
         if metric_name not in ("smape", "mape", "mae", "mse", "rmse"):
-            raise Exception(f"Metric {self.params['metric']} not supported!")
+            raise UnsupportedMetricError(f"Metric {self.params['metric']} not supported!")
         for key in keys:
             actual = val_df[val_df[self.params["group_id"]] == key][self.params["target"]].to_numpy()
             forecast = np.array(pred_df[pred_df[self.params["group_id"]] == key][self.params["target"]].iloc[0])
@@ -118,8 +200,10 @@ class TimesFMForecaster(ForecastingRegressor):
                         actual,
                         b'',
                     )])
-            except:
-                pass
+            except (ModelPredictionError, DataPreparationError) as err:
+                _logger.warning(f"Failed to calculate metric for key {key}: {err}")
+            except Exception as err:
+                _logger.warning(f"Unexpected error calculating metric for key {key}: {err}")
         return metrics
 
 

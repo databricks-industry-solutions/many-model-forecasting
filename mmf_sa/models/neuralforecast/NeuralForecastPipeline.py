@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import logging
 import mlflow
 from mlflow.models import ModelSignature, infer_signature
 from mlflow.types.schema import Schema, ColSpec
@@ -26,6 +27,14 @@ from neuralforecast.auto import (
 from neuralforecast.losses.pytorch import (
     MAE, MSE, RMSE, MAPE, SMAPE, MASE,
 )
+from mmf_sa.exceptions import (
+    MissingFeatureError,
+    UnsupportedMetricError,
+    ModelPredictionError,
+    DataPreparationError
+)
+
+_logger = logging.getLogger(__name__)
 
 
 class NeuralFcForecaster(ForecastingRegressor):
@@ -75,22 +84,22 @@ class NeuralFcForecaster(ForecastingRegressor):
                 try:
                     features = features + self.params.dynamic_future_numerical
                 except Exception as e:
-                    raise Exception(f"Dynamic future numerical missing: {e}")
+                    raise MissingFeatureError(f"Dynamic future numerical missing: {e}")
             if 'dynamic_future_categorical' in self.params.keys():
                 try:
                     features = features + self.params.dynamic_future_categorical
                 except Exception as e:
-                    raise Exception(f"Dynamic future categorical missing: {e}")
+                    raise MissingFeatureError(f"Dynamic future categorical missing: {e}")
             if 'dynamic_historical_numerical' in self.params.keys():
                 try:
                     features = features + self.params.dynamic_historical_numerical
                 except Exception as e:
-                    raise Exception(f"Dynamic historical numerical missing: {e}")
+                    raise MissingFeatureError(f"Dynamic historical numerical missing: {e}")
             if 'dynamic_historical_categorical' in self.params.keys():
                 try:
                     features = features + self.params.dynamic_historical_categorical
                 except Exception as e:
-                    raise Exception(f"Dynamic historical categorical missing: {e}")
+                    raise MissingFeatureError(f"Dynamic historical categorical missing: {e}")
             _df = df[features]
             _df = (
                 _df.rename(
@@ -108,12 +117,12 @@ class NeuralFcForecaster(ForecastingRegressor):
                 try:
                     features = features + self.params.dynamic_future_numerical
                 except Exception as e:
-                    raise Exception(f"Dynamic future numerical missing: {e}")
+                    raise MissingFeatureError(f"Dynamic future numerical missing: {e}")
             if 'dynamic_future_categorical' in self.params.keys():
                 try:
                     features = features + self.params.dynamic_future_categorical
                 except Exception as e:
-                    raise Exception(f"Dynamic future categorical missing: {e}")
+                    raise MissingFeatureError(f"Dynamic future categorical missing: {e}")
             _df = df[features]
             _df = (
                 _df.rename(
@@ -150,6 +159,7 @@ class NeuralFcForecaster(ForecastingRegressor):
             static_pdf = self.prepare_static_features(x)
             self.model.fit(df=pdf, static_df=static_pdf)
 
+
     def predict(self, hist_df: pd.DataFrame, val_df: pd.DataFrame = None):
 
         _df = self.prepare_data(hist_df)
@@ -159,6 +169,7 @@ class NeuralFcForecaster(ForecastingRegressor):
         _dynamic_future = self.model.make_future_dataframe(_df)
         
         # Make prediction
+
         forecast_df = self.model.predict(
             df=_df,
             static_df=_static_df,
@@ -184,25 +195,25 @@ class NeuralFcForecaster(ForecastingRegressor):
         return forecast_df, self.model
 
     def forecast(self, df: pd.DataFrame, spark=None):
-        _df = df[df[self.params.target].notnull()]
-        _df = self.prepare_data(_df)
-        _last_date = _df["ds"].max()
-        _future_df = df[
-            (df[self.params["date_col"]] > np.datetime64(_last_date))
+        hist_df = df[df[self.params.target].notnull()]
+        hist_df = self.prepare_data(hist_df)
+        last_date = hist_df["ds"].max()
+        future_df = df[
+            (df[self.params["date_col"]] > np.datetime64(last_date))
             & (df[self.params["date_col"]]
-               <= np.datetime64(_last_date + self.prediction_length_offset))
+               <= np.datetime64(last_date + self.prediction_length_offset))
         ]
-        _dynamic_future = self.prepare_data(_future_df, future=True)
-        _dynamic_future = None if _dynamic_future.empty else _dynamic_future
-        _static_df = self.prepare_static_features(_future_df)
+        dynamic_future = self.prepare_data(future_df, future=True)
+        dynamic_future = None if dynamic_future.empty else dynamic_future
+        static_df = self.prepare_static_features(future_df)
 
         # Check if dynamic futures for all unique_id are provided.
         # If not, drop unique_id without dynamic futures from scoring.
-        if (_dynamic_future is not None) and \
-                (not set(_df["unique_id"].unique().flatten())
-                        .issubset(set(_dynamic_future["unique_id"].unique().flatten()))):
-            _df = _df[_df["unique_id"].isin(list(_dynamic_future["unique_id"].unique()))]
-        forecast_df = self.model.predict(df=_df, static_df=_static_df, futr_df=_dynamic_future)
+        if (dynamic_future is not None) and \
+                (not set(hist_df["unique_id"].unique().flatten())
+                        .issubset(set(dynamic_future["unique_id"].unique().flatten()))):
+            hist_df = hist_df[hist_df["unique_id"].isin(list(dynamic_future["unique_id"].unique()))]
+        forecast_df = self.model.predict(df=hist_df, static_df=static_df, futr_df=dynamic_future)
         target = [col for col in forecast_df.columns.to_list()
                   if col not in ["unique_id", "ds"]][0]
         forecast_df = forecast_df.reset_index(drop=False).rename(
@@ -223,9 +234,10 @@ class NeuralFcForecaster(ForecastingRegressor):
         metrics = []
         metric_name = self.params["metric"]
         if metric_name not in ("smape", "mape", "mae", "mse", "rmse"):
-            raise Exception(f"Metric {self.params['metric']} not supported!")
 
-        
+
+            raise UnsupportedMetricError(f"Metric {self.params['metric']} not supported!")
+
         for key in keys:
             actual = val_df[val_df[self.params["group_id"]] == key][self.params["target"]].reset_index(drop=True)
             forecast = pred_df[pred_df[self.params["group_id"]] == key][self.params["target"]].\
@@ -253,8 +265,10 @@ class NeuralFcForecaster(ForecastingRegressor):
                         actual.to_numpy(),
                         b'',
                     )])
-            except:
-                pass
+            except (ModelPredictionError, DataPreparationError) as err:
+                _logger.warning(f"Failed to calculate metric for key {key}: {err}")
+            except Exception as err:
+                _logger.warning(f"Unexpected error calculating metric for key {key}: {err}")
         return metrics
 
 
@@ -272,7 +286,7 @@ def get_loss_function(loss):
     elif loss == "mase":
         return MASE()
     else:
-        raise Exception(
+        raise UnsupportedMetricError(
             f"Provided loss {loss} not supported!"
         )
 

@@ -19,7 +19,7 @@ def run_forecast(
     target: str,
     freq: str,
     prediction_length: int,
-    backtest_months: int,
+    backtest_length: int,
     stride: int,
     metric: str = "smape",
     scoring_data: Union[str, pd.DataFrame, DataFrame] = None,
@@ -55,9 +55,9 @@ def run_forecast(
         group_id (str): A string specifying the column name that groups the training data into individual time series.
         date_col (str): A string specifying the column name that stores the date variable.
         target (str): A string specifying the column name of the target variable.
-        freq (str): A string specifying the frequency. Currently, "D" for daily and "M" for monthly are supported.
+        freq (str): A string specifying the frequency. "H" for hourly, "D" for daily, "W" for weekly and "M" for monthly are supported.
         prediction_length (int): An integer specifying the prediction length: i.e. forecasting horizon.
-        backtest_months (int): An integer specifying the number of backtest months.
+        backtest_length (int): An integer specifying the number of time points to be used for backtesting.
         stride (int): An integer specifying the stride length.
         metric (str): A string specifying the metric to use for evaluation. Supported metrics are mae, mse, rmse, mape and smape. Default is smape.
         scoring_data (Union[str, pd.DataFrame, DataFrame]): Scoring data as a string of delta table name, pandas DataFrame, or Spark DataFrame.
@@ -94,9 +94,23 @@ def run_forecast(
     else:
         _conf = OmegaConf.create()
 
-    base_conf = OmegaConf.create(
-        pkg_resources.read_text(sys.modules[__name__], "forecasting_conf.yaml")
-    )
+    if freq == "H":
+        base_conf = OmegaConf.create(
+            pkg_resources.read_text(sys.modules[__name__], "forecasting_conf_hourly.yaml")
+        )
+    elif freq == "D":
+        base_conf = OmegaConf.create(
+            pkg_resources.read_text(sys.modules[__name__], "forecasting_conf_daily.yaml")
+        )
+    elif freq == "W":
+        base_conf = OmegaConf.create(
+            pkg_resources.read_text(sys.modules[__name__], "forecasting_conf_weekly.yaml")
+        )
+    elif freq == "M":
+        base_conf = OmegaConf.create(
+            pkg_resources.read_text(sys.modules[__name__], "forecasting_conf_monthly.yaml")
+        )
+        
     _conf = OmegaConf.merge(base_conf, _conf)
 
     _data_conf = {}
@@ -109,7 +123,7 @@ def run_forecast(
     _conf["target"] = target
     _conf["freq"] = freq
     _conf["prediction_length"] = prediction_length
-    _conf["backtest_months"] = backtest_months
+    _conf["backtest_length"] = backtest_length
     _conf["stride"] = stride
     _conf["metric"] = metric
     _conf["resample"] = resample

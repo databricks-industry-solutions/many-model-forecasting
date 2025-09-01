@@ -3,6 +3,7 @@ import sys
 import importlib.resources as pkg_resources
 from omegaconf import OmegaConf, DictConfig
 from mmf_sa.models.abstract_model import ForecastingRegressor
+from mmf_sa.exceptions import ModelNotFoundError, ModelInitializationError, ConfigurationError
 
 
 class ModelRegistry:
@@ -34,7 +35,7 @@ class ModelRegistry:
                         model[prop_name] = _val
                 active_models[model_name] = model
             else:
-                raise Exception(f"Cannot find model {model_name}!")
+                raise ModelNotFoundError(f"Cannot find model {model_name}!")
 
         return OmegaConf.create(active_models)
 

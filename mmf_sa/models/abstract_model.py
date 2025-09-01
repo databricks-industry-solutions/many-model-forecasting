@@ -10,6 +10,7 @@ from sktime.performance_metrics.forecasting import (
     MeanAbsolutePercentageError,
 )
 import mlflow
+from mmf_sa.exceptions import UnsupportedMetricError
 mlflow.set_registry_uri("databricks-uc")
 
 
@@ -18,12 +19,18 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
         self.params = params
         self.freq = params["freq"].upper()[0]
         self.one_ts_offset = (
-            pd.offsets.MonthEnd(1) if self.freq == "M" else pd.DateOffset(days=1)
+            pd.offsets.MonthEnd(1) if self.freq == "M" else
+            pd.DateOffset(weeks=1) if self.freq == "W" else
+            pd.DateOffset(days=1) if self.freq == "D" else
+            pd.DateOffset(hours=1) if self.freq == "H" else
+            None
         )
         self.prediction_length_offset = (
-            pd.offsets.MonthEnd(params["prediction_length"])
-            if self.freq == "M"
-            else pd.DateOffset(days=params["prediction_length"])
+            pd.offsets.MonthEnd(params["prediction_length"]) if self.freq == "M" else
+            pd.DateOffset(weeks=params["prediction_length"]) if self.freq == "W" else
+            pd.DateOffset(days=params["prediction_length"]) if self.freq == "D" else
+            pd.DateOffset(hours=params["prediction_length"]) if self.freq == "H" else
+            None
         )
 
     @abstractmethod
@@ -62,15 +69,14 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
         """
         stride = int(self.params["stride"]) # Read in stride
         stride_offset = (
-            pd.offsets.MonthEnd(stride)
-            if self.freq == "M"
-            else pd.DateOffset(days=stride)
+            pd.offsets.MonthEnd(stride) if self.freq == "M" else
+            pd.DateOffset(weeks=stride) if self.freq == "W" else
+            pd.DateOffset(days=stride) if self.freq == "D" else
+            pd.DateOffset(hours=stride) if self.freq == "H" else
+            None
         )
         df = df.copy().sort_values(by=[self.params["date_col"]])
         end_date = df[self.params["date_col"]].max() # Last date from the training data
-        # Offsets the timestamp: e.g. if it's in the middle of the month, makes it the end of the month
-     
-
 
         curr_date = start + self.one_ts_offset
        
@@ -200,7 +206,7 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
             rmse = MeanSquaredError(square_root=True)
             metric_value = rmse(actual, forecast)
         else:
-            raise Exception(f"Metric {self.params['metric']} not supported!")
+            raise UnsupportedMetricError(f"Metric {self.params['metric']} not supported!")
 
         return {
             "curr_date": curr_date,
@@ -209,4 +215,3 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
             "forecast": pred_df[self.params["target"]].to_numpy("float"),
             "actual": val_df[self.params["target"]].to_numpy(),
             "model_pickle": cloudpickle.dumps(model_fitted)}
-

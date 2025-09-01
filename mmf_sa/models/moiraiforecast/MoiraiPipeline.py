@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import logging
 import torch
 import mlflow
 from mlflow.types import Schema, TensorSpec
@@ -13,6 +14,9 @@ from typing import Iterator
 from pyspark.sql.functions import collect_list, pandas_udf
 from pyspark.sql import DataFrame
 from mmf_sa.models.abstract_model import ForecastingRegressor
+from mmf_sa.exceptions import UnsupportedMetricError, ModelPredictionError, DataPreparationError
+
+_logger = logging.getLogger(__name__)
 
 
 class MoiraiForecaster(ForecastingRegressor):
@@ -112,7 +116,7 @@ class MoiraiForecaster(ForecastingRegressor):
         metrics = []
         metric_name = self.params["metric"]
         if metric_name not in ("smape", "mape", "mae", "mse", "rmse"):
-            raise Exception(f"Metric {self.params['metric']} not supported!")
+            raise UnsupportedMetricError(f"Metric {self.params['metric']} not supported!")
         for key in keys:
             actual = val_df[val_df[self.params["group_id"]] == key][self.params["target"]].to_numpy()
             forecast = pred_df[pred_df[self.params["group_id"]] == key][self.params["target"]].to_numpy()[0]
@@ -138,8 +142,10 @@ class MoiraiForecaster(ForecastingRegressor):
                         actual,
                         b'',
                     )])
-            except:
-                pass
+            except (ModelPredictionError, DataPreparationError) as err:
+                _logger.warning(f"Failed to calculate metric for key {key}: {err}")
+            except Exception as err:
+                _logger.warning(f"Unexpected error calculating metric for key {key}: {err}")
         return metrics
 
     def create_predict_udf(self):
@@ -157,8 +163,8 @@ class MoiraiForecaster(ForecastingRegressor):
             else:
                 module = MoiraiModule.from_pretrained(self.repo)
             # inference
+            median = []
             for batch in batch_iterator:
-                median = []
                 for series in batch:
                     if 'moe' in self.repo:
                         model = MoiraiMoEForecast(

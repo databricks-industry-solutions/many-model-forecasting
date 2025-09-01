@@ -7,7 +7,7 @@ promoted_props:
   - freq
   - temp_path
   - accelerator
-  - backtest_months
+  - backtest_length
   - stride
   - static_features
   - dynamic_future_numerical
@@ -84,6 +84,28 @@ models:
       season_length: 7
       decomposition_type: "multiplicative"
 
+  StatsForecastAutoTbats:
+    module: mmf_sa.models.statsforecast.StatsFcForecastingPipeline
+    model_class: StatsFcAutoTbats
+    framework: StatsForecast
+    model_type: local
+    model_spec:
+      season_length: 7
+      use_boxcox: true
+      bc_lower_bound: 0.0
+      bc_upper_bound: 1.0
+      use_trend: true
+      use_damped_trend: true
+      use_arma_errors: true
+
+  StatsForecastAutoMfles:
+    module: mmf_sa.models.statsforecast.StatsFcForecastingPipeline
+    model_class: StatsFcAutoMfles
+    framework: StatsForecast
+    model_type: local
+    model_spec:
+      season_length: 7
+
   StatsForecastTSB:
     module: mmf_sa.models.statsforecast.StatsFcForecastingPipeline
     model_class: StatsFcTSB
@@ -128,43 +150,29 @@ models:
     model_type: local
     model_spec:
 
-  RFableArima:
-    module: mmf_sa.models.r_fable.RFableForecastingPipeline
-    model_class: RFableModel
-    framework: RFable
+  SKTimeTBats:
+    module: mmf_sa.models.sktime.SKTimeForecastingPipeline
+    model_class: SKTimeTBats
+    framework: SKTime
     model_type: local
+    enable_gcv: false
     model_spec:
+      box_cox: True
+      use_trend: True
       season_length: 7
 
-  RFableETS:
-    module: mmf_sa.models.r_fable.RFableForecastingPipeline
-    model_class: RFableModel
-    framework: RFable
+  SKTimeProphet:
+    module: mmf_sa.models.sktime.SKTimeForecastingPipeline
+    model_class: SKTimeProphet
+    framework: SKTime
     model_type: local
+    enable_gcv: false
     model_spec:
-      season_length: 7
-
-  RFableNNETAR:
-    module: mmf_sa.models.r_fable.RFableForecastingPipeline
-    model_class: RFableModel
-    framework: RFable
-    model_type: local
-    model_spec:
-      season_length: 7
-
-  RFableEnsemble:
-    module: mmf_sa.models.r_fable.RFableForecastingPipeline
-    model_class: RFableModel
-    framework: RFable
-    model_type: local
-
-  RDynamicHarmonicRegression:
-    module: mmf_sa.models.r_fable.RFableForecastingPipeline
-    model_class: RFableModel
-    framework: RFable
-    model_type: local
-    model_spec:
-      fourier_terms:
+      growth: linear
+      yearly_seasonality: auto
+      weekly_seasonality: auto
+      daily_seasonality: auto
+      seasonality_mode: additive
 
   SKTimeLgbmDsDt:
     module: mmf_sa.models.sktime.SKTimeForecastingPipeline
@@ -176,17 +184,6 @@ models:
       deseasonalise_model: multiplicative
       season_length: 7
       detrend_poly_degree: 2
-
-  SKTimeTBats:
-    module: mmf_sa.models.sktime.SKTimeForecastingPipeline
-    model_class: SKTimeTBats
-    framework: SKTime
-    model_type: local
-    enable_gcv: false
-    model_spec:
-      box_cox: True
-      use_trend: True
-      season_length: 7
 
   NeuralForecastRNN:
     module: mmf_sa.models.neuralforecast.NeuralForecastPipeline
@@ -475,11 +472,3 @@ models:
     model_class: TimesFM_2_0_500m
     framework: TimesFM
     model_type: foundation
-
-  Moment1Large:
-    module: mmf_sa.models.momentforecast.MomentPipeline
-    model_class: Moment1Large
-    framework: Moment
-    model_type: foundation
-    num_samples: 10
-    batch_size: 10

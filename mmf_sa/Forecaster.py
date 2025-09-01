@@ -29,6 +29,17 @@ from pyspark.sql.functions import lit, avg, min, max, col, posexplode, collect_l
 from mmf_sa.models.abstract_model import ForecastingRegressor
 from mmf_sa.models import ModelRegistry
 from mmf_sa.data_quality_checks import DataQualityChecks
+from mmf_sa.exceptions import (
+    ConfigurationError,
+    ExperimentError,
+    ModelError,
+    EvaluationError,
+    ScoringError,
+    ModelRegistryError,
+    SparkError,
+    DataError,
+    UnsupportedFrequencyError
+)
 _logger = logging.getLogger(__name__)
 os.environ['NIXTLA_ID_AS_COL'] = '1'
 mlflow.set_registry_uri("databricks-uc")
@@ -51,7 +62,7 @@ class Forecaster:
             _yaml_conf = yaml.safe_load(pathlib.Path(conf).read_text())
             self.conf = OmegaConf.create(_yaml_conf)
         else:
-            raise Exception("No configuration provided!")
+            raise ConfigurationError("No configuration provided!")
         if run_id:
             self.run_id = run_id
         else:
@@ -64,9 +75,19 @@ class Forecaster:
         elif self.conf.get("experiment_path"):
             self.experiment_id = self.set_mlflow_experiment()
         else:
-            raise Exception(
-                "Please set 'experiment_path' parameter in the configuration file!"
+            raise ExperimentError(
+                "Set 'experiment_path' parameter in the configuration file!"
             )
+        if self.conf["freq"] == "H":
+            self.backtest_offset = pd.DateOffset(hours=self.conf["backtest_length"])
+        elif self.conf["freq"] == "D":
+            self.backtest_offset = pd.DateOffset(days=self.conf["backtest_length"])
+        elif self.conf["freq"] == "W":
+            self.backtest_offset = pd.DateOffset(weeks=self.conf["backtest_length"])
+        elif self.conf["freq"] == "M":
+            self.backtest_offset = pd.DateOffset(months=self.conf["backtest_length"])
+        else:
+            self.backtest_offset =  None
         self.run_date = datetime.now()
 
     def set_mlflow_experiment(self):
@@ -142,14 +163,12 @@ class Forecaster:
         # Train with data before the backtest months in conf
         train_df = df[
             df[self.conf["date_col"]]
-            <= df[self.conf["date_col"]].max()
-            - pd.DateOffset(months=self.conf["backtest_months"])
+            <= df[self.conf["date_col"]].max() - self.backtest_offset
         ]
         # Validate with data after the backtest months cutoff...
         val_df = df[
             df[self.conf["date_col"]]
-            > df[self.conf["date_col"]].max()
-            - pd.DateOffset(months=self.conf["backtest_months"])
+            > df[self.conf["date_col"]].max() - self.backtest_offset
         ]
 
         
@@ -165,6 +184,10 @@ class Forecaster:
             score (bool, optional): A boolean specifying whether to score the models. Default is True.
         Returns: run_id (str): A string specifying the run id.
         """
+        print("Run quality checks")
+        src_df = self.resolve_source("train_data")
+        clean_df, removed = DataQualityChecks(src_df, self.conf, self.spark).run(verbose=True)
+        print("Finished quality checks")
         print("Starting evaluate_score")
         if evaluate:
             self.evaluate_models()
@@ -189,9 +212,14 @@ class Forecaster:
                     self.evaluate_global_model(model_conf)
                 elif model_conf["model_type"] == "foundation":
                     self.evaluate_foundation_model(model_conf)
-            except Exception as err:
+            except (ModelError, EvaluationError, DataError, ConfigurationError) as err:
                 _logger.error(
                     f"Error has occurred while evaluating model {model_name}: {repr(err)}",
+                    exc_info=err,
+                )
+            except Exception as err:
+                _logger.error(
+                    f"Unexpected error while evaluating model {model_name}: {repr(err)}",
                     exc_info=err,
                 )
             print(f"Finished evaluating {model_name}")
@@ -215,7 +243,7 @@ class Forecaster:
                     StructField(
                         self.conf["group_id"], src_df.schema[self.conf["group_id"]].dataType
                     ),
-                    StructField("backtest_window_start_date", DateType()),
+                    StructField("backtest_window_start_date", TimestampType()),
                     StructField("metric_name", StringType()),
                     StructField("metric_value", DoubleType()),
                     StructField("forecast", ArrayType(DoubleType())),
@@ -280,9 +308,17 @@ class Forecaster:
         """
         pdf[model.params["date_col"]] = pd.to_datetime(pdf[model.params["date_col"]])
         pdf.sort_values(by=model.params["date_col"], inplace=True)
-        split_date = pdf[model.params["date_col"]].max() - pd.DateOffset(
-            months=model.params["backtest_months"]
-        )
+        if model.params["freq"] == "H":
+            backtest_offset = pd.DateOffset(hours=model.params["backtest_length"])
+        elif model.params["freq"] == "D":
+            backtest_offset = pd.DateOffset(days=model.params["backtest_length"])
+        elif model.params["freq"] == "W":
+            backtest_offset = pd.DateOffset(weeks=model.params["backtest_length"])
+        elif model.params["freq"] == "M":
+            backtest_offset = pd.DateOffset(months=model.params["backtest_length"])
+        else:
+            backtest_offset = None
+        split_date = pdf[model.params["date_col"]].max() - backtest_offset
         group_id = pdf[model.params["group_id"]].iloc[0]
         try:
             pdf = pdf.fillna(0)
@@ -290,9 +326,15 @@ class Forecaster:
             pdf[model.params["target"]] = pdf[model.params["target"]].clip(0)
             metrics_df = model.backtest(pdf, start=split_date, group_id=group_id)
             return metrics_df
-        except Exception as err:
+        except (ModelError, EvaluationError, DataError) as err:
             _logger.error(
                 f"Error evaluating group {group_id} using model {repr(model)}: {err}",
+                exc_info=err,
+                stack_info=True,
+            )
+        except Exception as err:
+            _logger.error(
+                f"Unexpected error evaluating group {group_id} using model {repr(model)}: {err}",
                 exc_info=err,
                 stack_info=True,
             )
@@ -379,7 +421,7 @@ class Forecaster:
         schema = StructType(
             [
                 StructField(self.conf["group_id"], group_id_dtype),
-                StructField("backtest_window_start_date", DateType()),
+                StructField("backtest_window_start_date", TimestampType()),
                 StructField("metric_name", StringType()),
                 StructField("metric_value", DoubleType()),
                 StructField("forecast", ArrayType(DoubleType())),
@@ -438,7 +480,7 @@ class Forecaster:
             train_df, val_df = self.split_df_train_val(hist_df)
             input_example = train_df[train_df[self.conf['group_id']] == train_df[self.conf['group_id']] \
                 .unique()[0]].sort_values(by=[self.conf['date_col']])
-            if model_conf["framework"] in ["Chronos", "Moirai", "Moment", "TimesFM"]:
+            if model_conf["framework"] in ["Chronos", "Moirai", "TimesFM"]:
                 model.register(
                     registered_model_name=f"{self.conf['model_output']}.{model_conf['name']}_{self.conf['use_case_name']}",
                 )
@@ -546,7 +588,19 @@ class Forecaster:
                 res_df[model.params["date_col"]].to_numpy(),
                 res_df[model.params["target"]].to_numpy(),
                 cloudpickle.dumps(model_fitted)]
-        except:
+        except (ModelError, ScoringError, DataError) as err:
+            _logger.error(
+                f"Error scoring group {group_id} using model {repr(model)}: {err}",
+                exc_info=err,
+                stack_info=True,
+            )
+            data = [group_id, None, None, None]
+        except Exception as err:
+            _logger.error(
+                f"Unexpected error scoring group {group_id} using model {repr(model)}: {err}",
+                exc_info=err,
+                stack_info=True,
+            )
             data = [group_id, None, None, None]
         res_df = pd.DataFrame(
             columns=[
@@ -597,8 +651,8 @@ class Forecaster:
         model_name = model_conf["name"]
         _, model_uri = self.get_model_for_scoring(model_conf)
         model = self.model_registry.get_model(model_name)
-        hist_df, removed = self.prepare_data_for_global_model()
-        prediction_df, model_pretrained = model.forecast(hist_df, spark=self.spark)
+        score_df, removed = self.prepare_data_for_global_model("scoring")
+        prediction_df, model_pretrained = model.forecast(score_df, spark=self.spark)
         sdf = self.spark.createDataFrame(prediction_df).drop('index')
         (
             sdf.withColumn(self.conf["group_id"], col(self.conf["group_id"]).cast(StringType()))
@@ -648,4 +702,3 @@ class Forecaster:
             if version_int > latest_version:
                 latest_version = version_int
         return client.get_model_version(registered_name, str(latest_version))
-
