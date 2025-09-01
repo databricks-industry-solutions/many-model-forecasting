@@ -113,6 +113,8 @@ class Forecaster:
             removed (List[str]): A list of strings specifying the removed groups.
         """
         src_df = self.resolve_source("train_data")
+      
+        # shutting down quality checks
         src_df, removed = DataQualityChecks(src_df, self.conf, self.spark).run()
 
         # This block runs when preparing data for scoring
@@ -149,6 +151,8 @@ class Forecaster:
             > df[self.conf["date_col"]].max()
             - pd.DateOffset(months=self.conf["backtest_months"])
         ]
+
+        
         return train_df, val_df
 
     def evaluate_score(
@@ -330,6 +334,8 @@ class Forecaster:
             # Next, we train the model only with train_df and run detailed backtesting
             model = self.model_registry.get_model(model_name)
             model.fit(pd.concat([train_df]))
+
+
             metrics = self.backtest_global_model(
                 model=model,
                 train_df=train_df,
@@ -365,7 +371,7 @@ class Forecaster:
                 pd.concat([train_df, val_df]),
                 start=train_df[self.conf["date_col"]].max(),
                 spark=self.spark,
-                # backtest_retrain=self.conf["backtest_retrain"],
+                allow_varying_test_sizes=self.conf["allow_varying_test_sizes"],
             ))
         group_id_dtype = IntegerType() \
             if train_df[self.conf["group_id"]].dtype == 'int' else StringType()
@@ -384,7 +390,9 @@ class Forecaster:
         # Covert to Python-native types before converting to pyspark dataframe
         res_pdf['forecast'] = res_pdf['forecast'].apply(lambda x: [float(i) for i in x])
         res_pdf['actual'] = res_pdf['actual'].apply(lambda x: [float(i) for i in x])
+
         res_sdf = self.spark.createDataFrame(res_pdf, schema)
+
         # Write evaluation results to a delta table
         if write:
             if self.conf.get("evaluation_output", None):

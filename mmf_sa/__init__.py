@@ -41,6 +41,7 @@ def run_forecast(
     experiment_path: str = None,
     run_id: str = None,
     conf: Union[str, Dict[str, Any], OmegaConf] = None,
+    allow_varying_test_sizes: bool = False,
 ) -> str:
 
     """
@@ -112,6 +113,8 @@ def run_forecast(
     _conf["stride"] = stride
     _conf["metric"] = metric
     _conf["resample"] = resample
+    _conf["allow_varying_test_sizes"] = allow_varying_test_sizes
+    
     run_evaluation = True
     run_scoring = False
     if scoring_data is not None and scoring_output is not None:
