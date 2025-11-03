@@ -1,2 +1,3 @@
 -r requirements.txt
+pandas==2.2.3
 neuralforecast==2.0.0

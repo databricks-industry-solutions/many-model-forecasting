@@ -35,10 +35,15 @@ class SKTimeForecastingPipeline(ForecastingRegressor):
     def prepare_data(self, df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy().fillna(0)
         df[self.params.target] = df[self.params.target].clip(0)
+        freq = self.params.freq
+        if freq == "H":
+            freq = "h"
+        elif freq == "M":
+            freq = "ME"
         date_idx = pd.date_range(
             start=df[self.params.date_col].min(),
             end=df[self.params.date_col].max(),
-            freq=self.params.freq,
+            freq=freq,
             name=self.params.date_col,
         )
         df = df.set_index(self.params.date_col)
@@ -70,10 +75,15 @@ class SKTimeForecastingPipeline(ForecastingRegressor):
         pred_df = self.model.predict(
             ForecastingHorizon(np.arange(1, self.params.prediction_length + 1))
         )
+        freq = self.params.freq
+        if freq == "H":
+            freq = "h"
+        elif freq == "M":
+            freq = "ME"
         date_idx = pd.date_range(
             _df.index.max().to_timestamp(freq=self.params.freq) + self.one_ts_offset,
             _df.index.max().to_timestamp(freq=self.params.freq) + self.prediction_length_offset,
-            freq=self.params.freq,
+            freq=freq,
             name=self.params.date_col,
         )
         forecast_df = pd.DataFrame(data=[], index=date_idx).reset_index()
