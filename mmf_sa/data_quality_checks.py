@@ -323,10 +323,15 @@ class DataQualityChecks:
     
         # Create complete date range and resample
         df_indexed = df.set_index(self.conf["date_col"])
+        freq = self.conf["freq"]
+        if freq == "H":
+            freq = "h"
+        elif freq == "M":
+            freq = "ME"
         date_idx = pd.date_range(
             start=df[self.conf["date_col"]].min(),
             end=max_date,
-            freq=self.conf["freq"],
+            freq=freq,
             name=self.conf["date_col"],
         )
         df_resampled = (
