@@ -5,11 +5,6 @@
 
 # COMMAND ----------
 
-import logging
-logger = spark._jvm.org.apache.log4j
-logging.getLogger("py4j.java_gateway").setLevel(logging.ERROR)
-logging.getLogger("py4j.clientserver").setLevel(logging.ERROR)
-
 # COMMAND ----------
 
 import pathlib
