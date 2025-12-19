@@ -1,4 +1,5 @@
 __version__ = "0.0.1"
+import logging
 import pathlib
 import sys
 from typing import Union, Any, Dict, List
@@ -9,6 +10,19 @@ from omegaconf import OmegaConf
 from omegaconf.basecontainer import BaseContainer
 from pyspark.sql import SparkSession, DataFrame
 from mmf_sa.Forecaster import Forecaster
+
+
+def _configure_logging():
+    """Configure default logging settings to reduce noise from internal loggers."""
+    # Suppress verbose Databricks internal loggers
+    for logger_name in ["ThreadMonitor", "py4j.java_gateway", "py4j.clientserver"]:
+        logging.getLogger(logger_name).setLevel(logging.WARNING)
+
+    # Set mmf_sa loggers to INFO level
+    logging.getLogger("mmf_sa").setLevel(logging.INFO)
+
+
+_configure_logging()
 
 
 def run_forecast(
