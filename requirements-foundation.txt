@@ -1,5 +1,5 @@
 -r requirements.txt
 -c constraints.txt
 chronos-forecasting==1.4.1
-uni2ts==1.2.0
+uni2ts==2.0.0
 timesfm[torch]==1.3.0
