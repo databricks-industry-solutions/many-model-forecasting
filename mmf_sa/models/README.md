@@ -51,6 +51,7 @@ Model hyperparameters can be modified under [mmf_sa/models/models_conf.yaml](htt
 | ChronosBoltMini | [amazon/chronos-bolt-mini](https://huggingface.co/amazon/chronos-bolt-mini) |  | 
 | ChronosBoltSmall | [amazon/chronos-bolt-small](https://huggingface.co/amazon/chronos-bolt-small) |  | 
 | ChronosBoltBase | [amazon/chronos-bolt-base](https://huggingface.co/amazon/chronos-bolt-base) |  | 
+| Chronos2 | [amazon/chronos-2](https://huggingface.co/amazon/chronos-2) |  | 
 | MoiraiSmall | [Salesforce/moirai-1.1-R-small](https://huggingface.co/Salesforce/moirai-1.1-R-small) |  | 
 | MoiraiBase | [Salesforce/moirai-1.1-R-base](https://huggingface.co/Salesforce/moirai-1.1-R-base) |  | 
 | MoiraiLarge | [Salesforce/moirai-1.1-R-large](https://huggingface.co/Salesforce/moirai-1.1-R-large) |  | 
@@ -58,3 +59,9 @@ Model hyperparameters can be modified under [mmf_sa/models/models_conf.yaml](htt
 | MoiraiMoEBase | [Salesforce/moirai-moe-1.0-R-base](https://huggingface.co/Salesforce/moirai-moe-1.0-R-base) |  | 
 | TimesFM_1_0_200m | [google/timesfm-1.0-200m-pytorch](https://huggingface.co/google/timesfm-1.0-200m-pytorch) | ✅ | 
 | TimesFM_2_0_500m | [google/timesfm-2.0-500m-pytorch](https://huggingface.co/google/timesfm-2.0-500m-pytorch) | ✅ |
+| TimesFM_2_5_200m | [google/timesfm-2.5-200m-pytorch](https://huggingface.co/google/timesfm-2.5-200m-pytorch) | ✅ |
+
+Notes:
+- TimesFM covariates use MMF's `dynamic_*` and `static_features` inputs and require a timesfm build with xreg support.
+- TimesFM_2_5_200m may produce NaNs on some series; MMF applies a last-value fallback to keep outputs numeric.
+- Chronos and Chronos-2 models run in univariate mode (no covariate support).

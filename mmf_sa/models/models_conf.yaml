@@ -14,6 +14,7 @@ promoted_props:
   - dynamic_future_categorical
   - dynamic_historical_numerical
   - dynamic_historical_categorical
+  - use_case_name
 
 models:
 
@@ -407,6 +408,14 @@ models:
     num_samples: 10
     batch_size: 16
 
+  Chronos2:
+    module: mmf_sa.models.chronosforecast.ChronosPipeline
+    model_class: Chronos2
+    framework: Chronos
+    model_type: foundation
+    num_samples: 10
+    batch_size: 8
+
   MoiraiSmall:
     module: mmf_sa.models.moiraiforecast.MoiraiPipeline
     model_class: MoiraiSmall
@@ -470,5 +479,11 @@ models:
   TimesFM_2_0_500m:
     module: mmf_sa.models.timesfmforecast.TimesFMPipeline
     model_class: TimesFM_2_0_500m
+    framework: TimesFM
+    model_type: foundation
+
+  TimesFM_2_5_200m:
+    module: mmf_sa.models.timesfmforecast.TimesFMPipeline
+    model_class: TimesFM_2_5_200m
     framework: TimesFM
     model_type: foundation

@@ -484,7 +484,15 @@ class Forecaster:
                 model_uri=model_uri,
                 write=True,
             )
-            mlflow.log_metric(self.conf["metric"], metrics)
+            # backtest_global_model already logs per-metric values; this extra log can fail if
+            # metrics is None/NaN (e.g., when all per-series metric calculations failed).
+            try:
+                import numpy as np
+                if metrics is not None and not (isinstance(metrics, float) and np.isnan(metrics)):
+                    mlflow.log_metric(self.conf["metric"], float(metrics))
+            except Exception:
+                # Avoid failing the whole run due to metric logging issues
+                pass
             mlflow.set_tag("model_name", model.params["name"])
             mlflow.set_tag("run_id", self.run_id)
             mlflow.log_params(model.get_params())
@@ -645,15 +653,100 @@ class Forecaster:
         model = self.model_registry.get_model(model_name)
         score_df, removed = self.prepare_data_for_global_model("scoring")
         prediction_df, model_pretrained = model.forecast(score_df, spark=self.spark)
-        sdf = self.spark.createDataFrame(prediction_df).drop('index')
+        # Spark can't infer schema from numpy arrays; coerce to Python lists
+        if isinstance(prediction_df, pd.DataFrame):
+            def _to_list(arr, coerce_fn=None):
+                values = np.asarray(arr)
+                if values.ndim == 0:
+                    values = np.asarray([values.item()])
+                if coerce_fn:
+                    return [coerce_fn(x) for x in values]
+                return values.tolist()
+
+            date_col = self.conf["date_col"]
+            target_col = self.conf["target"]
+            if date_col in prediction_df.columns:
+                def _normalize_dates(arr):
+                    values = _to_list(arr)
+                    normalized = []
+                    for x in values:
+                        # Skip obvious non-date tokens like frequency labels
+                        if isinstance(x, str):
+                            stripped = x.strip()
+                            if stripped.isalpha() and len(stripped) <= 3:
+                                normalized.append(None)
+                                continue
+                            if not any(ch.isdigit() for ch in stripped):
+                                normalized.append(None)
+                                continue
+                        try:
+                            ts = pd.to_datetime(x, errors="coerce")
+                        except Exception:
+                            ts = pd.NaT
+                        if isinstance(ts, (pd.DatetimeIndex, np.ndarray, list)):
+                            ts = ts[0] if len(ts) else pd.NaT
+                        if pd.isna(ts):
+                            normalized.append(None)
+                        elif hasattr(ts, "to_pydatetime"):
+                            normalized.append(ts.to_pydatetime())
+                        else:
+                            normalized.append(None)
+                    return normalized
+
+                prediction_df[date_col] = prediction_df[date_col].apply(_normalize_dates)
+
+            prediction_df = prediction_df.reset_index(drop=True)
+            if target_col in prediction_df.columns:
+                pred_len = int(self.conf.get("prediction_length", 1))
+
+                def _normalize_target(arr):
+                    if arr is None:
+                        return [float("nan")] * pred_len
+                    values = _to_list(arr)
+                    if not values:
+                        return [float("nan")] * pred_len
+                    normalized = []
+                    for x in values:
+                        if x is None or pd.isna(x):
+                            normalized.append(float("nan"))
+                        else:
+                            normalized.append(float(x))
+                    return normalized
+
+                prediction_df[target_col] = prediction_df[target_col].apply(_normalize_target)
+        # Ensure group_id is a clean string column to avoid UTF8 issues
+        group_col = self.conf["group_id"]
+        if group_col in prediction_df.columns:
+            prediction_df[group_col] = prediction_df[group_col].astype(str)
+        # Disable Arrow to avoid conversion issues on complex types
+        self.spark.conf.set("spark.sql.execution.arrow.pyspark.enabled", "false")
+        # Avoid ConvertToLocalRelation on small DFs (can trigger UTF8 issues)
+        self.spark.conf.set("spark.sql.optimizer.localRelationThreshold", "0")
+        # Let Spark infer schema without forcing types, then cast columns
+        sdf = self.spark.createDataFrame(prediction_df)
+        if 'index' in sdf.columns:
+            sdf = sdf.drop('index')
+        
+        # Cast columns to expected types
+        sdf = (
+            sdf
+            .withColumn(self.conf["group_id"], col(self.conf["group_id"]).cast(StringType()))
+            .withColumn(self.conf["date_col"], col(self.conf["date_col"]).cast(ArrayType(TimestampType())))
+            .withColumn(self.conf["target"], col(self.conf["target"]).cast(ArrayType(DoubleType())))
+        )
+        
         (
-            sdf.withColumn(self.conf["group_id"], col(self.conf["group_id"]).cast(StringType()))
+            sdf
             .withColumn("model", lit(model_conf["name"]))
             .withColumn("run_id", lit(self.run_id))
-            .withColumn("run_date", lit(self.run_date))
+            .withColumn("run_date", lit(self.run_date).cast(TimestampType()))
             .withColumn("use_case", lit(self.conf["use_case_name"]))
             .withColumn("model_pickle", lit(b""))
             .withColumn("model_uri", lit(model_uri))
+            .withColumn("model", col("model").cast(StringType()))
+            .withColumn("run_id", col("run_id").cast(StringType()))
+            .withColumn("use_case", col("use_case").cast(StringType()))
+            .withColumn("model_uri", col("model_uri").cast(StringType()))
             .write.mode("append")
             .saveAsTable(self.conf["scoring_output"])
         )

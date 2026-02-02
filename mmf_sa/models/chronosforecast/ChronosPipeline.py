@@ -118,29 +118,68 @@ class ChronosForecaster(ForecastingRegressor):
         metric_name = self.params["metric"]
         if metric_name not in ("smape", "mape", "mae", "mse", "rmse"):
             raise UnsupportedMetricError(f"Metric {self.params['metric']} not supported!")
+
+        # Use pure numpy metric implementations to avoid sktime/sklearn version incompatibilities.
+        def _to_1d(a):
+            return np.asarray(a, dtype=float).reshape(-1)
+
+        def _smape(y_true, y_pred, eps=1e-8):
+            denom = np.maximum(np.abs(y_true) + np.abs(y_pred), eps)
+            return float(np.mean(200.0 * np.abs(y_pred - y_true) / denom))
+
+        def _mape(y_true, y_pred, eps=1e-8):
+            denom = np.maximum(np.abs(y_true), eps)
+            return float(np.mean(100.0 * np.abs((y_true - y_pred) / denom)))
+
+        def _mae(y_true, y_pred):
+            return float(np.mean(np.abs(y_true - y_pred)))
+
+        def _mse(y_true, y_pred):
+            err = y_true - y_pred
+            return float(np.mean(err * err))
+
+        def _rmse(y_true, y_pred):
+            return float(np.sqrt(_mse(y_true, y_pred)))
+
         for key in keys:
-            actual = val_df[val_df[self.params["group_id"]] == key][self.params["target"]].to_numpy()
+            # Align actuals to the forecast horizon. Some calling paths provide a longer val_df
+            # than prediction_length, which breaks metric computation.
+            _val = val_df[val_df[self.params["group_id"]] == key]
+            if self.params.get("date_col") in _val.columns:
+                _val = _val.sort_values(by=[self.params["date_col"]])
+            actual = _val[self.params["target"]].to_numpy()
+
             forecast = pred_df[pred_df[self.params["group_id"]] == key][self.params["target"]].to_numpy()[0]
-            # Mapping metric names to their respective classes
-            metric_classes = {
-                "smape": MeanAbsolutePercentageError(symmetric=True),
-                "mape": MeanAbsolutePercentageError(symmetric=False),
-                "mae": MeanAbsoluteError(),
-                "mse": MeanSquaredError(square_root=False),
-                "rmse": MeanSquaredError(square_root=True),
-            }
+            forecast = np.asarray(forecast, dtype=float).reshape(-1)
+
+            if len(actual) > len(forecast):
+                actual = actual[-len(forecast):]
+            elif len(forecast) > len(actual):
+                forecast = forecast[-len(actual):]
+
+            actual_1d = _to_1d(actual)
+            forecast_1d = _to_1d(forecast)
             try:
-                if metric_name in metric_classes:
-                    metric_function = metric_classes[metric_name]
-                    metric_value = metric_function(actual, forecast)
+                if metric_name == "smape":
+                    metric_value = _smape(actual_1d, forecast_1d)
+                elif metric_name == "mape":
+                    metric_value = _mape(actual_1d, forecast_1d)
+                elif metric_name == "mae":
+                    metric_value = _mae(actual_1d, forecast_1d)
+                elif metric_name == "mse":
+                    metric_value = _mse(actual_1d, forecast_1d)
+                elif metric_name == "rmse":
+                    metric_value = _rmse(actual_1d, forecast_1d)
+                else:
+                    raise UnsupportedMetricError(f"Metric {metric_name} not supported!")
                 metrics.extend(
                     [(
                         key,
                         curr_date,
                         metric_name,
                         metric_value,
-                        forecast,
-                        actual,
+                        forecast_1d,
+                        actual_1d,
                         b'',
                     )])
             except (ModelPredictionError, DataPreparationError) as err:
@@ -242,7 +281,98 @@ class ChronosBoltBase(ChronosForecaster):
         self.repo = "amazon/chronos-bolt-base"
 
 
+class Chronos2(ChronosForecaster):
+    def __init__(self, params):
+        super().__init__(params)
+        self.params = params
+        self.repo = "amazon/chronos-2"
+    
+    def register(self, registered_model_name: str):
+        """Override register to use Chronos2Model with correct API."""
+        pipeline = Chronos2Model(
+            self.repo,
+            self.params["prediction_length"],
+        )
+        input_schema = Schema([TensorSpec(np.dtype(np.double), (-1, -1))])
+        output_schema = Schema([TensorSpec(np.dtype(np.uint8), (-1, -1, -1))])
+        signature = ModelSignature(inputs=input_schema, outputs=output_schema)
+        input_example = np.random.rand(1, 52)
+        mlflow.pyfunc.log_model(
+            "model",
+            python_model=pipeline,
+            registered_model_name=registered_model_name,
+            signature=signature,
+            input_example=input_example,
+            pip_requirements=[
+                "torch==2.3.1",
+                "torchvision==0.18.1",
+                "transformers==4.41.2",
+                "cloudpickle==2.2.1",
+                "chronos-forecasting>=2.0",  # Chronos-2 requires v2.0+
+                "git+https://github.com/databricks-industry-solutions/many-model-forecasting.git",
+                "pyspark==3.5.0",
+            ],
+        )
+    
+    def create_predict_udf(self):
+        @pandas_udf('array<double>')
+        def predict_udf(bulk_iterator: Iterator[pd.Series]) -> Iterator[pd.Series]:
+            # initialization step
+            import torch
+            import numpy as np
+            import pandas as pd
+            from chronos import Chronos2Pipeline
+            
+            # Initialize Chronos2Pipeline (per official docs: https://huggingface.co/amazon/chronos-2)
+            pipeline = Chronos2Pipeline.from_pretrained(
+                self.repo,
+                device_map='cuda',
+            )
+
+            # inference
+            median = []
+            for bulk in bulk_iterator:
+                for i in range(0, len(bulk), self.params["batch_size"]):
+                    batch = bulk[i:i+self.params["batch_size"]]
+                    contexts = [torch.tensor(list(series)) for series in batch]
+                    # Chronos2 uses 'inputs' parameter (not 'context')
+                    forecasts = pipeline.predict(
+                        inputs=contexts,
+                        prediction_length=self.params["prediction_length"],
+                    )
+                    # Arrow is extremely picky here: each row must be a *flat* list[python-float]
+                    # (no numpy arrays, no numpy scalars, no nested lists).
+                    for f in forecasts:
+                        # Convert tensor-like outputs to numpy
+                        if hasattr(f, "detach"):
+                            f = f.detach()
+                        if hasattr(f, "cpu"):
+                            f = f.cpu()
+                        if hasattr(f, "numpy"):
+                            f = f.numpy()
+
+                        arr = np.asarray(f)
+                        # Common shapes:
+                        # - (num_samples, prediction_length) -> take median over samples axis
+                        # - (prediction_length,) -> already 1D
+                        # - (q, prediction_length) -> median over q axis (still gives prediction_length)
+                        if arr.ndim >= 2:
+                            arr = np.median(arr, axis=0)
+                        arr = np.asarray(arr, dtype=np.float64).reshape(-1)
+
+                        row = arr.tolist()
+                        # If tolist() still produced nested lists for any reason, flatten once.
+                        while len(row) > 0 and isinstance(row[0], list):
+                            row = row[0]
+                        # Ensure pure Python floats (not numpy scalar types).
+                        row = [float(x) for x in row]
+                        median.append(row)
+            yield pd.Series(median)
+        return predict_udf
+
+
 class ChronosModel(mlflow.pyfunc.PythonModel):
+    """MLflow model for Chronos 1.x (T5 and Bolt models)."""
     def __init__(self, repo, prediction_length):
         import torch
         self.repo = repo
@@ -256,10 +386,52 @@ class ChronosModel(mlflow.pyfunc.PythonModel):
             torch_dtype=torch.bfloat16,
         )
 
-    def predict(self, context, input_data, params=None):
+    def predict(self, context, model_input, params=None):
+        # MLflow pyfunc prefers signature: (context, model_input, params=None)
+        input_data = model_input
         history = [torch.tensor(list(series)) for series in input_data]
         forecast = self.pipeline.predict(
             context=history,
             prediction_length=self.prediction_length,
         )
         return forecast.numpy()
+
+
+class Chronos2Model(mlflow.pyfunc.PythonModel):
+    """MLflow model for Chronos-2 (uses Chronos2Pipeline with 'inputs' parameter)."""
+    def __init__(self, repo, prediction_length):
+        import torch
+        self.repo = repo
+        self.prediction_length = prediction_length
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        # Initialize Chronos2Pipeline (per official docs: https://huggingface.co/amazon/chronos-2)
+        from chronos import Chronos2Pipeline
+        self.pipeline = Chronos2Pipeline.from_pretrained(
+            self.repo,
+            device_map='cuda',
+        )
+
+    def predict(self, context, model_input, params=None):
+        """
+        MLflow pyfunc predict signature should use 'model_input' (not 'input_data') to avoid warnings.
+        We accept model_input as array-like [n_series, context_length] and return numpy array.
+        """
+        import numpy as np
+        import torch
+
+        input_data = model_input
+        history = [torch.tensor(list(series)) for series in input_data]
+        # Chronos2 uses 'inputs' parameter instead of 'context'
+        forecast = self.pipeline.predict(
+            inputs=history,
+            prediction_length=self.prediction_length,
+        )
+
+        # forecast can be tensor / numpy array / list depending on chronos-forecasting version
+        if hasattr(forecast, "detach"):
+            forecast = forecast.detach()
+        if hasattr(forecast, "cpu"):
+            forecast = forecast.cpu()
+        if hasattr(forecast, "numpy"):
+            forecast = forecast.numpy()
+        return np.asarray(forecast)
