@@ -11,6 +11,7 @@ MMF integrates a variety of well-established and cutting-edge algorithms, includ
 Get started now!
 
 ## What's New
+- Feb 2026: Added multi-node multi-GPU support for global models. Try the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/global_daily.ipynb).
 - Aug 2025: MMF runs on Serverless. Try the [notebooks](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/serverless).
 - Jul 2025: Added the MMF architecture [README](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/README.md).
 - Jul 2025: Decommissioned R models.
