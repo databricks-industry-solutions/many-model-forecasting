@@ -120,7 +120,7 @@ We encourage you to read through [examples/daily/local_univariate_daily.ipynb](h
 
 Global models leverage patterns across multiple time series, enabling shared learning and improved predictions for each series. You would typically train one big model for many or all time series. They can often deliver better performance and robustness for forecasting large and similar datasets. We support deep learning based models from [neuralforecast](https://nixtlaverse.nixtla.io/neuralforecast/index.html). Covariates (i.e. exogenous regressors) and hyperparameter tuning are both supported for some models. 
 
-To get started, attach the [examples/daily/global_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/global_daily.ipynb) notebook to a cluster running [DBR 15.4LTS for ML](https://docs.databricks.com/en/release-notes/runtime/15.4lts-ml.html) or later version. We recommend using a single-node cluster with multiple GPU instances such as [g4dn.12xlarge [T4]](https://aws.amazon.com/ec2/instance-types/g4/) on AWS or [Standard_NC64as_T4_v3](https://learn.microsoft.com/en-us/azure/virtual-machines/nct4-v3-series) on Azure. Multi-node setting is currently not supported.
+To get started, attach the [examples/daily/global_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/global_daily.ipynb) notebook to a cluster running [DBR 18.0 for ML](https://docs.databricks.com/en/release-notes/runtime/18.0-ml.html) or later version. We recommend using a GPU cluster such as [g5.12xlarge [A10G]](https://aws.amazon.com/ec2/instance-types/g5/) on AWS or [Standard_NV36ads_A10_v5](https://learn.microsoft.com/en-us/azure/virtual-machines/nva10v5-series) on Azure. Both single-node multi-GPU and multi-node multi-GPU clusters are supported. When using a multi-node cluster, set `num_nodes` to the number of worker nodes (see below).
 
 You can choose the models to train and put them in a list:
 
@@ -144,11 +144,15 @@ The models prefixed with "Auto" perform hyperparameter optimization within a spe
 Now, with the following command, we run the [examples/run_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/run_daily.ipynb) notebook that will in turn call ```run_forecast``` function and loop through the ```active_models``` list. 
 
 ```python
+# Number of nodes for distributed training. Use 1 for single-node multi-GPU,
+# or set to the number of worker nodes for multi-node multi-GPU clusters.
+num_nodes = 1
+
 for model in active_models:
   dbutils.notebook.run(
     "run_daily",
     timeout_seconds=0, 
-    arguments={"catalog": catalog, "db": db, "model": model, "run_id": run_id})
+    arguments={"catalog": catalog, "db": db, "model": model, "run_id": run_id, "num_nodes": str(num_nodes)})
 ```
 
 Inside the [examples/run_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/run_daily.ipynb), we have the ```run_forecast``` function specified as:
@@ -177,6 +181,7 @@ run_forecast(
     use_case_name="m4_daily",
     run_id=run_id,
     accelerator="gpu",
+    num_nodes=num_nodes,
 )
 ```
 
@@ -186,6 +191,7 @@ The parameters are all the same except:
 -  ```model_output``` is where you store your model.
 -  ```use_case_name``` will be used to suffix the model name when registered to Unity Catalog.
 -  ```accelerator``` tells MMF to use GPU instead of CPU.
+-  ```num_nodes``` specifies the number of nodes for distributed training (default: `1`). Use `1` for single-node multi-GPU clusters. For multi-node clusters, set this to the number of **worker** nodes. When `num_nodes > 1`, training data is shared across nodes via the DBFS FUSE mount. Autoscaling must be disabled on multi-node GPU clusters to prevent workers from being removed mid-training.
   
 To modify the model hyperparameters or reset the range of the hyperparameter search, change the values in [mmf_sa/models/models_conf.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/models_conf.yaml) or overwrite these values, for example, in [mmf_sa/forecasting_conf_daily.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/forecasting_conf_daily.yaml) if your frequency is `D`. 
 
