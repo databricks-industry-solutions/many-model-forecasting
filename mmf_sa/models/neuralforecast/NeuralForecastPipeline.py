@@ -63,10 +63,10 @@ class NeuralFcForecaster(ForecastingRegressor):
             signature=signature,
             pip_requirements=[
                 "cloudpickle==2.2.1",
-                "neuralforecast==2.0.0",
+                "neuralforecast==3.1.4",
                 "ray[tune] == 2.5.0",
                 "git+https://github.com/databricks-industry-solutions/many-model-forecasting.git",
-                "pyspark==3.5.0",
+                "pyspark==4.0.0",
             ],
         )
         mlflow.log_params(model.get_params())
@@ -151,16 +151,158 @@ class NeuralFcForecaster(ForecastingRegressor):
         else:
             return None
 
+    @staticmethod
+    def _patch_function_pickler():
+        """Monkey-patch PySpark's FunctionPickler to write output only on rank 0.
+
+        PySpark's ``FunctionPickler.create_fn_run_script`` generates a Python
+        script that **every** ``torchrun`` process executes — including the
+        final step that writes the trained model to ``output.pickle``.  When
+        multiple GPU ranks write to the same file concurrently the file gets
+        corrupted, producing ``_pickle.UnpicklingError: invalid load key``.
+
+        This patch injects a ``LOCAL_RANK == 0`` guard so that only the first
+        rank writes the result.  All ranks still participate fully in DDP
+        training (forward, backward, allreduce); the guard only controls who
+        serializes the (identical) output to disk.
+
+        The patch is idempotent — calling it multiple times is safe.
+        """
+        import textwrap
+        from pyspark.ml.dl_util import FunctionPickler
+
+        # Skip if already patched.
+        if getattr(FunctionPickler, "_mmf_patched", False):
+            return
+
+        @staticmethod
+        def _patched_create_fn_run_script(
+            pickled_fn_path,
+            fn_output_path,
+            script_path,
+            prefix_code="",
+            suffix_code="",
+        ):
+            # Identical to the original except for the LOCAL_RANK guard
+            # around the output write.
+            code_snippet = textwrap.dedent(
+                f"""
+                from pyspark import cloudpickle
+                import os
+
+                if __name__ == "__main__":
+                    with open("{pickled_fn_path}", "rb") as f:
+                        fn, args, kwargs = cloudpickle.load(f)
+                    output = fn(*args, **kwargs)
+                    # --- MMF patch: only rank 0 writes output to avoid file
+                    # corruption when multiple torchrun processes write to the
+                    # same file concurrently. ---
+                    if int(os.environ.get("LOCAL_RANK", "0")) == 0:
+                        with open("{fn_output_path}", "wb") as f:
+                            cloudpickle.dump(output, f)
+                """
+            )
+            with open(script_path, "w") as f:
+                if prefix_code != "":
+                    f.write(prefix_code)
+                f.write(code_snippet)
+                if suffix_code != "":
+                    f.write(suffix_code)
+            return script_path
+
+        FunctionPickler.create_fn_run_script = _patched_create_fn_run_script
+        FunctionPickler._mmf_patched = True
+
+    def _get_distributed_config(self):
+        """Create a DistributedConfig for multi-GPU training via TorchDistributor.
+
+        When the accelerator is 'gpu' and multiple GPUs are available, returns a
+        DistributedConfig that routes training through Spark's TorchDistributor.
+        TorchDistributor launches each training run as a fresh ``torchrun``
+        subprocess, so DDP process-group init/teardown is fully isolated per
+        call.
+
+        Returns None when distributed training is not applicable (CPU mode or
+        single GPU), in which case the caller should fall back to local
+        single-GPU training.
+
+        Before returning, applies ``_patch_function_pickler()`` to fix a race
+        condition in PySpark's ``FunctionPickler`` where all ``torchrun``
+        ranks write to the same output file concurrently, corrupting it.
+        The patch ensures only rank 0 writes the result.
+        """
+        if self.params.get("accelerator") != "gpu":
+            return None
+
+        import torch
+        if not torch.cuda.is_available() or torch.cuda.device_count() <= 1:
+            return None
+
+        import uuid
+        from neuralforecast import DistributedConfig
+
+        # Fix the multi-rank output-file race condition before any
+        # TorchDistributor usage.
+        self._patch_function_pickler()
+
+        num_devices = torch.cuda.device_count()
+        partitions_path = f"file:///tmp/mmf_nf_distributed/{uuid.uuid4()}"
+
+        return DistributedConfig(
+            partitions_path=partitions_path,
+            num_nodes=1,
+            devices=num_devices,
+        )
+
+    def _set_devices_for_local_inference(self):
+        """Pin all fitted models to a single GPU for local inference.
+
+        After distributed training via TorchDistributor the model objects are
+        returned to the driver process.  Their ``trainer_kwargs`` may still
+        contain ``devices=-1`` (all GPUs), which would trigger DDP when
+        ``predict()`` or ``forecast()`` creates a Trainer internally.  Setting
+        ``devices=1`` ensures inference runs on a single GPU without DDP.
+        """
+        if not isinstance(self.model, NeuralForecast):
+            return
+        for model_list in [self.model.models]:
+            for m in model_list:
+                if hasattr(m, "trainer_kwargs"):
+                    m.trainer_kwargs["devices"] = 1
+
     def fit(self, x, y=None):
         if isinstance(self.model, NeuralForecast):
             pdf = self.prepare_data(x)
             static_pdf = self.prepare_static_features(x)
-            self.model.fit(df=pdf, static_df=static_pdf)
+
+            dc = self._get_distributed_config()
+            if dc is not None:
+                # Multi-GPU: convert to Spark DataFrames and train via
+                # TorchDistributor, which launches a fresh ``torchrun``
+                # process per training call (clean DDP lifecycle).
+                from pyspark.sql import SparkSession
+                spark = SparkSession.getActiveSession()
+                sdf = spark.createDataFrame(pdf)
+                static_sdf = (
+                    spark.createDataFrame(static_pdf)
+                    if static_pdf is not None
+                    else None
+                )
+                self.model.fit(
+                    df=sdf, static_df=static_sdf, distributed_config=dc,
+                )
+                # After distributed fit, pin models to single GPU so that
+                # predict/forecast do not attempt DDP.
+                self._set_devices_for_local_inference()
+            else:
+                # Local single-GPU or CPU training.  This branch is reached
+                # when _get_distributed_config() returns None (single GPU,
+                # CPU, or no Spark session available).
+                self.model.fit(df=pdf, static_df=static_pdf)
 
     def predict(self,
                 hist_df: pd.DataFrame,
                 val_df: pd.DataFrame = None):
-
         df = self.prepare_data(hist_df)
         dynamic_covariates = self.prepare_data(val_df, future=True)
         if dynamic_covariates.empty:

@@ -141,3 +141,4 @@ examples/m5-examples/lightning_logs
 .databricks
 .claude
 docs/
+.cursor/

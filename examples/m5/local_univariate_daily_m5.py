@@ -1,6 +1,7 @@
 # Databricks notebook source
 # DBTITLE 1,Install the necessary libraries
-# MAGIC %pip install -r ../../requirements.txt --quiet
+# MAGIC %pip install -r ../../requirements-local.txt --quiet
+# MAGIC %pip install datasetsforecast==0.0.8 --quiet
 # MAGIC dbutils.library.restartPython()
 
 # COMMAND ----------

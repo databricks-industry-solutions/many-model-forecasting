@@ -53,9 +53,7 @@ active_models = [
     "StatsForecastCrostonClassic",
     "StatsForecastCrostonOptimized",
     "StatsForecastCrostonSBA",
-    "SKTimeTBats",
     "SKTimeProphet",
-    "SKTimeLgbmDsDt",
 ]
 ```
 
@@ -268,8 +266,6 @@ Any issues discovered through the use of this project should be filed as GitHub 
 | statsforecast | Time series forecasting suite using statistical models | Apache 2.0 | https://pypi.org/project/statsforecast/
 | neuralforecast | Time series forecasting suite using deep learning models | Apache 2.0 | https://pypi.org/project/neuralforecast/
 | sktime | A unified framework for machine learning with time series | BSD 3-Clause | https://pypi.org/project/sktime/
-| tbats | BATS and TBATS for time series forecasting | MIT | https://pypi.org/project/tbats/
-| lightgbm | LightGBM Python Package | MIT | https://pypi.org/project/lightgbm/
 | Chronos | Pretrained (Language) Models for Probabilistic Time Series Forecasting | Apache 2.0 | https://github.com/amazon-science/chronos-forecasting
 | Moirai | Unified Training of Universal Time Series Forecasting Transformers | Apache 2.0 | https://github.com/SalesforceAIResearch/uni2ts
 | TimesFM | A pretrained time-series foundation model developed by Google Research for time-series forecasting | Apache 2.0 | https://github.com/google-research/timesfm
