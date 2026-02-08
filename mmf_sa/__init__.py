@@ -48,6 +48,7 @@ def run_forecast(
     dynamic_historical_categorical: List[str] = None,
     active_models: List[str] = None,
     accelerator: str = "cpu",
+    num_nodes: int = 1,
     backtest_retrain: bool = None,
     train_predict_ratio: int = None,
     data_quality_check: bool = False,
@@ -85,6 +86,7 @@ def run_forecast(
         dynamic_historical_categorical (List[str]): A list of strings specifying the dynamic historical features that are categorical.
         active_models (List[str]): A list of strings specifying the active models.
         accelerator (str): A string specifying the accelerator to use: cpu or gpu. Default is cpu.
+        num_nodes (int): Number of nodes for distributed training. Use 1 (default) for single-node multi-GPU, or >1 for multi-node multi-GPU clusters.
         backtest_retrain (bool): A boolean specifying whether to retrain the model during backtesting. Currently, not supported.
         train_predict_ratio (int): An integer specifying the train predict ratio.
         data_quality_check (bool): A boolean specifying whether to check the data quality. Default is False.
@@ -155,6 +157,8 @@ def run_forecast(
         _conf["active_models"] = active_models
     if accelerator is not None:
         _conf["accelerator"] = accelerator
+    if num_nodes is not None:
+        _conf["num_nodes"] = num_nodes
     if backtest_retrain is not None:
         _conf["backtest_retrain"] = backtest_retrain
     if train_predict_ratio is not None:

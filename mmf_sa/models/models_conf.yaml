@@ -7,6 +7,7 @@ promoted_props:
   - freq
   - temp_path
   - accelerator
+  - num_nodes
   - backtest_length
   - stride
   - static_features

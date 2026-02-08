@@ -220,11 +220,17 @@ class NeuralFcForecaster(ForecastingRegressor):
         DistributedConfig that routes training through Spark's TorchDistributor.
         TorchDistributor launches each training run as a fresh ``torchrun``
         subprocess, so DDP process-group init/teardown is fully isolated per
-        call.
+        call.  Supports both single-node and multi-node clusters.
+
+        The ``num_nodes`` parameter is read from ``self.params`` (default 1).
+        When ``num_nodes > 1``, the partitions path is placed on DBFS
+        (``/dbfs/tmp/...``) so that all nodes can access the training data
+        via the FUSE mount.  For single-node clusters the local filesystem
+        (``/tmp/...``) is used for faster I/O.
 
         Returns None when distributed training is not applicable (CPU mode or
-        single GPU), in which case the caller should fall back to local
-        single-GPU training.
+        single GPU on a single-node cluster), in which case the caller should
+        fall back to local single-GPU training.
 
         Before returning, applies ``_patch_function_pickler()`` to fix a race
         condition in PySpark's ``FunctionPickler`` where all ``torchrun``
@@ -235,7 +241,16 @@ class NeuralFcForecaster(ForecastingRegressor):
             return None
 
         import torch
-        if not torch.cuda.is_available() or torch.cuda.device_count() <= 1:
+        if not torch.cuda.is_available():
+            return None
+
+        num_nodes = int(self.params.get("num_nodes", 1))
+        num_devices = torch.cuda.device_count()
+
+        # Distributed training requires either multiple GPUs on the driver
+        # (single-node) or multiple nodes.  A single GPU on a single node
+        # does not benefit from DDP.
+        if num_devices <= 1 and num_nodes <= 1:
             return None
 
         import uuid
@@ -245,12 +260,16 @@ class NeuralFcForecaster(ForecastingRegressor):
         # TorchDistributor usage.
         self._patch_function_pickler()
 
-        num_devices = torch.cuda.device_count()
-        partitions_path = f"file:///tmp/mmf_nf_distributed/{uuid.uuid4()}"
+        # For multi-node clusters, use DBFS (accessible from all nodes via
+        # FUSE mount).  For single-node, use local /tmp for faster I/O.
+        if num_nodes > 1:
+            partitions_path = f"file:///dbfs/tmp/mmf_nf_distributed/{uuid.uuid4()}"
+        else:
+            partitions_path = f"file:///tmp/mmf_nf_distributed/{uuid.uuid4()}"
 
         return DistributedConfig(
             partitions_path=partitions_path,
-            num_nodes=1,
+            num_nodes=num_nodes,
             devices=num_devices,
         )
 
@@ -270,6 +289,29 @@ class NeuralFcForecaster(ForecastingRegressor):
                 if hasattr(m, "trainer_kwargs"):
                     m.trainer_kwargs["devices"] = 1
 
+    def _disable_logger_for_distributed(self):
+        """Disable the TensorBoard logger and checkpointing for distributed training.
+
+        When ``TorchDistributor`` launches ``torchrun`` processes on worker
+        nodes, the current working directory may resolve to a read-only
+        filesystem (e.g. ``/Workspace/Repos/...`` on Databricks).  PyTorch
+        Lightning's default ``TensorBoardLogger`` tries to create a
+        ``lightning_logs/`` directory relative to the CWD, which fails with
+        ``PermissionDeniedError`` on read-only filesystems.
+
+        Disabling the logger and checkpointing avoids this error without
+        affecting training quality — metrics are tracked via MLflow instead.
+        This is called only before distributed training and does not affect
+        local (single-GPU) training.
+        """
+        if not isinstance(self.model, NeuralForecast):
+            return
+        for model_list in [self.model.models]:
+            for m in model_list:
+                if hasattr(m, "trainer_kwargs"):
+                    m.trainer_kwargs["logger"] = False
+                    m.trainer_kwargs["enable_checkpointing"] = False
+
     def fit(self, x, y=None):
         if isinstance(self.model, NeuralForecast):
             pdf = self.prepare_data(x)
@@ -288,6 +330,9 @@ class NeuralFcForecaster(ForecastingRegressor):
                     if static_pdf is not None
                     else None
                 )
+                # Disable TensorBoard logger before distributed training to
+                # prevent PermissionDeniedError on read-only worker filesystems.
+                self._disable_logger_for_distributed()
                 self.model.fit(
                     df=sdf, static_df=static_sdf, distributed_config=dc,
                 )
