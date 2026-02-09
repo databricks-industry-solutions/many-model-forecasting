@@ -11,6 +11,7 @@ targets:
     default: true
     workspace:
       host: https://e2-demo-field-eng.cloud.databricks.com
+      root_path: /Workspace/Repos/ryuta.yoshimatsu@databricks.com/many-model-forecasting-bundle
 
   ## Optionally, there could be 'staging' or 'prod' targets here.
   #

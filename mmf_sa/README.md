@@ -37,6 +37,7 @@ def run_forecast(
     dynamic_historical_categorical: List[str] = None,
     active_models: List[str] = None,
     accelerator: str = "cpu",
+    num_nodes: int = 1,
     train_predict_ratio: int = None,
     data_quality_check: bool = False,
     resample: bool = False,
@@ -128,6 +129,7 @@ models:
    - Trained on all time series simultaneously
    - Examples: NeuralForecastAutoNBEATSx, NeuralForecastAutoTiDE
    - Centralized training with shared parameters
+   - Supports distributed training on single-node multi-GPU and multi-node multi-GPU clusters via `TorchDistributor`
 
 3. **Foundation Models**:
    - Pre-trained models adapted for specific tasks
@@ -202,6 +204,15 @@ Global models follow a two-phase training approach:
    - Trains only on training data: i.e., all data excluding the `backtest_length`
    - Performs detailed backtesting using the same model
    - Calculates performance metrics and writes the results to the `evaluation_output` table
+
+#### Multi-GPU Distributed Training
+
+When `accelerator="gpu"` is set and the cluster has multiple GPUs (either on a single node or across multiple nodes), global models automatically use Spark's `TorchDistributor` with PyTorch DDP for distributed training. This is controlled by the `num_nodes` parameter:
+
+- **Single-node multi-GPU** (`num_nodes=1`, default): All GPUs on the driver node participate in DDP training. Training data is partitioned to local storage (`/tmp/`).
+- **Multi-node multi-GPU** (`num_nodes > 1`): GPUs across worker nodes participate in DDP training. Training data is partitioned to shared storage (`/dbfs/tmp/`) via the DBFS FUSE mount so all nodes can access it. Set `num_nodes` to the number of **worker** nodes. Autoscaling must be disabled to prevent workers from being removed mid-training.
+
+If only a single GPU is available on a single-node cluster, training falls back to standard single-GPU mode without DDP.
 
 ### Foundation Model Evaluation
 

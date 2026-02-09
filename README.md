@@ -11,6 +11,9 @@ MMF integrates a variety of well-established and cutting-edge algorithms, includ
 Get started now!
 
 ## What's New
+Use a cluster with [Databricks Runtime 17.3LTS for ML](https://docs.databricks.com/en/release-notes/runtime/17.3lts-ml.html) for local models, [Databricks Runtime 18.0 for ML](https://docs.databricks.com/en/release-notes/runtime/18.0-ml.html) for global models, and [Databricks Runtime 15.4LTS for ML](https://docs.databricks.com/en/release-notes/runtime/15.4lts-ml.html) for foundation models.
+
+- Feb 2026: Added multi-node multi-GPU support for global models. Try the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/global_daily.ipynb).
 - Aug 2025: MMF runs on Serverless. Try the [notebooks](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/serverless).
 - Jul 2025: Added the MMF architecture [README](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/README.md).
 - Jul 2025: Decommissioned R models.
@@ -31,7 +34,7 @@ To run this solution on a public [M4](https://www.kaggle.com/datasets/yogesh94/m
 
 Local models are used to model individual time series. They could be advantageous over other types of model for their capabilities to tailor fit to individual series, offer greater interpretability, and require lower data requirements. We support models from [statsforecast](https://github.com/Nixtla/statsforecast), and [sktime](https://www.sktime.net/en/stable/). Covariates (i.e. exogenous regressors) are currently only supported for some models from statsforecast. 
 
-To get started, attach the [examples/daily/local_univariate_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/local_univariate_daily.ipynb) notebook to a cluster running [DBR 15.4LTS for ML](https://docs.databricks.com/en/release-notes/runtime/15.4lts-ml.html) or later versions. The cluster can be either a single-node or multi-node CPU cluster. Make sure to set the following [Spark configurations](https://spark.apache.org/docs/latest/configuration.html) on the cluster before you start using MMF: ```spark.sql.execution.arrow.enabled true``` and ```spark.sql.adaptive.enabled false``` (more detailed explanation can be found [here](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/local_univariate_daily.ipynb)). 
+To get started, attach the [examples/daily/local_univariate_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/local_univariate_daily.ipynb) notebook to a cluster running [DBR 17.3LTS for ML](https://docs.databricks.com/en/release-notes/runtime/17.3lts-ml.html) or later versions. The cluster can be either a single-node or multi-node CPU cluster. Make sure to set the following [Spark configurations](https://spark.apache.org/docs/latest/configuration.html) on the cluster before you start using MMF: ```spark.sql.execution.arrow.enabled true``` and ```spark.sql.adaptive.enabled false``` (more detailed explanation can be found [here](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/local_univariate_daily.ipynb)). 
 
 In this notebook, we will apply 20+ models to 100 time series. You can specify the models to use in a list:
 
@@ -53,9 +56,7 @@ active_models = [
     "StatsForecastCrostonClassic",
     "StatsForecastCrostonOptimized",
     "StatsForecastCrostonSBA",
-    "SKTimeTBats",
     "SKTimeProphet",
-    "SKTimeLgbmDsDt",
 ]
 ```
 
@@ -122,7 +123,7 @@ We encourage you to read through [examples/daily/local_univariate_daily.ipynb](h
 
 Global models leverage patterns across multiple time series, enabling shared learning and improved predictions for each series. You would typically train one big model for many or all time series. They can often deliver better performance and robustness for forecasting large and similar datasets. We support deep learning based models from [neuralforecast](https://nixtlaverse.nixtla.io/neuralforecast/index.html). Covariates (i.e. exogenous regressors) and hyperparameter tuning are both supported for some models. 
 
-To get started, attach the [examples/daily/global_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/global_daily.ipynb) notebook to a cluster running [DBR 15.4LTS for ML](https://docs.databricks.com/en/release-notes/runtime/15.4lts-ml.html) or later version. We recommend using a single-node cluster with multiple GPU instances such as [g4dn.12xlarge [T4]](https://aws.amazon.com/ec2/instance-types/g4/) on AWS or [Standard_NC64as_T4_v3](https://learn.microsoft.com/en-us/azure/virtual-machines/nct4-v3-series) on Azure. Multi-node setting is currently not supported.
+To get started, attach the [examples/daily/global_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/global_daily.ipynb) notebook to a cluster running [DBR 18.0 for ML](https://docs.databricks.com/en/release-notes/runtime/18.0-ml.html) or later version. We recommend using a GPU cluster such as [g5.12xlarge [A10G]](https://aws.amazon.com/ec2/instance-types/g5/) on AWS or [Standard_NV36ads_A10_v5](https://learn.microsoft.com/en-us/azure/virtual-machines/nva10v5-series) on Azure. Both single-node multi-GPU and multi-node multi-GPU clusters are supported. When using a multi-node cluster, set `num_nodes` to the number of worker nodes (see below).
 
 You can choose the models to train and put them in a list:
 
@@ -146,11 +147,15 @@ The models prefixed with "Auto" perform hyperparameter optimization within a spe
 Now, with the following command, we run the [examples/run_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/run_daily.ipynb) notebook that will in turn call ```run_forecast``` function and loop through the ```active_models``` list. 
 
 ```python
+# Number of nodes for distributed training. Use 1 for single-node multi-GPU,
+# or set to the number of worker nodes for multi-node multi-GPU clusters.
+num_nodes = 1
+
 for model in active_models:
   dbutils.notebook.run(
     "run_daily",
     timeout_seconds=0, 
-    arguments={"catalog": catalog, "db": db, "model": model, "run_id": run_id})
+    arguments={"catalog": catalog, "db": db, "model": model, "run_id": run_id, "num_nodes": str(num_nodes)})
 ```
 
 Inside the [examples/run_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/run_daily.ipynb), we have the ```run_forecast``` function specified as:
@@ -179,6 +184,7 @@ run_forecast(
     use_case_name="m4_daily",
     run_id=run_id,
     accelerator="gpu",
+    num_nodes=num_nodes,
 )
 ```
 
@@ -188,6 +194,7 @@ The parameters are all the same except:
 -  ```model_output``` is where you store your model.
 -  ```use_case_name``` will be used to suffix the model name when registered to Unity Catalog.
 -  ```accelerator``` tells MMF to use GPU instead of CPU.
+-  ```num_nodes``` specifies the number of nodes for distributed training (default: `1`). Use `1` for single-node multi-GPU clusters. For multi-node clusters, set this to the number of **worker** nodes. When `num_nodes > 1`, training data is shared across nodes via the DBFS FUSE mount. Autoscaling must be disabled on multi-node GPU clusters to prevent workers from being removed mid-training.
   
 To modify the model hyperparameters or reset the range of the hyperparameter search, change the values in [mmf_sa/models/models_conf.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/models_conf.yaml) or overwrite these values, for example, in [mmf_sa/forecasting_conf_daily.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/forecasting_conf_daily.yaml) if your frequency is `D`. 
 
@@ -199,7 +206,7 @@ We encourage you to read through [examples/daily/global_daily.ipynb](https://git
 
 Foundation time series models are mostly transformer based models pretrained on millions or billions of time points. These models can perform analysis (i.e. forecasting, anomaly detection, classification) on a previously unseen time series without training or tuning. We support open source models from multiple sources: [chronos](https://github.com/amazon-science/chronos-forecasting), [timesfm](https://github.com/google-research/timesfm), and [moirai](https://blog.salesforceairesearch.com/moirai/). This is a rapidly changing field, and we are working on updating the supported models and new features as the field evolves.
 
-To get started, attach the [examples/daily/foundation_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/foundation_daily.ipynb) notebook to a cluster running [DBR 15.4LTS for ML](https://docs.databricks.com/en/release-notes/runtime/15.4lts-ml.html) or later versions. We recommend using a single-node cluster with multiple GPU instances such as [g4dn.12xlarge [T4]](https://aws.amazon.com/ec2/instance-types/g4/) on AWS or [Standard_NC64as_T4_v3](https://learn.microsoft.com/en-us/azure/virtual-machines/nct4-v3-series) on Azure. Multi-node setup is currently not supported. 
+To get started, attach the [examples/daily/foundation_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/foundation_daily.ipynb) notebook to a cluster running [DBR 15.4LTS for ML](https://docs.databricks.com/en/release-notes/runtime/15.4lts-ml.html). We recommend using a single-node cluster with multiple GPU instances such as [g4dn.12xlarge [T4]](https://aws.amazon.com/ec2/instance-types/g4/) on AWS or [Standard_NC64as_T4_v3](https://learn.microsoft.com/en-us/azure/virtual-machines/nct4-v3-series) on Azure. Multi-node setup is currently not supported. 
 
 You can choose the models you want to evaluate and forecast by specifying them in a list:
 
@@ -268,8 +275,6 @@ Any issues discovered through the use of this project should be filed as GitHub 
 | statsforecast | Time series forecasting suite using statistical models | Apache 2.0 | https://pypi.org/project/statsforecast/
 | neuralforecast | Time series forecasting suite using deep learning models | Apache 2.0 | https://pypi.org/project/neuralforecast/
 | sktime | A unified framework for machine learning with time series | BSD 3-Clause | https://pypi.org/project/sktime/
-| tbats | BATS and TBATS for time series forecasting | MIT | https://pypi.org/project/tbats/
-| lightgbm | LightGBM Python Package | MIT | https://pypi.org/project/lightgbm/
 | Chronos | Pretrained (Language) Models for Probabilistic Time Series Forecasting | Apache 2.0 | https://github.com/amazon-science/chronos-forecasting
 | Moirai | Unified Training of Universal Time Series Forecasting Transformers | Apache 2.0 | https://github.com/SalesforceAIResearch/uni2ts
 | TimesFM | A pretrained time-series foundation model developed by Google Research for time-series forecasting | Apache 2.0 | https://github.com/google-research/timesfm

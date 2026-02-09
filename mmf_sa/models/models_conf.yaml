@@ -7,6 +7,7 @@ promoted_props:
   - freq
   - temp_path
   - accelerator
+  - num_nodes
   - backtest_length
   - stride
   - static_features
@@ -150,17 +151,6 @@ models:
     model_type: local
     model_spec:
 
-  SKTimeTBats:
-    module: mmf_sa.models.sktime.SKTimeForecastingPipeline
-    model_class: SKTimeTBats
-    framework: SKTime
-    model_type: local
-    enable_gcv: false
-    model_spec:
-      box_cox: True
-      use_trend: True
-      season_length: 7
-
   SKTimeProphet:
     module: mmf_sa.models.sktime.SKTimeForecastingPipeline
     model_class: SKTimeProphet
@@ -173,17 +163,6 @@ models:
       weekly_seasonality: auto
       daily_seasonality: auto
       seasonality_mode: additive
-
-  SKTimeLgbmDsDt:
-    module: mmf_sa.models.sktime.SKTimeForecastingPipeline
-    model_class: SKTimeLgbmDsDt
-    framework: SKTime
-    model_type: local
-    enable_gcv: false
-    model_spec:
-      deseasonalise_model: multiplicative
-      season_length: 7
-      detrend_poly_degree: 2
 
   NeuralForecastRNN:
     module: mmf_sa.models.neuralforecast.NeuralForecastPipeline

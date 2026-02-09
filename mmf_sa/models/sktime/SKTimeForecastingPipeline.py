@@ -2,17 +2,11 @@ from abc import abstractmethod
 import numpy as np
 import pandas as pd
 from typing import Dict, Any, Union
-from lightgbm import LGBMRegressor
 from sktime.forecasting.model_selection import (
     SlidingWindowSplitter,
     ForecastingGridSearchCV,
 )
-from sktime.forecasting.tbats import TBATS
 from sktime.forecasting.fbprophet import Prophet
-from sktime.forecasting.compose import make_reduction
-from sktime.forecasting.compose import TransformedTargetForecaster
-from sktime.transformations.series.detrend import Detrender, ConditionalDeseasonalizer
-from sktime.forecasting.trend import PolynomialTrendForecaster
 from sktime.forecasting.base import ForecastingHorizon, BaseForecaster
 from mmf_sa.models.abstract_model import ForecastingRegressor
 
@@ -95,26 +89,6 @@ class SKTimeForecastingPipeline(ForecastingRegressor):
         return self.predict(x)
 
 
-class SKTimeTBats(SKTimeForecastingPipeline):
-    def __init__(self, params):
-        super().__init__(params)
-
-    def create_model(self) -> BaseForecaster:
-        model = TBATS(
-            sp=int(self.model_spec.get("season_length")),
-            use_trend=self.model_spec.get("use_trend"),
-            use_box_cox=self.model_spec.get("box_cox"),
-            n_jobs=-1,
-        )
-        return model
-
-    def create_param_grid(self):
-        return {
-            "use_trend": [True, False],
-            "use_box_cox": [True, False],
-            "sp": [1, 7, 14],
-        }
-
 class SKTimeProphet(SKTimeForecastingPipeline):
     def __init__(self, params):
         super().__init__(params)
@@ -134,50 +108,4 @@ class SKTimeProphet(SKTimeForecastingPipeline):
         return {
             "growth": ['linear', 'logarithmic'],
             "seasonality_mode": ['additive', 'multiplicative'],
-        }
-
-
-class SKTimeLgbmDsDt(SKTimeForecastingPipeline):
-    def __init__(self, params):
-        super().__init__(params)
-
-    def create_model(self) -> BaseForecaster:
-        model = TransformedTargetForecaster(
-            [
-                (
-                    "deseasonalise",
-                    ConditionalDeseasonalizer(
-                        model=self.model_spec.get("deseasonalise_model"),
-                        sp=int(self.model_spec.get("season_length"))
-                    )
-                ),
-                (
-                    "detrend",
-                    Detrender(
-                        forecaster=PolynomialTrendForecaster(degree=int(self.model_spec.get("detrend_poly_degree")))
-                    )
-                ),
-                (
-                    "forecast",
-                    make_reduction(
-                        estimator=LGBMRegressor(random_state=42, n_jobs=-1),
-                        scitype="tabular-regressor",
-                        window_length=int(self.model_spec.get("window_size", self.params.prediction_length)),
-                        strategy="recursive"
-                    )
-                )
-            ]
-        )
-        return model
-
-    def create_param_grid(self):
-        return {
-            "deseasonalise__model": ["additive", "multiplicative"],
-            "deseasonalise__sp": [1, 7, 14],
-            "detrend__forecaster__degree": [1, 2, 3],
-            # "forecast__estimator__learning_rate": [0.1, 0.01, 0.001],
-            "forecast__window_length": [
-                self.params.prediction_length,
-                self.params.prediction_length * 2,
-            ],
         }
