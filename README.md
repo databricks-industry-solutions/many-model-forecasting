@@ -12,8 +12,11 @@ Get started now!
 
 ## What's New
 For local models, use a cluster with [Databricks Runtime 17.3LTS for ML](https://docs.databricks.com/en/release-notes/runtime/17.3lts-ml.html). 
+
 For global models, use a cluster with [Databricks Runtime 18.0 for ML](https://docs.databricks.com/en/release-notes/runtime/18.0-ml.html). 
+
 For foundation models, use a cluster with [Databricks Runtime 15.4LTS for ML](https://docs.databricks.com/en/release-notes/runtime/15.4lts-ml.html).
+
 - Feb 2026: Added multi-node multi-GPU support for global models. Try the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/global_daily.ipynb).
 - Aug 2025: MMF runs on Serverless. Try the [notebooks](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/serverless).
 - Jul 2025: Added the MMF architecture [README](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/README.md).
