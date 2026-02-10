@@ -86,8 +86,10 @@ class ChronosForecaster(ForecastingRegressor):
                 spark=None):
         hist_df = self.prepare_data(hist_df, spark=spark)
         horizon_timestamps_udf = self.create_horizon_timestamps_udf()
-        forecast_udf = self.create_predict_udf()
         device_count = torch.cuda.device_count()
+        if device_count == 0:
+            device_count = 1
+        forecast_udf = self.create_predict_udf(device_count)
         forecast_df = (
             hist_df.repartition(device_count, self.params.group_id)
             .select(
@@ -149,17 +151,30 @@ class ChronosForecaster(ForecastingRegressor):
                 _logger.warning(f"Unexpected error calculating metric for key {key}: {err}")
         return metrics
 
-    def create_predict_udf(self):
+    def create_predict_udf(self, device_count):
+        repo = self.repo
+        num_devices = device_count
+
         @pandas_udf('array<double>')
         def predict_udf(bulk_iterator: Iterator[pd.Series]) -> Iterator[pd.Series]:
             # initialization step
+            import os
             import torch
             import numpy as np
             import pandas as pd
+            from pyspark import TaskContext
+
+            # Assign this worker to a specific GPU based on partition ID
+            ctx = TaskContext.get()
+            partition_id = ctx.partitionId() if ctx else 0
+            gpu_id = partition_id % num_devices
+            os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
+            torch.cuda.set_device(0)  # Device 0 within the visible set
+
             # Initialize the ChronosPipeline with a pretrained model from the specified repository
             from chronos import BaseChronosPipeline
             pipeline = BaseChronosPipeline.from_pretrained(
-                self.repo,
+                repo,
                 device_map='cuda',
                 torch_dtype=torch.bfloat16,
             )

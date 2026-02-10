@@ -83,8 +83,10 @@ class MoiraiForecaster(ForecastingRegressor):
                 spark=None):
         hist_df = self.prepare_data(hist_df, spark=spark)
         horizon_timestamps_udf = self.create_horizon_timestamps_udf()
-        forecast_udf = self.create_predict_udf()
         device_count = torch.cuda.device_count()
+        if device_count == 0:
+            device_count = 1
+        forecast_udf = self.create_predict_udf(device_count)
         forecast_df = (
             hist_df.repartition(device_count, self.params.group_id)
             .select(
@@ -148,31 +150,48 @@ class MoiraiForecaster(ForecastingRegressor):
                 _logger.warning(f"Unexpected error calculating metric for key {key}: {err}")
         return metrics
 
-    def create_predict_udf(self):
+    def create_predict_udf(self, device_count):
+        repo = self.repo
+        num_devices = device_count
+        prediction_length = self.params["prediction_length"]
+        patch_size = self.params.get("patch_size", 16)
+        num_samples = self.params["num_samples"]
+
         @pandas_udf('array<double>')
         def predict_udf(batch_iterator: Iterator[pd.Series]) -> Iterator[pd.Series]:
             # initialization step
+            import os
             import torch
             import numpy as np
             import pandas as pd
+            from pyspark import TaskContext
             from einops import rearrange
+
+            # Assign this worker to a specific GPU based on partition ID
+            ctx = TaskContext.get()
+            partition_id = ctx.partitionId() if ctx else 0
+            gpu_id = partition_id % num_devices
+            os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
+            torch.cuda.set_device(0)  # Device 0 within the visible set
+            device = torch.device("cuda:0")
+
             from uni2ts.model.moirai import MoiraiModule, MoiraiForecast
             from uni2ts.model.moirai_moe import MoiraiMoEForecast, MoiraiMoEModule
-            if 'moe' in self.repo:
-                module = MoiraiMoEModule.from_pretrained(self.repo)
+            if 'moe' in repo:
+                module = MoiraiMoEModule.from_pretrained(repo).to(device)
             else:
-                module = MoiraiModule.from_pretrained(self.repo)
+                module = MoiraiModule.from_pretrained(repo).to(device)
             # inference
             median = []
             for batch in batch_iterator:
                 for series in batch:
-                    if 'moe' in self.repo:
+                    if 'moe' in repo:
                         model = MoiraiMoEForecast(
                             module=module,
-                            prediction_length=self.params["prediction_length"],
+                            prediction_length=prediction_length,
                             context_length=len(series),
                             patch_size=16,
-                            num_samples=self.params["num_samples"],
+                            num_samples=num_samples,
                             target_dim=1,
                             feat_dynamic_real_dim=0,
                             past_feat_dynamic_real_dim=0,
@@ -180,10 +199,10 @@ class MoiraiForecaster(ForecastingRegressor):
                     else:
                         model = MoiraiForecast(
                             module=module,
-                            prediction_length=self.params["prediction_length"],
+                            prediction_length=prediction_length,
                             context_length=len(series),
-                            patch_size=self.params["patch_size"],
-                            num_samples=self.params["num_samples"],
+                            patch_size=patch_size,
+                            num_samples=num_samples,
                             target_dim=1,
                             feat_dynamic_real_dim=0,
                             past_feat_dynamic_real_dim=0,
@@ -192,7 +211,7 @@ class MoiraiForecaster(ForecastingRegressor):
                     # Time series values. Shape: (batch, time, variate)
                     past_target = rearrange(
                         torch.as_tensor(series, dtype=torch.float32), "t -> 1 t 1"
-                    )
+                    ).to(device)
                     # 1s if the value is observed, 0s otherwise. Shape: (batch, time, variate)
                     past_observed_target = torch.ones_like(past_target, dtype=torch.bool)
                     # 1s if the value is padding, 0s otherwise. Shape: (batch, time)
