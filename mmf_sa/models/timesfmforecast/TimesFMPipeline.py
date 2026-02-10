@@ -150,21 +150,32 @@ class TimesFMForecaster(ForecastingRegressor):
         )
         return sdf
 
-    def create_predict_udf(self):
+    def create_predict_udf(self, device_count):
         """Create a pandas UDF that loads the TimesFM model inside each Spark worker
         and runs distributed inference across multiple GPUs."""
         repo = self.repo
         prediction_length = self.params["prediction_length"]
         freq = self.params["freq"]
         model_hparams = self.model_hparams
+        num_devices = device_count
 
         @pandas_udf('array<double>')
         def predict_udf(bulk_iterator: Iterator[pd.Series]) -> Iterator[pd.Series]:
+            import os
+            import torch
             import timesfm
             import numpy as np
             import pandas as pd
+            from pyspark import TaskContext
 
-            # Load the model on the GPU assigned to this Spark worker
+            # Assign this worker to a specific GPU based on partition ID
+            ctx = TaskContext.get()
+            partition_id = ctx.partitionId() if ctx else 0
+            gpu_id = partition_id % num_devices
+            os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
+            torch.cuda.set_device(0)  # Device 0 within the visible set
+
+            # Load the model on the assigned GPU
             model = timesfm.TimesFm(
                 hparams=timesfm.TimesFmHparams(
                     backend="gpu",
@@ -209,13 +220,13 @@ class TimesFMForecaster(ForecastingRegressor):
 
     def _predict_distributed(self, hist_df: pd.DataFrame, spark):
         """Distributed prediction using Spark pandas UDFs across multiple GPUs.
-        Each partition loads its own model on the GPU assigned by Spark's GPU-aware scheduling."""
+        Each partition explicitly targets a specific GPU via CUDA_VISIBLE_DEVICES."""
         hist_sdf = self.prepare_data_for_spark(hist_df, spark)
         horizon_timestamps_udf = self.create_horizon_timestamps_udf()
-        forecast_udf = self.create_predict_udf()
         device_count = torch.cuda.device_count()
         if device_count == 0:
             device_count = 1
+        forecast_udf = self.create_predict_udf(device_count)
 
         forecast_df = (
             hist_sdf.repartition(device_count, "unique_id")
