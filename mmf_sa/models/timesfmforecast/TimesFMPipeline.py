@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import logging
+import torch
 import mlflow
 from mlflow.types import Schema, TensorSpec
 from mlflow.models.signature import ModelSignature
@@ -9,6 +10,9 @@ from sktime.performance_metrics.forecasting import (
     MeanSquaredError,
     MeanAbsolutePercentageError,
 )
+from typing import Iterator
+from pyspark.sql.functions import collect_list, pandas_udf
+from pyspark.sql import DataFrame
 from utilsforecast.processing import make_future_dataframe
 from mmf_sa.models.abstract_model import ForecastingRegressor
 from mmf_sa.exceptions import MissingFeatureError, UnsupportedMetricError, ModelPredictionError, DataPreparationError
@@ -23,6 +27,24 @@ class TimesFMForecaster(ForecastingRegressor):
         self.device = None
         self.model = None
         self.repo = None
+        self.model_hparams = {}
+
+    def _get_or_create_model(self):
+        """Lazy-load the TimesFM model on the driver (for single-GPU fallback with covariates)."""
+        if self.model is None:
+            import timesfm
+            self.model = timesfm.TimesFm(
+                hparams=timesfm.TimesFmHparams(
+                    backend="gpu",
+                    per_core_batch_size=32,
+                    horizon_len=self.params.prediction_length,
+                    **self.model_hparams,
+                ),
+                checkpoint=timesfm.TimesFmCheckpoint(
+                    huggingface_repo_id=self.repo,
+                ),
+            )
+        return self.model
 
     def register(self, registered_model_name: str):
         pipeline = TimesFMModel(self.params, self.repo)
@@ -42,7 +64,25 @@ class TimesFMForecaster(ForecastingRegressor):
             ],
         )
 
+    def create_horizon_timestamps_udf(self):
+        @pandas_udf('array<timestamp>')
+        def horizon_timestamps_udf(batch_iterator: Iterator[pd.Series]) -> Iterator[pd.Series]:
+            import numpy as np
+            batch_horizon_timestamps = []
+            for batch in batch_iterator:
+                for series in batch:
+                    last = series.max()
+                    horizon_timestamps = []
+                    for i in range(self.params["prediction_length"]):
+                        last = last + self.one_ts_offset
+                        horizon_timestamps.append(last.to_numpy())
+                    batch_horizon_timestamps.append(np.array(horizon_timestamps))
+            yield pd.Series(batch_horizon_timestamps)
+        return horizon_timestamps_udf
+
     def prepare_data(self, df: pd.DataFrame, future: bool = False, spark=None) -> pd.DataFrame:
+        """Prepare data as pandas DataFrame (column selection and renaming).
+        Used by the single-GPU fallback path for covariate handling."""
         if not future:
             # Prepare historical dataframe with or without exogenous regressors for training
             features = [self.params.group_id, self.params.date_col, self.params.target]
@@ -90,13 +130,133 @@ class TimesFMForecaster(ForecastingRegressor):
             )
         return _df.sort_values(by=["unique_id", "ds"])
 
+    def prepare_data_for_spark(self, df: pd.DataFrame, spark) -> DataFrame:
+        """Convert pandas DataFrame to Spark DataFrame grouped by unique_id with collected lists.
+        Used by the distributed multi-GPU prediction path."""
+        features = [self.params.group_id, self.params.date_col, self.params.target]
+        _df = df[features].rename(columns={
+            self.params.group_id: "unique_id",
+            self.params.date_col: "ds",
+            self.params.target: "y",
+        }).sort_values(by=["unique_id", "ds"])
+
+        sdf = spark.createDataFrame(_df)
+        sdf = (
+            sdf.groupBy("unique_id")
+            .agg(
+                collect_list("ds").alias("ds"),
+                collect_list("y").alias("y"),
+            )
+        )
+        return sdf
+
+    def create_predict_udf(self, device_count):
+        """Create a pandas UDF that loads the TimesFM model inside each Spark worker
+        and runs distributed inference across multiple GPUs."""
+        repo = self.repo
+        prediction_length = self.params["prediction_length"]
+        freq = self.params["freq"]
+        model_hparams = self.model_hparams
+        num_devices = device_count
+
+        @pandas_udf('array<double>')
+        def predict_udf(bulk_iterator: Iterator[pd.Series]) -> Iterator[pd.Series]:
+            import os
+            import torch
+            import timesfm
+            import numpy as np
+            import pandas as pd
+            from pyspark import TaskContext
+
+            # Assign this worker to a specific GPU based on partition ID
+            ctx = TaskContext.get()
+            partition_id = ctx.partitionId() if ctx else 0
+            gpu_id = partition_id % num_devices
+            os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
+            torch.cuda.set_device(0)  # Device 0 within the visible set
+
+            # Load the model on the assigned GPU
+            model = timesfm.TimesFm(
+                hparams=timesfm.TimesFmHparams(
+                    backend="gpu",
+                    per_core_batch_size=32,
+                    horizon_len=prediction_length,
+                    **model_hparams,
+                ),
+                checkpoint=timesfm.TimesFmCheckpoint(
+                    huggingface_repo_id=repo,
+                ),
+            )
+
+            freq_index = 0 if freq in ("H", "D") else 1
+
+            results = []
+            for bulk in bulk_iterator:
+                inputs = [np.array(list(series), dtype=np.float64) for series in bulk]
+                forecasts, _ = model.forecast(
+                    inputs=inputs,
+                    freq=[freq_index] * len(inputs),
+                )
+                results.extend([arr.astype(np.float64) for arr in forecasts])
+            yield pd.Series(results)
+
+        return predict_udf
+
     def predict(self,
                 hist_df: pd.DataFrame,
                 val_df: pd.DataFrame = None,
                 spark=None):
+        """Route to distributed or single-GPU prediction based on available context."""
+        has_covariates = (
+            'dynamic_future_numerical' in self.params.keys()
+            or 'dynamic_future_categorical' in self.params.keys()
+            or 'static_features' in self.params.keys()
+        )
+
+        if spark is not None and not has_covariates:
+            return self._predict_distributed(hist_df, spark)
+        else:
+            return self._predict_single(hist_df, val_df)
+
+    def _predict_distributed(self, hist_df: pd.DataFrame, spark):
+        """Distributed prediction using Spark pandas UDFs across multiple GPUs.
+        Each partition explicitly targets a specific GPU via CUDA_VISIBLE_DEVICES."""
+        hist_sdf = self.prepare_data_for_spark(hist_df, spark)
+        horizon_timestamps_udf = self.create_horizon_timestamps_udf()
+        device_count = torch.cuda.device_count()
+        if device_count == 0:
+            device_count = 1
+        forecast_udf = self.create_predict_udf(device_count)
+
+        forecast_df = (
+            hist_sdf.repartition(device_count, "unique_id")
+            .select(
+                hist_sdf.unique_id,
+                horizon_timestamps_udf(hist_sdf.ds).alias("ds"),
+                forecast_udf(hist_sdf.y).alias("y"),
+            )
+        ).toPandas()
+
+        forecast_df = forecast_df.reset_index(drop=False).rename(
+            columns={
+                "unique_id": self.params.group_id,
+                "ds": self.params.date_col,
+                "y": self.params.target,
+            }
+        )
+        return forecast_df, self.model
+
+    def _predict_single(self, hist_df: pd.DataFrame, val_df: pd.DataFrame = None):
+        """Single-GPU prediction (fallback for covariate case or when spark is unavailable)."""
+        model = self._get_or_create_model()
         df = self.prepare_data(hist_df)
-        dynamic_covariates = self.prepare_data(val_df, future=True)
-        df_union = pd.concat([df, dynamic_covariates], axis=0, join='outer', ignore_index=True)
+        dynamic_covariates = self.prepare_data(val_df, future=True) if val_df is not None else None
+
+        if dynamic_covariates is not None:
+            df_union = pd.concat([df, dynamic_covariates], axis=0, join='outer', ignore_index=True)
+        else:
+            df_union = df
+
         forecast_input = [group['y'].values for _, group in df.groupby('unique_id')]
         freq_index = 0 if self.params.freq in ("H", "D") else 1
         dynamic_numerical_covariates = {}
@@ -119,12 +279,12 @@ class TimesFMForecaster(ForecastingRegressor):
             and not dynamic_categorical_covariates \
             and not static_numerical_covariates \
             and not static_categorical_covariates:
-            forecasts, _ = self.model.forecast(
+            forecasts, _ = model.forecast(
                 inputs=forecast_input,
                 freq=[freq_index] * len(forecast_input)
             )
         else:
-            forecasts, _ = self.model.forecast_with_covariates(
+            forecasts, _ = model.forecast_with_covariates(
                 inputs=forecast_input,
                 dynamic_numerical_covariates=dynamic_numerical_covariates,
                 dynamic_categorical_covariates=dynamic_categorical_covariates,
@@ -153,7 +313,7 @@ class TimesFMForecaster(ForecastingRegressor):
 
         # Todo
         # forecast_df[self.params.target] = forecast_df[self.params.target].clip(0.01)
-        return forecast_df, self.model
+        return forecast_df, model
 
     def forecast(self, df: pd.DataFrame, spark=None):
         hist_df = df[df[self.params.target].notnull()]
@@ -163,13 +323,13 @@ class TimesFMForecaster(ForecastingRegressor):
             & (df[self.params.date_col]
                <= np.datetime64(last_date + self.prediction_length_offset))
             ]
-        forecast_df, model = self.predict(hist_df=hist_df, val_df=future_df)
+        forecast_df, model = self.predict(hist_df=hist_df, val_df=future_df, spark=spark)
         return forecast_df, model
 
     def calculate_metrics(
         self, hist_df: pd.DataFrame, val_df: pd.DataFrame, curr_date, spark=None
     ) -> list:
-        pred_df, model_pretrained = self.predict(hist_df, val_df)
+        pred_df, model_pretrained = self.predict(hist_df, val_df, spark=spark)
         keys = pred_df[self.params["group_id"]].unique()
         metrics = []
         metric_name = self.params["metric"]
@@ -210,41 +370,22 @@ class TimesFMForecaster(ForecastingRegressor):
 class TimesFM_1_0_200m(TimesFMForecaster):
     def __init__(self, params):
         super().__init__(params)
-        import timesfm
         self.params = params
-        #self.backend = "gpu" if torch.cuda.is_available() else "cpu"
         self.repo = "google/timesfm-1.0-200m-pytorch"
-        self.model = timesfm.TimesFm(
-            hparams=timesfm.TimesFmHparams(
-                backend="gpu",
-                per_core_batch_size=32,
-                horizon_len=self.params.prediction_length,
-            ),
-            checkpoint=timesfm.TimesFmCheckpoint(
-                huggingface_repo_id=self.repo
-            ),
-        )
+        self.model_hparams = {}
+
 
 class TimesFM_2_0_500m(TimesFMForecaster):
     def __init__(self, params):
         super().__init__(params)
-        import timesfm
         self.params = params
-        #self.backend = "gpu" if torch.cuda.is_available() else "cpu"
         self.repo = "google/timesfm-2.0-500m-pytorch"
-        self.model = timesfm.TimesFm(
-            hparams=timesfm.TimesFmHparams(
-                backend="gpu",
-                per_core_batch_size=32,
-                horizon_len=self.params.prediction_length,
-                num_layers=50,
-                use_positional_embedding=False,
-                context_len=2048,
-            ),
-            checkpoint=timesfm.TimesFmCheckpoint(
-                huggingface_repo_id=self.repo
-            ),
-        )
+        self.model_hparams = {
+            "num_layers": 50,
+            "use_positional_embedding": False,
+            "context_len": 2048,
+        }
+
 
 class TimesFMModel(mlflow.pyfunc.PythonModel):
     def __init__(self, params, repo):
