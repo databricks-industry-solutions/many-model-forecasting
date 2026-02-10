@@ -220,7 +220,7 @@ class MoiraiForecaster(ForecastingRegressor):
                         past_observed_target=past_observed_target,
                         past_is_pad=past_is_pad,
                     )
-                    median.append(np.median(forecast[0], axis=0))
+                    median.append(np.median(forecast[0].cpu().numpy(), axis=0))
             yield pd.Series(median)
         return predict_udf
 
@@ -314,4 +314,5 @@ class MoiraiModel(mlflow.pyfunc.PythonModel):
             past_observed_target=past_observed_target,
             past_is_pad=past_is_pad,
         )
-        return np.median(forecast[0], axis=0)
+        forecast_np = forecast[0].cpu().numpy() if forecast[0].is_cuda else forecast[0].numpy()
+        return np.median(forecast_np, axis=0)
