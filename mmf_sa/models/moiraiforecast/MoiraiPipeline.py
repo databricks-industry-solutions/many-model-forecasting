@@ -160,7 +160,6 @@ class MoiraiForecaster(ForecastingRegressor):
         @pandas_udf('array<double>')
         def predict_udf(batch_iterator: Iterator[pd.Series]) -> Iterator[pd.Series]:
             # initialization step
-            import os
             import torch
             import numpy as np
             import pandas as pd
@@ -171,9 +170,8 @@ class MoiraiForecaster(ForecastingRegressor):
             ctx = TaskContext.get()
             partition_id = ctx.partitionId() if ctx else 0
             gpu_id = partition_id % num_devices
-            os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
-            torch.cuda.set_device(0)  # Device 0 within the visible set
-            device = torch.device("cuda:0")
+            device = torch.device(f"cuda:{gpu_id}")
+            torch.cuda.set_device(gpu_id)
 
             from uni2ts.model.moirai import MoiraiModule, MoiraiForecast
             from uni2ts.model.moirai_moe import MoiraiMoEForecast, MoiraiMoEModule

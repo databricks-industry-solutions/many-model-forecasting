@@ -158,7 +158,6 @@ class ChronosForecaster(ForecastingRegressor):
         @pandas_udf('array<double>')
         def predict_udf(bulk_iterator: Iterator[pd.Series]) -> Iterator[pd.Series]:
             # initialization step
-            import os
             import torch
             import numpy as np
             import pandas as pd
@@ -168,14 +167,13 @@ class ChronosForecaster(ForecastingRegressor):
             ctx = TaskContext.get()
             partition_id = ctx.partitionId() if ctx else 0
             gpu_id = partition_id % num_devices
-            os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
-            torch.cuda.set_device(0)  # Device 0 within the visible set
+            torch.cuda.set_device(gpu_id)
 
             # Initialize the ChronosPipeline with a pretrained model from the specified repository
             from chronos import BaseChronosPipeline
             pipeline = BaseChronosPipeline.from_pretrained(
                 repo,
-                device_map='cuda',
+                device_map=f"cuda:{gpu_id}",
                 torch_dtype=torch.bfloat16,
             )
 
