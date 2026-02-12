@@ -16,7 +16,7 @@ Use a cluster with [Databricks Runtime 17.3LTS for ML](https://docs.databricks.c
 - Feb 2026: [Chronos-2](https://github.com/amazon-science/chronos-forecasting) models are now available for univariate forecasting. Try the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/foundation_daily.ipynb).
 - Feb 2026: [TimesFM 2.5](https://github.com/google-research/timesfm) is available for univariate and covariate forecasting. Decommissioned TimesFM 1.0 and TimesFM 2.0. Try the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/foundation_daily.ipynb).
 - Feb 2026: Decommissioned ChronosT5 models.
-- Feb 2026: Moirai models are temporarily disabled due to [uni2ts](https://github.com/SalesforceAIResearch/uni2ts) requiring torch<2.5, incompatible with DBR ML 18.0.
+- Feb 2026: Moirai models are temporarily disabled due to [uni2ts](https://github.com/SalesforceAIResearch/uni2ts) requiring torch<2.5, incompatible the latest DBRs.
 - Feb 2026: Added multi-node multi-GPU support for global models. Try the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/global_daily.ipynb).
 - Aug 2025: MMF runs on Serverless. Try the [notebooks](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/serverless).
 
