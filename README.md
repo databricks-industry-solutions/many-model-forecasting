@@ -13,6 +13,7 @@ Get started now!
 ## What's New
 Use a cluster with [Databricks Runtime 17.3LTS for ML](https://docs.databricks.com/en/release-notes/runtime/17.3lts-ml.html) for local models, and [Databricks Runtime 18.0 for ML](https://docs.databricks.com/en/release-notes/runtime/18.0-ml.html) or later for global and foundation models.
 
+- Feb 2026: [Chronos-2](https://github.com/amazon-science/chronos-forecasting) models are now available for univariate forecasting. Try the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/foundation_daily.ipynb).
 - Feb 2026: [TimesFM 2.5](https://github.com/google-research/timesfm) is available for univariate and covariate forecasting. Decommissioned TimesFM 1.0 and TimesFM 2.0. Try the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/foundation_daily.ipynb).
 - Feb 2026: Decommissioned ChronosT5 models.
 - Feb 2026: Moirai models are temporarily disabled due to [uni2ts](https://github.com/SalesforceAIResearch/uni2ts) requiring torch<2.5, incompatible with DBR ML 18.0.
@@ -197,7 +198,7 @@ We encourage you to read through [examples/daily/global_daily.ipynb](https://git
 
 ### Foundation Models
 
-Foundation time series models are mostly transformer based models pretrained on millions or billions of time points. These models can perform analysis (i.e. forecasting, anomaly detection, classification) on a previously unseen time series without training or tuning. We support open source models from multiple sources: [chronos](https://github.com/amazon-science/chronos-forecasting) and [timesfm](https://github.com/google-research/timesfm). This is a rapidly changing field, and we are working on updating the supported models and new features as the field evolves.
+Foundation time series models are mostly transformer based models pretrained on millions or billions of time points. These models can perform analysis (i.e. forecasting, anomaly detection, classification) on a previously unseen time series without training or tuning. We support open source models from multiple sources: [chronos](https://github.com/amazon-science/chronos-forecasting) (Chronos-Bolt and Chronos-2) and [timesfm](https://github.com/google-research/timesfm). This is a rapidly changing field, and we are working on updating the supported models and new features as the field evolves.
 
 To get started, attach the [examples/daily/foundation_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/foundation_daily.ipynb) notebook to a cluster running [DBR 18.0 for ML](https://docs.databricks.com/en/release-notes/runtime/18.0-ml.html) or later. We recommend using a single-node cluster with multiple GPU instances such as [g5.12xlarge [A10G]](https://aws.amazon.com/ec2/instance-types/g5/) on AWS or [Standard_NV36ads_A10_v5](https://learn.microsoft.com/en-us/azure/virtual-machines/nva10v5-series) on Azure. Multi-node setup is currently not supported. 
 
@@ -209,6 +210,9 @@ active_models = [
     "ChronosBoltMini",
     "ChronosBoltSmall",
     "ChronosBoltBase",
+    "Chronos2",
+    "Chronos2Small",
+    "Chronos2Synth",
     "TimesFM_2_5_200m",
 ]
 ```

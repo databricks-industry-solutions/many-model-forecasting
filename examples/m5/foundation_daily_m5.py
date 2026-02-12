@@ -18,6 +18,9 @@ active_models = [
     "ChronosBoltMini",
     "ChronosBoltSmall",
     "ChronosBoltBase",
+    "Chronos2",
+    "Chronos2Small",
+    "Chronos2Synth",
     "TimesFM_2_5_200m",
 ]
 

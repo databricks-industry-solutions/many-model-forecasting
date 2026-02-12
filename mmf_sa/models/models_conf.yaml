@@ -346,6 +346,27 @@ models:
     num_samples: 10
     batch_size: 16
 
+  Chronos2:
+    module: mmf_sa.models.chronosforecast.ChronosPipeline
+    model_class: Chronos2
+    framework: Chronos
+    model_type: foundation
+    batch_size: 16
+
+  Chronos2Small:
+    module: mmf_sa.models.chronosforecast.ChronosPipeline
+    model_class: Chronos2Small
+    framework: Chronos
+    model_type: foundation
+    batch_size: 16
+
+  Chronos2Synth:
+    module: mmf_sa.models.chronosforecast.ChronosPipeline
+    model_class: Chronos2Synth
+    framework: Chronos
+    model_type: foundation
+    batch_size: 16
+
   MoiraiSmall:
     module: mmf_sa.models.moiraiforecast.MoiraiPipeline
     model_class: MoiraiSmall

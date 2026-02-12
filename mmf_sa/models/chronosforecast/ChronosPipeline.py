@@ -217,6 +217,110 @@ class ChronosBoltBase(ChronosForecaster):
         self.repo = "amazon/chronos-bolt-base"
 
 
+class Chronos2Forecaster(ChronosForecaster):
+    """Forecaster for Chronos-2 models (amazon/chronos-2, autogluon/chronos-2-small, autogluon/chronos-2-synth).
+
+    Chronos-2 uses a different output format from Chronos-Bolt:
+    - predict() returns a list of tensors, each shaped (n_variates, n_quantiles, prediction_length)
+    - Default quantiles are [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+    """
+
+    def __init__(self, params):
+        super().__init__(params)
+        self.params = params
+
+    def register(self, registered_model_name: str):
+        pipeline = Chronos2MLflowModel(
+            self.repo,
+            self.params["prediction_length"],
+        )
+        input_schema = Schema([TensorSpec(np.dtype(np.double), (-1, -1))])
+        output_schema = Schema([TensorSpec(np.dtype(np.uint8), (-1, -1, -1))])
+        signature = ModelSignature(inputs=input_schema, outputs=output_schema)
+        input_example = np.random.rand(1, 52)
+        mlflow.pyfunc.log_model(
+            "model",
+            python_model=pipeline,
+            registered_model_name=registered_model_name,
+            signature=signature,
+            input_example=input_example,
+            pip_requirements=[
+                "torch>=2.3.1",
+                "transformers>=4.41.2",
+                "chronos-forecasting==2.2.2",
+                "git+https://github.com/databricks-industry-solutions/many-model-forecasting.git",
+            ],
+        )
+
+    def create_predict_udf(self, device_count):
+        repo = self.repo
+        num_devices = device_count
+
+        @pandas_udf('array<double>')
+        def predict_udf(bulk_iterator: Iterator[pd.Series]) -> Iterator[pd.Series]:
+            # initialization step
+            import torch
+            import numpy as np
+            import pandas as pd
+            from pyspark import TaskContext
+
+            # Assign this worker to a specific GPU based on partition ID
+            ctx = TaskContext.get()
+            partition_id = ctx.partitionId() if ctx else 0
+            gpu_id = partition_id % num_devices
+            torch.cuda.set_device(gpu_id)
+
+            # Initialize the Chronos2Pipeline with a pretrained model
+            from chronos import BaseChronosPipeline
+            pipeline = BaseChronosPipeline.from_pretrained(
+                repo,
+                device_map=f"cuda:{gpu_id}",
+                torch_dtype=torch.bfloat16,
+            )
+
+            # Get the index for median (0.5) quantile
+            quantile_idx = pipeline.quantiles.index(0.5)
+
+            # inference
+            median = []
+            for bulk in bulk_iterator:
+                for i in range(0, len(bulk), self.params["batch_size"]):
+                    batch = bulk[i:i+self.params["batch_size"]]
+                    contexts = [torch.tensor(list(series)) for series in batch]
+                    forecasts = pipeline.predict(
+                        inputs=contexts,
+                        prediction_length=self.params["prediction_length"],
+                    )
+                    # forecasts is a list of tensors, each of shape
+                    # (n_variates, n_quantiles, prediction_length)
+                    # For univariate: (1, n_quantiles, prediction_length)
+                    for forecast in forecasts:
+                        median.append(forecast[0, quantile_idx, :].numpy())
+            yield pd.Series(median)
+        return predict_udf
+
+
+class Chronos2(Chronos2Forecaster):
+    def __init__(self, params):
+        super().__init__(params)
+        self.params = params
+        self.repo = "amazon/chronos-2"
+
+
+class Chronos2Small(Chronos2Forecaster):
+    def __init__(self, params):
+        super().__init__(params)
+        self.params = params
+        self.repo = "autogluon/chronos-2-small"
+
+
+class Chronos2Synth(Chronos2Forecaster):
+    def __init__(self, params):
+        super().__init__(params)
+        self.params = params
+        self.repo = "autogluon/chronos-2-synth"
+
+
 class ChronosModel(mlflow.pyfunc.PythonModel):
     def __init__(self, repo, prediction_length):
         import torch
@@ -238,3 +342,31 @@ class ChronosModel(mlflow.pyfunc.PythonModel):
             prediction_length=self.prediction_length,
         )
         return forecast.numpy()
+
+
+class Chronos2MLflowModel(mlflow.pyfunc.PythonModel):
+    def __init__(self, repo, prediction_length):
+        import torch
+        self.repo = repo
+        self.prediction_length = prediction_length
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        # Initialize the Chronos2Pipeline with a pretrained model from the specified repository
+        from chronos import BaseChronosPipeline
+        self.pipeline = BaseChronosPipeline.from_pretrained(
+            self.repo,
+            device_map='cuda',
+            torch_dtype=torch.bfloat16,
+        )
+
+    def predict(self, context, input_data, params=None):
+        history = [torch.tensor(list(series)) for series in input_data]
+        forecasts = self.pipeline.predict(
+            inputs=history,
+            prediction_length=self.prediction_length,
+        )
+        # forecasts is a list of tensors, each of shape
+        # (n_variates, n_quantiles, prediction_length)
+        # Extract median (0.5) quantile for univariate forecasting
+        quantile_idx = self.pipeline.quantiles.index(0.5)
+        results = np.stack([f[0, quantile_idx, :].numpy() for f in forecasts])
+        return results
