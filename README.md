@@ -11,20 +11,13 @@ MMF integrates a variety of well-established and cutting-edge algorithms, includ
 Get started now!
 
 ## What's New
-Use a cluster with [Databricks Runtime 17.3LTS for ML](https://docs.databricks.com/en/release-notes/runtime/17.3lts-ml.html) for local models, [Databricks Runtime 18.0 for ML](https://docs.databricks.com/en/release-notes/runtime/18.0-ml.html) for global models, and [Databricks Runtime 15.4LTS for ML](https://docs.databricks.com/en/release-notes/runtime/15.4lts-ml.html) for foundation models.
+Use a cluster with [Databricks Runtime 17.3LTS for ML](https://docs.databricks.com/en/release-notes/runtime/17.3lts-ml.html) for local models, and [Databricks Runtime 18.0 for ML](https://docs.databricks.com/en/release-notes/runtime/18.0-ml.html) or later for global and foundation models.
 
+- Feb 2026: [TimesFM 2.5](https://github.com/google-research/timesfm) is available for univariate and covariate forecasting. Decommissioned TimesFM 1.0 and TimesFM 2.0. Try the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/foundation_daily.ipynb).
+- Feb 2026: Decommissioned ChronosT5 models.
+- Feb 2026: Moirai models are temporarily disabled due to [uni2ts](https://github.com/SalesforceAIResearch/uni2ts) requiring torch<2.5, incompatible with DBR ML 18.0.
 - Feb 2026: Added multi-node multi-GPU support for global models. Try the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/global_daily.ipynb).
 - Aug 2025: MMF runs on Serverless. Try the [notebooks](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/serverless).
-- Jul 2025: Added the MMF architecture [README](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/README.md).
-- Jul 2025: Decommissioned R models.
-- Feb 2025: [AutoTBATS](https://nixtlaverse.nixtla.io/statsforecast/src/core/models.html#autotbats) and [AutoMFLES](https://nixtlaverse.nixtla.io/statsforecast/src/core/models.html#automfles) from statsforecast are available. Try the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/local_univariate_daily.ipynb).
-- Feb 2025: [Prophet](https://www.sktime.net/en/stable/api_reference/auto_generated/sktime.forecasting.fbprophet.Prophet.html) is available for univariate forecasting via sktime. Try the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/local_univariate_daily.ipynb).
-- Feb 2025: Added a post evaluation [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/post-evaluation-analysis.ipynb) for fine-grained model selection.
-- Feb 2025: Added [README](https://github.com/databricks-industry-solutions/many-model-forecasting/tree/main/mmf_sa/models) for a comprehensive list of supported models.
-- Jan 2025: [TimesFM](https://github.com/google-research/timesfm) is available for univariate and covariate forecasting. Try the [univariate](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/foundation_daily.ipynb) and [covariate](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/external_regressors/foundation_external_regressors_daily.ipynb) notebooks.
-- Jan 2025: [Chronos Bolt](https://github.com/amazon-science/chronos-forecasting) models are available for univariate forecasting. Try the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/foundation_daily.ipynb).
-- Jan 2025: [Moirai MoE](https://github.com/SalesforceAIResearch/uni2ts) models are available for univariate forecasting. Try the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/foundation_daily.ipynb).
-- Jan 2025: Added support for hourly (`freq="H"`) and weekly (`freq="W"`) time series . Try the [hourly](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/hourly) and [weekly](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/weekly) notebooks.
 
 ## Getting started
 
@@ -204,30 +197,19 @@ We encourage you to read through [examples/daily/global_daily.ipynb](https://git
 
 ### Foundation Models
 
-Foundation time series models are mostly transformer based models pretrained on millions or billions of time points. These models can perform analysis (i.e. forecasting, anomaly detection, classification) on a previously unseen time series without training or tuning. We support open source models from multiple sources: [chronos](https://github.com/amazon-science/chronos-forecasting), [timesfm](https://github.com/google-research/timesfm), and [moirai](https://blog.salesforceairesearch.com/moirai/). This is a rapidly changing field, and we are working on updating the supported models and new features as the field evolves.
+Foundation time series models are mostly transformer based models pretrained on millions or billions of time points. These models can perform analysis (i.e. forecasting, anomaly detection, classification) on a previously unseen time series without training or tuning. We support open source models from multiple sources: [chronos](https://github.com/amazon-science/chronos-forecasting) and [timesfm](https://github.com/google-research/timesfm). This is a rapidly changing field, and we are working on updating the supported models and new features as the field evolves.
 
-To get started, attach the [examples/daily/foundation_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/foundation_daily.ipynb) notebook to a cluster running [DBR 15.4LTS for ML](https://docs.databricks.com/en/release-notes/runtime/15.4lts-ml.html). We recommend using a single-node cluster with multiple GPU instances such as [g5.12xlarge [A10G]](https://aws.amazon.com/ec2/instance-types/g5/) on AWS or [Standard_NV36ads_A10_v5](https://learn.microsoft.com/en-us/azure/virtual-machines/nva10v5-series) on Azure. Multi-node setup is currently not supported. 
+To get started, attach the [examples/daily/foundation_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/foundation_daily.ipynb) notebook to a cluster running [DBR 18.0 for ML](https://docs.databricks.com/en/release-notes/runtime/18.0-ml.html) or later. We recommend using a single-node cluster with multiple GPU instances such as [g5.12xlarge [A10G]](https://aws.amazon.com/ec2/instance-types/g5/) on AWS or [Standard_NV36ads_A10_v5](https://learn.microsoft.com/en-us/azure/virtual-machines/nva10v5-series) on Azure. Multi-node setup is currently not supported. 
 
 You can choose the models you want to evaluate and forecast by specifying them in a list:
 
 ```python
 active_models = [
-    "ChronosT5Tiny",
-    "ChronosT5Mini",
-    "ChronosT5Small",
-    "ChronosT5Base",
-    "ChronosT5Large",
     "ChronosBoltTiny",
     "ChronosBoltMini",
     "ChronosBoltSmall",
     "ChronosBoltBase",
-    "MoiraiSmall",
-    "MoiraiBase",
-    "MoiraiLarge",
-    "MoiraiMoESmall",
-    "MoiraiMoEBase",
-    "TimesFM_1_0_200m",
-    "TimesFM_2_0_500m",
+    "TimesFM_2_5_200m",
 ]
 ```
 
@@ -253,7 +235,7 @@ We encourage you to read through [examples/daily/foundation_daily.ipynb](https:/
 
 #### Using Time Series Foundation Models on Databricks
 
-If you want to try out time series foundation models on Databricks without MMF, you can find example notebooks in [databricks-industry-solutions/transformer_forecasting](https://github.com/databricks-industry-solutions/transformer_forecasting). These notebooks will show you how you can load, distribute the inference, fine-tune, register, deploy a model and generate online forecasts on it. We have notebooks for [TimeGPT](https://docs.nixtla.io/), [Chronos](https://github.com/amazon-science/chronos-forecasting), [Moirai](https://github.com/SalesforceAIResearch/uni2ts), and [TimesFM](https://github.com/google-research/timesfm).
+If you want to try out time series foundation models on Databricks without MMF, you can find example notebooks in [databricks-industry-solutions/transformer_forecasting](https://github.com/databricks-industry-solutions/transformer_forecasting). These notebooks will show you how you can load, distribute the inference, fine-tune, register, deploy a model and generate online forecasts on it. We have notebooks for [TimeGPT](https://docs.nixtla.io/), [Chronos](https://github.com/amazon-science/chronos-forecasting), and [TimesFM](https://github.com/google-research/timesfm).
 
 ## [Vector Lab](https://www.youtube.com/@VectorLab) - Many Model Forecasting
 

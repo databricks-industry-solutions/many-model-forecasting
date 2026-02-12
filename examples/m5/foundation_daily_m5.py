@@ -14,22 +14,11 @@ user = spark.sql('select current_user() as user').collect()[0]['user'] # User em
 # COMMAND ----------
 
 active_models = [
-    "ChronosT5Tiny",
-    "ChronosT5Mini",
-    "ChronosT5Small",
-    "ChronosT5Base",
-    "ChronosT5Large",
     "ChronosBoltTiny",
     "ChronosBoltMini",
     "ChronosBoltSmall",
     "ChronosBoltBase",
-    "MoiraiSmall",
-    "MoiraiBase",
-    "MoiraiLarge",
-    "MoiraiMoESmall",
-    "MoiraiMoEBase",
-    "TimesFM_1_0_200m",
-    "TimesFM_2_0_500m",
+    "TimesFM_2_5_200m",
 ]
 
 # COMMAND ----------

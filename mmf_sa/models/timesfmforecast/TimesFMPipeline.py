@@ -33,17 +33,13 @@ class TimesFMForecaster(ForecastingRegressor):
         """Lazy-load the TimesFM model on the driver (for single-GPU fallback with covariates)."""
         if self.model is None:
             import timesfm
-            self.model = timesfm.TimesFm(
-                hparams=timesfm.TimesFmHparams(
-                    backend="gpu",
-                    per_core_batch_size=32,
-                    horizon_len=self.params.prediction_length,
-                    **self.model_hparams,
-                ),
-                checkpoint=timesfm.TimesFmCheckpoint(
-                    huggingface_repo_id=self.repo,
-                ),
+            self.model = timesfm.TimesFM_2p5_200M_torch.from_pretrained(self.repo)
+            forecast_config = timesfm.ForecastConfig(
+                max_context=self.model_hparams.get("context_len", 512),
+                max_horizon=max(self.params.prediction_length, 128),
+                per_core_batch_size=32,
             )
+            self.model.compile(forecast_config)
         return self.model
 
     def register(self, registered_model_name: str):
@@ -58,9 +54,8 @@ class TimesFMForecaster(ForecastingRegressor):
             signature=signature,
             #input_example=input_example,
             pip_requirements=[
-                "timesfm[torch]==1.2.6",
+                "timesfm[torch] @ git+https://github.com/google-research/timesfm.git",
                 "git+https://github.com/databricks-industry-solutions/many-model-forecasting.git",
-                "pyspark==3.5.0",
             ],
         )
 
@@ -155,7 +150,6 @@ class TimesFMForecaster(ForecastingRegressor):
         and runs distributed inference across multiple GPUs."""
         repo = self.repo
         prediction_length = self.params["prediction_length"]
-        freq = self.params["freq"]
         model_hparams = self.model_hparams
         num_devices = device_count
 
@@ -175,27 +169,21 @@ class TimesFMForecaster(ForecastingRegressor):
             os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
             torch.cuda.set_device(0)  # Device 0 within the visible set
 
-            # Load the model on the assigned GPU
-            model = timesfm.TimesFm(
-                hparams=timesfm.TimesFmHparams(
-                    backend="gpu",
-                    per_core_batch_size=32,
-                    horizon_len=prediction_length,
-                    **model_hparams,
-                ),
-                checkpoint=timesfm.TimesFmCheckpoint(
-                    huggingface_repo_id=repo,
-                ),
+            # Load and compile the model on the assigned GPU
+            model = timesfm.TimesFM_2p5_200M_torch.from_pretrained(repo)
+            forecast_config = timesfm.ForecastConfig(
+                max_context=model_hparams.get("context_len", 512),
+                max_horizon=max(prediction_length, 128),
+                per_core_batch_size=32,
             )
-
-            freq_index = 0 if freq in ("H", "D") else 1
+            model.compile(forecast_config)
 
             results = []
             for bulk in bulk_iterator:
                 inputs = [np.array(list(series), dtype=np.float64) for series in bulk]
                 forecasts, _ = model.forecast(
+                    horizon=prediction_length,
                     inputs=inputs,
-                    freq=[freq_index] * len(inputs),
                 )
                 results.extend([arr.astype(np.float64) for arr in forecasts])
             yield pd.Series(results)
@@ -258,7 +246,6 @@ class TimesFMForecaster(ForecastingRegressor):
             df_union = df
 
         forecast_input = [group['y'].values for _, group in df.groupby('unique_id')]
-        freq_index = 0 if self.params.freq in ("H", "D") else 1
         dynamic_numerical_covariates = {}
         if 'dynamic_future_numerical' in self.params.keys():
             for var in self.params.dynamic_future_numerical:
@@ -280,17 +267,25 @@ class TimesFMForecaster(ForecastingRegressor):
             and not static_numerical_covariates \
             and not static_categorical_covariates:
             forecasts, _ = model.forecast(
+                horizon=self.params.prediction_length,
                 inputs=forecast_input,
-                freq=[freq_index] * len(forecast_input)
             )
         else:
+            # Recompile with return_backcast=True required by forecast_with_covariates
+            import timesfm
+            xreg_config = timesfm.ForecastConfig(
+                max_context=self.model_hparams.get("context_len", 512),
+                max_horizon=max(self.params.prediction_length, 128),
+                per_core_batch_size=32,
+                return_backcast=True,
+            )
+            model.compile(xreg_config)
             forecasts, _ = model.forecast_with_covariates(
                 inputs=forecast_input,
                 dynamic_numerical_covariates=dynamic_numerical_covariates,
                 dynamic_categorical_covariates=dynamic_categorical_covariates,
                 static_numerical_covariates=static_numerical_covariates,
                 static_categorical_covariates=static_categorical_covariates,
-                freq=[freq_index] * len(forecast_input),
                 xreg_mode="xreg + timesfm",  # default
                 ridge=0.0,
                 force_on_cpu=False,
@@ -367,64 +362,42 @@ class TimesFMForecaster(ForecastingRegressor):
         return metrics
 
 
-class TimesFM_1_0_200m(TimesFMForecaster):
+class TimesFM_2_5_200m(TimesFMForecaster):
     def __init__(self, params):
         super().__init__(params)
         self.params = params
-        self.repo = "google/timesfm-1.0-200m-pytorch"
+        self.repo = "google/timesfm-2.5-200m-pytorch"
         self.model_hparams = {}
-
-
-class TimesFM_2_0_500m(TimesFMForecaster):
-    def __init__(self, params):
-        super().__init__(params)
-        self.params = params
-        self.repo = "google/timesfm-2.0-500m-pytorch"
-        self.model_hparams = {
-            "num_layers": 50,
-            "use_positional_embedding": False,
-            "context_len": 2048,
-        }
 
 
 class TimesFMModel(mlflow.pyfunc.PythonModel):
     def __init__(self, params, repo):
-        import timesfm
-        self.params = params
+        # Store only simple Python types for pickling compatibility.
+        # The heavy model is loaded lazily in predict().
+        self.prediction_length = int(params["prediction_length"])
         self.repo = repo
-        #self.backend = "gpu" if torch.cuda.is_available() else "cpu"
-        if self.repo == "google/timesfm-1.0-200m-pytorch":
-            self.model = timesfm.TimesFm(
-                hparams=timesfm.TimesFmHparams(
-                    backend="gpu",
-                    per_core_batch_size=32,
-                    horizon_len=self.params.prediction_length,
-                ),
-                checkpoint=timesfm.TimesFmCheckpoint(
-                    huggingface_repo_id=self.repo,
-                ),
-            )
-        else:
-            self.model = timesfm.TimesFm(
-                hparams=timesfm.TimesFmHparams(
-                    backend="gpu",
-                    per_core_batch_size=32,
-                    horizon_len=self.params.prediction_length,
-                    num_layers=50,
-                    use_positional_embedding=False,
-                    context_len=2048,
-                ),
-                checkpoint=timesfm.TimesFmCheckpoint(
-                    huggingface_repo_id=self.repo
-                ),
-        )
+        self.model = None
 
-    def predict(self, context, input_df, params=None):
-        # Generate forecasts on the input DataFrame
-        forecast_df = self.model.forecast_on_df(
-            inputs=input_df,  # Input DataFrame containing the time series data.
-            freq=self.params.freq,  # Frequency of the time series data, set to daily.
-            value_name=self.params.target,  # Column name in the DataFrame containing the values to forecast.
-            num_jobs=-1,  # Number of parallel jobs to run, set to -1 to use all available processors.
+    def _load_model(self):
+        if self.model is None:
+            import timesfm
+            self.model = timesfm.TimesFM_2p5_200M_torch.from_pretrained(self.repo)
+            forecast_config = timesfm.ForecastConfig(
+                max_context=512,
+                max_horizon=max(self.prediction_length, 128),
+                per_core_batch_size=32,
+            )
+            self.model.compile(forecast_config)
+
+    def predict(self, context, input_data, params=None):
+        import numpy as np
+        self._load_model()
+        # input_data is expected to be a numpy array of shape (batch, context)
+        if hasattr(input_data, 'values'):
+            input_data = input_data.values
+        inputs = [input_data[i] for i in range(input_data.shape[0])]
+        point_forecast, _ = self.model.forecast(
+            horizon=self.prediction_length,
+            inputs=inputs,
         )
-        return forecast_df  # Return the forecast DataFrame
+        return point_forecast

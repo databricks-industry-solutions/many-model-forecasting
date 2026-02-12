@@ -314,46 +314,6 @@ models:
     scaler_type: [ "robust", "standard" ]
     revin: [ False, True ]
 
-  ChronosT5Tiny:
-    module: mmf_sa.models.chronosforecast.ChronosPipeline
-    model_class: ChronosT5Tiny
-    framework: Chronos
-    model_type: foundation
-    num_samples: 10
-    batch_size: 16
-
-  ChronosT5Mini:
-    module: mmf_sa.models.chronosforecast.ChronosPipeline
-    model_class: ChronosT5Mini
-    framework: Chronos
-    model_type: foundation
-    num_samples: 10
-    batch_size: 16
-
-  ChronosT5Small:
-    module: mmf_sa.models.chronosforecast.ChronosPipeline
-    model_class: ChronosT5Small
-    framework: Chronos
-    model_type: foundation
-    num_samples: 10
-    batch_size: 8
-
-  ChronosT5Base:
-    module: mmf_sa.models.chronosforecast.ChronosPipeline
-    model_class: ChronosT5Base
-    framework: Chronos
-    model_type: foundation
-    num_samples: 10
-    batch_size: 8
-
-  ChronosT5Large:
-    module: mmf_sa.models.chronosforecast.ChronosPipeline
-    model_class: ChronosT5Large
-    framework: Chronos
-    model_type: foundation
-    num_samples: 10
-    batch_size: 2
-
   ChronosBoltTiny:
     module: mmf_sa.models.chronosforecast.ChronosPipeline
     model_class: ChronosBoltTiny
@@ -440,14 +400,8 @@ models:
     patch_size: 32
     batch_size: 10
 
-  TimesFM_1_0_200m:
+  TimesFM_2_5_200m:
     module: mmf_sa.models.timesfmforecast.TimesFMPipeline
-    model_class: TimesFM_1_0_200m
-    framework: TimesFM
-    model_type: foundation
-
-  TimesFM_2_0_500m:
-    module: mmf_sa.models.timesfmforecast.TimesFMPipeline
-    model_class: TimesFM_2_0_500m
+    model_class: TimesFM_2_5_200m
     framework: TimesFM
     model_type: foundation

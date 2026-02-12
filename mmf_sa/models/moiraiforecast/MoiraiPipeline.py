@@ -45,9 +45,8 @@ class MoiraiForecaster(ForecastingRegressor):
             signature=signature,
             input_example=input_example,
             pip_requirements=[
-                "uni2ts==1.2.0",
+                "uni2ts==2.0.0",
                 "git+https://github.com/databricks-industry-solutions/many-model-forecasting.git",
-                "pyspark==3.5.0",
             ],
         )
 

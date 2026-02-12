@@ -1,5 +1,4 @@
 -r requirements.txt
--c constraints.txt
-chronos-forecasting==1.4.1
-uni2ts==1.2.0
-timesfm[torch]==1.3.0
+timesfm[torch] @ git+https://github.com/google-research/timesfm.git
+chronos-forecasting==2.2.2
+utilsforecast==0.2.15

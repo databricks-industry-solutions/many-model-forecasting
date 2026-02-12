@@ -42,13 +42,10 @@ class ChronosForecaster(ForecastingRegressor):
             signature=signature,
             input_example=input_example,
             pip_requirements=[  # List of pip requirements
-                "torch==2.3.1",
-                "torchvision==0.18.1",
-                "transformers==4.41.2",
-                "cloudpickle==2.2.1",
-                "chronos-forecasting==1.4.1",
+                "torch>=2.3.1",
+                "transformers>=4.41.2",
+                "chronos-forecasting==2.2.2",
                 "git+https://github.com/databricks-industry-solutions/many-model-forecasting.git",
-                "pyspark==3.5.0",
             ],
         )
 
@@ -174,7 +171,7 @@ class ChronosForecaster(ForecastingRegressor):
             pipeline = BaseChronosPipeline.from_pretrained(
                 repo,
                 device_map=f"cuda:{gpu_id}",
-                torch_dtype=torch.bfloat16,
+                dtype=torch.bfloat16,
             )
 
             # inference
@@ -184,47 +181,12 @@ class ChronosForecaster(ForecastingRegressor):
                     batch = bulk[i:i+self.params["batch_size"]]
                     contexts = [torch.tensor(list(series)) for series in batch]
                     forecasts = pipeline.predict(
-                        context=contexts,
+                        inputs=contexts,
                         prediction_length=self.params["prediction_length"],
                     )
                     median.extend([np.median(forecast, axis=0) for forecast in forecasts])
             yield pd.Series(median)
         return predict_udf
-
-
-class ChronosT5Tiny(ChronosForecaster):
-    def __init__(self, params):
-        super().__init__(params)
-        self.params = params
-        self.repo = "amazon/chronos-t5-tiny"
-
-
-class ChronosT5Mini(ChronosForecaster):
-    def __init__(self, params):
-        super().__init__(params)
-        self.params = params
-        self.repo = "amazon/chronos-t5-mini"
-
-
-class ChronosT5Small(ChronosForecaster):
-    def __init__(self, params):
-        super().__init__(params)
-        self.params = params
-        self.repo = "amazon/chronos-t5-small"
-
-
-class ChronosT5Base(ChronosForecaster):
-    def __init__(self, params):
-        super().__init__(params)
-        self.params = params
-        self.repo = "amazon/chronos-t5-base"
-
-
-class ChronosT5Large(ChronosForecaster):
-    def __init__(self, params):
-        super().__init__(params)
-        self.params = params
-        self.repo = "amazon/chronos-t5-large"
 
 
 class ChronosBoltTiny(ChronosForecaster):
@@ -272,7 +234,7 @@ class ChronosModel(mlflow.pyfunc.PythonModel):
     def predict(self, context, input_data, params=None):
         history = [torch.tensor(list(series)) for series in input_data]
         forecast = self.pipeline.predict(
-            context=history,
+            inputs=history,
             prediction_length=self.prediction_length,
         )
         return forecast.numpy()

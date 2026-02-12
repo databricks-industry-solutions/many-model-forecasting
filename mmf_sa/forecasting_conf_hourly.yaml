@@ -38,8 +38,6 @@ active_models:
   - StatsForecastCrostonOptimized
   - StatsForecastCrostonSBA
   - SKTimeProphet
-  - SKTimeLgbmDsDt
-  - SKTimeTBats
   - NeuralForecastRNN
   - NeuralForecastLSTM
   - NeuralForecastNBEATSx
@@ -50,16 +48,11 @@ active_models:
   - NeuralForecastAutoNHITS
   - NeuralForecastAutoTiDE
   - NeuralForecastAutoPatchTST
-  - ChronosT5Tiny
-  - ChronosT5Mini
-  - ChronosT5Small
-  - ChronosT5Base
-  - ChronosT5Large
-  - MoiraiSmall
-  - MoiraiBase
-  - MoiraiLarge
-  - TimesFM_1_0_200m
-  - TimesFM_2_0_500m
+  - ChronosBoltTiny
+  - ChronosBoltMini
+  - ChronosBoltSmall
+  - ChronosBoltBase
+  - TimesFM_2_5_200m
 
 #Here we can override hyperparameters for built-in models
 models:
