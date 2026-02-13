@@ -3,15 +3,24 @@ name = "mmf_sa"
 version = "0.0.1"
 dependencies = [
     "omegaconf==2.3.0",
-    "statsforecast==2.0.0",
-    "neuralforecast==2.0.0",
-    "tbats==1.1.3",
-    "sktime==0.29.0",
-    "lightgbm==4.3.0",
-    "datasetsforecast==0.0.8",
+    "sktime==0.40.1",
+    "mlflow>=3.1.4",
 ]
 
 [project.optional-dependencies]
+local = [
+    "statsforecast==2.0.0",
+    "prophet==1.1.6",
+]
+global = [
+    "pandas==2.2.3",
+    "neuralforecast==3.1.4",
+]
+foundation = [
+    "timesfm[torch] @ git+https://github.com/google-research/timesfm.git",
+    "chronos-forecasting==2.2.2",
+    "utilsforecast==0.2.15",
+]
 tests = [
     "setuptools",
     "wheel",
@@ -25,8 +34,11 @@ tests = [
     "hyperopt",
     "plotly",
     "black",
-    "datasetsforecast"
+    "datasetsforecast",
 ]
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [build-system]
 requires = ["hatchling"]

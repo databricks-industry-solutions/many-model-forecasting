@@ -111,7 +111,7 @@ models:
   ModelName:
     module: path.to.model.module
     model_class: ModelClassName
-    framework: StatsForecast|NeuralForecast|SKTime|Chronos|Moirai|TimesFM
+    framework: StatsForecast|NeuralForecast|SKTime|Chronos|Moirai(disabled)|TimesFM
     model_type: local|global|foundation
     model_spec:
       parameter1: value1
@@ -133,7 +133,7 @@ models:
 
 3. **Foundation Models**:
    - Pre-trained models adapted for specific tasks
-   - Examples: ChronosBoltBase, TimesFM_2_0_500m
+   - Examples: ChronosBoltBase, TimesFM_2_5_200m
    - Zero-shot learning capabilities
 
 ### Abstract Model Interface
