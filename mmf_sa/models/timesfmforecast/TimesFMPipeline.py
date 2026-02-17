@@ -238,6 +238,12 @@ class TimesFMForecaster(ForecastingRegressor):
             model.compile(forecast_config)
 
             for batch_tuple in bulk_iterator:
+                # When a single column is passed, PySpark delivers a bare
+                # pd.Series instead of a one-element tuple.  Normalise so
+                # the rest of the code can always index by position.
+                if not isinstance(batch_tuple, tuple):
+                    batch_tuple = (batch_tuple,)
+
                 y_batch = batch_tuple[0]
                 inputs = [
                     np.array(list(series), dtype=np.float64)
