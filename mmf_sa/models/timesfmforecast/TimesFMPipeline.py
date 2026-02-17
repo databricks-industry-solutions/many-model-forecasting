@@ -10,7 +10,7 @@ from sktime.performance_metrics.forecasting import (
     MeanSquaredError,
     MeanAbsolutePercentageError,
 )
-from typing import Iterator
+from typing import Iterator, Tuple
 from pyspark.sql.functions import collect_list, pandas_udf
 from pyspark.sql import DataFrame
 from utilsforecast.processing import make_future_dataframe
@@ -90,6 +90,11 @@ class TimesFMForecaster(ForecastingRegressor):
                     features = features + self.params.dynamic_future_categorical
                 except Exception as e:
                     raise MissingFeatureError(f"Dynamic future categorical missing: {e}")
+            if 'static_features' in self.params.keys():
+                try:
+                    features = features + self.params.static_features
+                except Exception as e:
+                    raise MissingFeatureError(f"Static features missing: {e}")
             _df = df[features]
             _df = (
                 _df.rename(
@@ -124,51 +129,101 @@ class TimesFMForecaster(ForecastingRegressor):
             )
         return _df.sort_values(by=["unique_id", "ds"])
 
-    def prepare_data_for_spark(self, df: pd.DataFrame, spark) -> DataFrame:
+    def prepare_data_for_spark(self, hist_df: pd.DataFrame, spark,
+                               val_df: pd.DataFrame = None) -> DataFrame:
         """Convert pandas DataFrame to Spark DataFrame grouped by unique_id with collected lists.
-        Used by the distributed multi-GPU prediction path."""
-        features = [self.params.group_id, self.params.date_col, self.params.target]
-        _df = df[features].rename(columns={
-            self.params.group_id: "unique_id",
-            self.params.date_col: "ds",
-            self.params.target: "y",
-        }).sort_values(by=["unique_id", "ds"])
+        Used by the distributed multi-GPU prediction path. Supports covariates.
 
-        sdf = spark.createDataFrame(_df)
-        sdf = (
-            sdf.groupBy("unique_id")
-            .agg(
-                collect_list("ds").alias("ds"),
-                collect_list("y").alias("y"),
-            )
+        The resulting Spark DataFrame has one row per unique_id with columns:
+          - ``ds``: array of historical timestamps
+          - ``y``: array of historical target values
+          - one array column per dynamic covariate (spanning history + future)
+          - one scalar column per static feature
+        """
+        dyn_num_vars = list(self.params.get("dynamic_future_numerical", []))
+        dyn_cat_vars = list(self.params.get("dynamic_future_categorical", []))
+        static_vars = list(self.params.get("static_features", []))
+        dynamic_vars = dyn_num_vars + dyn_cat_vars
+
+        hist_pdf = self.prepare_data(hist_df)
+
+        # Core Spark DataFrame: y and ds from historical data only
+        core_pdf = hist_pdf[["unique_id", "ds", "y"]].sort_values(
+            by=["unique_id", "ds"]
         )
-        return sdf
+        core_sdf = spark.createDataFrame(core_pdf)
+        core_sdf = core_sdf.groupBy("unique_id").agg(
+            collect_list("ds").alias("ds"),
+            collect_list("y").alias("y"),
+        )
 
-    def create_predict_udf(self, device_count):
+        # Dynamic covariate columns (from union of historical + future data)
+        if dynamic_vars:
+            if val_df is not None:
+                future_pdf = self.prepare_data(val_df, future=True)
+                union_pdf = pd.concat(
+                    [hist_pdf, future_pdf], axis=0, join="outer", ignore_index=True
+                ).sort_values(by=["unique_id", "ds"])
+            else:
+                union_pdf = hist_pdf.sort_values(by=["unique_id", "ds"])
+
+            cov_pdf = union_pdf[["unique_id"] + dynamic_vars]
+            cov_sdf = spark.createDataFrame(cov_pdf)
+            cov_agg = [collect_list(v).alias(v) for v in dynamic_vars]
+            cov_sdf = cov_sdf.groupBy("unique_id").agg(*cov_agg)
+            core_sdf = core_sdf.join(cov_sdf, on="unique_id", how="left")
+
+        # Static feature columns (scalar per unique_id, from original data)
+        if static_vars:
+            static_pdf = hist_df[
+                [self.params.group_id] + static_vars
+            ].drop_duplicates(subset=[self.params.group_id])
+            static_pdf = static_pdf.rename(
+                columns={self.params.group_id: "unique_id"}
+            )
+            static_sdf = spark.createDataFrame(static_pdf)
+            core_sdf = core_sdf.join(static_sdf, on="unique_id", how="left")
+
+        return core_sdf
+
+    def create_predict_udf(self, device_count, col_map=None):
         """Create a pandas UDF that loads the TimesFM model inside each Spark worker
-        and runs distributed inference across multiple GPUs."""
+        and runs distributed inference across multiple GPUs.
+
+        Parameters
+        ----------
+        device_count : int
+            Number of GPUs available (used for partition-to-GPU mapping).
+        col_map : list[tuple[str, str]] or None
+            Ordered mapping of covariate columns that the UDF will receive
+            after the leading ``y`` column.  Each entry is
+            ``(category, variable_name)`` where *category* is one of
+            ``"dyn_num"``, ``"dyn_cat"``, ``"stat_num"``, ``"stat_cat"``.
+            When *None* or empty the UDF performs plain forecasting without
+            covariates.
+        """
         repo = self.repo
         prediction_length = self.params["prediction_length"]
         model_hparams = self.model_hparams
         num_devices = device_count
+        _col_map = list(col_map) if col_map else []
+        _has_covariates = len(_col_map) > 0
 
         @pandas_udf('array<double>')
-        def predict_udf(bulk_iterator: Iterator[pd.Series]) -> Iterator[pd.Series]:
+        def predict_udf(
+            bulk_iterator: Iterator[Tuple[pd.Series, ...]]
+        ) -> Iterator[pd.Series]:
             import torch
             import timesfm
             import numpy as np
             import pandas as pd
             from pyspark import TaskContext
 
-            # Assign this worker to a specific GPU based on partition ID
             ctx = TaskContext.get()
             partition_id = ctx.partitionId() if ctx else 0
             gpu_id = partition_id % num_devices
             torch.cuda.set_device(gpu_id)
 
-            # Load the model (defaults to cuda:0 internally) then relocate
-            # to the assigned GPU by overriding the hardcoded device attribute
-            # and moving all parameters.
             model = timesfm.TimesFM_2p5_200M_torch.from_pretrained(repo)
             inner_module = object.__getattribute__(model, 'model')
             inner_module.device = torch.device(f"cuda:{gpu_id}")
@@ -178,18 +233,63 @@ class TimesFMForecaster(ForecastingRegressor):
                 max_context=model_hparams.get("context_len", 512),
                 max_horizon=max(prediction_length, 128),
                 per_core_batch_size=32,
+                return_backcast=_has_covariates,
             )
             model.compile(forecast_config)
 
-            results = []
-            for bulk in bulk_iterator:
-                inputs = [np.array(list(series), dtype=np.float64) for series in bulk]
-                forecasts, _ = model.forecast(
-                    horizon=prediction_length,
-                    inputs=inputs,
+            for batch_tuple in bulk_iterator:
+                y_batch = batch_tuple[0]
+                inputs = [
+                    np.array(list(series), dtype=np.float64)
+                    for series in y_batch
+                ]
+
+                if not _has_covariates:
+                    forecasts, _ = model.forecast(
+                        horizon=prediction_length,
+                        inputs=inputs,
+                    )
+                else:
+                    dyn_num_dict = {}
+                    dyn_cat_dict = {}
+                    stat_num_dict = {}
+                    stat_cat_dict = {}
+
+                    for idx, (category, name) in enumerate(_col_map):
+                        col_batch = batch_tuple[1 + idx]
+                        if category == "dyn_num":
+                            dyn_num_dict[name] = [
+                                np.array(list(s), dtype=np.float64)
+                                for s in col_batch
+                            ]
+                        elif category == "dyn_cat":
+                            dyn_cat_dict[name] = [
+                                np.array(list(s)) for s in col_batch
+                            ]
+                        elif category == "stat_num":
+                            stat_num_dict[name] = [
+                                float(s) for s in col_batch
+                            ]
+                        elif category == "stat_cat":
+                            stat_cat_dict[name] = [
+                                str(s) for s in col_batch
+                            ]
+
+                    forecasts, _ = model.forecast_with_covariates(
+                        inputs=inputs,
+                        dynamic_numerical_covariates=dyn_num_dict,
+                        dynamic_categorical_covariates=dyn_cat_dict,
+                        static_numerical_covariates=stat_num_dict,
+                        static_categorical_covariates=stat_cat_dict,
+                        xreg_mode="xreg + timesfm",
+                        ridge=0.0,
+                        force_on_cpu=True,
+                        normalize_xreg_target_per_input=True,
+                    )
+
+                yield pd.Series(
+                    [arr.astype(np.float64) for arr in forecasts]
                 )
-                results.extend([arr.astype(np.float64) for arr in forecasts])
-            yield pd.Series(results)
 
         return predict_udf
 
@@ -198,33 +298,60 @@ class TimesFMForecaster(ForecastingRegressor):
                 val_df: pd.DataFrame = None,
                 spark=None):
         """Route to distributed or single-GPU prediction based on available context."""
-        has_covariates = (
-            'dynamic_future_numerical' in self.params.keys()
-            or 'dynamic_future_categorical' in self.params.keys()
-            or 'static_features' in self.params.keys()
-        )
-
-        if spark is not None and not has_covariates:
-            return self._predict_distributed(hist_df, spark)
+        if spark is not None:
+            return self._predict_distributed(hist_df, spark, val_df)
         else:
             return self._predict_single(hist_df, val_df)
 
-    def _predict_distributed(self, hist_df: pd.DataFrame, spark):
+    def _predict_distributed(self, hist_df: pd.DataFrame, spark,
+                             val_df: pd.DataFrame = None):
         """Distributed prediction using Spark pandas UDFs across multiple GPUs.
-        Each partition explicitly targets a specific GPU via torch.cuda.set_device."""
-        hist_sdf = self.prepare_data_for_spark(hist_df, spark)
+        Each partition explicitly targets a specific GPU via torch.cuda.set_device.
+        Supports dynamic and static covariates."""
+        # Classify covariate columns
+        dyn_num_vars = list(self.params.get("dynamic_future_numerical", []))
+        dyn_cat_vars = list(self.params.get("dynamic_future_categorical", []))
+        static_vars = list(self.params.get("static_features", []))
+
+        stat_num_vars = []
+        stat_cat_vars = []
+        for var in static_vars:
+            if pd.api.types.is_numeric_dtype(hist_df[var]):
+                stat_num_vars.append(var)
+            else:
+                stat_cat_vars.append(var)
+
+        # Build ordered column map consumed by the UDF closure.
+        # Position 0 in the UDF tuple is always ``y``; covariate columns
+        # follow in the order recorded here.
+        col_map = []
+        for var in dyn_num_vars:
+            col_map.append(("dyn_num", var))
+        for var in dyn_cat_vars:
+            col_map.append(("dyn_cat", var))
+        for var in stat_num_vars:
+            col_map.append(("stat_num", var))
+        for var in stat_cat_vars:
+            col_map.append(("stat_cat", var))
+
+        hist_sdf = self.prepare_data_for_spark(hist_df, spark, val_df)
         horizon_timestamps_udf = self.create_horizon_timestamps_udf()
         device_count = torch.cuda.device_count()
         if device_count == 0:
             device_count = 1
-        forecast_udf = self.create_predict_udf(device_count)
+        forecast_udf = self.create_predict_udf(device_count, col_map)
+
+        # Build UDF column list: y first, then covariates in col_map order
+        udf_columns = [hist_sdf.y]
+        for _, var in col_map:
+            udf_columns.append(hist_sdf[var])
 
         forecast_df = (
             hist_sdf.repartition(device_count, "unique_id")
             .select(
                 hist_sdf.unique_id,
                 horizon_timestamps_udf(hist_sdf.ds).alias("ds"),
-                forecast_udf(hist_sdf.y).alias("y"),
+                forecast_udf(*udf_columns).alias("y"),
             )
         ).toPandas()
 
@@ -238,7 +365,7 @@ class TimesFMForecaster(ForecastingRegressor):
         return forecast_df, self.model
 
     def _predict_single(self, hist_df: pd.DataFrame, val_df: pd.DataFrame = None):
-        """Single-GPU prediction (fallback for covariate case or when spark is unavailable)."""
+        """Single-GPU prediction (used when Spark session is unavailable)."""
         model = self._get_or_create_model()
         df = self.prepare_data(hist_df)
         dynamic_covariates = self.prepare_data(val_df, future=True) if val_df is not None else None
