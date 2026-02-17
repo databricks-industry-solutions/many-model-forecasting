@@ -11,7 +11,7 @@ jobs:
    runs-on: ubuntu-latest
    steps:
      - name: Checkout repo
-       uses: actions/checkout@v2
+       uses: actions/checkout@v4
      - name: Run a databricks notebook
        uses: databricks/run-notebook@v0
        with:
@@ -22,11 +22,11 @@ jobs:
          new-cluster-json: >
            {
              "num_workers": 0,
-             "spark_version": "14.3.x-cpu-ml-scala2.12",
-             "node_type_id": "Standard_D3_v2",
+             "spark_version": "17.3.x-cpu-ml-scala2.12",
+             "node_type_id": "Standard_DS3_v2",
              "azure_attributes": {
                   "availability": "ON_DEMAND_AZURE"
-                            },
+              },
              "spark_conf": {
                   "spark.master": "local[*, 4]",
                   "spark.databricks.cluster.profile": "singleNode"

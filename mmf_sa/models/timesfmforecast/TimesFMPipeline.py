@@ -52,7 +52,6 @@ class TimesFMForecaster(ForecastingRegressor):
             python_model=pipeline,
             registered_model_name=registered_model_name,
             signature=signature,
-            #input_example=input_example,
             pip_requirements=[
                 "timesfm[torch] @ git+https://github.com/google-research/timesfm.git",
                 "git+https://github.com/databricks-industry-solutions/many-model-forecasting.git",
@@ -155,7 +154,6 @@ class TimesFMForecaster(ForecastingRegressor):
 
         @pandas_udf('array<double>')
         def predict_udf(bulk_iterator: Iterator[pd.Series]) -> Iterator[pd.Series]:
-            import os
             import torch
             import timesfm
             import numpy as np
@@ -166,11 +164,16 @@ class TimesFMForecaster(ForecastingRegressor):
             ctx = TaskContext.get()
             partition_id = ctx.partitionId() if ctx else 0
             gpu_id = partition_id % num_devices
-            os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
-            torch.cuda.set_device(0)  # Device 0 within the visible set
+            torch.cuda.set_device(gpu_id)
 
-            # Load and compile the model on the assigned GPU
+            # Load the model (defaults to cuda:0 internally) then relocate
+            # to the assigned GPU by overriding the hardcoded device attribute
+            # and moving all parameters.
             model = timesfm.TimesFM_2p5_200M_torch.from_pretrained(repo)
+            inner_module = object.__getattribute__(model, 'model')
+            inner_module.device = torch.device(f"cuda:{gpu_id}")
+            inner_module.to(inner_module.device)
+
             forecast_config = timesfm.ForecastConfig(
                 max_context=model_hparams.get("context_len", 512),
                 max_horizon=max(prediction_length, 128),
@@ -208,7 +211,7 @@ class TimesFMForecaster(ForecastingRegressor):
 
     def _predict_distributed(self, hist_df: pd.DataFrame, spark):
         """Distributed prediction using Spark pandas UDFs across multiple GPUs.
-        Each partition explicitly targets a specific GPU via CUDA_VISIBLE_DEVICES."""
+        Each partition explicitly targets a specific GPU via torch.cuda.set_device."""
         hist_sdf = self.prepare_data_for_spark(hist_df, spark)
         horizon_timestamps_udf = self.create_horizon_timestamps_udf()
         device_count = torch.cuda.device_count()
