@@ -44,9 +44,9 @@ Model hyperparameters can be modified under [mmf_sa/models/models_conf.yaml](htt
 | ChronosBoltMini | [amazon/chronos-bolt-mini](https://huggingface.co/amazon/chronos-bolt-mini) |  | 
 | ChronosBoltSmall | [amazon/chronos-bolt-small](https://huggingface.co/amazon/chronos-bolt-small) |  | 
 | ChronosBoltBase | [amazon/chronos-bolt-base](https://huggingface.co/amazon/chronos-bolt-base) |  | 
-| Chronos2 | [amazon/chronos-2](https://huggingface.co/amazon/chronos-2) |  | 
-| Chronos2Small | [autogluon/chronos-2-small](https://huggingface.co/autogluon/chronos-2-small) |  | 
-| Chronos2Synth | [autogluon/chronos-2-synth](https://huggingface.co/autogluon/chronos-2-synth) |  | 
+| Chronos2 | [amazon/chronos-2](https://huggingface.co/amazon/chronos-2) | ✅ | 
+| Chronos2Small | [autogluon/chronos-2-small](https://huggingface.co/autogluon/chronos-2-small) | ✅ | 
+| Chronos2Synth | [autogluon/chronos-2-synth](https://huggingface.co/autogluon/chronos-2-synth) | ✅ | 
 | TimesFM_2_5_200m | [google/timesfm-2.5-200m-pytorch](https://huggingface.co/google/timesfm-2.5-200m-pytorch) | ✅ |
 | ~~MoiraiSmall~~ | ~~[Salesforce/moirai-1.1-R-small](https://huggingface.co/Salesforce/moirai-1.1-R-small)~~ | | *Temporarily disabled: `uni2ts` requires `torch<2.5`, incompatible with DBR ML 18.0* |
 | ~~MoiraiBase~~ | ~~[Salesforce/moirai-1.1-R-base](https://huggingface.co/Salesforce/moirai-1.1-R-base)~~ | | *Temporarily disabled* |
