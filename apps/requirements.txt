@@ -1,0 +1,4 @@
+dash-bootstrap-components
+databricks-sql-connector
+databricks-sdk
+pandas
