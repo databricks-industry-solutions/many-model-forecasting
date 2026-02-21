@@ -25,6 +25,40 @@ Use a cluster with [Databricks Runtime 17.3LTS for ML](https://docs.databricks.c
 
 To run this solution on a public [M4](https://www.kaggle.com/datasets/yogesh94/m4-forecasting-competition-dataset) dataset, clone this MMF repo into your [Databricks Repos](https://www.databricks.com/product/repos).
 
+### Installing mmf_sa without cloning the repository
+
+If you want to use `mmf_sa` as a package without cloning the entire repository, you can install it directly from GitHub using `pip`:
+
+```bash
+pip install "mmf_sa @ git+https://github.com/databricks-industry-solutions/many-model-forecasting.git"
+```
+
+MMF provides optional dependency groups for different model types. Install them as needed:
+
+```bash
+# Local statistical models (statsforecast, prophet)
+pip install "mmf_sa[local] @ git+https://github.com/databricks-industry-solutions/many-model-forecasting.git"
+
+# Global deep learning models (neuralforecast)
+pip install "mmf_sa[global] @ git+https://github.com/databricks-industry-solutions/many-model-forecasting.git"
+
+# Foundation models (chronos, timesfm)
+pip install "mmf_sa[foundation] @ git+https://github.com/databricks-industry-solutions/many-model-forecasting.git"
+```
+
+To pin to a specific version, you can use a commit hash or a tag:
+
+```bash
+pip install "mmf_sa @ git+https://github.com/databricks-industry-solutions/many-model-forecasting.git@<commit_hash_or_tag>"
+```
+
+On Databricks, use `%pip` in a notebook cell:
+
+```python
+%pip install "mmf_sa[local] @ git+https://github.com/databricks-industry-solutions/many-model-forecasting.git" --quiet
+dbutils.library.restartPython()
+```
+
 ### Local Models
 
 Local models are used to model individual time series. They could be advantageous over other types of model for their capabilities to tailor fit to individual series, offer greater interpretability, and require lower data requirements. We support models from [statsforecast](https://github.com/Nixtla/statsforecast), and [sktime](https://www.sktime.net/en/stable/). Covariates (i.e. exogenous regressors) are currently only supported for some models from statsforecast. 
