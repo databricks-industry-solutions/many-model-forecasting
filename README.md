@@ -49,7 +49,7 @@ pip install "mmf_sa[foundation] @ git+https://github.com/databricks-industry-sol
 To pin to a specific version, you can use a commit hash or a tag:
 
 ```bash
-pip install "mmf_sa @ git+https://github.com/databricks-industry-solutions/many-model-forecasting.git@<commit_hash_or_tag>"
+pip install "mmf_sa @ git+https://github.com/databricks-industry-solutions/many-model-forecasting.git@v0.1.0"
 ```
 
 On Databricks, use `%pip` in a notebook cell:
