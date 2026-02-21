@@ -309,7 +309,7 @@ def fetch_forecast_data(
     warehouse_id: str,
     run_ids=None, run_date: str = "",
     unique_ids: list[str] | None = None,
-    model: str = "__best__",
+    models: list[str] | None = None,
     group_col: str = "",
     eval_cm: dict | None = None, score_cm: dict | None = None,
 ) -> tuple[pd.DataFrame, str, str, str]:
@@ -336,6 +336,10 @@ def fetch_forecast_data(
     eval_full = f"`{catalog}`.`{schema}`.`{eval_table}`"
     score_full = f"`{catalog}`.`{schema}`.`{score_table}`"
 
+    models = models or ["__best__"]
+    want_best = "__best__" in models
+    named_models = [m for m in models if m != "__best__"]
+
     eval_conds = []
     if run_date.strip():
         eval_conds.append(f"CAST(`{e_rd}` AS DATE) = '{_esc(run_date)}'")
@@ -353,35 +357,43 @@ def fetch_forecast_data(
     rid_sf = _run_id_filter(run_ids, prefix="score.", col_map=score_cm)
     if rid_sf:
         score_conds.append(rid_sf)
-    if model != "__best__":
-        score_conds.append(f"score.`{s_model}` = '{_esc(model)}'")
-    score_extra = (" AND " + " AND ".join(score_conds)) if score_conds else ""
 
-    if model == "__best__":
-        eval_subquery = f"""
-        SELECT `{eval_group}`, `{e_model}`, avg_metric,
-            RANK() OVER (PARTITION BY `{eval_group}` ORDER BY avg_metric ASC NULLS LAST) AS rnk
+    union_parts = []
+
+    if want_best:
+        best_sub = f"""
+        SELECT `{eval_group}`, `{e_model}`, avg_metric
         FROM (
-            SELECT `{eval_group}`, `{e_model}`, AVG(`{e_mv}`) AS avg_metric
+            SELECT `{eval_group}`, `{e_model}`, AVG(`{e_mv}`) AS avg_metric,
+                RANK() OVER (PARTITION BY `{eval_group}` ORDER BY AVG(`{e_mv}`) ASC NULLS LAST) AS rnk
             FROM {eval_full}
             {eval_where}
             GROUP BY `{eval_group}`, `{e_model}`
             HAVING AVG(`{e_mv}`) IS NOT NULL
-        )"""
-        rank_filter = "WHERE eval.rnk = 1"
-    else:
-        model_cond = f"`{e_model}` = '{_esc(model)}'"
+        ) WHERE rnk = 1"""
+        union_parts.append(best_sub)
+
+    if named_models:
+        m_vals = ", ".join(f"'{_esc(m)}'" for m in named_models)
+        m_cond = f"`{e_model}` IN ({m_vals})"
         if eval_where:
-            model_where = f"{eval_where} AND {model_cond}"
+            named_where = f"{eval_where} AND {m_cond}"
         else:
-            model_where = f"WHERE {model_cond}"
-        eval_subquery = f"""
-        SELECT `{eval_group}`, `{e_model}`, AVG(`{e_mv}`) AS avg_metric, 1 AS rnk
+            named_where = f"WHERE {m_cond}"
+        named_sub = f"""
+        SELECT `{eval_group}`, `{e_model}`, AVG(`{e_mv}`) AS avg_metric
         FROM {eval_full}
-        {model_where}
+        {named_where}
         GROUP BY `{eval_group}`, `{e_model}`
         HAVING AVG(`{e_mv}`) IS NOT NULL"""
-        rank_filter = ""
+        union_parts.append(named_sub)
+
+    eval_subquery = " UNION ".join(union_parts)
+
+    if named_models and not want_best:
+        m_vals = ", ".join(f"'{_esc(m)}'" for m in named_models)
+        score_conds.append(f"score.`{s_model}` IN ({m_vals})")
+    score_extra = (" AND " + " AND ".join(score_conds)) if score_conds else ""
 
     query = f"""
     SELECT
@@ -395,8 +407,7 @@ def fetch_forecast_data(
         ON eval.`{eval_group}` = score.`{score_group}`
         AND eval.`{e_model}` = score.`{s_model}`
         {score_extra}
-    {rank_filter}
-    ORDER BY eval.`{eval_group}`
+    ORDER BY eval.`{eval_group}`, eval.`{e_model}`
     LIMIT {MAX_ROWS}
     """
 
@@ -460,6 +471,49 @@ def fetch_training_data(
     return df, group_col, date_col, value_col
 
 
+def fetch_best_model_per_group(
+    catalog: str, schema: str, eval_table: str, warehouse_id: str,
+    group_col: str, unique_ids: list[str],
+    run_date: str = "", run_ids=None,
+    col_map: dict | None = None,
+) -> dict[str, str]:
+    """Return {group_id: best_model_name} based on lowest avg metric."""
+    full = f"`{catalog}`.`{schema}`.`{eval_table}`"
+    model_col = _c(col_map, "model")
+    rd_col = _c(col_map, "run_date")
+    mv_col = _c(col_map, "metric_value")
+
+    conds = []
+    if run_date.strip():
+        conds.append(f"CAST(`{rd_col}` AS DATE) = '{_esc(run_date)}'")
+    rid_f = _run_id_filter(run_ids, col_map=col_map)
+    if rid_f:
+        conds.append(rid_f)
+    vals = ", ".join(f"'{_esc(v)}'" for v in unique_ids)
+    conds.append(f"`{group_col}` IN ({vals})")
+    where = "WHERE " + " AND ".join(conds)
+
+    query = f"""
+    SELECT `{group_col}`, `{model_col}` FROM (
+        SELECT `{group_col}`, `{model_col}`,
+            RANK() OVER (PARTITION BY `{group_col}`
+                         ORDER BY AVG(`{mv_col}`) ASC NULLS LAST) AS rnk
+        FROM {full} {where}
+        GROUP BY `{group_col}`, `{model_col}`
+        HAVING AVG(`{mv_col}`) IS NOT NULL
+    ) WHERE rnk = 1
+    """
+    conn = get_connection(warehouse_id)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(query)
+            return {str(r[0]): str(r[1]) for r in cur.fetchall()}
+    except Exception:
+        return {}
+    finally:
+        conn.close()
+
+
 def fetch_backtest_start_dates(
     catalog: str, schema: str, eval_table: str, warehouse_id: str,
     group_col: str, unique_ids: list[str] | None = None,
@@ -503,10 +557,10 @@ def fetch_backtest_data(
     catalog: str, schema: str, eval_table: str, warehouse_id: str,
     group_col: str, unique_ids: list[str],
     backtest_date: str, run_date: str = "", run_ids=None,
-    model: str = "__best__",
+    models: list[str] | None = None,
     col_map: dict | None = None,
 ) -> pd.DataFrame:
-    """Fetch forecast & actual arrays for a model at a backtest window."""
+    """Fetch forecast & actual arrays for selected models at a backtest window."""
     full = f"`{catalog}`.`{schema}`.`{eval_table}`"
     model_col = _c(col_map, "model")
     rd_col = _c(col_map, "run_date")
@@ -514,6 +568,10 @@ def fetch_backtest_data(
     bt_col = _c(col_map, "bt_start")
     fc_col = _c(col_map, "forecast")
     ac_col = _c(col_map, "actual")
+
+    models = models or ["__best__"]
+    want_best = "__best__" in models
+    named_models = [m for m in models if m != "__best__"]
 
     base_conds = []
     if run_date.strip():
@@ -535,7 +593,8 @@ def fetch_backtest_data(
     e_conds.append(
         f"CAST(e.`{bt_col}` AS DATE) = '{_esc(backtest_date)}'"
     )
-    if model == "__best__":
+
+    if want_best and not named_models:
         cte = f"""
         WITH best AS (
             SELECT `{group_col}`, `{model_col}`,
@@ -553,10 +612,35 @@ def fetch_backtest_data(
             ON e.`{group_col}` = b.`{group_col}`
             AND e.`{model_col}` = b.`{model_col}`
             AND b.rnk = 1"""
+    elif want_best and named_models:
+        m_vals = ", ".join(f"'{_esc(m)}'" for m in named_models)
+        cte = f"""
+        WITH best AS (
+            SELECT `{group_col}`, `{model_col}`,
+                RANK() OVER (
+                    PARTITION BY `{group_col}`
+                    ORDER BY AVG(`{mv_col}`) ASC NULLS LAST
+                ) AS rnk
+            FROM {full}
+            {base_where}
+            GROUP BY `{group_col}`, `{model_col}`
+            HAVING AVG(`{mv_col}`) IS NOT NULL
+        ),
+        selected_models AS (
+            SELECT `{group_col}`, `{model_col}` FROM best WHERE rnk = 1
+            UNION
+            SELECT DISTINCT `{group_col}`, `{model_col}` FROM {full}
+            {base_where} AND `{model_col}` IN ({m_vals})
+        )"""
+        join = f"""
+        INNER JOIN selected_models sm
+            ON e.`{group_col}` = sm.`{group_col}`
+            AND e.`{model_col}` = sm.`{model_col}`"""
     else:
         cte = ""
         join = ""
-        e_conds.append(f"e.`{model_col}` = '{_esc(model)}'")
+        m_vals = ", ".join(f"'{_esc(m)}'" for m in named_models)
+        e_conds.append(f"e.`{model_col}` IN ({m_vals})")
 
     query = f"""
     {cte}
@@ -571,7 +655,7 @@ def fetch_backtest_data(
       AND e.`{fc_col}`[0] IS NOT NULL
     GROUP BY e.`{group_col}`, e.`{model_col}`,
              CAST(e.`{bt_col}` AS DATE)
-    ORDER BY e.`{group_col}`
+    ORDER BY e.`{group_col}`, e.`{model_col}`
     LIMIT {MAX_ROWS}
     """
 
@@ -799,13 +883,14 @@ input_card = dbc.Card(
                 [
                     dbc.Col(
                         [
-                            dbc.Label("Model", html_for="select-model"),
+                            dbc.Label("Model(s)", html_for="select-model"),
                             dcc.Dropdown(
                                 id="select-model",
                                 options=[{"label": "Best (auto)", "value": "__best__"}],
-                                value="__best__",
-                                placeholder="Select model…",
-                                clearable=False,
+                                value=["__best__"],
+                                placeholder="Select model(s)…",
+                                multi=True,
+                                clearable=True,
                             ),
                         ],
                         md=12,
@@ -1115,7 +1200,7 @@ def populate_models(eval_table, run_date, run_ids, selected_mv_col, warehouse_id
         eval_cm["metric_value"] = selected_mv_col
 
     if not eval_table or not catalog or not schema:
-        return [best_opt], "__best__", html.Div()
+        return [best_opt], ["__best__"], html.Div()
 
     try:
         models = fetch_model_names(
@@ -1124,12 +1209,12 @@ def populate_models(eval_table, run_date, run_ids, selected_mv_col, warehouse_id
             col_map=eval_cm,
         )
     except Exception as exc:
-        return ([best_opt], "__best__",
+        return ([best_opt], ["__best__"],
                 dbc.Alert([html.Strong("Error fetching models: "), html.Code(str(exc))],
                           color="danger", dismissable=True, className="mt-2"))
 
     options = [best_opt] + [{"label": m, "value": m} for m in models]
-    return options, "__best__", html.Div()
+    return options, ["__best__"], html.Div()
 
 
 @callback(
@@ -1214,7 +1299,9 @@ def load_forecast(n_clicks, warehouse_id, catalog, schema, train_table,
     run_ids = run_ids or []
     run_date = run_date or ""
     unique_ids = unique_ids or []
-    selected_model = selected_model or "__best__"
+    selected_models = selected_model if isinstance(selected_model, list) else [selected_model or "__best__"]
+    if not selected_models:
+        selected_models = ["__best__"]
     selected_group_col = selected_group_col or ""
     selected_target_col = selected_target_col or ""
     eval_cm = {**(eval_cm or {})}
@@ -1245,7 +1332,7 @@ def load_forecast(n_clicks, warehouse_id, catalog, schema, train_table,
             catalog, schema, eval_table, score_table, warehouse_id,
             run_ids=run_ids, run_date=run_date,
             unique_ids=unique_ids or None,
-            model=selected_model,
+            models=selected_models,
             group_col=selected_group_col,
             eval_cm=eval_cm, score_cm=score_cm,
         )
@@ -1306,14 +1393,21 @@ def load_forecast(n_clicks, warehouse_id, catalog, schema, train_table,
                 *NO_BT,
             )
 
+        best_per_group = {}
+        if "__best__" in selected_models and "avg_metric" in df_raw.columns:
+            for gid in df_raw[group_col].unique():
+                grp = df_raw.loc[df_raw[group_col] == gid]
+                best_row = grp.loc[grp["avg_metric"].idxmin()]
+                best_per_group[str(gid)] = best_row["model"]
+
         fig = go.Figure()
         groups = sorted(df_flat[group_col].unique())
-        for i, gid in enumerate(groups):
-            h_color = HIST_COLORS[i % len(HIST_COLORS)]
-            f_color = FCST_COLORS[i % len(FCST_COLORS)]
+        all_models = sorted(df_flat["model"].unique())
+        multi_model = len(all_models) > 1
+        trace_idx = 0
+        for gi, gid in enumerate(groups):
             gid_str = str(gid)
-            model_name = df_flat.loc[df_flat[group_col] == gid, "model"].iloc[0]
-            legend_label = f"{gid_str} ({model_name})"
+            h_color = HIST_COLORS[gi % len(HIST_COLORS)]
 
             hist_mask = df_hist[hist_group].astype(str) == gid_str
             h = df_hist.loc[hist_mask]
@@ -1326,25 +1420,40 @@ def load_forecast(n_clicks, warehouse_id, catalog, schema, train_table,
                     line=dict(color=h_color, width=2),
                 ))
 
-            f_mask = df_flat[group_col] == gid
-            f = df_flat.loc[f_mask]
-            if not f.empty:
-                x_vals = f["forecast_dates"].tolist()
-                y_vals = f["forecast_values"].tolist()
-                if not h.empty:
-                    x_vals = [h[hist_date].iloc[-1]] + x_vals
-                    y_vals = [h[hist_value].iloc[-1]] + y_vals
-                fig.add_trace(go.Scatter(
-                    x=x_vals, y=y_vals,
-                    mode="lines",
-                    name=f"{legend_label} — forecast",
-                    legendgroup=gid_str,
-                    line=dict(color=f_color, width=2, dash="dash"),
-                ))
+            gid_models = sorted(
+                df_flat.loc[df_flat[group_col] == gid, "model"].unique()
+            )
+            best_model = best_per_group.get(gid_str)
+            if best_model and best_model in gid_models:
+                gid_models = [best_model] + [m for m in gid_models if m != best_model]
+            for model_name in gid_models:
+                f_color = FCST_COLORS[trace_idx % len(FCST_COLORS)]
+                f_mask = (df_flat[group_col] == gid) & (df_flat["model"] == model_name)
+                f = df_flat.loc[f_mask]
+                if not f.empty:
+                    x_vals = f["forecast_dates"].tolist()
+                    y_vals = f["forecast_values"].tolist()
+                    if not h.empty:
+                        x_vals = [h[hist_date].iloc[-1]] + x_vals
+                        y_vals = [h[hist_value].iloc[-1]] + y_vals
+                    is_best = best_model == model_name
+                    best_tag = " ★" if is_best else ""
+                    label = f"{gid_str} ({model_name}{best_tag})"
+                    fig.add_trace(go.Scatter(
+                        x=x_vals, y=y_vals,
+                        mode="lines",
+                        name=f"{label} — forecast",
+                        legendgroup=f"{gid_str}_{model_name}",
+                        line=dict(color=f_color, width=2, dash="dash"),
+                    ))
+                trace_idx += 1
 
+        n_traces = f"{len(groups)} series"
+        if multi_model:
+            n_traces += f", {len(all_models)} models"
         fig.update_layout(
             template="plotly_white",
-            title=f"Historical + Forecast ({len(groups)} series)",
+            title=f"Historical + Forecast ({n_traces})",
             xaxis_title="",
             yaxis_title=hist_value,
             xaxis=dict(
@@ -1385,14 +1494,58 @@ def load_forecast(n_clicks, warehouse_id, catalog, schema, train_table,
         "avg_metric": "avg_metric_value",
     })
 
+    summary_df = (
+        df_flat.drop_duplicates(subset=[group_col, "model", "avg_metric_value"])
+        [[group_col, "model", "avg_metric_value"]]
+        .sort_values([group_col, "avg_metric_value"])
+        .drop_duplicates(subset=[group_col], keep="first")
+    )
+    mv_label = _c(eval_cm, "metric_value")
+    summary_df = summary_df.rename(columns={
+        "model": "best_model",
+        "avg_metric_value": f"avg_{mv_label}",
+    })
+
+    display_df = df_flat.drop(columns=["avg_metric_value"], errors="ignore")
+    display_df = display_df.sort_values([group_col, "model", date_col]).reset_index(drop=True)
+
+    ranking_df = (
+        summary_df["best_model"]
+        .value_counts()
+        .reset_index()
+        .rename(columns={"best_model": "model", "count": "times_chosen_as_best"})
+        .sort_values("times_chosen_as_best", ascending=True)
+        .reset_index(drop=True)
+    )
+
+    rank_fig = go.Figure(go.Bar(
+        x=ranking_df["times_chosen_as_best"],
+        y=ranking_df["model"],
+        orientation="h",
+        marker_color="#636EFA",
+        text=ranking_df["times_chosen_as_best"],
+        textposition="outside",
+    ))
+    rank_fig.update_layout(
+        template="plotly_white",
+        title="Model Ranking — Times Chosen as Best",
+        xaxis_title="Times Chosen as Best",
+        yaxis_title="",
+        margin=dict(l=10, r=40, t=50, b=40),
+        height=max(300, len(ranking_df) * 35 + 100),
+    )
+
     content = html.Div(
         [
             dbc.Badge(
-                f"{df_flat[group_col].nunique()} series, {len(df_flat):,} rows",
+                f"{display_df[group_col].nunique()} series, {len(display_df):,} rows",
                 color="success",
                 className="mb-2",
             ),
-            build_datatable(df_flat, "dt-forecast"),
+            build_datatable(display_df, "dt-forecast"),
+            html.H5("Best Model per Group", className="mt-4 mb-2"),
+            build_datatable(summary_df, "dt-best-model"),
+            dcc.Graph(figure=rank_fig, className="mt-4"),
         ]
     )
     return content, html.Div(), *NO_BT
@@ -1426,7 +1579,9 @@ def render_backtest(backtest_date, warehouse_id, catalog, schema, train_table,
     warehouse_id = warehouse_id or ""
     run_date = run_date or ""
     run_ids = run_ids or []
-    selected_model = selected_model or "__best__"
+    selected_models = selected_model if isinstance(selected_model, list) else [selected_model or "__best__"]
+    if not selected_models:
+        selected_models = ["__best__"]
     selected_group_col = selected_group_col or ""
     selected_target_col = selected_target_col or ""
     eval_cm = {**(eval_cm or {})}
@@ -1460,7 +1615,7 @@ def render_backtest(backtest_date, warehouse_id, catalog, schema, train_table,
             catalog, schema, eval_table, warehouse_id,
             group_col, unique_ids, backtest_date,
             run_date=run_date, run_ids=run_ids,
-            model=selected_model,
+            models=selected_models,
             col_map=eval_cm,
         )
 
@@ -1471,47 +1626,51 @@ def render_backtest(backtest_date, warehouse_id, catalog, schema, train_table,
         if not df_hist.empty and hasattr(df_hist[hist_date].dt, "tz") and df_hist[hist_date].dt.tz is not None:
             bt_start = bt_start.tz_localize(df_hist[hist_date].dt.tz)
 
+        def _to_float_list(val):
+            if val is None:
+                return []
+            result = []
+            for x in val:
+                if x is None:
+                    continue
+                try:
+                    fv = float(x)
+                    if not math.isnan(fv):
+                        result.append(fv)
+                except (TypeError, ValueError):
+                    continue
+            return result
+
+        best_per_group = {}
+        if "__best__" in selected_models:
+            best_per_group = fetch_best_model_per_group(
+                catalog, schema, eval_table, warehouse_id,
+                group_col, unique_ids,
+                run_date=run_date, run_ids=run_ids, col_map=eval_cm,
+            )
+
         fig = go.Figure()
         groups = sorted(df_bt[group_col].astype(str).unique())
+        all_bt_models = sorted(df_bt["model"].unique())
+        multi_model = len(all_bt_models) > 1
+        trace_idx = 0
 
-        for i, gid in enumerate(groups):
-            h_color = HIST_COLORS[i % len(HIST_COLORS)]
-            f_color = FCST_COLORS[i % len(FCST_COLORS)]
+        for gi, gid in enumerate(groups):
+            h_color = HIST_COLORS[gi % len(HIST_COLORS)]
 
-            bt_row = df_bt.loc[df_bt[group_col].astype(str) == gid].iloc[0]
-            model_name = bt_row["model"]
-
-            def _to_float_list(val):
-                if val is None:
-                    return []
-                result = []
-                for x in val:
-                    if x is None:
-                        continue
-                    try:
-                        f = float(x)
-                        if not math.isnan(f):
-                            result.append(f)
-                    except (TypeError, ValueError):
-                        continue
-                return result
-
-            forecast_arr = _to_float_list(bt_row["forecast"])
-            actual_arr = _to_float_list(bt_row["actual"])
-
-            n_points = max(len(forecast_arr), len(actual_arr))
-            bt_dates = [bt_start + offset * j for j in range(n_points)]
-
-            # Historical + Actual (same color, single legend entry)
             hist_mask = (df_hist[hist_group].astype(str) == gid) & (df_hist[hist_date] < bt_start)
             h = df_hist.loc[hist_mask]
 
+            gid_rows = df_bt.loc[df_bt[group_col].astype(str) == gid]
+            first_row = gid_rows.iloc[0]
+            actual_arr = _to_float_list(first_row["actual"])
+            n_actual = len(actual_arr)
+            actual_dates = [bt_start + offset * j for j in range(n_actual)]
+
             hist_x = list(h[hist_date]) if not h.empty else []
             hist_y = [float(v) for v in h[hist_value]] if not h.empty else []
-
-            if len(actual_arr) > 0:
-                act_dates = bt_dates[:len(actual_arr)]
-                hist_x = hist_x + list(act_dates)
+            if n_actual > 0:
+                hist_x = hist_x + list(actual_dates)
                 hist_y = hist_y + actual_arr
 
             if hist_x:
@@ -1523,25 +1682,40 @@ def render_backtest(backtest_date, warehouse_id, catalog, schema, train_table,
                     line=dict(color=h_color, width=2),
                 ))
 
-            # Forecast
-            if len(forecast_arr) > 0:
-                fcst_dates = bt_dates[:len(forecast_arr)]
-                fcst_x = list(fcst_dates)
-                fcst_y = list(forecast_arr)
-                if not h.empty:
-                    fcst_x = [h[hist_date].iloc[-1]] + fcst_x
-                    fcst_y = [float(h[hist_value].iloc[-1])] + fcst_y
-                fig.add_trace(go.Scatter(
-                    x=fcst_x, y=fcst_y,
-                    mode="lines",
-                    name=f"{gid} ({model_name}) — forecast",
-                    legendgroup=gid,
-                    line=dict(color=f_color, width=2, dash="dash"),
-                ))
+            gid_models = sorted(gid_rows["model"].unique())
+            best_model = best_per_group.get(gid)
+            if best_model and best_model in gid_models:
+                gid_models = [best_model] + [m for m in gid_models if m != best_model]
+            for model_name in gid_models:
+                f_color = FCST_COLORS[trace_idx % len(FCST_COLORS)]
+                bt_row = gid_rows.loc[gid_rows["model"] == model_name].iloc[0]
+                forecast_arr = _to_float_list(bt_row["forecast"])
 
+                if len(forecast_arr) > 0:
+                    fcst_dates = [bt_start + offset * j for j in range(len(forecast_arr))]
+                    fcst_x = list(fcst_dates)
+                    fcst_y = list(forecast_arr)
+                    if not h.empty:
+                        fcst_x = [h[hist_date].iloc[-1]] + fcst_x
+                        fcst_y = [float(h[hist_value].iloc[-1])] + fcst_y
+                    is_best = best_model == model_name
+                    best_tag = " ★" if is_best else ""
+                    label = f"{gid} ({model_name}{best_tag})"
+                    fig.add_trace(go.Scatter(
+                        x=fcst_x, y=fcst_y,
+                        mode="lines",
+                        name=f"{label} — forecast",
+                        legendgroup=f"{gid}_{model_name}",
+                        line=dict(color=f_color, width=2, dash="dash"),
+                    ))
+                trace_idx += 1
+
+        n_label = f"{len(groups)} series"
+        if multi_model:
+            n_label += f", {len(all_bt_models)} models"
         fig.update_layout(
             template="plotly_white",
-            title=f"Backtest @ {backtest_date} ({len(groups)} series)",
+            title=f"Backtest @ {backtest_date} ({n_label})",
             xaxis_title="",
             yaxis_title=hist_value,
             xaxis=dict(
@@ -1554,7 +1728,7 @@ def render_backtest(backtest_date, warehouse_id, catalog, schema, train_table,
         )
 
         return html.Div([
-            dbc.Badge(f"{len(groups)} series", color="success", className="mb-2 me-2"),
+            dbc.Badge(n_label, color="success", className="mb-2 me-2"),
             dcc.Graph(figure=fig),
         ])
 
