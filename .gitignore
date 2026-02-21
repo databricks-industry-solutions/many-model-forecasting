@@ -140,5 +140,6 @@ examples/m5-examples/lightning_logs
 
 .databricks
 .claude
+.ai-dev-kit/
 docs/
 .cursor/
