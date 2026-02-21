@@ -2,6 +2,12 @@
 
 Dash app for browsing evaluation and scoring tables produced by `run_forecast`.
 
+
+
+https://github.com/user-attachments/assets/1a974656-a0a4-4788-963d-e5f48a352286
+
+
+
 ## Inputs
 
 | Field | Required | Description |
