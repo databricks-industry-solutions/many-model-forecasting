@@ -185,19 +185,25 @@ class Forecaster:
         clean_df, removed = DataQualityChecks(src_df, self.conf, self.spark).run(verbose=True)
         print("Finished quality checks")
         print("Starting evaluate_score")
+        failed_models = set()
         if evaluate:
-            self.evaluate_models()
+            failed_models = self.evaluate_models()
         if score:
-            self.score_models()
+            self.score_models(failed_models)
         print("Finished evaluate_score")
         return self.run_id
 
-    def evaluate_models(self):
+    def evaluate_models(self) -> set:
         """
         Trains and evaluates all models from the active models list.
         Parameters: self (Forecaster): A Forecaster object.
+        Returns: failed_models (set): A set of model names that failed evaluation.
+            Only global and foundation models are tracked because they register
+            to the model registry during evaluation; scoring would fail if the
+            registered model does not exist.
         """
         print("Starting evaluate_models")
+        failed_models = set()
         for model_name in self.model_registry.get_active_model_keys():
             print(f"Started evaluating {model_name}")
             try:
@@ -213,13 +219,18 @@ class Forecaster:
                     f"Error has occurred while evaluating model {model_name}: {repr(err)}",
                     exc_info=err,
                 )
+                if model_conf["model_type"] in ("global", "foundation"):
+                    failed_models.add(model_name)
             except Exception as err:
                 _logger.error(
                     f"Unexpected error while evaluating model {model_name}: {repr(err)}",
                     exc_info=err,
                 )
+                if model_conf["model_type"] in ("global", "foundation"):
+                    failed_models.add(model_name)
             print(f"Finished evaluating {model_name}")
         print("Finished evaluate_models")
+        return failed_models
 
     def evaluate_local_model(self, model_conf):
         """
@@ -490,13 +501,24 @@ class Forecaster:
             mlflow.set_tag("run_id", self.run_id)
             mlflow.log_params(model.get_params())
 
-    def score_models(self):
+    def score_models(self, failed_models: set = None):
         """
         Scores the models using the provided model configuration.
-        Parameters: self (Forecaster): A Forecaster object.
+        Models whose evaluation failed are skipped to avoid "resource does not
+        exist" errors when retrieving from the model registry.
+        Parameters:
+            self (Forecaster): A Forecaster object.
+            failed_models (set, optional): Model names that failed evaluation and
+                should be skipped during scoring. Default is None.
         """
         print("Starting run_scoring")
+        if failed_models is None:
+            failed_models = set()
         for model_name in self.model_registry.get_active_model_keys():
+            if model_name in failed_models:
+                _logger.warning(f"Skipping scoring for {model_name}: evaluation failed")
+                print(f"Skipping scoring for {model_name}: evaluation failed")
+                continue
             model_conf = self.model_registry.get_model_conf(model_name)
             print(f"Started scoring with {model_name}")
             if model_conf["model_type"] == "global":
