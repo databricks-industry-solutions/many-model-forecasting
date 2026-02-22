@@ -316,9 +316,19 @@ class Forecaster:
             backtest_offset = None
         split_date = pdf[model.params["date_col"]].max() - backtest_offset
         group_id = pdf[model.params["group_id"]].iloc[0]
+        empty_result = pd.DataFrame(
+            columns=[
+                model.params["group_id"],
+                "backtest_window_start_date",
+                "metric_name",
+                "metric_value",
+                "forecast",
+                "actual",
+                "model_pickle",
+            ]
+        )
         try:
             pdf = pdf.fillna(0)
-            # Fix here
             pdf[model.params["target"]] = pdf[model.params["target"]].clip(0)
             metrics_df = model.backtest(pdf, start=split_date, group_id=group_id)
             return metrics_df
@@ -328,23 +338,14 @@ class Forecaster:
                 exc_info=err,
                 stack_info=True,
             )
+            return empty_result
         except Exception as err:
             _logger.error(
                 f"Unexpected error evaluating group {group_id} using model {repr(model)}: {err}",
                 exc_info=err,
                 stack_info=True,
             )
-            return pd.DataFrame(
-                columns=[
-                    model.params["group_id"],
-                    "backtest_window_start_date",
-                    "metric_name",
-                    "metric_value",
-                    "forecast",
-                    "actual",
-                    "model_pickle",
-                ]
-            )
+            return empty_result
 
     def evaluate_global_model(self, model_conf):
         """
