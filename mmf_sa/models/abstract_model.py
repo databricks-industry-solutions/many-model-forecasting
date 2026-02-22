@@ -13,6 +13,31 @@ import mlflow
 from mmf_sa.exceptions import UnsupportedMetricError
 mlflow.set_registry_uri("databricks-uc")
 
+MMF_PACKAGE = "git+https://github.com/databricks-industry-solutions/many-model-forecasting.git"
+
+MODEL_PIP_REQUIREMENTS = {
+    "neuralforecast": [
+        "cloudpickle==2.2.1",
+        "neuralforecast==3.1.4",
+        "ray[tune]==2.5.0",
+        MMF_PACKAGE,
+    ],
+    "chronos": [
+        "torch>=2.3.1",
+        "transformers>=4.41.2",
+        "chronos-forecasting==2.2.2",
+        MMF_PACKAGE,
+    ],
+    "timesfm": [
+        "timesfm[torch] @ git+https://github.com/google-research/timesfm.git@2dcc66fbfe2155adba1af66aa4d564a0ee52f61e",
+        MMF_PACKAGE,
+    ],
+    "moirai": [
+        "uni2ts==2.0.0",
+        MMF_PACKAGE,
+    ],
+}
+
 
 class ForecastingRegressor(BaseEstimator, RegressorMixin):
     def __init__(self, params):

@@ -44,7 +44,7 @@ class Job(ABC):
         utils = self._get_dbutils(self.spark)
 
         if not utils:
-            self.logger.warn("No DBUtils defined in the runtime")
+            self.logger.warning("No DBUtils defined in the runtime")
         else:
             self.logger.info("DBUtils class initialized")
 

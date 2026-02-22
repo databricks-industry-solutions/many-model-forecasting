@@ -13,7 +13,7 @@ from sktime.performance_metrics.forecasting import (
 from typing import Iterator
 from pyspark.sql.functions import collect_list, pandas_udf
 from pyspark.sql import DataFrame
-from mmf_sa.models.abstract_model import ForecastingRegressor
+from mmf_sa.models.abstract_model import ForecastingRegressor, MODEL_PIP_REQUIREMENTS
 from mmf_sa.exceptions import UnsupportedMetricError, ModelPredictionError, DataPreparationError
 
 _logger = logging.getLogger(__name__)
@@ -44,10 +44,7 @@ class MoiraiForecaster(ForecastingRegressor):
             registered_model_name=registered_model_name,
             signature=signature,
             input_example=input_example,
-            pip_requirements=[
-                "uni2ts==2.0.0",
-                "git+https://github.com/databricks-industry-solutions/many-model-forecasting.git",
-            ],
+            pip_requirements=MODEL_PIP_REQUIREMENTS["moirai"],
         )
 
     def create_horizon_timestamps_udf(self):

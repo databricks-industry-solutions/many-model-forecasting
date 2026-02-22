@@ -13,7 +13,7 @@ from sktime.performance_metrics.forecasting import (
 from typing import Iterator, Tuple
 from pyspark.sql.functions import collect_list, pandas_udf
 from pyspark.sql import DataFrame
-from mmf_sa.models.abstract_model import ForecastingRegressor
+from mmf_sa.models.abstract_model import ForecastingRegressor, MODEL_PIP_REQUIREMENTS
 from mmf_sa.exceptions import (
     MissingFeatureError,
     UnsupportedMetricError,
@@ -46,12 +46,7 @@ class ChronosForecaster(ForecastingRegressor):
             registered_model_name=registered_model_name,
             signature=signature,
             input_example=input_example,
-            pip_requirements=[  # List of pip requirements
-                "torch>=2.3.1",
-                "transformers>=4.41.2",
-                "chronos-forecasting==2.2.2",
-                "git+https://github.com/databricks-industry-solutions/many-model-forecasting.git",
-            ],
+            pip_requirements=MODEL_PIP_REQUIREMENTS["chronos"],
         )
 
     def create_horizon_timestamps_udf(self):
@@ -253,12 +248,7 @@ class Chronos2Forecaster(ChronosForecaster):
             registered_model_name=registered_model_name,
             signature=signature,
             input_example=input_example,
-            pip_requirements=[
-                "torch>=2.3.1",
-                "transformers>=4.41.2",
-                "chronos-forecasting==2.2.2",
-                "git+https://github.com/databricks-industry-solutions/many-model-forecasting.git",
-            ],
+            pip_requirements=MODEL_PIP_REQUIREMENTS["chronos"],
         )
 
     def prepare_data(self, df: pd.DataFrame, future: bool = False, spark=None) -> pd.DataFrame:

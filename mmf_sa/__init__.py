@@ -109,6 +109,13 @@ def run_forecast(
     else:
         _conf = OmegaConf.create()
 
+    supported_freq = {"H", "D", "W", "M"}
+    if freq not in supported_freq:
+        raise UnsupportedFrequencyError(
+            f"Unsupported frequency '{freq}'. "
+            f"Supported frequencies: {', '.join(sorted(supported_freq))}"
+        )
+
     if freq == "H":
         base_conf = OmegaConf.create(
             pkg_resources.read_text(sys.modules[__name__], "forecasting_conf_hourly.yaml")
@@ -125,7 +132,7 @@ def run_forecast(
         base_conf = OmegaConf.create(
             pkg_resources.read_text(sys.modules[__name__], "forecasting_conf_monthly.yaml")
         )
-        
+
     _conf = OmegaConf.merge(base_conf, _conf)
 
     _data_conf = {}

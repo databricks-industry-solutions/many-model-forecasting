@@ -195,21 +195,21 @@ class AcceleratorError(InfrastructureError):
 
 
 # I/O related exceptions
-class IOError(MMFError):
+class MMFIOError(MMFError):
     """Base exception for I/O operations."""
     pass
 
 
-class FileNotFoundError(IOError):
+class MMFFileNotFoundError(MMFIOError):
     """Raised when a required file is not found."""
     pass
 
 
-class WriteError(IOError):
+class WriteError(MMFIOError):
     """Raised when writing operations fail."""
     pass
 
 
-class ReadError(IOError):
+class ReadError(MMFIOError):
     """Raised when reading operations fail."""
     pass 

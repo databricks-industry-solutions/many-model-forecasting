@@ -10,7 +10,7 @@ from sktime.performance_metrics.forecasting import (
     MeanAbsolutePercentageError,
 )
 from neuralforecast import NeuralForecast
-from mmf_sa.models.abstract_model import ForecastingRegressor
+from mmf_sa.models.abstract_model import ForecastingRegressor, MODEL_PIP_REQUIREMENTS
 from neuralforecast.auto import (
     RNN,
     LSTM,
@@ -61,13 +61,7 @@ class NeuralFcForecaster(ForecastingRegressor):
             registered_model_name=registered_model_name,
             #input_example=input_example,
             signature=signature,
-            pip_requirements=[
-                "cloudpickle==2.2.1",
-                "neuralforecast==3.1.4",
-                "ray[tune] == 2.5.0",
-                "git+https://github.com/databricks-industry-solutions/many-model-forecasting.git",
-                "pyspark==4.0.0",
-            ],
+            pip_requirements=MODEL_PIP_REQUIREMENTS["neuralforecast"],
         )
         mlflow.log_params(model.get_params())
         print(f"Model registered: {registered_model_name}")
@@ -635,7 +629,7 @@ class NeuralFcAutoRNN(NeuralFcForecaster):
 
         def config(trial):
             return dict(
-                learning_rate=trial.suggest_loguniform('learning_rate', 1e-4, 1e-1),
+                learning_rate=trial.suggest_float('learning_rate', 1e-4, 1e-1, log=True),
                 batch_size=trial.suggest_int("batch_size", 16, 32, step=8),
                 max_steps=self.params.max_steps,
                 scaler_type='robust',
@@ -692,7 +686,7 @@ class NeuralFcAutoLSTM(NeuralFcForecaster):
 
         def config(trial):
             return dict(
-                learning_rate=trial.suggest_loguniform('learning_rate', 1e-4, 1e-1),
+                learning_rate=trial.suggest_float('learning_rate', 1e-4, 1e-1, log=True),
                 batch_size=trial.suggest_int("batch_size", 16, 32, step=8),
                 max_steps=self.params.max_steps,
                 encoder_hidden_size=trial.suggest_categorical(
@@ -748,7 +742,7 @@ class NeuralFcAutoNBEATSx(NeuralFcForecaster):
 
         def config(trial):
             return dict(
-                learning_rate=trial.suggest_loguniform('learning_rate', 1e-4, 1e-1),
+                learning_rate=trial.suggest_float('learning_rate', 1e-4, 1e-1, log=True),
                 batch_size=trial.suggest_int("batch_size", 16, 32, step=8),
                 max_steps=self.params.max_steps,
                 input_size=self.params.input_size,
@@ -799,7 +793,7 @@ class NeuralFcAutoNHITS(NeuralFcForecaster):
 
         def config(trial):
             return dict(
-                learning_rate=trial.suggest_loguniform('learning_rate', 1e-4, 1e-1),
+                learning_rate=trial.suggest_float('learning_rate', 1e-4, 1e-1, log=True),
                 batch_size=trial.suggest_int("batch_size", 16, 32, step=8),
                 max_steps=self.params.max_steps,
                 input_size=self.params.input_size,
@@ -853,7 +847,7 @@ class NeuralFcAutoTiDE(NeuralFcForecaster):
 
         def config(trial):
             return dict(
-                learning_rate=trial.suggest_loguniform('learning_rate', 1e-4, 1e-1),
+                learning_rate=trial.suggest_float('learning_rate', 1e-4, 1e-1, log=True),
                 batch_size=trial.suggest_int("batch_size", 16, 32, step=8),
                 max_steps=self.params.max_steps,
                 scaler_type='robust',
@@ -918,7 +912,7 @@ class NeuralFcAutoPatchTST(NeuralFcForecaster):
 
         def config(trial):
             return dict(
-                learning_rate=trial.suggest_loguniform('learning_rate', 1e-4, 1e-1),
+                learning_rate=trial.suggest_float('learning_rate', 1e-4, 1e-1, log=True),
                 batch_size=trial.suggest_int("batch_size", 16, 32, step=8),
                 max_steps=self.params.max_steps,
                 input_size=self.params.input_size,

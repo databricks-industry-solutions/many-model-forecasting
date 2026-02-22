@@ -14,7 +14,7 @@ from typing import Iterator, Tuple
 from pyspark.sql.functions import collect_list, pandas_udf
 from pyspark.sql import DataFrame
 from utilsforecast.processing import make_future_dataframe
-from mmf_sa.models.abstract_model import ForecastingRegressor
+from mmf_sa.models.abstract_model import ForecastingRegressor, MODEL_PIP_REQUIREMENTS
 from mmf_sa.exceptions import MissingFeatureError, UnsupportedMetricError, ModelPredictionError, DataPreparationError
 
 _logger = logging.getLogger(__name__)
@@ -52,10 +52,7 @@ class TimesFMForecaster(ForecastingRegressor):
             python_model=pipeline,
             registered_model_name=registered_model_name,
             signature=signature,
-            pip_requirements=[
-                "timesfm[torch] @ git+https://github.com/google-research/timesfm.git@2dcc66fbfe2155adba1af66aa4d564a0ee52f61e",
-                "git+https://github.com/databricks-industry-solutions/many-model-forecasting.git",
-            ],
+            pip_requirements=MODEL_PIP_REQUIREMENTS["timesfm"],
         )
 
     def create_horizon_timestamps_udf(self):
