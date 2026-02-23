@@ -259,6 +259,48 @@ The system supports multiple out-of-the-box evaluation metrics:
 - **MSE**: Mean Squared Error
 - **RMSE**: Root Mean Squared Error
 
+### How Backtesting Works
+
+Backtesting uses an **expanding window** strategy to evaluate model performance across multiple historical points. Three parameters control this process:
+
+| Parameter | Description |
+|---|---|
+| `backtest_length` | Number of time steps (from the end of `train_data`) reserved for backtesting. This defines the evaluation region. |
+| `prediction_length` | The forecast horizon — how many steps ahead the model predicts at each backtest window. |
+| `stride` | How many time steps the window advances between consecutive backtests. A stride of 1 produces the maximum number of windows; larger strides reduce computation. |
+
+The number of backtest windows is approximately:
+
+```
+num_windows = (backtest_length - prediction_length) / stride + 1
+```
+
+For example, with `backtest_length=24`, `prediction_length=12`, and `stride=1`, the framework produces **12** backtest windows.
+
+An optional `train_predict_ratio` parameter (default 1) sets the minimum ratio of training data points to `prediction_length`. During data quality checks, any time series with fewer training points than `train_predict_ratio × prediction_length` is excluded.
+
+### Backtesting by Model Type
+
+The backtesting mechanism differs depending on the model type:
+
+#### Local Models
+
+Local models are trained independently for each time series. During backtesting, **the model is re-trained at every backtest split** — each window gets its own freshly fitted model. This matches the typical local-model workflow where you always retrain on the most recent available data before producing a forecast.
+
+![Backtesting for Local Models](../images/backtesting_local.jpg)
+
+#### Global Models
+
+Global models are trained once on all time series simultaneously (excluding the `backtest_length` region), and **the same trained model is reused across all backtest splits**. This is because training a global model is computationally intensive. For scoring, a separate final model is re-trained on the entire historical dataset and registered in Unity Catalog.
+
+![Backtesting for Global Models](../images/backtesting_global.jpg)
+
+#### Foundation Models
+
+Foundation models are pre-trained or fine-tuned, so **there is no training involved during evaluation or scoring — only inference**. The backtest windows are evaluated by running the foundation model's predict method on each split. The model is registered in Unity Catalog for scoring.
+
+![Backtesting for Foundation Models](../images/backtesting_foundation.jpg)
+
 ## Scoring Pipeline
 
 ### Scoring Workflow
