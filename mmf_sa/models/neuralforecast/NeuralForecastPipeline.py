@@ -283,20 +283,20 @@ class NeuralFcForecaster(ForecastingRegressor):
                 if hasattr(m, "trainer_kwargs"):
                     m.trainer_kwargs["devices"] = 1
 
-    def _disable_logger_for_distributed(self):
-        """Disable the TensorBoard logger and checkpointing for distributed training.
+    def _disable_lightning_logger(self):
+        """Disable the TensorBoard logger and checkpointing.
 
-        When ``TorchDistributor`` launches ``torchrun`` processes on worker
-        nodes, the current working directory may resolve to a read-only
-        filesystem (e.g. ``/Workspace/Repos/...`` on Databricks).  PyTorch
-        Lightning's default ``TensorBoardLogger`` tries to create a
-        ``lightning_logs/`` directory relative to the CWD, which fails with
-        ``PermissionDeniedError`` on read-only filesystems.
+        PyTorch Lightning's default ``TensorBoardLogger`` tries to create a
+        ``lightning_logs/`` directory relative to the CWD.  On Databricks this
+        fails when the CWD is a Workspace FUSE path (e.g.
+        ``/Workspace/Users/.../lightning_logs/``) because the FUSE filesystem
+        does not reliably support the random-write I/O that TensorBoard's
+        event-file writer performs, resulting in ``UnknownError: Input/output
+        error``.  The same issue occurs on read-only filesystems used by
+        ``TorchDistributor`` worker nodes.
 
         Disabling the logger and checkpointing avoids this error without
         affecting training quality — metrics are tracked via MLflow instead.
-        This is called only before distributed training and does not affect
-        local (single-GPU) training.
         """
         if not isinstance(self.model, NeuralForecast):
             return
@@ -324,9 +324,7 @@ class NeuralFcForecaster(ForecastingRegressor):
                     if static_pdf is not None
                     else None
                 )
-                # Disable TensorBoard logger before distributed training to
-                # prevent PermissionDeniedError on read-only worker filesystems.
-                self._disable_logger_for_distributed()
+                self._disable_lightning_logger()
                 self.model.fit(
                     df=sdf, static_df=static_sdf, distributed_config=dc,
                 )
@@ -334,9 +332,7 @@ class NeuralFcForecaster(ForecastingRegressor):
                 # predict/forecast do not attempt DDP.
                 self._set_devices_for_local_inference()
             else:
-                # Local single-GPU or CPU training.  This branch is reached
-                # when _get_distributed_config() returns None (single GPU,
-                # CPU, or no Spark session available).
+                self._disable_lightning_logger()
                 self.model.fit(df=pdf, static_df=static_pdf)
 
     def predict(self,
