@@ -1,16 +1,18 @@
 """
-Unit tests for the improved data_quality_checks.py module.
-Tests cover all new functionality including ValidationResult, ExternalRegressorValidator,
-DateOffsetUtility, and the enhanced DataQualityChecks class.
+Unit tests for the data_quality_checks.py module.
+Tests cover all functionality including ValidationResult, ExternalRegressorValidator,
+DateOffsetUtility, and the Spark-native DataQualityChecks class.
 """
 
 import pytest
 import pandas as pd
 import numpy as np
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import patch
 from omegaconf import OmegaConf
 from pyspark.sql import SparkSession
-from pyspark.sql.types import StructType, StructField, StringType, IntegerType, DoubleType, TimestampType
+from pyspark.sql.types import (
+    StructType, StructField, StringType, DoubleType, TimestampType
+)
 
 from mmf_sa.data_quality_checks import (
     DataQualityChecks,
@@ -35,27 +37,28 @@ from mmf_sa.exceptions import (
 from .fixtures import spark_session
 
 
+# ---------------------------------------------------------------------------
+# Helper-class tests (unchanged — these are independent of Spark)
+# ---------------------------------------------------------------------------
+
 class TestValidationResult:
     """Test suite for ValidationResult class."""
-    
+
     def test_success_without_data(self):
-        """Test successful validation result without processed data."""
         result = ValidationResult.success()
         assert result.is_valid is True
         assert result.reason is None
         assert result.processed_data is None
-    
+
     def test_success_with_data(self):
-        """Test successful validation result with processed data."""
         data = pd.DataFrame({'col': [1, 2, 3]})
         result = ValidationResult.success(data)
         assert result.is_valid is True
         assert result.reason is None
         assert result.processed_data is not None
         assert len(result.processed_data) == 3
-    
+
     def test_failure(self):
-        """Test failed validation result."""
         reason = "Test failure reason"
         result = ValidationResult.failure(reason)
         assert result.is_valid is False
@@ -65,16 +68,14 @@ class TestValidationResult:
 
 class TestDataQualityThresholds:
     """Test suite for DataQualityThresholds class."""
-    
+
     def test_default_values(self):
-        """Test default threshold values."""
         thresholds = DataQualityThresholds()
         assert thresholds.missing_data_threshold == DEFAULT_MISSING_DATA_THRESHOLD
         assert thresholds.negative_data_threshold == DEFAULT_NEGATIVE_DATA_THRESHOLD
         assert thresholds.min_train_predict_ratio == DEFAULT_MIN_TRAIN_PREDICT_RATIO
-    
+
     def test_custom_values(self):
-        """Test custom threshold values."""
         thresholds = DataQualityThresholds(
             missing_data_threshold=0.1,
             negative_data_threshold=0.15,
@@ -83,23 +84,20 @@ class TestDataQualityThresholds:
         assert thresholds.missing_data_threshold == 0.1
         assert thresholds.negative_data_threshold == 0.15
         assert thresholds.min_train_predict_ratio == 2.0
-    
+
     def test_invalid_missing_data_threshold(self):
-        """Test invalid missing data threshold values."""
         with pytest.raises(ParameterValidationError) as exc_info:
             DataQualityThresholds(missing_data_threshold=1.5)
         assert "missing_data_threshold must be between 0 and 1" in str(exc_info.value)
         assert "1.5" in str(exc_info.value)
-    
+
     def test_invalid_negative_data_threshold(self):
-        """Test invalid negative data threshold values."""
         with pytest.raises(ParameterValidationError) as exc_info:
             DataQualityThresholds(negative_data_threshold=-0.1)
         assert "negative_data_threshold must be between 0 and 1" in str(exc_info.value)
         assert "-0.1" in str(exc_info.value)
-    
+
     def test_invalid_train_predict_ratio(self):
-        """Test invalid train predict ratio values."""
         with pytest.raises(ParameterValidationError) as exc_info:
             DataQualityThresholds(min_train_predict_ratio=-1.0)
         assert "min_train_predict_ratio must be non-negative" in str(exc_info.value)
@@ -108,58 +106,47 @@ class TestDataQualityThresholds:
 
 class TestDataQualityMetrics:
     """Test suite for DataQualityMetrics class."""
-    
+
     def test_default_initialization(self):
-        """Test default initialization of metrics."""
         metrics = DataQualityMetrics()
         assert metrics.total_groups == 0
         assert metrics.removed_groups == 0
         assert metrics.removal_reasons == {}
-    
+
     def test_add_removal_reason(self):
-        """Test adding removal reasons."""
         metrics = DataQualityMetrics()
         metrics.add_removal_reason("test_reason", 2)
         assert metrics.removal_reasons["test_reason"] == 2
-        
-        # Add more of the same reason
+
         metrics.add_removal_reason("test_reason", 3)
         assert metrics.removal_reasons["test_reason"] == 5
-        
-        # Add different reason
+
         metrics.add_removal_reason("another_reason", 1)
         assert metrics.removal_reasons["another_reason"] == 1
         assert len(metrics.removal_reasons) == 2
-    
+
     def test_get_removal_rate(self):
-        """Test removal rate calculation."""
         metrics = DataQualityMetrics()
-        
-        # Test with zero total groups
         assert metrics.get_removal_rate() == 0.0
-        
-        # Test with normal values
+
         metrics.total_groups = 10
         metrics.removed_groups = 2
         assert metrics.get_removal_rate() == 20.0
-        
-        # Test with all groups removed
+
         metrics.removed_groups = 10
         assert metrics.get_removal_rate() == 100.0
 
 
 class TestSupportedFrequencies:
     """Test suite for SupportedFrequencies enum."""
-    
+
     def test_enum_values(self):
-        """Test enum values are correct."""
         assert SupportedFrequencies.HOURLY.value == "H"
         assert SupportedFrequencies.DAILY.value == "D"
         assert SupportedFrequencies.WEEKLY.value == "W"
         assert SupportedFrequencies.MONTHLY.value == "M"
-    
+
     def test_enum_validation(self):
-        """Test enum validation."""
         valid_values = [freq.value for freq in SupportedFrequencies]
         assert "H" in valid_values
         assert "D" in valid_values
@@ -170,9 +157,8 @@ class TestSupportedFrequencies:
 
 class TestExternalRegressorTypes:
     """Test suite for ExternalRegressorTypes enum."""
-    
+
     def test_enum_values(self):
-        """Test enum values are correct."""
         assert ExternalRegressorTypes.STATIC_FEATURES.value == "static_features"
         assert ExternalRegressorTypes.DYNAMIC_FUTURE_NUMERICAL.value == "dynamic_future_numerical"
         assert ExternalRegressorTypes.DYNAMIC_FUTURE_CATEGORICAL.value == "dynamic_future_categorical"
@@ -182,36 +168,29 @@ class TestExternalRegressorTypes:
 
 class TestDateOffsetUtility:
     """Test suite for DateOffsetUtility class."""
-    
+
     def test_valid_frequencies(self):
-        """Test valid frequency calculations."""
-        # Test hourly
         offset = DateOffsetUtility.get_backtest_offset("H", 24)
         assert offset is not None
         assert offset == pd.DateOffset(hours=24)
-        
-        # Test daily
+
         offset = DateOffsetUtility.get_backtest_offset("D", 7)
         assert offset is not None
         assert offset == pd.DateOffset(days=7)
-        
-        # Test weekly
+
         offset = DateOffsetUtility.get_backtest_offset("W", 2)
         assert offset is not None
         assert offset == pd.DateOffset(weeks=2)
-        
-        # Test monthly
+
         offset = DateOffsetUtility.get_backtest_offset("M", 3)
         assert offset is not None
         assert offset == pd.DateOffset(months=3)
-    
+
     def test_invalid_frequency(self):
-        """Test invalid frequency handling."""
         offset = DateOffsetUtility.get_backtest_offset("INVALID", 1)
         assert offset is None
-    
+
     def test_zero_length(self):
-        """Test zero length handling."""
         offset = DateOffsetUtility.get_backtest_offset("D", 0)
         assert offset is not None
         assert offset == pd.DateOffset(days=0)
@@ -219,21 +198,18 @@ class TestDateOffsetUtility:
 
 class TestExternalRegressorValidator:
     """Test suite for ExternalRegressorValidator class."""
-    
+
     def test_no_external_regressors(self):
-        """Test validator with no external regressors."""
         conf = OmegaConf.create({
             'group_id': 'group_id',
             'date_col': 'date_col',
             'target': 'target'
         })
         validator = ExternalRegressorValidator(conf)
-        
         assert not validator.has_external_regressors()
         assert validator.get_external_regressors() == {}
-    
+
     def test_with_external_regressors(self):
-        """Test validator with external regressors."""
         conf = OmegaConf.create({
             'group_id': 'group_id',
             'date_col': 'date_col',
@@ -242,470 +218,436 @@ class TestExternalRegressorValidator:
             'dynamic_future_numerical': ['feature3']
         })
         validator = ExternalRegressorValidator(conf)
-        
         assert validator.has_external_regressors()
         external_regressors = validator.get_external_regressors()
         assert 'static_features' in external_regressors
         assert 'dynamic_future_numerical' in external_regressors
         assert external_regressors['static_features'] == ['feature1', 'feature2']
         assert external_regressors['dynamic_future_numerical'] == ['feature3']
-    
+
     def test_resampling_compatibility_valid(self):
-        """Test valid resampling compatibility."""
-        # No external regressors, resampling enabled - should pass
         conf = OmegaConf.create({
             'group_id': 'group_id',
             'resample': True
         })
         validator = ExternalRegressorValidator(conf)
-        validator.validate_resampling_compatibility()  # Should not raise
-        
-        # External regressors, resampling disabled - should pass
+        validator.validate_resampling_compatibility()
+
         conf = OmegaConf.create({
             'group_id': 'group_id',
             'static_features': ['feature1'],
             'resample': False
         })
         validator = ExternalRegressorValidator(conf)
-        validator.validate_resampling_compatibility()  # Should not raise
-    
+        validator.validate_resampling_compatibility()
+
     def test_resampling_compatibility_invalid(self):
-        """Test invalid resampling compatibility."""
         conf = OmegaConf.create({
             'group_id': 'group_id',
             'static_features': ['feature1'],
             'resample': True
         })
         validator = ExternalRegressorValidator(conf)
-        
         with pytest.raises(InvalidConfigurationError) as exc_info:
             validator.validate_resampling_compatibility()
         assert "Resampling must be disabled when external regressors are provided" in str(exc_info.value)
-    
+
     def test_check_nulls_in_regressors_valid(self):
-        """Test null checks with valid data."""
         conf = OmegaConf.create({
             'static_features': ['feature1', 'feature2'],
             'dynamic_future_numerical': ['feature3']
         })
         validator = ExternalRegressorValidator(conf)
-        
-        # Create data without nulls
         df = pd.DataFrame({
             'feature1': [1, 2, 3],
             'feature2': ['a', 'b', 'c'],
             'feature3': [1.0, 2.0, 3.0]
         })
-        
         result = validator.check_nulls_in_regressors(df, 'test_group')
         assert result.is_valid is True
         assert result.reason is None
-    
+
     def test_check_nulls_in_regressors_invalid(self):
-        """Test null checks with invalid data."""
         conf = OmegaConf.create({
             'static_features': ['feature1', 'feature2'],
             'dynamic_future_numerical': ['feature3']
         })
         validator = ExternalRegressorValidator(conf)
-        
-        # Create data with nulls
         df = pd.DataFrame({
             'feature1': [1, 2, np.nan],
             'feature2': ['a', 'b', 'c'],
             'feature3': [1.0, 2.0, 3.0]
         })
-        
         result = validator.check_nulls_in_regressors(df, 'test_group')
         assert result.is_valid is False
         assert "null values in static features" in result.reason
 
 
+# ---------------------------------------------------------------------------
+# Spark-native DataQualityChecks tests
+# ---------------------------------------------------------------------------
+
+def _make_spark_df(spark, pdf):
+    """Convert a Pandas DataFrame to a Spark DataFrame, handling timestamps."""
+    return spark.createDataFrame(pdf)
+
+
+def _basic_conf(**overrides):
+    """Create a basic OmegaConf config for tests with optional overrides."""
+    base = {
+        'group_id': 'group_id',
+        'date_col': 'date_col',
+        'target': 'target',
+        'freq': 'D',
+        'backtest_length': 2,
+        'prediction_length': 1,
+        'train_predict_ratio': 1.0,
+        'data_quality_check': True,
+        'resample': False,
+    }
+    base.update(overrides)
+    return OmegaConf.create(base)
+
+
 class TestDataQualityChecks:
-    """Test suite for DataQualityChecks class."""
-    
-    def create_sample_data(self):
-        """Create sample data for testing."""
+    """Test suite for the Spark-native DataQualityChecks class."""
+
+    def _sample_pdf(self):
         return pd.DataFrame({
             'group_id': ['A', 'A', 'A', 'A', 'B', 'B', 'B', 'B'],
-            'date_col': pd.date_range('2023-01-01', periods=8, freq='D'),
-            'target': [10, 20, 30, 40, 15, 25, 35, 45],
-            'feature1': [1, 2, 3, 4, 5, 6, 7, 8],
-            'feature2': ['x', 'y', 'z', 'w', 'x', 'y', 'z', 'w']
+            'date_col': pd.date_range('2023-01-01', periods=4, freq='D').tolist() * 2,
+            'target': [10.0, 20.0, 30.0, 40.0, 15.0, 25.0, 35.0, 45.0],
+            'feature1': [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
         })
-    
-    def create_basic_config(self):
-        """Create basic configuration for testing."""
-        return OmegaConf.create({
-            'group_id': 'group_id',
-            'date_col': 'date_col',
-            'target': 'target',
-            'freq': 'D',
-            'backtest_length': 2,
-            'prediction_length': 1,
-            'train_predict_ratio': 1.0,
-            'data_quality_check': True,
-            'resample': False
-        })
-    
+
+    # -- initialisation & config validation --------------------------------
+
     def test_initialization(self, spark_session):
-        """Test DataQualityChecks initialization."""
-        sample_data = self.create_sample_data()
-        conf = self.create_basic_config()
-        
-        # Mock Spark DataFrame
-        mock_df = Mock()
-        mock_df.toPandas.return_value = sample_data
-        
-        checker = DataQualityChecks(mock_df, conf, spark_session)
-        
+        sdf = _make_spark_df(spark_session, self._sample_pdf())
+        conf = _basic_conf()
+        checker = DataQualityChecks(sdf, conf, spark_session)
+
         assert checker.conf == conf
         assert checker.spark == spark_session
         assert isinstance(checker.thresholds, DataQualityThresholds)
         assert isinstance(checker.metrics, DataQualityMetrics)
         assert isinstance(checker.regressor_validator, ExternalRegressorValidator)
-        assert len(checker.df) == 8
-    
+
     def test_configuration_validation_missing_params(self, spark_session):
-        """Test configuration validation with missing parameters."""
-        sample_data = self.create_sample_data()
-        
-        # Missing required parameters
+        sdf = _make_spark_df(spark_session, self._sample_pdf())
         incomplete_conf = OmegaConf.create({
             'group_id': 'group_id',
-            'date_col': 'date_col'
-            # Missing target, freq, backtest_length, prediction_length
+            'date_col': 'date_col',
         })
-        
-        mock_df = Mock()
-        mock_df.toPandas.return_value = sample_data
-        
         with pytest.raises(InvalidConfigurationError) as exc_info:
-            DataQualityChecks(mock_df, incomplete_conf, spark_session)
+            DataQualityChecks(sdf, incomplete_conf, spark_session)
         assert "Missing required parameters" in str(exc_info.value)
-    
+
     def test_configuration_validation_invalid_frequency(self, spark_session):
-        """Test configuration validation with invalid frequency."""
-        sample_data = self.create_sample_data()
-        conf = self.create_basic_config()
-        conf['freq'] = 'INVALID'
-        
-        mock_df = Mock()
-        mock_df.toPandas.return_value = sample_data
-        
+        sdf = _make_spark_df(spark_session, self._sample_pdf())
+        conf = _basic_conf(freq='INVALID')
         with pytest.raises(InvalidConfigurationError) as exc_info:
-            DataQualityChecks(mock_df, conf, spark_session)
+            DataQualityChecks(sdf, conf, spark_session)
         assert "Unsupported frequency: INVALID" in str(exc_info.value)
-    
+
+    # -- backtest length validation ----------------------------------------
+
     def test_backtest_length_validation_valid(self, spark_session):
-        """Test valid backtest length validation."""
-        sample_data = self.create_sample_data()
-        conf = self.create_basic_config()
-        conf['backtest_length'] = 5
-        conf['prediction_length'] = 3
-        
-        mock_df = Mock()
-        mock_df.toPandas.return_value = sample_data
-        
-        checker = DataQualityChecks(mock_df, conf, spark_session)
-        checker._validate_backtest_length()  # Should not raise
-    
+        sdf = _make_spark_df(spark_session, self._sample_pdf())
+        conf = _basic_conf(backtest_length=5, prediction_length=3)
+        checker = DataQualityChecks(sdf, conf, spark_session)
+        checker._validate_backtest_length()
+
     def test_backtest_length_validation_invalid(self, spark_session):
-        """Test invalid backtest length validation."""
-        sample_data = self.create_sample_data()
-        conf = self.create_basic_config()
-        conf['backtest_length'] = 1
-        conf['prediction_length'] = 3
-        
-        mock_df = Mock()
-        mock_df.toPandas.return_value = sample_data
-        
-        checker = DataQualityChecks(mock_df, conf, spark_session)
-        
+        sdf = _make_spark_df(spark_session, self._sample_pdf())
+        conf = _basic_conf(backtest_length=1, prediction_length=3)
+        checker = DataQualityChecks(sdf, conf, spark_session)
         with pytest.raises(ParameterValidationError) as exc_info:
             checker._validate_backtest_length()
         assert "Backtest length (1) is shorter than prediction length (3)" in str(exc_info.value)
-    
-    def test_training_period_length_check_valid(self, spark_session):
-        """Test valid training period length check."""
-        sample_data = self.create_sample_data()
-        conf = self.create_basic_config()
-        
-        mock_df = Mock()
-        mock_df.toPandas.return_value = sample_data
-        
-        checker = DataQualityChecks(mock_df, conf, spark_session)
-        
-        # Get data for one group
-        group_data = sample_data[sample_data['group_id'] == 'A']
-        
-        result = checker._check_training_period_length(group_data, 'A')
-        assert result.is_valid is True
-    
-    def test_training_period_length_check_invalid(self, spark_session):
-        """Test invalid training period length check."""
-        # Create data with insufficient training period
-        sample_data = pd.DataFrame({
+
+    # -- regressor null check ----------------------------------------------
+
+    def test_regressor_nulls_none_configured(self, spark_session):
+        sdf = _make_spark_df(spark_session, self._sample_pdf())
+        conf = _basic_conf()
+        checker = DataQualityChecks(sdf, conf, spark_session)
+        removed = checker._find_groups_with_regressor_nulls(sdf)
+        assert removed.count() == 0
+
+    def test_regressor_nulls_detected(self, spark_session):
+        pdf = pd.DataFrame({
+            'group_id': ['A', 'A', 'B', 'B'],
+            'date_col': pd.date_range('2023-01-01', periods=2, freq='D').tolist() * 2,
+            'target': [10.0, 20.0, 30.0, 40.0],
+            'feat': [1.0, None, 3.0, 4.0],
+        })
+        sdf = _make_spark_df(spark_session, pdf)
+        conf = _basic_conf(static_features=['feat'])
+        checker = DataQualityChecks(sdf, conf, spark_session)
+
+        removed = checker._find_groups_with_regressor_nulls(sdf)
+        removed_ids = {row[0] for row in removed.collect()}
+        assert removed_ids == {'A'}
+
+    # -- training period length check --------------------------------------
+
+    def test_training_period_sufficient(self, spark_session):
+        pdf = pd.DataFrame({
+            'group_id': ['A'] * 10 + ['B'] * 10,
+            'date_col': (
+                pd.date_range('2023-01-01', periods=10, freq='D').tolist()
+                + pd.date_range('2023-01-01', periods=10, freq='D').tolist()
+            ),
+            'target': [float(i) for i in range(1, 11)] * 2,
+        })
+        sdf = _make_spark_df(spark_session, pdf)
+        conf = _basic_conf(backtest_length=2, prediction_length=1, train_predict_ratio=1.0)
+        checker = DataQualityChecks(sdf, conf, spark_session)
+
+        removed = checker._find_groups_with_insufficient_training(sdf)
+        assert removed.count() == 0
+
+    def test_training_period_insufficient(self, spark_session):
+        pdf = pd.DataFrame({
             'group_id': ['A', 'A'],
             'date_col': pd.date_range('2023-01-01', periods=2, freq='D'),
-            'target': [10, 20]
+            'target': [10.0, 20.0],
         })
-        
-        conf = self.create_basic_config()
-        conf['train_predict_ratio'] = 5.0  # High ratio to make it fail
-        
-        mock_df = Mock()
-        mock_df.toPandas.return_value = sample_data
-        
-        checker = DataQualityChecks(mock_df, conf, spark_session)
-        
-        result = checker._check_training_period_length(sample_data, 'A')
-        assert result.is_valid is False
-        assert result.reason == "insufficient training data"
-    
-    def test_missing_entries_check_no_resampling(self, spark_session):
-        """Test missing entries check without resampling."""
-        sample_data = self.create_sample_data()
-        conf = self.create_basic_config()
-        conf['resample'] = False
-        
-        mock_df = Mock()
-        mock_df.toPandas.return_value = sample_data
-        
-        checker = DataQualityChecks(mock_df, conf, spark_session)
-        
-        # Get data for one group
-        group_data = sample_data[sample_data['group_id'] == 'A']
-        
-        result = checker._check_missing_entries(group_data, 'A', group_data['date_col'].max())
-        assert result.is_valid is True
-    
-    def test_missing_entries_check_with_resampling(self, spark_session):
-        """Test missing entries check with resampling enabled."""
-        # Create data with missing dates but under the threshold
-        sample_data = pd.DataFrame({
-            'group_id': ['A', 'A', 'A', 'A'],
-            'date_col': pd.to_datetime(['2023-01-01', '2023-01-02', '2023-01-04', '2023-01-05']),  # Missing 01-03 only (20% missing)
-            'target': [10, 20, 30, 40]
-        })
-        
-        conf = self.create_basic_config()
-        conf['resample'] = True
-        
-        mock_df = Mock()
-        mock_df.toPandas.return_value = sample_data
-        
-        checker = DataQualityChecks(mock_df, conf, spark_session)
-        
-        result = checker._check_missing_entries(sample_data, 'A', sample_data['date_col'].max())
-        assert result.is_valid is True
-        assert result.processed_data is not None
-        assert len(result.processed_data) > len(sample_data)  # Should have more rows after resampling
-    
-    def test_negative_entries_check_valid(self, spark_session):
-        """Test negative entries check with valid data."""
-        sample_data = self.create_sample_data()
-        conf = self.create_basic_config()
-        
-        mock_df = Mock()
-        mock_df.toPandas.return_value = sample_data
-        
-        checker = DataQualityChecks(mock_df, conf, spark_session)
-        
-        # Get data for one group
-        group_data = sample_data[sample_data['group_id'] == 'A']
-        
-        result = checker._check_negative_entries(group_data, 'A')
-        assert result.is_valid is True
-    
-    def test_negative_entries_check_invalid(self, spark_session):
-        """Test negative entries check with invalid data."""
-        # Create data with many negative values
-        sample_data = pd.DataFrame({
-            'group_id': ['A', 'A', 'A', 'A'],
+        sdf = _make_spark_df(spark_session, pdf)
+        conf = _basic_conf(train_predict_ratio=5.0)
+        checker = DataQualityChecks(sdf, conf, spark_session)
+
+        removed = checker._find_groups_with_insufficient_training(sdf)
+        removed_ids = {row[0] for row in removed.collect()}
+        assert 'A' in removed_ids
+
+    # -- negative entries check --------------------------------------------
+
+    def test_negative_entries_below_threshold(self, spark_session):
+        pdf = pd.DataFrame({
+            'group_id': ['A'] * 4,
             'date_col': pd.date_range('2023-01-01', periods=4, freq='D'),
-            'target': [10, -20, -30, -40]  # 75% negative
+            'target': [10.0, 20.0, 30.0, 40.0],
         })
-        
-        conf = self.create_basic_config()
-        
-        mock_df = Mock()
-        mock_df.toPandas.return_value = sample_data
-        
-        checker = DataQualityChecks(mock_df, conf, spark_session)
-        
-        result = checker._check_negative_entries(sample_data, 'A')
-        assert result.is_valid is False
-        assert result.reason == f"negative data ratio exceeds threshold ({DEFAULT_NEGATIVE_DATA_THRESHOLD})"
-    
-    def test_run_group_checks_all_pass(self, spark_session):
-        """Test group checks when all checks pass."""
-        sample_data = self.create_sample_data()
-        conf = self.create_basic_config()
-        
-        mock_df = Mock()
-        mock_df.toPandas.return_value = sample_data
-        
-        checker = DataQualityChecks(mock_df, conf, spark_session)
-        
-        # Get data for one group
-        group_data = sample_data[sample_data['group_id'] == 'A']
-        
-        result_df = checker._run_group_checks(group_data, group_data['date_col'].max())
-        assert not result_df.empty
-        assert len(result_df) == len(group_data)
-    
-    def test_run_group_checks_some_fail(self, spark_session):
-        """Test group checks when some checks fail."""
-        # Create data that will fail negative entries check
-        sample_data = pd.DataFrame({
-            'group_id': ['A', 'A', 'A', 'A'],
+        sdf = _make_spark_df(spark_session, pdf)
+        conf = _basic_conf()
+        checker = DataQualityChecks(sdf, conf, spark_session)
+
+        removed = checker._find_groups_with_excessive_negatives(sdf)
+        assert removed.count() == 0
+
+    def test_negative_entries_above_threshold(self, spark_session):
+        pdf = pd.DataFrame({
+            'group_id': ['A'] * 4,
             'date_col': pd.date_range('2023-01-01', periods=4, freq='D'),
-            'target': [10, -20, -30, -40]  # 75% negative
+            'target': [10.0, -20.0, -30.0, -40.0],
         })
-        
-        conf = self.create_basic_config()
-        
-        mock_df = Mock()
-        mock_df.toPandas.return_value = sample_data
-        
-        checker = DataQualityChecks(mock_df, conf, spark_session)
-        
-        result_df = checker._run_group_checks(sample_data, sample_data['date_col'].max())
-        assert result_df.empty  # Should be empty due to failed checks
-        assert checker.metrics.removed_groups == 1
-    
-    def test_run_with_data_quality_checks_disabled(self, spark_session):
-        """Test run method with data quality checks disabled."""
-        sample_data = self.create_sample_data()
-        conf = self.create_basic_config()
-        conf['data_quality_check'] = False
-        
-        mock_df = Mock()
-        mock_df.toPandas.return_value = sample_data
-        
-        # Mock the createDataFrame method
-        mock_result_df = Mock()
-        spark_session.createDataFrame = Mock(return_value=mock_result_df)
-        
-        checker = DataQualityChecks(mock_df, conf, spark_session)
-        
+        sdf = _make_spark_df(spark_session, pdf)
+        conf = _basic_conf()
+        checker = DataQualityChecks(sdf, conf, spark_session)
+
+        removed = checker._find_groups_with_excessive_negatives(sdf)
+        removed_ids = {row[0] for row in removed.collect()}
+        assert removed_ids == {'A'}
+
+    # -- missing entries check ---------------------------------------------
+
+    def test_missing_entries_no_gaps(self, spark_session):
+        pdf = pd.DataFrame({
+            'group_id': ['A'] * 4,
+            'date_col': pd.date_range('2023-01-01', periods=4, freq='D'),
+            'target': [10.0, 20.0, 30.0, 40.0],
+        })
+        sdf = _make_spark_df(spark_session, pdf)
+        conf = _basic_conf(resample=False)
+        checker = DataQualityChecks(sdf, conf, spark_session)
+
+        clean_df, removed = checker._handle_missing_entries(sdf)
+        assert removed.count() == 0
+        assert clean_df.count() == 4
+
+    def test_missing_entries_gaps_resample_false(self, spark_session):
+        """Groups with gaps are removed when resample=False."""
+        pdf = pd.DataFrame({
+            'group_id': ['A', 'A', 'A'],
+            'date_col': pd.to_datetime(['2023-01-01', '2023-01-02', '2023-01-05']),
+            'target': [10.0, 20.0, 30.0],
+        })
+        sdf = _make_spark_df(spark_session, pdf)
+        conf = _basic_conf(resample=False)
+        checker = DataQualityChecks(sdf, conf, spark_session)
+
+        clean_df, removed = checker._handle_missing_entries(sdf)
+        removed_ids = {row[0] for row in removed.collect()}
+        assert 'A' in removed_ids
+
+    def test_missing_entries_gaps_resample_true_within_threshold(self, spark_session):
+        """Gaps are filled when resample=True and within threshold."""
+        pdf = pd.DataFrame({
+            'group_id': ['A', 'A', 'A', 'A'],
+            'date_col': pd.to_datetime(['2023-01-01', '2023-01-02', '2023-01-04', '2023-01-05']),
+            'target': [10.0, 20.0, 30.0, 40.0],
+        })
+        sdf = _make_spark_df(spark_session, pdf)
+        conf = _basic_conf(resample=True)
+        checker = DataQualityChecks(sdf, conf, spark_session)
+
+        clean_df, removed = checker._handle_missing_entries(sdf)
+        assert removed.count() == 0
+        assert clean_df.count() == 5  # 4 original + 1 gap-filled
+
+    def test_missing_entries_gaps_resample_true_exceeds_threshold(self, spark_session):
+        """Groups removed when resample=True but missing ratio exceeds threshold."""
+        pdf = pd.DataFrame({
+            'group_id': ['A', 'A'],
+            'date_col': pd.to_datetime(['2023-01-01', '2023-01-10']),
+            'target': [10.0, 20.0],
+        })
+        sdf = _make_spark_df(spark_session, pdf)
+        conf = _basic_conf(resample=True)
+        thresholds = DataQualityThresholds(missing_data_threshold=0.2)
+        checker = DataQualityChecks(sdf, conf, spark_session, thresholds=thresholds)
+
+        clean_df, removed = checker._handle_missing_entries(sdf)
+        removed_ids = {row[0] for row in removed.collect()}
+        assert 'A' in removed_ids
+
+    # -- full run() --------------------------------------------------------
+
+    def test_run_data_quality_checks_disabled(self, spark_session):
+        pdf = self._sample_pdf()
+        sdf = _make_spark_df(spark_session, pdf)
+        conf = _basic_conf(data_quality_check=False)
+        checker = DataQualityChecks(sdf, conf, spark_session)
+
         clean_df, removed_groups = checker.run()
-        
-        assert clean_df == mock_result_df
         assert removed_groups == []
-    
-    def test_empty_dataset_error(self, spark_session):
-        """Test empty dataset error handling."""
-        # Create empty data with proper data types
-        sample_data = pd.DataFrame({
-            'group_id': pd.Series([], dtype='object'),
-            'date_col': pd.Series([], dtype='datetime64[ns]'),
-            'target': pd.Series([], dtype='float64')
+        assert clean_df.count() == len(pdf)
+
+    def test_run_all_groups_pass(self, spark_session):
+        pdf = pd.DataFrame({
+            'group_id': ['A'] * 6 + ['B'] * 6,
+            'date_col': (
+                pd.date_range('2023-01-01', periods=6, freq='D').tolist()
+                + pd.date_range('2023-01-01', periods=6, freq='D').tolist()
+            ),
+            'target': [10.0, 20.0, 30.0, 40.0, 50.0, 60.0] * 2,
         })
-        
-        conf = self.create_basic_config()
-        
-        mock_df = Mock()
-        mock_df.toPandas.return_value = sample_data
-        
-        checker = DataQualityChecks(mock_df, conf, spark_session)
-        
+        sdf = _make_spark_df(spark_session, pdf)
+        conf = _basic_conf(backtest_length=3, prediction_length=2)
+        checker = DataQualityChecks(sdf, conf, spark_session)
+
+        clean_df, removed_groups = checker.run()
+        assert removed_groups == []
+        assert clean_df.count() == 12
+
+        metrics = checker.get_quality_metrics()
+        assert metrics.total_groups == 2
+        assert metrics.removed_groups == 0
+        assert metrics.get_removal_rate() == 0.0
+
+    def test_run_removes_negative_group(self, spark_session):
+        pdf = pd.DataFrame({
+            'group_id': ['A'] * 6 + ['B'] * 4,
+            'date_col': (
+                pd.date_range('2023-01-01', periods=6, freq='D').tolist()
+                + pd.date_range('2023-01-01', periods=4, freq='D').tolist()
+            ),
+            'target': [10.0, 20.0, 30.0, 40.0, 50.0, 60.0,
+                        10.0, -20.0, -30.0, -40.0],
+        })
+        sdf = _make_spark_df(spark_session, pdf)
+        conf = _basic_conf(backtest_length=2, prediction_length=1)
+        checker = DataQualityChecks(sdf, conf, spark_session)
+
+        clean_df, removed_groups = checker.run()
+        assert 'B' in removed_groups
+        remaining = {row['group_id'] for row in clean_df.select('group_id').distinct().collect()}
+        assert remaining == {'A'}
+
+    def test_empty_dataset_error(self, spark_session):
+        schema = StructType([
+            StructField('group_id', StringType()),
+            StructField('date_col', TimestampType()),
+            StructField('target', DoubleType()),
+        ])
+        sdf = spark_session.createDataFrame([], schema)
+        conf = _basic_conf()
+        checker = DataQualityChecks(sdf, conf, spark_session)
+
         with pytest.raises(EmptyDatasetError) as exc_info:
             checker.run()
         assert "No time series passed the data quality checks" in str(exc_info.value)
-    
-    def test_conversion_error_handling(self, spark_session):
-        """Test DataFrame conversion error handling."""
-        conf = self.create_basic_config()
-        
-        # Mock DataFrame that raises exception on toPandas
-        mock_df = Mock()
-        mock_df.toPandas.side_effect = Exception("Conversion failed")
-        
-        with pytest.raises(DataQualityError) as exc_info:
-            DataQualityChecks(mock_df, conf, spark_session)
-        assert "DataFrame conversion failed" in str(exc_info.value)
-    
+
     def test_get_quality_metrics(self, spark_session):
-        """Test getting quality metrics."""
-        sample_data = self.create_sample_data()
-        conf = self.create_basic_config()
-        
-        mock_df = Mock()
-        mock_df.toPandas.return_value = sample_data
-        
-        checker = DataQualityChecks(mock_df, conf, spark_session)
-        
-        # Add some test metrics
+        sdf = _make_spark_df(spark_session, self._sample_pdf())
+        conf = _basic_conf()
+        checker = DataQualityChecks(sdf, conf, spark_session)
+
         checker.metrics.total_groups = 10
         checker.metrics.removed_groups = 2
         checker.metrics.add_removal_reason("test_reason", 2)
-        
+
         metrics = checker.get_quality_metrics()
-        
         assert isinstance(metrics, DataQualityMetrics)
         assert metrics.total_groups == 10
         assert metrics.removed_groups == 2
         assert metrics.removal_reasons["test_reason"] == 2
         assert metrics.get_removal_rate() == 20.0
-    
+
     def test_log_quality_metrics_aggregated_only(self, spark_session):
-        """Test that logging shows only aggregated numbers."""
-        sample_data = self.create_sample_data()
-        conf = self.create_basic_config()
-        
-        mock_df = Mock()
-        mock_df.toPandas.return_value = sample_data
-        
-        checker = DataQualityChecks(mock_df, conf, spark_session)
-        
-        # Set up metrics
+        sdf = _make_spark_df(spark_session, self._sample_pdf())
+        conf = _basic_conf()
+        checker = DataQualityChecks(sdf, conf, spark_session)
+
         checker.metrics.total_groups = 10
         checker.metrics.removed_groups = 3
         checker.metrics.add_removal_reason("insufficient training data", 2)
-        checker.metrics.add_removal_reason(f"negative data ratio exceeds threshold ({DEFAULT_NEGATIVE_DATA_THRESHOLD})", 1)
-        
+        checker.metrics.add_removal_reason(
+            f"negative data ratio exceeds threshold ({DEFAULT_NEGATIVE_DATA_THRESHOLD})", 1
+        )
+
         initial_groups = set(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'])
         final_groups = set(['A', 'B', 'C', 'D', 'E', 'F', 'G'])
         removed_groups = ['H', 'I', 'J']
-        
-        # Test logging with removals - should only show aggregated numbers
+
         with patch('mmf_sa.data_quality_checks._logger') as mock_logger:
             checker._log_quality_metrics(initial_groups, final_groups, removed_groups)
-            
-            # Check that only aggregated metrics are logged
+
             mock_logger.info.assert_any_call("Data quality summary:")
             mock_logger.info.assert_any_call("  - Initial groups: 10")
             mock_logger.info.assert_any_call("  - Final groups: 7")
             mock_logger.info.assert_any_call("  - Removed groups: 3 (30.0%)")
-            
-            # Verify that removal reasons ARE logged but sample groups are NOT
+
             logged_calls = [call[0][0] for call in mock_logger.info.call_args_list]
             assert any("Removal reasons:" in call for call in logged_calls)
             assert any("insufficient training data" in call for call in logged_calls)
-            assert any(f"negative data ratio exceeds threshold ({DEFAULT_NEGATIVE_DATA_THRESHOLD})" in call for call in logged_calls)
+            assert any(
+                f"negative data ratio exceeds threshold ({DEFAULT_NEGATIVE_DATA_THRESHOLD})" in call
+                for call in logged_calls
+            )
             assert not any("Sample removed groups:" in call for call in logged_calls)
-        
-        # Test logging with no removals
+
         with patch('mmf_sa.data_quality_checks._logger') as mock_logger:
             checker._log_quality_metrics(initial_groups, initial_groups, [])
-            
             mock_logger.info.assert_called_with("All groups passed data quality checks")
 
 
 class TestDataQualityChecksIntegration:
     """Integration tests for DataQualityChecks."""
-    
+
     def test_full_pipeline_success(self, spark_session):
-        """Test full pipeline with successful data quality checks."""
-        # Create good quality data
-        sample_data = pd.DataFrame({
-            'group_id': ['A', 'A', 'A', 'A', 'A', 'A', 'B', 'B', 'B', 'B', 'B', 'B'],
-            'date_col': pd.date_range('2023-01-01', periods=12, freq='D'),
-            'target': [10, 20, 30, 40, 50, 60, 15, 25, 35, 45, 55, 65]
+        pdf = pd.DataFrame({
+            'group_id': ['A'] * 6 + ['B'] * 6,
+            'date_col': (
+                pd.date_range('2023-01-01', periods=6, freq='D').tolist()
+                + pd.date_range('2023-01-01', periods=6, freq='D').tolist()
+            ),
+            'target': [10.0, 20.0, 30.0, 40.0, 50.0, 60.0,
+                        15.0, 25.0, 35.0, 45.0, 55.0, 65.0],
         })
-        
+        sdf = _make_spark_df(spark_session, pdf)
         conf = OmegaConf.create({
             'group_id': 'group_id',
             'date_col': 'date_col',
@@ -715,37 +657,38 @@ class TestDataQualityChecksIntegration:
             'prediction_length': 2,
             'train_predict_ratio': 1.0,
             'data_quality_check': True,
-            'resample': False
+            'resample': False,
         })
-        
-        mock_df = Mock()
-        mock_df.toPandas.return_value = sample_data
-        
-        # Mock the createDataFrame method
-        mock_result_df = Mock()
-        spark_session.createDataFrame = Mock(return_value=mock_result_df)
-        
-        checker = DataQualityChecks(mock_df, conf, spark_session)
-        
+
+        checker = DataQualityChecks(sdf, conf, spark_session)
         clean_df, removed_groups = checker.run()
-        
-        assert clean_df == mock_result_df
+
         assert removed_groups == []
-        
+        assert clean_df.count() == 12
+
         metrics = checker.get_quality_metrics()
         assert metrics.total_groups == 2
         assert metrics.removed_groups == 0
         assert metrics.get_removal_rate() == 0.0
-    
+
     def test_full_pipeline_with_removals(self, spark_session):
-        """Test full pipeline with some groups removed."""
-        # Create mixed quality data - Group A good, Group B mostly negative, Group C insufficient data
-        sample_data = pd.DataFrame({
-            'group_id': ['A', 'A', 'A', 'A', 'A', 'A', 'B', 'B', 'B', 'B', 'C', 'C'],
-            'date_col': pd.date_range('2023-01-01', periods=12, freq='D'),
-            'target': [10, 20, 30, 40, 50, 60, -15, -25, -35, -45, 1, 2]  # Group A good, Group B all negative, Group C insufficient
+        """Group A is good, Group B is mostly negative, Group C has insufficient data."""
+        pdf = pd.DataFrame({
+            'group_id': (
+                ['A'] * 6 + ['B'] * 4 + ['C'] * 2
+            ),
+            'date_col': (
+                pd.date_range('2023-01-01', periods=6, freq='D').tolist()
+                + pd.date_range('2023-01-01', periods=4, freq='D').tolist()
+                + pd.date_range('2023-01-01', periods=2, freq='D').tolist()
+            ),
+            'target': (
+                [10.0, 20.0, 30.0, 40.0, 50.0, 60.0]
+                + [-15.0, -25.0, -35.0, -45.0]
+                + [1.0, 2.0]
+            ),
         })
-        
+        sdf = _make_spark_df(spark_session, pdf)
         conf = OmegaConf.create({
             'group_id': 'group_id',
             'date_col': 'date_col',
@@ -755,24 +698,50 @@ class TestDataQualityChecksIntegration:
             'prediction_length': 1,
             'train_predict_ratio': 1.0,
             'data_quality_check': True,
-            'resample': False
+            'resample': False,
         })
-        
-        mock_df = Mock()
-        mock_df.toPandas.return_value = sample_data
-        
-        # Mock the createDataFrame method to return a filtered DataFrame
-        mock_result_df = Mock()
-        spark_session.createDataFrame = Mock(return_value=mock_result_df)
-        
-        checker = DataQualityChecks(mock_df, conf, spark_session)
-        
+
+        checker = DataQualityChecks(sdf, conf, spark_session)
         clean_df, removed_groups = checker.run()
-        
-        assert clean_df == mock_result_df
-        assert len(removed_groups) > 0  # Some groups should be removed
-        
+
+        assert len(removed_groups) > 0
+        remaining = {
+            row['group_id']
+            for row in clean_df.select('group_id').distinct().collect()
+        }
+        assert 'A' in remaining
+
         metrics = checker.get_quality_metrics()
         assert metrics.total_groups == 3
         assert metrics.removed_groups > 0
-        assert metrics.get_removal_rate() > 0.0 
+        assert metrics.get_removal_rate() > 0.0
+
+    def test_full_pipeline_with_resampling(self, spark_session):
+        """Verify gap-filling produces the expected number of rows."""
+        pdf = pd.DataFrame({
+            'group_id': ['A'] * 4 + ['B'] * 5,
+            'date_col': (
+                pd.to_datetime(['2023-01-01', '2023-01-02', '2023-01-04', '2023-01-05']).tolist()
+                + pd.date_range('2023-01-01', periods=5, freq='D').tolist()
+            ),
+            'target': [10.0, 20.0, 30.0, 40.0, 1.0, 2.0, 3.0, 4.0, 5.0],
+        })
+        sdf = _make_spark_df(spark_session, pdf)
+        conf = OmegaConf.create({
+            'group_id': 'group_id',
+            'date_col': 'date_col',
+            'target': 'target',
+            'freq': 'D',
+            'backtest_length': 2,
+            'prediction_length': 1,
+            'train_predict_ratio': 1.0,
+            'data_quality_check': True,
+            'resample': True,
+        })
+
+        checker = DataQualityChecks(sdf, conf, spark_session)
+        clean_df, removed_groups = checker.run()
+
+        assert removed_groups == []
+        # A: 5 days (01-01 to 01-05 with 01-03 filled), B: 5 days
+        assert clean_df.count() == 10
