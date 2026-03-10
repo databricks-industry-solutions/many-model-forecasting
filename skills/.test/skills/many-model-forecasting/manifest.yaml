@@ -1,0 +1,59 @@
+---
+skill_name: many-model-forecasting
+description: >
+  Kickstart Many Models Forecasting (MMF) projects on Databricks — explore
+  data, configure clusters, and run forecasting pipelines with mmf_sa.
+triggers:
+  - many model forecasting
+  - mmf
+  - time series forecasting
+  - forecasting pipeline
+  - mmf_sa
+  - statsforecast
+  - neuralforecast
+  - chronos
+
+scorers:
+  # Deterministic scorers
+  enabled:
+    - python_syntax
+    - pattern_adherence
+    - no_hallucinated_apis
+    - expected_facts_present
+
+  # LLM-based scorers with guidelines
+  llm_scorers:
+    - Safety
+    - guidelines_from_expectations
+
+  # Default evaluation guidelines
+  default_guidelines:
+    - "Response must address the user's request completely"
+    - "Must use the correct MCP tools for the task (execute_parameterized_sql, connect_to_workspace, databricks_jobs, etc.)"
+    - "SQL queries must reference the correct catalog.schema.table format"
+    - "MMF training table must follow the schema: unique_id (STRING), ds (TIMESTAMP), y (DOUBLE)"
+    - "Must use correct model names from the MMF model catalog (e.g. StatsForecastAutoArima, not AutoArima)"
+    - "Cluster configurations must match documented runtimes and node types"
+    - "Notebook generation must use the template placeholders correctly"
+    - "Must use run_forecast from mmf_sa with the correct parameters"
+
+  # Trace expectations for session evaluation
+  trace_expectations:
+    tool_limits:
+      Bash: 10
+      Read: 20
+      mcp__databricks-v2__execute_parameterized_sql: 20
+      mcp__databricks-v2__connect_to_workspace: 3
+      mcp__databricks-v2__databricks_jobs: 5
+    token_budget:
+      max_total: 150000
+    required_tools:
+      - Read  # Should read skill documentation
+    banned_tools: []
+    expected_files: []
+
+quality_gates:
+  syntax_valid: 1.0        # 100% - all code must be syntactically valid
+  pattern_adherence: 0.90  # 90% - follow documented patterns
+  no_hallucinated_apis: 1.0  # 100% - no made-up APIs
+  execution_success: 0.80  # 80% - code should execute successfully
