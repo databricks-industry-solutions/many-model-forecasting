@@ -1,0 +1,75 @@
+# Databricks AI Dev Kit
+.ai-dev-kit/
+.claude/
+.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+# Exception: frontend source lib (Python ignores lib/ for build artifacts)
+!databricks-builder-app/client/src/lib/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment variables
+.env
+.env.local
+.env.test
+
+# Configuration files with sensitive data
+*conf*.json
+*.secret
+credentials.json
+
+# Resource tracking manifest (created by MCP server)
+.databricks-resources.json
+
+# Test coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# MCP Server logs
+*.log
+mcp.json
+
+# Generated test files
+databricks-tools-core/tests/integration/pdf/generated_pdf/
+
+# Python cache
+__pycache__/
+windows_info.txt

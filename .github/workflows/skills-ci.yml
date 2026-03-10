@@ -1,0 +1,58 @@
+name: Skills CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'skills/**'
+      - '.github/workflows/skills-ci.yml'
+      - '.github/scripts/validate_skills.py'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'skills/**'
+      - '.github/workflows/skills-ci.yml'
+      - '.github/scripts/validate_skills.py'
+
+jobs:
+  lint:
+    name: Lint & Format Skills
+    runs-on: linux-ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "latest"
+
+      - name: Run ruff check
+        run: |
+          uvx ruff check \
+            --select=E,F,B,PIE \
+            --ignore=E401,E402,F401,F403,B017,B904,ANN,TCH \
+            --line-length=120 \
+            --target-version=py311 \
+            skills/install.py skills/.test/src/
+
+      - name: Check formatting
+        run: |
+          uvx ruff format --check \
+            --line-length=120 \
+            --target-version=py311 \
+            skills/install.py skills/.test/src/
+
+  validate-skills:
+    name: Validate Skills
+    runs-on: linux-ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install pyyaml
+
+      - name: Validate skill structure
+        run: python .github/scripts/validate_skills.py
