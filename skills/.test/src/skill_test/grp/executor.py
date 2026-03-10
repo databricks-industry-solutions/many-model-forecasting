@@ -159,8 +159,21 @@ def verify_sql_structure(code: str) -> ExecutionResult:
 
     # Check for valid SQL statements
     statements = [
-        "SELECT", "CREATE", "INSERT", "UPDATE", "DELETE", "WITH", "MERGE",
-        "SHOW", "DESCRIBE", "ALTER", "DROP", "GRANT", "REVOKE", "USE", "SET",
+        "SELECT",
+        "CREATE",
+        "INSERT",
+        "UPDATE",
+        "DELETE",
+        "WITH",
+        "MERGE",
+        "SHOW",
+        "DESCRIBE",
+        "ALTER",
+        "DROP",
+        "GRANT",
+        "REVOKE",
+        "USE",
+        "SET",
     ]
     has_statement = any(stmt in code.upper() for stmt in statements)
     if not has_statement:
