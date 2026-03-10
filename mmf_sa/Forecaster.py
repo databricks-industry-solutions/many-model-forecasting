@@ -365,6 +365,7 @@ class Forecaster:
             self (Forecaster): A Forecaster object.
             model_conf (dict): A dictionary specifying the model configuration.
         """
+        mlflow.autolog(disable=True)
         with mlflow.start_run(experiment_id=self.experiment_id) as run:
             model_name = model_conf["name"]
             hist_df, removed = self.prepare_data_for_global_model("evaluating")
