@@ -1,0 +1,48 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "skill-test"
+version = "0.1.0"
+description = "Testing framework for evaluating Databricks skills"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pyyaml>=6.0",
+    "mlflow[databricks]>=3.6.1",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+databricks = ["databricks-sdk>=0.20.0"]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
+tier1 = [
+    "pytest>=8.0",
+    "duckdb",
+    "openai",
+    "sqlglot>=28.0",
+    "pytz",
+    "python-dotenv",
+    "numpy",
+    "pandas",
+]
+optimize = ["gepa>=0.1.0", "tiktoken>=0.7.0"]
+# judges group: install separately when mlflow-deepeval/mlflow-ragas are published
+# judges = ["mlflow-deepeval>=0.1.0", "mlflow-ragas>=0.1.0"]
+all = ["skill-test[databricks,dev,optimize,tier1]"]
+
+[project.scripts]
+skill-test = "skill_test.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/skill_test"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+asyncio_mode = "auto"
+markers = [
+    "tier1: Tier 1 skill logic tests (require DATABRICKS_TOKEN, use DuckDB mock backend)",
+    "tier2: Tier 2 workspace integration tests (require live Databricks workspace)",
+]
