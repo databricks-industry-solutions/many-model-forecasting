@@ -1,4 +1,4 @@
-[![CI](https://github.com/lbruand-db/mmf-dev-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/lbruand-db/mmf-dev-kit/actions/workflows/ci.yml)
+[![Skills CI](https://github.com/databricks-industry-solutions/many-model-forecasting/actions/workflows/skills-ci.yml/badge.svg)](https://github.com/databricks-industry-solutions/many-model-forecasting/actions/workflows/skills-ci.yml)
 
 # Many-Model Forecasting (MMF) Dev Kit
 
@@ -29,7 +29,7 @@ This skill depends on the **Databricks MCP tools** (e.g., `connect_to_workspace`
 Download `install.py` and run it — no need to clone the entire repo:
 
 ```bash
-curl -O https://raw.githubusercontent.com/lbruand-db/mmf-dev-kit/main/install.py
+curl -O https://raw.githubusercontent.com/databricks-industry-solutions/many-model-forecasting/main/skills/install.py
 python3 install.py --target /path/to/your-project
 ```
 

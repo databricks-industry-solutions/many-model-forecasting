@@ -29,7 +29,7 @@ SKILL_FILES = [
 ]
 MARKER = "<!-- mmf-dev-kit:skills -->"
 ALL_TOOLS = ["claude", "cursor", "gemini"]
-REPO_RAW_URL = "https://raw.githubusercontent.com/lbruand-db/mmf-dev-kit/main"
+REPO_RAW_URL = "https://raw.githubusercontent.com/databricks-industry-solutions/many-model-forecasting/main/skills"
 
 SKILL_REFERENCE_BLOCK = """\
 ## Many-Model Forecasting Skill
