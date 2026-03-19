@@ -59,6 +59,12 @@ On Databricks, use `%pip` in a notebook cell:
 dbutils.library.restartPython()
 ```
 
+### Using MMF with AI Coding Assistants (Skills)
+
+MMF is also available as a **skill** for AI coding assistants such as [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview). The MMF skill is part of the [mmf-dev-kit](https://github.com/databricks-industry-solutions/many-model-forecasting/tree/main/skills), a focused development kit that teaches AI assistants how to explore your time series data, configure the right Databricks cluster, and run the full MMF forecasting pipeline — all through natural language commands.
+
+The skill builds on top of [ai-dev-kit](https://github.com/databricks-solutions/ai-dev-kit), which provides the Databricks MCP tools (workspace connectivity, SQL execution, cluster management) that the AI assistant uses under the hood. Once installed, you can run three slash commands directly from your terminal: `/explore-data` to profile your time series, `/setup-cluster` to configure the right cluster type (CPU for local models, GPU for foundation models), and `/run-mmf` to launch the full forecasting pipeline. For installation instructions and full details, see the [skills README](https://github.com/databricks-industry-solutions/many-model-forecasting/tree/main/skills).
+
 ### Local Models
 
 Local models are used to model individual time series. They could be advantageous over other types of model for their capabilities to tailor fit to individual series, offer greater interpretability, and require lower data requirements. We support models from [statsforecast](https://github.com/Nixtla/statsforecast), and [sktime](https://www.sktime.net/en/stable/). Covariates (i.e. exogenous regressors) are currently only supported for some models from statsforecast. 
