@@ -77,7 +77,9 @@ uv run --extra dev python scripts/run_eval.py many-model-forecasting
 
 ## Demo
 
-![MMF Dev Kit demo](mmf-demo.svg)
+The following demo shows the three MMF slash commands in action against a real Databricks workspace: `/explore-data` profiles the time series and checks data quality, `/setup-cluster` configures the right cluster type based on the models you want to run, and `/run-mmf` launches the full forecasting pipeline — all from the terminal, driven by an AI coding assistant.
+
+<img src="mmf-demo.svg" width="750" alt="MMF Dev Kit demo"/>
 
 ## License
 
