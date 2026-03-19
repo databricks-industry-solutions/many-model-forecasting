@@ -11,10 +11,6 @@ A focused development kit for the **Many-Model Forecasting** skill, enabling AI 
 | [`databricks-skills/many-model-forecasting/`](databricks-skills/many-model-forecasting/) | The MMF skill — patterns and best practices for forecasting on Databricks |
 | [`.test/`](.test/) | Test infrastructure for evaluating the skill |
 
-## Demo
-
-![MMF Dev Kit demo](mmf-demo.svg)
-
 ## The MMF Skill
 
 The Many-Model Forecasting skill teaches AI assistants how to:
@@ -78,6 +74,10 @@ uv run --extra dev python -m pytest tests/test_scorers.py -v
 # Skill evaluation
 uv run --extra dev python scripts/run_eval.py many-model-forecasting
 ```
+
+## Demo
+
+![MMF Dev Kit demo](mmf-demo.svg)
 
 ## License
 
