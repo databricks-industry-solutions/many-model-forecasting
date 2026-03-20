@@ -75,6 +75,12 @@ uv run --extra dev python -m pytest tests/test_scorers.py -v
 uv run --extra dev python scripts/run_eval.py many-model-forecasting
 ```
 
+## Demo
+
+The following demo shows the three MMF slash commands in action against a real Databricks workspace. These commands are implemented as Claude Code slash commands backed by Databricks MCP tools: `/explore-data` profiles the time series and checks data quality, `/setup-cluster` configures the right cluster type based on the models you want to run, and `/run-mmf` launches the full forecasting pipeline — all from the terminal, driven by an AI coding assistant.
+
+<img src="mmf-demo.svg" width="750" alt="MMF Dev Kit demo"/>
+
 ## License
 
 Copyright 2026 Databricks, Inc. Licensed under the [Apache License, Version 2.0](http://www.apache.org/licenses/LICENSE-2.0). See [LICENSE](LICENSE) for details.
