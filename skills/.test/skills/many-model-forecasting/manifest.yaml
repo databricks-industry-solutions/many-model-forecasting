@@ -2,7 +2,8 @@
 skill_name: many-model-forecasting
 description: >
   Kickstart Many Models Forecasting (MMF) projects on Databricks — explore
-  data, configure clusters, and run forecasting pipelines with mmf_sa.
+  data, profile series, configure clusters, run forecasting pipelines, and
+  evaluate results with mmf_sa.
 triggers:
   - many model forecasting
   - mmf
@@ -12,6 +13,14 @@ triggers:
   - statsforecast
   - neuralforecast
   - chronos
+  - prep and clean data
+  - profile series
+  - classify series
+  - provision cluster
+  - provision resources
+  - execute forecast
+  - post evaluation
+  - evaluate forecast
 
 scorers:
   # Deterministic scorers
@@ -36,6 +45,9 @@ scorers:
     - "Cluster configurations must match documented runtimes and node types"
     - "Notebook generation must use the template placeholders correctly"
     - "Must use run_forecast from mmf_sa with the correct parameters"
+    - "Must collect a use_case name before creating any tables"
+    - "All generated table names must be prefixed with {use_case}_"
+    - "GPU models must run one-per-session to avoid CUDA memory issues"
 
   # Trace expectations for session evaluation
   trace_expectations:
@@ -45,6 +57,9 @@ scorers:
       mcp__databricks-v2__execute_parameterized_sql: 20
       mcp__databricks-v2__connect_to_workspace: 3
       mcp__databricks-v2__databricks_jobs: 5
+      mcp__databricks-v2__list_clusters: 5
+      mcp__databricks-v2__start_cluster: 3
+      mcp__databricks-v2__create_cluster: 3
     token_budget:
       max_total: 150000
     required_tools:
