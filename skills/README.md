@@ -57,8 +57,8 @@ your-project/
     ├── 1-explore-data.md
     ├── 2-setup-the-mmf-cluster.md
     ├── 3-run-mmf.md
-    ├── mmf_local_notebook_template.py
-    └── mmf_gpu_notebook_template.py
+    ├── mmf_local_notebook_template.ipynb
+    └── mmf_gpu_notebook_template.ipynb
 ```
 
 Re-running the installer is safe — it updates existing configurations without duplication.
@@ -80,7 +80,3 @@ uv run --extra dev python scripts/run_eval.py many-model-forecasting
 The following demo shows the three MMF slash commands in action against a real Databricks workspace. These commands are implemented as Claude Code slash commands backed by Databricks MCP tools: `/explore-data` profiles the time series and checks data quality, `/setup-cluster` configures the right cluster type based on the models you want to run, and `/run-mmf` launches the full forecasting pipeline — all from the terminal, driven by an AI coding assistant.
 
 <img src="mmf-demo.svg" width="750" alt="MMF Dev Kit demo"/>
-
-## License
-
-Copyright 2026 Databricks, Inc. Licensed under the [Apache License, Version 2.0](http://www.apache.org/licenses/LICENSE-2.0). See [LICENSE](LICENSE) for details.

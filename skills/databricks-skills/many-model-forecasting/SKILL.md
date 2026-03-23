@@ -66,8 +66,8 @@ See [2-setup-the-mmf-cluster.md](2-setup-the-mmf-cluster.md) for Azure and GCP n
 
 ## Notebook Templates
 
-- [mmf_local_notebook_template.py](mmf_local_notebook_template.py) — CPU models (StatsForecast, Prophet)
-- [mmf_gpu_notebook_template.py](mmf_gpu_notebook_template.py) — GPU models (NeuralForecast, Chronos, TimesFM)
+- [mmf_local_notebook_template.ipynb](mmf_local_notebook_template.ipynb) — CPU models (StatsForecast, Prophet)
+- [mmf_gpu_notebook_template.ipynb](mmf_gpu_notebook_template.ipynb) — GPU models (NeuralForecast, Chronos, TimesFM)
 
 ## Prerequisites
 

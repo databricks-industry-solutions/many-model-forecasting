@@ -66,8 +66,8 @@ Present all parameters to the user via `AskUserQuestion` for validation.
 | `{pip_extras}` | `[foundation]` or `[global]` (GPU template only) |
 
 Use the templates from:
-- [mmf_local_notebook_template.py](mmf_local_notebook_template.py) for `notebooks/run_local`
-- [mmf_gpu_notebook_template.py](mmf_gpu_notebook_template.py) for `notebooks/run_foundation` (with `{pip_extras}` = `[foundation]`) and `notebooks/run_global` (with `{pip_extras}` = `[global]`)
+- [mmf_local_notebook_template.ipynb](mmf_local_notebook_template.ipynb) for `notebooks/run_local`
+- [mmf_gpu_notebook_template.ipynb](mmf_gpu_notebook_template.ipynb) for `notebooks/run_foundation` (with `{pip_extras}` = `[foundation]`) and `notebooks/run_global` (with `{pip_extras}` = `[global]`)
 
 ### Step 3: Upload notebooks
 
