@@ -1,48 +1,34 @@
 metadata:
   skill_name: many-model-forecasting
-  version: 0.1.0
-  created_at: '2026-03-05T10:00:00.000000'
+  version: 0.2.0
+  created_at: '2026-03-23T10:00:00.000000'
 test_cases:
-- id: mmf_20260305_explore_data
+- id: mmf_20260323_prep_and_clean_data
   inputs:
-    prompt: Explore my time series data in catalog `sales_catalog` schema `forecasting` and create the mmf_train_data table
+    prompt: >
+      Prepare and clean my time series data in catalog `sales_catalog` schema `forecasting`.
+      Use case name is "retail". Create the retail_train_data table.
   outputs:
-    response: "I'll explore your time series data and prepare it for MMF forecasting.\n\
-      \n**Step 1: Connect to workspace**\n\n```python\nconnect_to_workspace()\n```\n\
-      \n**Step 2: List tables**\n\n```sql\nSHOW TABLES IN sales_catalog.forecasting\n\
-      ```\n\n**Step 3: Describe candidate tables**\n\n```sql\nDESCRIBE TABLE sales_catalog.forecasting.daily_sales\n\
-      ```\n\n**Step 4: Profile the table**\n\n```sql\nSELECT COUNT(*) AS count FROM\
-      \ sales_catalog.forecasting.daily_sales\n```\n\n```sql\nSELECT MIN(sale_date)\
-      \ AS min_ds, MAX(sale_date) AS max_ds FROM sales_catalog.forecasting.daily_sales\n\
-      ```\n\n```sql\nSELECT COUNT(DISTINCT store_id) AS unique_count FROM sales_catalog.forecasting.daily_sales\n\
-      ```\n\n**Step 4a: Detect frequency**\n\n```sql\nSELECT ROUND(AVG(diff_days),\
-      \ 1) AS avg_gap, MIN(diff_days) AS min_gap, MAX(diff_days) AS max_gap\nFROM\
-      \ (\n  SELECT DATEDIFF(DAY, LAG(sale_date) OVER (PARTITION BY store_id ORDER\
-      \ BY sale_date), sale_date) AS diff_days\n  FROM sales_catalog.forecasting.daily_sales\n\
-      ) sub WHERE diff_days IS NOT NULL\n```\n\nDetected frequency: Daily (`freq=D`).\n\
-      \n**Step 5: Data quality checks**\n\n```sql\nSELECT store_id,\n       COUNT(*)\
-      \ AS total,\n       SUM(CASE WHEN revenue IS NULL THEN 1 ELSE 0 END) AS missing_y,\n\
-      \       ROUND(SUM(CASE WHEN revenue IS NULL THEN 1 ELSE 0 END) / COUNT(*) *\
-      \ 100, 2) AS missing_pct\nFROM sales_catalog.forecasting.daily_sales\nGROUP\
-      \ BY store_id\nHAVING missing_pct > 0\nORDER BY missing_pct DESC\n```\n\n**Step\
-      \ 6: Create mmf_train_data**\n\n```sql\nCREATE OR REPLACE TABLE sales_catalog.forecasting.mmf_train_data\
-      \ AS\nSELECT\n    CAST(store_id AS STRING) AS unique_id,\n    CAST(sale_date\
-      \ AS TIMESTAMP) AS ds,\n    CAST(revenue AS DOUBLE) AS y\nFROM sales_catalog.forecasting.daily_sales\n\
-      WHERE revenue IS NOT NULL\n```\n\nVerify:\n```sql\nSELECT COUNT(*) AS count\
-      \ FROM sales_catalog.forecasting.mmf_train_data\n```\n\nThe `mmf_train_data`\
-      \ table is ready with columns `unique_id` (STRING), `ds` (TIMESTAMP), `y` (DOUBLE)."
+    response: ""
     execution_success: true
   expectations:
     expected_facts:
-    - Creates mmf_train_data table with unique_id, ds, y columns
-    - Casts unique_id to STRING, ds to TIMESTAMP, y to DOUBLE
-    - Runs data quality checks for missing values
-    - Detects time series frequency
+    - Collects use_case name before any data exploration (Step 0)
     - Uses SHOW TABLES to discover tables
+    - Runs DESCRIBE TABLE on candidate tables
+    - Detects time series frequency
+    - Creates {use_case}_train_data table with unique_id, ds, y columns
+    - Casts unique_id to STRING, ds to TIMESTAMP, y to DOUBLE
+    - Generates date spine to detect implicit gaps (Step 7a)
+    - Presents missing data summary with AskUserQuestion and imputation options
+    - Performs IQR-based anomaly detection (Step 8)
+    - Presents anomaly summary with AskUserQuestion for capping range
+    - Creates {use_case}_cleaning_report table (Step 9)
+    - All table names prefixed with use_case (retail_train_data, retail_cleaning_report)
     expected_patterns:
-    - pattern: mmf_train_data
+    - pattern: _train_data
       min_count: 2
-      description: Must reference the MMF training table
+      description: Must reference the use-case-prefixed training table
     - pattern: unique_id
       min_count: 1
       description: Must include unique_id column
@@ -55,56 +41,102 @@ test_cases:
     - pattern: SHOW TABLES
       min_count: 1
       description: Must discover available tables
+    - pattern: SEQUENCE
+      min_count: 1
+      description: Must generate date spine for gap detection
+    - pattern: PERCENTILE
+      min_count: 1
+      description: Must compute IQR for anomaly detection
     guidelines:
+    - Must collect use_case name before any table discovery (Step 0)
     - Must explore the catalog/schema to discover time series tables
-    - Must detect the data frequency (daily, weekly, monthly)
-    - Must run data quality checks before creating the training table
-    - Must create mmf_train_data with the correct MMF schema (unique_id STRING, ds TIMESTAMP, y DOUBLE)
-    - Should filter out NULL target values
+    - Must detect the data frequency (hourly, daily, weekly, monthly)
+    - Must generate date spine to detect implicit gaps
+    - Must present missing data summary and AskUserQuestion with imputation options
+    - Must present anomaly summary and AskUserQuestion for capping range
+    - Must create {use_case}_train_data with the correct MMF schema (unique_id STRING, ds TIMESTAMP, y DOUBLE)
+    - Must create {use_case}_cleaning_report with imputation_method and iqr_multiplier columns
+    - Should filter out NULL target values in initial table creation
+    - Original Step 6 (read-only quality diagnostic) must NOT be present
   metadata:
     category: happy_path
     difficulty: medium
     source: interactive
     tags:
-    - explore-data
+    - prep-and-clean-data
     - sql
     - data-preparation
-    created_at: '2026-03-05T10:00:00.000000'
-    execution_verified:
-      mode: local
-      verified_date: '2026-03-05'
+    - cleaning
+    created_at: '2026-03-23T10:00:00.000000'
 
-- id: mmf_20260305_setup_cluster_cpu
+- id: mmf_20260323_profile_series
+  inputs:
+    prompt: >
+      Profile and classify the time series in catalog `sales_catalog` schema `forecasting`.
+      Use case name is "retail", freq=D, prediction_length=30.
+  outputs:
+    response: ""
+    execution_success: true
+  expectations:
+    expected_facts:
+    - Accepts use_case parameter and writes to {use_case}_series_profile
+    - Verifies {use_case}_train_data exists before profiling
+    - Generates notebook from mmf_profiling_notebook_template.ipynb
+    - Uploads notebook to workspace
+    - Creates Workflow job on CPU cluster
+    - Profiling computes adf_pvalue, seasonality_strength, spectral_entropy
+    - Classification produces exactly two classes (high_confidence, low_signal)
+    - Model recommendations use only names from MMF model catalog
+    - Presents classification summary to user
+    expected_patterns:
+    - pattern: _series_profile
+      min_count: 1
+      description: Must reference the use-case-prefixed profile table
+    - pattern: high_confidence
+      min_count: 1
+      description: Must include high_confidence classification
+    - pattern: low_signal
+      min_count: 1
+      description: Must include low_signal classification
+    - pattern: mmf_profiling_notebook_template
+      min_count: 1
+      description: Must reference the profiling template
+    guidelines:
+    - Must verify training data exists before profiling
+    - Must generate notebook from template with correct placeholder substitution
+    - Must create Workflow job on CPU cluster (profiling is CPU-bound)
+    - Classification must produce exactly two classes (high_confidence, low_signal)
+    - Model recommendations must use exact MMF model names
+  metadata:
+    category: happy_path
+    difficulty: medium
+    source: interactive
+    tags:
+    - profile-series
+    - classification
+    - notebook
+    created_at: '2026-03-23T10:05:00.000000'
+
+- id: mmf_20260323_provision_resources_cpu
   inputs:
     prompt: Set up a cluster configuration for running local statistical models (AutoArima, AutoETS) on AWS
   outputs:
-    response: "For local statistical models on AWS, you need a CPU cluster. Here's\
-      \ the recommended configuration:\n\n**CPU Cluster (`mmf_cpu_cluster`)**\n\n\
-      | Setting | Value |\n|---------|-------|\n| **Runtime** | `17.3.x-cpu-ml-scala2.13`\
-      \ |\n| **Node type** | `i3.xlarge` |\n| **Workers** | 2 |\n| **Spark config**\
-      \ | See below |\n\n```python\ncluster_config = {\n    \"cluster_key\": \"mmf_cpu_cluster\"\
-      ,\n    \"spark_version\": \"17.3.x-cpu-ml-scala2.13\",\n    \"node_type_id\"\
-      : \"i3.xlarge\",\n    \"num_workers\": 2,\n    \"spark_conf\": {\n        \"\
-      spark.sql.execution.arrow.enabled\": \"true\",\n        \"spark.sql.adaptive.enabled\"\
-      : \"false\",\n        \"spark.databricks.delta.formatCheck.enabled\": \"false\"\
-      ,\n        \"spark.databricks.delta.schema.autoMerge.enabled\": \"true\"\n \
-      \   }\n}\n```\n\nSince you're only running local models (StatsForecastAutoArima,\
-      \ StatsForecastAutoETS), a CPU cluster is sufficient — no GPU cluster needed.\n\
-      \nThis cluster will be created as an ephemeral job cluster within the Databricks\
-      \ Workflow when you run `/run-mmf`."
+    response: ""
     execution_success: true
   expectations:
     expected_facts:
     - Uses CPU cluster for local models
     - Runtime is 17.3.x-cpu-ml-scala2.13
     - Node type is i3.xlarge for AWS
-    - 2 workers
+    - Workers based on series count (dynamic sizing)
     - Includes spark.sql.execution.arrow.enabled=true
     - No GPU cluster needed for local models only
+    - Cluster name prefixed with use_case
+    - Verifies Unity Catalog enablement
     expected_patterns:
-    - pattern: mmf_cpu_cluster
+    - pattern: _cpu_cluster
       min_count: 1
-      description: Must use the CPU cluster key name
+      description: Must use the use-case-prefixed CPU cluster key name
     - pattern: 17\.3\.x-cpu-ml-scala2\.13
       min_count: 1
       description: Must specify the correct CPU runtime
@@ -118,43 +150,26 @@ test_cases:
     - Must recommend CPU cluster for local statistical models
     - Must use the correct runtime version and node type for AWS
     - Must include all required Spark configuration parameters
+    - Must suggest worker count based on number of series
     - Should explain that GPU cluster is not needed for local models
     - Should mention the cluster is ephemeral (job cluster)
+    - Must verify Unity Catalog enablement
   metadata:
     category: happy_path
     difficulty: easy
     source: interactive
     tags:
-    - setup-cluster
+    - provision-resources
     - cpu
     - aws
     - local-models
-    created_at: '2026-03-05T10:05:00.000000'
-    execution_verified:
-      mode: local
-      verified_date: '2026-03-05'
+    created_at: '2026-03-23T10:10:00.000000'
 
-- id: mmf_20260305_setup_cluster_gpu
+- id: mmf_20260323_provision_resources_gpu
   inputs:
     prompt: Configure clusters for running both local and foundation models (Chronos, AutoArima) on Azure
   outputs:
-    response: "Since you're running both local and foundation models, you need both\
-      \ a CPU and GPU cluster.\n\n**CPU Cluster (`mmf_cpu_cluster`)** — for StatsForecastAutoArima\n\
-      \n```python\ncpu_cluster = {\n    \"cluster_key\": \"mmf_cpu_cluster\",\n  \
-      \  \"spark_version\": \"17.3.x-cpu-ml-scala2.13\",\n    \"node_type_id\": \"\
-      Standard_DS3_v2\",\n    \"num_workers\": 2,\n    \"spark_conf\": {\n        \"\
-      spark.sql.execution.arrow.enabled\": \"true\",\n        \"spark.sql.adaptive.enabled\"\
-      : \"false\",\n        \"spark.databricks.delta.formatCheck.enabled\": \"false\"\
-      ,\n        \"spark.databricks.delta.schema.autoMerge.enabled\": \"true\"\n \
-      \   }\n}\n```\n\n**GPU Cluster (`mmf_gpu_cluster`)** — for ChronosBoltTiny/Mini/Small/Base\n\
-      \n```python\ngpu_cluster = {\n    \"cluster_key\": \"mmf_gpu_cluster\",\n  \
-      \  \"spark_version\": \"18.0.x-gpu-ml-scala2.13\",\n    \"node_type_id\": \"\
-      Standard_NV36ads_A10_v5\",\n    \"num_workers\": 0,\n    \"spark_conf\": {\n\
-      \        \"spark.databricks.delta.formatCheck.enabled\": \"false\",\n       \
-      \ \"spark.databricks.delta.schema.autoMerge.enabled\": \"true\"\n    }\n}\n\
-      ```\n\nThe GPU cluster runs as a single-node (0 workers) because foundation\
-      \ models run on the driver GPU directly. Both clusters are ephemeral job clusters\
-      \ created within the Databricks Workflow."
+    response: ""
     execution_success: true
   expectations:
     expected_facts:
@@ -162,21 +177,20 @@ test_cases:
     - CPU runtime is 17.3.x-cpu-ml-scala2.13
     - GPU runtime is 18.0.x-gpu-ml-scala2.13
     - Azure CPU node is Standard_DS3_v2
-    - Azure GPU node is Standard_NV36ads_A10_v5
+    - GPU instance type is user-selectable
     - GPU cluster has 0 workers (single-node)
+    - Cluster names prefixed with use_case
+    - Presents GPU instance selection options to user
     expected_patterns:
-    - pattern: mmf_cpu_cluster
+    - pattern: _cpu_cluster
       min_count: 1
       description: Must include CPU cluster
-    - pattern: mmf_gpu_cluster
+    - pattern: _gpu_cluster
       min_count: 1
       description: Must include GPU cluster
     - pattern: 18\.0\.x-gpu-ml-scala2\.13
       min_count: 1
       description: Must specify correct GPU runtime
-    - pattern: Standard_NV36ads_A10_v5
-      min_count: 1
-      description: Must use correct Azure GPU node type
     - pattern: Standard_DS3_v2
       min_count: 1
       description: Must use correct Azure CPU node type
@@ -184,60 +198,40 @@ test_cases:
     - Must recommend both CPU and GPU clusters for local + foundation models
     - Must use correct Azure node types
     - GPU cluster must be single-node (0 workers) for foundation models
+    - Must present GPU instance type options to user
     - Must include all required Spark configuration parameters for each cluster
   metadata:
     category: happy_path
     difficulty: medium
     source: interactive
     tags:
-    - setup-cluster
+    - provision-resources
     - gpu
     - azure
     - foundation-models
     - multi-cluster
-    created_at: '2026-03-05T10:10:00.000000'
-    execution_verified:
-      mode: local
-      verified_date: '2026-03-05'
+    created_at: '2026-03-23T10:15:00.000000'
 
-- id: mmf_20260305_run_local
+- id: mmf_20260323_execute_forecast_local
   inputs:
-    prompt: Run MMF with local models (AutoArima, AutoETS, AutoTheta) on catalog `retail` schema `demand`, daily frequency, prediction_length 30
+    prompt: >
+      Run MMF with local models (AutoArima, AutoETS, AutoTheta) on catalog `retail` schema `demand`,
+      use case "store", daily frequency, prediction_length 30
   outputs:
-    response: "I'll generate and run the local models forecasting notebook.\n\n**Step\
-      \ 1: Verify training data**\n\n```sql\nSELECT COUNT(*) AS count FROM retail.demand.mmf_train_data\n\
-      ```\n\n**Step 2: Generate notebook**\n\nUsing the local notebook template with\
-      \ these parameters:\n\n```python\ncatalog = \"retail\"\nschema = \"demand\"\n\
-      train_table = \"mmf_train_data\"\nfreq = \"D\"\nprediction_length = 30\nbacktest_length\
-      \ = 90\nstride = 30\nmetric = \"smape\"\nactive_models = [\"StatsForecastAutoArima\"\
-      , \"StatsForecastAutoETS\", \"StatsForecastAutoTheta\"]\ngroup_id = \"unique_id\"\
-      \ndate_col = \"ds\"\ntarget = \"y\"\n```\n\n**Step 3: Create Workflow job**\n\
-      \n```python\njob_config = {\n    \"name\": \"mmf_forecasting\",\n    \"job_clusters\"\
-      : [\n        {\n            \"job_cluster_key\": \"mmf_cpu_cluster\",\n     \
-      \       \"new_cluster\": {\n                \"spark_version\": \"17.3.x-cpu-ml-scala2.13\"\
-      ,\n                \"node_type_id\": \"i3.xlarge\",\n                \"num_workers\"\
-      : 2,\n                \"spark_conf\": {\n                    \"spark.sql.execution.arrow.enabled\"\
-      : \"true\",\n                    \"spark.sql.adaptive.enabled\": \"false\",\n\
-      \                    \"spark.databricks.delta.formatCheck.enabled\": \"false\"\
-      ,\n                    \"spark.databricks.delta.schema.autoMerge.enabled\":\
-      \ \"true\"\n                }\n            }\n        }\n    ],\n    \"tasks\"\
-      : [\n        {\n            \"task_key\": \"mmf_local_models\",\n           \
-      \ \"notebook_task\": {\n                \"notebook_path\": \"notebooks/run_local\"\
-      \n            },\n            \"job_cluster_key\": \"mmf_cpu_cluster\"\n    \
-      \    }\n    ]\n}\n```\n\n**Step 4: Analyze results**\n\n```sql\nSELECT model,\
-      \ ROUND(AVG(smape), 4) AS avg_metric, COUNT(*) AS series_count\nFROM retail.demand.mmf_evaluation_output\n\
-      GROUP BY model\nORDER BY avg_metric\n```\n\nThis runs StatsForecastAutoArima,\
-      \ StatsForecastAutoETS, and StatsForecastAutoTheta with a 30-day forecast horizon\
-      \ and 90-day backtest window (3x prediction_length)."
+    response: ""
     execution_success: true
   expectations:
     expected_facts:
     - Uses StatsForecastAutoArima, StatsForecastAutoETS, StatsForecastAutoTheta model names
     - Sets prediction_length to 30
-    - Sets backtest_length to 90 (3 * prediction_length)
+    - Derives backtest_length and stride from backtest strategy
     - Uses daily frequency (D)
-    - References retail.demand.mmf_train_data
+    - References {use_case}_train_data
     - Creates a Workflow job with CPU cluster
+    - Generates one notebook per GPU model (not applicable for local-only)
+    - Logs run metadata to {use_case}_run_metadata
+    - All output table names use {use_case} prefix
+    - Hands off to post-processing (Skill 5) for analysis
     expected_patterns:
     - pattern: StatsForecastAutoArima
       min_count: 1
@@ -254,69 +248,54 @@ test_cases:
     - pattern: backtest_length
       min_count: 1
       description: Must specify backtest length
-    - pattern: mmf_train_data
+    - pattern: _train_data
       min_count: 1
-      description: Must reference the training table
-    - pattern: mmf_evaluation_output
+      description: Must reference the use-case-prefixed training table
+    - pattern: _evaluation_output
       min_count: 1
-      description: Must reference the evaluation output table
+      description: Must reference use-case-prefixed evaluation output table
+    - pattern: _run_metadata
+      min_count: 1
+      description: Must reference use-case-prefixed run metadata table
     guidelines:
     - Must use exact MMF model names (StatsForecastAutoArima, not AutoArima)
-    - backtest_length should default to 3 * prediction_length
+    - Must present backtest strategy options and derive backtest_length and stride
     - Must create a Workflow job with CPU cluster for local models
     - Must verify training data exists before running
-    - Should include result analysis SQL queries
+    - Must log run metadata to {use_case}_run_metadata
+    - Must hand off to Skill 5 for result analysis
+    - All output table names must use {use_case} prefix
   metadata:
     category: happy_path
     difficulty: medium
     source: interactive
     tags:
-    - run-mmf
+    - execute-forecast
     - local-models
     - workflow
-    created_at: '2026-03-05T10:15:00.000000'
-    execution_verified:
-      mode: local
-      verified_date: '2026-03-05'
+    created_at: '2026-03-23T10:20:00.000000'
 
-- id: mmf_20260305_run_foundation
+- id: mmf_20260323_execute_forecast_foundation
   inputs:
-    prompt: Run foundation model forecasting with ChronosBoltSmall and TimesFM on catalog `energy` schema `consumption`, weekly frequency, predict 12 weeks ahead
+    prompt: >
+      Run foundation model forecasting with ChronosBoltSmall and TimesFM on catalog `energy` schema `consumption`,
+      use case "power", weekly frequency, predict 12 weeks ahead
   outputs:
-    response: "I'll set up foundation model forecasting with GPU compute.\n\n**Step\
-      \ 1: Verify training data**\n\n```sql\nSELECT COUNT(*) AS count FROM energy.consumption.mmf_train_data\n\
-      ```\n\n**Step 2: Generate GPU notebook**\n\nUsing the GPU notebook template\
-      \ with `[foundation]` pip extras:\n\n```python\ncatalog = \"energy\"\nschema\
-      \ = \"consumption\"\ntrain_table = \"mmf_train_data\"\nfreq = \"W\"\nprediction_length\
-      \ = 12\nbacktest_length = 36\nstride = 12\nmetric = \"smape\"\nactive_models\
-      \ = [\"ChronosBoltSmall\", \"TimesFM_2_5_200m\"]\ngroup_id = \"unique_id\"\n\
-      date_col = \"ds\"\ntarget = \"y\"\n```\n\nThe notebook installs `mmf_sa[foundation]`\
-      \ and calls `run_forecast` with `accelerator=\"gpu\"`.\n\n**Step 3: Create Workflow\
-      \ job**\n\n```python\njob_config = {\n    \"name\": \"mmf_forecasting\",\n \
-      \   \"job_clusters\": [\n        {\n            \"job_cluster_key\": \"mmf_gpu_cluster\"\
-      ,\n            \"new_cluster\": {\n                \"spark_version\": \"18.0.x-gpu-ml-scala2.13\"\
-      ,\n                \"node_type_id\": \"g5.12xlarge\",\n                \"num_workers\"\
-      : 0,\n                \"spark_conf\": {\n                    \"spark.databricks.delta.formatCheck.enabled\"\
-      : \"false\",\n                    \"spark.databricks.delta.schema.autoMerge.enabled\"\
-      : \"true\"\n                }\n            }\n        }\n    ],\n    \"tasks\"\
-      : [\n        {\n            \"task_key\": \"mmf_foundation_models\",\n      \
-      \      \"notebook_task\": {\n                \"notebook_path\": \"notebooks/run_foundation\"\
-      \n            },\n            \"job_cluster_key\": \"mmf_gpu_cluster\"\n    \
-      \    }\n    ]\n}\n```\n\n**Step 4: Analyze results**\n\n```sql\nSELECT model,\
-      \ ROUND(AVG(smape), 4) AS avg_metric, COUNT(*) AS series_count\nFROM energy.consumption.mmf_evaluation_output\n\
-      GROUP BY model\nORDER BY avg_metric\n```\n\nThis runs ChronosBoltSmall and TimesFM_2_5_200m\
-      \ with a 12-week forecast horizon on a single-node GPU cluster (g5.12xlarge,\
-      \ 0 workers)."
+    response: ""
     execution_success: true
   expectations:
     expected_facts:
     - Uses ChronosBoltSmall and TimesFM_2_5_200m model names
     - Uses weekly frequency (W)
     - Sets prediction_length to 12
-    - Sets backtest_length to 36 (3 * prediction_length)
-    - GPU cluster with g5.12xlarge and 0 workers
+    - Derives backtest_length and stride from backtest strategy
+    - Generates one notebook per GPU model (ChronosBoltSmall, TimesFM_2_5_200m)
+    - Creates one Workflow task per GPU model chained sequentially via depends_on
+    - Passes shared run_id to all GPU notebook tasks
+    - GPU cluster with 0 workers (single-node)
     - Installs mmf_sa[foundation]
     - Uses accelerator="gpu"
+    - All output table names use {use_case} prefix
     expected_patterns:
     - pattern: ChronosBoltSmall
       min_count: 1
@@ -324,35 +303,91 @@ test_cases:
     - pattern: TimesFM_2_5_200m
       min_count: 1
       description: Must use correct foundation model name
-    - pattern: mmf_gpu_cluster
+    - pattern: _gpu_cluster
       min_count: 1
       description: Must use GPU cluster for foundation models
     - pattern: 18\.0\.x-gpu-ml-scala2\.13
       min_count: 1
       description: Must use GPU runtime
-    - pattern: g5\.12xlarge
-      min_count: 1
-      description: Must use correct GPU node type
     - pattern: foundation
       min_count: 1
       description: Must reference foundation pip extras
+    - pattern: depends_on
+      min_count: 1
+      description: GPU tasks must be chained sequentially
+    - pattern: run_id
+      min_count: 1
+      description: Must pass shared run_id to GPU tasks
     guidelines:
     - Must use exact MMF model names (ChronosBoltSmall, TimesFM_2_5_200m)
+    - Must generate one notebook per GPU model (CUDA memory constraint)
+    - Must create one Workflow task per GPU model chained sequentially via depends_on
+    - Must pass a shared run_id to all GPU notebook tasks
     - Must use GPU cluster for foundation models
     - GPU cluster must be single-node (0 workers)
     - Must install mmf_sa[foundation] (not mmf_sa[global])
-    - backtest_length should default to 3 * prediction_length
-    - Should include result analysis SQL queries
+    - Must present backtest strategy options
   metadata:
     category: happy_path
     difficulty: hard
     source: interactive
     tags:
-    - run-mmf
+    - execute-forecast
     - foundation-models
     - gpu
     - workflow
-    created_at: '2026-03-05T10:20:00.000000'
-    execution_verified:
-      mode: local
-      verified_date: '2026-03-05'
+    - cuda-memory
+    created_at: '2026-03-23T10:25:00.000000'
+
+- id: mmf_20260323_post_process_evaluate
+  inputs:
+    prompt: >
+      Evaluate the forecast results for use case "retail" in catalog `sales_catalog` schema `forecasting`.
+      Find the best model per series and generate a summary report.
+  outputs:
+    response: ""
+    execution_success: true
+  expectations:
+    expected_facts:
+    - Accepts use_case parameter and prefixes all table names
+    - Verifies {use_case}_evaluation_output and {use_case}_scoring_output exist
+    - Best model selection SQL uses RANK() window function
+    - Creates {use_case}_best_models table
+    - Computes model ranking (wins count)
+    - Creates {use_case}_evaluation_summary table
+    - Presents business-ready summary to user
+    - Cross-references with {use_case}_series_profile when available
+    - Suggests next steps based on results
+    expected_patterns:
+    - pattern: _best_models
+      min_count: 1
+      description: Must create use-case-prefixed best models table
+    - pattern: _evaluation_summary
+      min_count: 1
+      description: Must create use-case-prefixed evaluation summary table
+    - pattern: RANK
+      min_count: 1
+      description: Must use RANK() for best model selection
+    - pattern: _evaluation_output
+      min_count: 1
+      description: Must reference use-case-prefixed evaluation output
+    - pattern: _scoring_output
+      min_count: 1
+      description: Must reference use-case-prefixed scoring output
+    guidelines:
+    - Must verify evaluation and scoring output tables exist
+    - Must use RANK() window function for best model selection
+    - Must create {use_case}_best_models and {use_case}_evaluation_summary tables
+    - Must present business-ready summary with wins count and average metrics
+    - Should cross-reference with {use_case}_series_profile when available
+    - Should suggest next steps based on results quality
+  metadata:
+    category: happy_path
+    difficulty: medium
+    source: interactive
+    tags:
+    - post-process
+    - evaluation
+    - best-model
+    - sql
+    created_at: '2026-03-23T10:30:00.000000'
