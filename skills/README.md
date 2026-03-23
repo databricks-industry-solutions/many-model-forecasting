@@ -26,30 +26,30 @@ All generated assets are prefixed with a user-provided **use case name** (e.g., 
 ### The 5-Skill Pipeline
 
 ```
-/prep-and-clean-data  →  /profile-and-classify-series  →  /provision-forecasting-resources
-        ↓                          ↓                                ↓
-  Discover, clean &         Statistical profiling,          Configure CPU/GPU
-  prepare data              classify forecastability,       cluster(s)
-  → {use_case}_train_data   recommend models
+/prep-and-clean-data  →  /profile-and-classify-series (OPTIONAL)  →  /provision-forecasting-resources
+        ↓                          ↓                                          ↓
+  Discover, clean &         Statistical profiling,                  Ask user which models,
+  prepare data              classify forecastability,               configure CPU/GPU
+  → {use_case}_train_data   recommend models                       cluster(s)
                             → {use_case}_series_profile
 
                     →  /execute-mmf-forecast  →  /post-process-and-evaluate
                               ↓                            ↓
                       Generate notebooks,          Best model selection,
-                      submit Workflow job           business-ready summary
+                      submit 3 parallel jobs       business-ready summary
                       → {use_case}_evaluation      → {use_case}_best_models
                       → {use_case}_scoring         → {use_case}_evaluation_summary
 ```
 
 | Skill | Command | Description |
 |-------|---------|-------------|
-| 1 | `/prep-and-clean-data` | Discover tables, map columns, impute missing data, cap anomalies |
-| 2 | `/profile-and-classify-series` | Compute statistical properties, classify forecastability, recommend models |
-| 3 | `/provision-forecasting-resources` | Configure CPU/GPU clusters with dynamic sizing and UC verification |
-| 4 | `/execute-mmf-forecast` | Generate notebooks, submit Workflow job (one task per GPU model), monitor |
+| 1 | `/prep-and-clean-data` | Discover tables, map columns, ask user about imputation and anomaly handling |
+| 2 | `/profile-and-classify-series` | **(Optional)** Compute statistical properties, classify forecastability, recommend models (serverless) |
+| 3 | `/provision-forecasting-resources` | Ask user which models and clusters, configure CPU/GPU (single-node GPU always) |
+| 4 | `/execute-mmf-forecast` | Generate orchestrator + run notebooks, create one job per model class, run in parallel |
 | 5 | `/post-process-and-evaluate` | Best-model selection, WAPE/sMAPE metrics, evaluation summary |
 
-Skills can be run end-to-end or individually. Skill 2 (profiling) is optional — Skills 3 and 4 fall back to manual configuration if the profile table doesn't exist.
+The workflow is **interactive** — the agent pauses at STOP gates to ask the user for decisions (catalog/schema, imputation strategy, anomaly handling, model selection, cluster configuration, backtesting setup). Skills can be run end-to-end or individually. Skill 2 (profiling) is optional — Skills 3 and 4 fall back to manual configuration if the profile table doesn't exist.
 
 ## Prerequisites
 
@@ -91,7 +91,8 @@ your-project/
     ├── 4-execute-mmf-forecast.md
     ├── 5-post-process-and-evaluate.md
     ├── mmf_local_notebook_template.ipynb
-    ├── mmf_gpu_notebook_template.ipynb
+    ├── mmf_gpu_run_notebook_template.ipynb
+    ├── mmf_gpu_orchestrator_notebook_template.ipynb
     └── mmf_profiling_notebook_template.ipynb
 ```
 

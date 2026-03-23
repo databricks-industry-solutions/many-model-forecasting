@@ -1,11 +1,12 @@
 # Prep and Clean Data
 
-**Slash command:** `/prep-and-clean-data <catalog> <schema>`
+**Slash command:** `/prep-and-clean-data`
 
-Collects a use case name, connects to a Databricks workspace, discovers time
-series tables, maps columns to the MMF schema (`unique_id`, `ds`, `y`),
-applies automated cleaning (imputation, anomaly capping), and creates the
-`{use_case}_train_data` table ready for forecasting.
+Asks the user for catalog, schema, and use case name, connects to a Databricks workspace,
+discovers time series tables, maps columns to the MMF schema (`unique_id`, `ds`, `y`),
+asks the user how to impute missing data, generates an anomaly analysis report,
+asks the user how to handle anomalies, and creates the `{use_case}_train_data` table
+ready for forecasting.
 
 ## Steps
 
@@ -26,6 +27,25 @@ Validation rules:
 - Cannot start with a number
 
 Store as `{use_case}` and propagate to all downstream skills. All table names in the pipeline use the pattern `{use_case}_<asset_name>` (e.g., `m4_train_data`, `rossmann_cleaning_report`).
+
+### ⛔ STOP GATE — Step 0a: Ask for catalog and schema
+
+**Do NOT assume catalog or schema values. Do NOT reuse values from prior runs. Always ask.**
+
+```
+AskUserQuestion:
+  "Which Unity Catalog catalog and schema should I use to discover your time series data?
+
+   • Catalog: (e.g., main, ml_dev, my_catalog)
+   • Schema:  (e.g., default, forecasting, my_schema)
+
+   I'll search for time series tables in this location."
+  Options: [free text — user provides catalog and schema]
+```
+
+**Do NOT proceed until the user provides both catalog and schema.**
+
+Store as `{catalog}` and `{schema}`.
 
 ### Step 1: Connect to workspace
 
@@ -205,7 +225,9 @@ The `SEQUENCE` interval changes by frequency:
 - Weekly (`freq=W`): `INTERVAL 7 DAY`
 - Monthly (`freq=M`): `INTERVAL 1 MONTH`
 
-#### Step 7b: Present summary and confirm strategy with user
+#### ⛔ STOP GATE — Step 7b: Present summary and ask user for imputation strategy
+
+**Do NOT proceed until the user chooses an imputation strategy.**
 
 ```
 AskUserQuestion:
@@ -221,6 +243,8 @@ AskUserQuestion:
    (c) Skip imputation — keep nulls as-is
    (d) Adjust the exclusion threshold (currently 20%)"
 ```
+
+**WAIT for the user to respond. Do NOT apply any imputation until the user confirms their choice.**
 
 #### Step 7c: Backfill the date spine and apply imputation
 
@@ -243,7 +267,7 @@ Then apply the chosen imputation on the now-explicit NULLs:
 
 Log the count of imputed values per series and excluded series for the cleaning report.
 
-### Step 8: Anomaly Detection & Capping
+### Step 8: Anomaly Detection & Analysis Report
 
 First, compute IQR statistics and flag anomalies per series:
 
@@ -280,11 +304,51 @@ HAVING anomaly_count > 0
 ORDER BY anomaly_pct DESC
 ```
 
-Present the anomaly summary and let the user define the capping range:
+#### Step 8a: Generate anomaly analysis report
+
+**Always generate and present an anomaly report before asking the user how to handle anomalies.**
+
+Present the following report to the user:
+
+```
+═══════════════════════════════════════════════════════
+          ANOMALY ANALYSIS REPORT
+          Use case: {use_case}
+═══════════════════════════════════════════════════════
+
+OVERALL SUMMARY
+  Total series analyzed:     {total_series}
+  Series with anomalies:     {n_affected} ({affected_pct}%)
+  Series without anomalies:  {n_clean} ({clean_pct}%)
+  Total anomalous points:    {total_anomalies} out of {total_points} ({overall_anomaly_pct}%)
+
+SEVERITY DISTRIBUTION
+  Low    (< 1% anomalous):   {n_low_severity} series
+  Medium (1-5% anomalous):   {n_med_severity} series
+  High   (> 5% anomalous):   {n_high_severity} series
+
+TOP 10 MOST AFFECTED SERIES
+  ┌──────────────┬─────────┬───────────┬────────────┬────────────┬──────────────┐
+  │ unique_id    │ total   │ anomalies │ anomaly_%  │ min_anom   │ max_anom     │
+  ├──────────────┼─────────┼───────────┼────────────┼────────────┼──────────────┤
+  │ {id_1}       │ {n_1}   │ {a_1}     │ {p_1}%     │ {min_1}    │ {max_1}      │
+  │ ...          │ ...     │ ...       │ ...        │ ...        │ ...          │
+  └──────────────┴─────────┴───────────┴────────────┴────────────┴──────────────┘
+
+IQR BOUNDS (1.5× multiplier)
+  Typical lower bound range: {min_lower} to {max_lower}
+  Typical upper bound range: {min_upper} to {max_upper}
+
+═══════════════════════════════════════════════════════
+```
+
+#### ⛔ STOP GATE — Step 8b: Ask user how to handle anomalies
+
+**Do NOT proceed until the user chooses an anomaly handling strategy.**
 
 ```
 AskUserQuestion:
-  "Anomaly detection summary (IQR-based):
+  "Based on the anomaly analysis report above:
    - {n_clean} series have no anomalies
    - {n_affected} series have outliers ({total_anomalies} points total, {anomaly_pct}% overall)
    - Default capping range: [Q1 - 1.5×IQR, Q3 + 1.5×IQR]
@@ -295,6 +359,10 @@ AskUserQuestion:
    (c) Custom multiplier: enter a value (e.g., 2.0)
    (d) Skip anomaly capping — keep all values as-is"
 ```
+
+**WAIT for the user to respond. Do NOT apply any capping until the user confirms their choice.**
+
+#### Step 8c: Apply capping (if chosen)
 
 If the user chooses (a), (b), or (c), apply capping using the chosen `{iqr_multiplier}`:
 
@@ -336,6 +404,31 @@ FROM ...
 ```
 
 Present cleaning summary to the user.
+
+### ⛔ STOP GATE — Step 10: Confirm before proceeding to next skill
+
+Present a summary of what was done and ask whether to proceed:
+
+```
+AskUserQuestion:
+  "✅ Data preparation complete for use case '{use_case}'.
+
+   Summary:
+   • Training table: {catalog}.{schema}.{use_case}_train_data
+   • Series count: {n_series}
+   • Date range: {min_date} → {max_date}
+   • Frequency: {freq}
+   • Imputation: {imputation_summary}
+   • Anomalies: {anomaly_summary}
+   • Cleaning report: {catalog}.{schema}.{use_case}_cleaning_report
+
+   Would you like to proceed to the next step?
+   (a) Run profiling & classification (optional — estimates series forecastability and recommends models)
+   (b) Skip profiling and go directly to cluster provisioning & model selection
+   (c) Stop here — I'll come back later"
+```
+
+**Do NOT proceed until the user responds.**
 
 ## Outputs
 

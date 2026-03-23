@@ -1,10 +1,25 @@
-# Profile and Classify Series
+# Profile and Classify Series (OPTIONAL)
 
-**Slash command:** `/profile-and-classify-series <catalog> <schema>`
+**Slash command:** `/profile-and-classify-series`
+
+**This skill is optional.** If the user skips it, they manually select models in Skill 3.
 
 Calculates statistical properties for each time series, partitions data into
 "High-Confidence" (forecastable) and "Low-Signal" (non-forecastable) groups,
-and recommends specific MMF model classes for each partition.
+and recommends specific MMF model classes for each partition. Runs on **serverless compute**.
+
+## Estimated Runtime
+
+Inform the user of approximate profiling times before they commit:
+
+| Series count | Estimated time | Notes |
+|-------------|---------------|-------|
+| < 100 | ~2–5 minutes | Quick validation |
+| 100–1,000 | ~5–15 minutes | Typical small-to-medium project |
+| 1,000–10,000 | ~15–45 minutes | Large project; serverless helps |
+| > 10,000 | ~1–2 hours | Consider sampling a subset first |
+
+The profiling involves STL decomposition, ADF tests, and spectral analysis per series. Serverless compute avoids cluster startup overhead, but wall-clock time scales linearly with series count.
 
 ## Parameters
 
@@ -41,13 +56,38 @@ SELECT COUNT(*) AS count FROM {catalog}.{schema}.{use_case}_train_data
 
 If the table does not exist or is empty, instruct the user to run `/prep-and-clean-data` first.
 
-### Step 2: Gather parameters
+### ⛔ STOP GATE — Step 2: Confirm catalog/schema and gather parameters
+
+**Always ask the user for catalog and schema. Do NOT assume or reuse values.**
 
 Use `AskUserQuestion` to confirm:
 - `catalog` and `schema`
 - `use_case` name
 - `freq` (detected frequency from Skill 1, or ask user)
 - `prediction_length` (forecast horizon — needed for series length classification)
+
+Also inform the user of the estimated runtime based on the series count:
+
+```
+AskUserQuestion:
+  "Profiling will analyze {n_series} time series.
+   Estimated runtime: {estimated_time}
+
+   Parameters:
+   • Catalog: {catalog}
+   • Schema: {schema}
+   • Use case: {use_case}
+   • Frequency: {freq}
+   • Prediction length: {prediction_length}
+
+   The job will run on serverless compute (no cluster startup delay).
+
+   Proceed with profiling?
+   (a) Yes, run profiling
+   (b) No, skip profiling and go to model selection"
+```
+
+**Do NOT proceed until the user confirms.**
 
 ### Step 3: Generate notebook from template
 
@@ -66,9 +106,9 @@ Replace these placeholders:
 Upload the generated notebook to the Databricks workspace at:
 - `notebooks/{use_case}/run_profiling`
 
-### Step 5: Create Workflow job
+### Step 5: Create Workflow job on serverless compute
 
-Create a single-task Workflow job on the **CPU cluster** (profiling is CPU-bound):
+Create a single-task Workflow job on **serverless compute** (profiling is CPU-bound and benefits from instant startup):
 
 ```json
 {
@@ -78,20 +118,12 @@ Create a single-task Workflow job on the **CPU cluster** (profiling is CPU-bound
     "notebook_task": {
       "notebook_path": "notebooks/{use_case}/run_profiling"
     },
-    "job_cluster_key": "{use_case}_cpu_cluster"
+    "environment_key": "Default"
   }],
-  "job_clusters": [{
-    "job_cluster_key": "{use_case}_cpu_cluster",
-    "new_cluster": {
-      "spark_version": "17.3.x-cpu-ml-scala2.13",
-      "node_type_id": "<cloud-specific node type>",
-      "num_workers": 2,
-      "spark_conf": {
-        "spark.sql.execution.arrow.enabled": "true",
-        "spark.sql.adaptive.enabled": "false",
-        "spark.databricks.delta.formatCheck.enabled": "false",
-        "spark.databricks.delta.schema.autoMerge.enabled": "true"
-      }
+  "environments": [{
+    "environment_key": "Default",
+    "spec": {
+      "client": "1"
     }
   }]
 }
@@ -169,6 +201,26 @@ Low-Signal (Non-Forecastable):
 | Intermittent/sparse (sparsity >0.3) | `StatsForecastTSB`, `StatsForecastADIDA`, `StatsForecastIMAPA`, `StatsForecastCrostonClassic` | Specialized intermittent demand models |
 | General / mixed characteristics | `StatsForecastAutoArima`, `NeuralForecastAutoNHITS`, `ChronosBoltBase`, `Chronos2`, `TimesFM_2_5_200m` | Broad coverage across model families |
 | Low-signal (non-forecastable) | `StatsForecastBaselineNaive`, `StatsForecastBaselineSeasonalNaive` | Baseline only; flag for human review |
+
+## ⛔ STOP GATE — Step 9: Confirm before proceeding to next skill
+
+```
+AskUserQuestion:
+  "✅ Profiling complete for use case '{use_case}'.
+
+   Summary:
+   • Total series profiled: {total}
+   • High-confidence: {high} ({high_pct}%)
+   • Low-signal: {low} ({low_pct}%)
+   • Recommended model types: {model_types}
+   • Profile table: {catalog}.{schema}.{use_case}_series_profile
+
+   Would you like to proceed to cluster provisioning and model selection?
+   (a) Yes, proceed to /provision-forecasting-resources
+   (b) No, stop here — I'll come back later"
+```
+
+**Do NOT proceed until the user responds.**
 
 ## Output
 

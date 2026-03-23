@@ -1,6 +1,6 @@
 # Post-Process and Evaluate
 
-**Slash command:** `/post-process-and-evaluate <catalog> <schema>`
+**Slash command:** `/post-process-and-evaluate`
 
 Calculates multiple accuracy metrics, performs best-model selection per series,
 and formats results for business consumption.
@@ -17,6 +17,20 @@ and formats results for business consumption.
 | `scoring_table` | `{use_case}_scoring_output` | Scoring output from Skill 4 |
 
 ## Steps
+
+### ⛔ STOP GATE — Step 0: Ask for catalog and schema
+
+**Always ask the user for catalog and schema. Do NOT assume or reuse values.**
+
+```
+AskUserQuestion:
+  "Which catalog and schema contain the forecast outputs?
+   • Catalog: (e.g., main, ml_dev)
+   • Schema:  (e.g., default, forecasting)
+   • Use case name: (e.g., m4, rossmann)"
+```
+
+**Do NOT proceed until the user provides catalog, schema, and use case name.**
 
 ### Step 1: Verify outputs exist
 
@@ -161,6 +175,26 @@ Based on results:
 - If local and foundation results are similar: suggest using local models for cost efficiency
 - If `low_signal` series still have high error: confirm they should be excluded from business decisions
 - If the user wants to iterate: allow re-running with different models or parameters
+
+### ⛔ STOP GATE — Step 9: Final confirmation
+
+```
+AskUserQuestion:
+  "✅ Post-processing and evaluation complete for use case '{use_case}'.
+
+   Summary:
+   • Total series evaluated: {total_series}
+   • Winning models: {n_winning_models}
+   • Top model: {top_model} ({top_wins} wins, {top_pct}%)
+   • Overall avg {metric}: {overall_avg}
+   • Best models table: {catalog}.{schema}.{use_case}_best_models
+   • Evaluation summary: {catalog}.{schema}.{use_case}_evaluation_summary
+
+   What would you like to do next?
+   (a) Re-run forecasting with different models or parameters
+   (b) Explore results further (drill into specific series or models)
+   (c) Done — all outputs are ready for business use"
+```
 
 ## Outputs
 

@@ -1,9 +1,10 @@
 # Execute MMF Forecast
 
-**Slash command:** `/execute-mmf-forecast <catalog> <schema>`
+**Slash command:** `/execute-mmf-forecast`
 
-Validates parameters, generates and submits Many Models Forecasting notebooks
-to Databricks, monitors execution, and logs run metadata.
+Validates parameters, asks the user about backtesting setup, generates notebooks
+using the **orchestrator + run_gpu** pattern, creates **one job per model class**
+(local, global, foundation), and triggers them **in parallel**.
 
 ## Parameters
 
@@ -17,7 +18,7 @@ Gather these from the user (with sensible defaults):
 | `backtest_length` | Derived from backtest strategy | Total historical points reserved for backtesting |
 | `stride` | Derived from backtest strategy | Step size between backtest windows |
 | `metric` | `smape` | Evaluation metric (`smape`, `mape`, `mae`, `mse`, `rmse`) |
-| `active_models` | `["StatsForecastAutoArima", "StatsForecastAutoETS", "StatsForecastAutoCES", "StatsForecastAutoTheta"]` | Models to run |
+| `active_models` | From Skill 3 | Models to run (grouped by class) |
 | `train_data` | `<catalog>.<schema>.{use_case}_train_data` | Input table (from `/prep-and-clean-data`) |
 | `evaluation_output` | `<catalog>.<schema>.{use_case}_evaluation_output` | Evaluation results table |
 | `scoring_output` | `<catalog>.<schema>.{use_case}_scoring_output` | Scoring results table |
@@ -65,9 +66,11 @@ WHERE forecastability_class = 'high_confidence'
 
 Parse the comma-separated model names and propose them as `active_models`. Present to user via `AskUserQuestion` for confirmation.
 
-If `{use_case}_series_profile` does NOT exist → skip this step; use the user-specified or default `active_models`.
+If `{use_case}_series_profile` does NOT exist → skip this step; use the models selected in Skill 3.
 
-### Step 1b: Define backtest strategy
+### ⛔ STOP GATE — Step 1b: Ask user about backtesting setup
+
+**Always ask the user about their backtesting configuration. Do NOT proceed until the user confirms.**
 
 After the user specifies `prediction_length`, guide them through configuring the backtest:
 
@@ -113,6 +116,8 @@ AskUserQuestion:
    (e) Custom — specify backtest_length and stride manually"
 ```
 
+**WAIT for the user to respond. Do NOT derive backtest parameters without user input.**
+
 Derive `backtest_length` and `stride` from the user's choice. For option (e), ask the user to enter values directly and validate:
 - `backtest_length >= prediction_length`
 - `stride >= 1`
@@ -129,17 +134,17 @@ SELECT COUNT(*) AS count FROM {catalog}.{schema}.{use_case}_train_data
 
 Present all parameters to the user via `AskUserQuestion` for validation.
 
-### Step 3: Generate notebooks by substituting placeholders
+### Step 3: Generate notebooks
 
-**CRITICAL: Copy the template VERBATIM from the template files, only replacing the `{placeholder}` tokens with actual values. Do NOT add, remove, or modify any other code. The templates are complete and production-ready.**
+**CRITICAL: Copy templates VERBATIM, only replacing `{placeholder}` tokens with actual values. Do NOT add, remove, or modify any other code. The templates are complete and production-ready.**
 
-Generate a shared `run_id` (UUID) that will be passed to all notebooks, grouping results across separate GPU sessions.
+Generate a shared `run_id` (UUID) that will be passed to all notebooks, grouping results across separate sessions.
 
-#### Local models notebook
+#### 3a: Local models notebook
 
 Generate a single notebook from `mmf_local_notebook_template.ipynb` with all local models in `{active_models}`. Local models (CPU/statsforecast) do not have CUDA memory constraints and can run together.
 
-#### Placeholder values for local notebook
+##### Placeholder values for local notebook
 
 | Placeholder | Value |
 |-------------|-------|
@@ -160,74 +165,163 @@ Generate a single notebook from `mmf_local_notebook_template.ipynb` with all loc
 Use the template from:
 - [mmf_local_notebook_template.ipynb](mmf_local_notebook_template.ipynb) for `notebooks/{use_case}/run_local`
 
-#### GPU model notebooks (one per model)
+#### 3b: GPU run notebook (static — no placeholder substitution)
 
-For each GPU model (global or foundation), generate a **separate notebook** from `mmf_gpu_notebook_template.ipynb`. Each notebook receives a single model.
+Upload the `mmf_gpu_run_notebook_template.ipynb` **as-is** to `notebooks/{use_case}/run_gpu`. This notebook:
+- Receives all parameters via `dbutils.widgets` (catalog, schema, model, run_id, etc.)
+- Auto-detects whether the model is global or foundation and installs the correct `mmf_sa` extras
+- Runs a single model per invocation
+- Is called by the orchestrator notebooks via `dbutils.notebook.run()`
 
-> **Why one notebook per GPU model.** PyTorch allocates CUDA memory that cannot be freed within the same Python process. Running multiple GPU models in sequence causes OOM when the second model loads. The example notebooks (`examples/monthly/global_monthly.ipynb`) solve this via `dbutils.notebook.run()` per model — each invocation gets a fresh kernel. The Workflow job equivalent is one task per GPU model.
+**Do NOT modify this template.** Upload it verbatim.
 
-#### Placeholder values for GPU notebooks
+Use the template from:
+- [mmf_gpu_run_notebook_template.ipynb](mmf_gpu_run_notebook_template.ipynb) for `notebooks/{use_case}/run_gpu`
+
+#### 3c: GPU orchestrator notebooks (one per model class)
+
+For each GPU model class (global and/or foundation), generate an **orchestrator notebook** from `mmf_gpu_orchestrator_notebook_template.ipynb`. Each orchestrator:
+- Holds the list of active models for its class
+- Loops through the models and calls `run_gpu` for each via `dbutils.notebook.run()`
+- Each `dbutils.notebook.run()` invocation gets a fresh Python process, avoiding CUDA memory conflicts
+
+> **Why orchestrator + run_gpu.** PyTorch allocates CUDA memory that cannot be freed within the same Python process. Running multiple GPU models in sequence causes OOM when the second model loads. The `dbutils.notebook.run()` pattern gives each model a fresh kernel. This is the same pattern used in the [examples folder](../../examples/monthly/global_monthly.ipynb).
+
+##### Placeholder values for orchestrator notebooks
 
 | Placeholder | Value |
 |-------------|-------|
 | `{catalog}` | user's catalog |
 | `{schema}` | user's schema |
+| `{use_case}` | use case name |
 | `{train_table}` | `{use_case}_train_data` |
 | `{freq}` | detected or user-specified frequency |
 | `{prediction_length}` | user-specified forecast horizon (integer) |
 | `{backtest_length}` | derived from backtest strategy (integer) |
 | `{stride}` | derived from backtest strategy (integer) |
 | `{metric}` | `smape` (default) |
-| `{model}` | single model name, e.g. `NeuralForecastAutoNHITS` |
-| `{run_id}` | shared UUID for the entire run |
-| `{num_nodes}` | `1` (default, single-node) |
+| `{active_models}` | Python list literal of models for this class only, e.g. `["NeuralForecastAutoNHITS", "NeuralForecastAutoPatchTST"]` |
 | `{group_id}` | `unique_id` (default) |
 | `{date_col}` | `ds` (default) |
 | `{target}` | `y` (default) |
-| `{pip_extras}` | `[global]` for NeuralForecast models, `[foundation]` for others |
-| `{use_case}` | use case name (for output table names and experiment path) |
+| `{num_nodes}` | `1` (single-node always) |
 
 Use the template from:
-- [mmf_gpu_notebook_template.ipynb](mmf_gpu_notebook_template.ipynb) — one notebook per GPU model
+- [mmf_gpu_orchestrator_notebook_template.ipynb](mmf_gpu_orchestrator_notebook_template.ipynb)
+
+Generate up to two orchestrators:
+- `notebooks/{use_case}/orchestrator_global` — if any global models selected
+- `notebooks/{use_case}/orchestrator_foundation` — if any foundation models selected
 
 ### Step 4: Upload notebooks
 
 Upload generated notebooks to the workspace:
 - `notebooks/{use_case}/run_local` — local models (single notebook, all local models)
-- `notebooks/{use_case}/run_{model_name}` — one per GPU model (e.g., `run_NeuralForecastAutoNHITS`, `run_ChronosBoltBase`)
+- `notebooks/{use_case}/run_gpu` — GPU single-model runner (static, uploaded as-is)
+- `notebooks/{use_case}/orchestrator_global` — global models orchestrator (if applicable)
+- `notebooks/{use_case}/orchestrator_foundation` — foundation models orchestrator (if applicable)
 
-### Step 5: Create Workflow job
+### Step 5: Create one job per model class (triggered in parallel)
 
-Create a multi-task Workflow job. **GPU models get one task each, chained sequentially** to prevent CUDA memory conflicts on the shared GPU cluster:
+**Create separate Workflow jobs for each model class and trigger them all in parallel.** This maximizes throughput — local models run on CPU while GPU models run concurrently.
 
-| Task key | Notebook | Cluster key | Depends on |
-|----------|----------|-------------|------------|
-| `local_models` | `notebooks/{use_case}/run_local` | `{use_case}_cpu_cluster` | — |
-| `gpu_{model_1}` | `notebooks/{use_case}/run_{model_1}` | `{use_case}_gpu_cluster` | — |
-| `gpu_{model_2}` | `notebooks/{use_case}/run_{model_2}` | `{use_case}_gpu_cluster` | `gpu_{model_1}` |
-| `gpu_{model_3}` | `notebooks/{use_case}/run_{model_3}` | `{use_case}_gpu_cluster` | `gpu_{model_2}` |
-| ... | ... | ... | previous GPU task |
-
-- The `local_models` task runs independently (in parallel with GPU tasks if both CPU and GPU clusters exist).
-- GPU tasks are **chained sequentially** via `depends_on` to ensure only one GPU model is loaded at a time.
-- Only include tasks for the model classes the user selected.
-
-Job clusters (ephemeral, created with the job):
-
-| Cluster key | Runtime | Node type (AWS) | Workers | Spark config |
-|-------------|---------|-----------------|---------|--------------|
-| `{use_case}_cpu_cluster` | `17.3.x-cpu-ml-scala2.13` | `i3.xlarge` | Dynamic (from Skill 3) | `spark.sql.execution.arrow.enabled=true`, `spark.sql.adaptive.enabled=false`, `spark.databricks.delta.formatCheck.enabled=false`, `spark.databricks.delta.schema.autoMerge.enabled=true` |
-| `{use_case}_gpu_cluster` | `18.0.x-gpu-ml-scala2.13` | `g5.12xlarge` (default) | 0 (single-node) | `spark.databricks.delta.formatCheck.enabled=false`, `spark.databricks.delta.schema.autoMerge.enabled=true` |
-
-Use `create_job` to create the Workflow, then `run_job` to start it.
-
-#### Serverless alternative
-
-If the user requests **serverless compute**, omit `job_clusters` entirely and use `environment_key` in each task instead of `job_cluster_key`:
+#### Job 1: Local models (if any local models selected)
 
 ```json
 {
-  "name": "{use_case}_forecasting",
+  "name": "{use_case}_local_forecasting",
+  "tasks": [{
+    "task_key": "local_models",
+    "notebook_task": {
+      "notebook_path": "notebooks/{use_case}/run_local"
+    },
+    "job_cluster_key": "{use_case}_cpu_cluster"
+  }],
+  "job_clusters": [{
+    "job_cluster_key": "{use_case}_cpu_cluster",
+    "new_cluster": {
+      "spark_version": "17.3.x-cpu-ml-scala2.13",
+      "node_type_id": "{cpu_node_type}",
+      "num_workers": {cpu_workers},
+      "spark_conf": {
+        "spark.sql.execution.arrow.enabled": "true",
+        "spark.sql.adaptive.enabled": "false",
+        "spark.databricks.delta.formatCheck.enabled": "false",
+        "spark.databricks.delta.schema.autoMerge.enabled": "true"
+      }
+    }
+  }]
+}
+```
+
+#### Job 2: Global models (if any global models selected)
+
+```json
+{
+  "name": "{use_case}_global_forecasting",
+  "tasks": [{
+    "task_key": "global_models",
+    "notebook_task": {
+      "notebook_path": "notebooks/{use_case}/orchestrator_global"
+    },
+    "job_cluster_key": "{use_case}_gpu_cluster"
+  }],
+  "job_clusters": [{
+    "job_cluster_key": "{use_case}_gpu_cluster",
+    "new_cluster": {
+      "spark_version": "18.0.x-gpu-ml-scala2.13",
+      "node_type_id": "{gpu_node_type}",
+      "num_workers": 0,
+      "spark_conf": {
+        "spark.databricks.delta.formatCheck.enabled": "false",
+        "spark.databricks.delta.schema.autoMerge.enabled": "true"
+      }
+    }
+  }]
+}
+```
+
+#### Job 3: Foundation models (if any foundation models selected)
+
+```json
+{
+  "name": "{use_case}_foundation_forecasting",
+  "tasks": [{
+    "task_key": "foundation_models",
+    "notebook_task": {
+      "notebook_path": "notebooks/{use_case}/orchestrator_foundation"
+    },
+    "job_cluster_key": "{use_case}_gpu_cluster"
+  }],
+  "job_clusters": [{
+    "job_cluster_key": "{use_case}_gpu_cluster",
+    "new_cluster": {
+      "spark_version": "18.0.x-gpu-ml-scala2.13",
+      "node_type_id": "{gpu_node_type}",
+      "num_workers": 0,
+      "spark_conf": {
+        "spark.databricks.delta.formatCheck.enabled": "false",
+        "spark.databricks.delta.schema.autoMerge.enabled": "true"
+      }
+    }
+  }]
+}
+```
+
+**Important notes:**
+- GPU clusters are **always single-node** (`num_workers: 0`).
+- Global and foundation jobs each get their own ephemeral GPU cluster so they can run **in parallel**.
+- Only create jobs for model classes the user actually selected.
+
+Use `create_job` to create each job, then `run_job` to start **all jobs simultaneously**.
+
+#### Serverless alternative (local models only)
+
+If the user requests **serverless compute** for local models, omit `job_clusters` entirely and use `environment_key` instead of `job_cluster_key`:
+
+```json
+{
+  "name": "{use_case}_local_forecasting",
   "tasks": [{
     "task_key": "local_models",
     "notebook_task": {"notebook_path": "notebooks/{use_case}/run_local"},
@@ -240,21 +334,25 @@ If the user requests **serverless compute**, omit `job_clusters` entirely and us
 }
 ```
 
-This is faster (no cluster startup) and works well for local CPU models. GPU models require ML Runtime clusters and cannot use serverless.
+GPU models require ML Runtime clusters and cannot use serverless.
 
 ### Step 6: Monitor execution
 
-Poll the job run status until completion. Report progress to the user with structured status updates showing per-model progress:
+Poll all job run statuses until completion. Report progress to the user with structured status updates showing per-job progress:
 
 ```
-[HH:MM:SS] Job run started (run_id: {run_id})
-[HH:MM:SS] Task local_models: RUNNING
-[HH:MM:SS] Task gpu_NeuralForecastAutoNHITS: RUNNING
-[HH:MM:SS] Task local_models: SUCCEEDED (duration: 12m 34s)
-[HH:MM:SS] Task gpu_NeuralForecastAutoNHITS: SUCCEEDED (duration: 5m 12s)
-[HH:MM:SS] Task gpu_ChronosBoltBase: RUNNING
-[HH:MM:SS] Task gpu_ChronosBoltBase: SUCCEEDED (duration: 3m 45s)
-[HH:MM:SS] All tasks completed. Overall status: SUCCEEDED
+[HH:MM:SS] Triggered 3 jobs in parallel:
+[HH:MM:SS]   Job {use_case}_local_forecasting (run_id: {local_run_id})
+[HH:MM:SS]   Job {use_case}_global_forecasting (run_id: {global_run_id})
+[HH:MM:SS]   Job {use_case}_foundation_forecasting (run_id: {foundation_run_id})
+
+[HH:MM:SS] {use_case}_local_forecasting: RUNNING
+[HH:MM:SS] {use_case}_global_forecasting: RUNNING (orchestrator running NeuralForecastAutoNHITS...)
+[HH:MM:SS] {use_case}_foundation_forecasting: RUNNING (orchestrator running ChronosBoltBase...)
+[HH:MM:SS] {use_case}_local_forecasting: SUCCEEDED (duration: 12m 34s)
+[HH:MM:SS] {use_case}_global_forecasting: SUCCEEDED (duration: 25m 12s)
+[HH:MM:SS] {use_case}_foundation_forecasting: SUCCEEDED (duration: 18m 45s)
+[HH:MM:SS] All jobs completed. Overall status: SUCCEEDED
 ```
 
 ### Step 7: Log run metadata
@@ -284,20 +382,24 @@ SELECT COUNT(*) AS eval_rows FROM {catalog}.{schema}.{use_case}_evaluation_outpu
 SELECT COUNT(*) AS score_rows FROM {catalog}.{schema}.{use_case}_scoring_output
 ```
 
-### Step 8: Hand off to post-processing
+### ⛔ STOP GATE — Step 8: Hand off to post-processing
 
-Present to the user:
+Present to the user and ask whether to proceed:
 
 ```
-"Forecast run complete.
- • Evaluation output: {eval_rows} rows in {use_case}_evaluation_output
- • Scoring output: {score_rows} rows in {use_case}_scoring_output
- • Run metadata logged to {use_case}_run_metadata
- • MLflow experiment: /Users/{user}/mmf/{use_case}
+AskUserQuestion:
+  "✅ Forecast run complete.
+   • Evaluation output: {eval_rows} rows in {use_case}_evaluation_output
+   • Scoring output: {score_rows} rows in {use_case}_scoring_output
+   • Run metadata logged to {use_case}_run_metadata
+   • MLflow experiment: /Users/{user}/mmf/{use_case}
 
- → Run /post-process-and-evaluate to analyze results, select best models,
-   and generate a business-ready summary."
+   Would you like to proceed to post-processing and evaluation?
+   (a) Yes, proceed to /post-process-and-evaluate
+   (b) No, stop here — I'll come back later"
 ```
+
+**Do NOT proceed until the user responds.**
 
 > **Note — analysis moved to Skill 5.** Result analysis queries (best model per series, avg metric per model, worst series) and business reporting are consolidated in Skill 5 (`/post-process-and-evaluate`) to avoid duplication.
 

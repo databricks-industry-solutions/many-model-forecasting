@@ -2,15 +2,15 @@
 
 **Slash command:** `/provision-forecasting-resources`
 
-Determines required cluster types (from profiling or user input), configures
-clusters with the correct specs, verifies Unity Catalog enablement, and
-optionally reuses or restarts existing clusters.
+Asks the user which models to run, determines required cluster types, asks the
+user which clusters to start and confirms configuration. GPU clusters always
+use **single-node** (0 workers).
 
 **Note:** Clusters are created as **ephemeral job clusters** within the Databricks Workflow (see Skill 4). This skill validates the configuration and lets the user customize it before the job is created. No long-lived clusters are provisioned.
 
 ## Steps
 
-### Step 1: Determine model classes
+### Step 1: Determine model classes from profiling (if available)
 
 First, check if `{use_case}_series_profile` exists to auto-detect model requirements:
 
@@ -20,51 +20,78 @@ FROM {catalog}.{schema}.{use_case}_series_profile
 WHERE forecastability_class = 'high_confidence'
 ```
 
-In both cases (profile exists or not), present the full model catalog and let the user select one or more model classes:
+If the profile table exists, extract the recommended models as suggestions. If it does not exist, skip to the model selection step without suggestions.
+
+### ⛔ STOP GATE — Step 2: Ask user which models to use
+
+**Always ask the user to select models. Do NOT proceed until the user confirms their selection.**
+
+Present the full model catalog and let the user select specific models:
 
 ```
 AskUserQuestion:
-  "Which model classes do you want to run? Select one or more:
+  "Which models do you want to run? Select one or more from each class:
 
-   [ ] Local models (CPU cluster)
-       StatsForecastBaselineWindowAverage, StatsForecastBaselineSeasonalWindowAverage,
-       StatsForecastBaselineNaive, StatsForecastBaselineSeasonalNaive,
-       StatsForecastAutoArima, StatsForecastAutoETS, StatsForecastAutoCES,
-       StatsForecastAutoTheta, StatsForecastAutoTbats, StatsForecastAutoMfles,
-       StatsForecastTSB, StatsForecastADIDA, StatsForecastIMAPA,
-       StatsForecastCrostonClassic, StatsForecastCrostonOptimized,
-       StatsForecastCrostonSBA, SKTimeProphet
+   {if profile exists: '📊 Based on series profiling, suggested models: {recommended_models}'}
 
-   [ ] Global models (GPU cluster)
-       NeuralForecastRNN, NeuralForecastLSTM, NeuralForecastNBEATSx,
-       NeuralForecastNHITS, NeuralForecastAutoRNN, NeuralForecastAutoLSTM,
-       NeuralForecastAutoNBEATSx, NeuralForecastAutoNHITS,
-       NeuralForecastAutoTiDE, NeuralForecastAutoPatchTST
+   LOCAL MODELS (CPU cluster — statistical, fast):
+   [ ] StatsForecastBaselineWindowAverage
+   [ ] StatsForecastBaselineSeasonalWindowAverage
+   [ ] StatsForecastBaselineNaive
+   [ ] StatsForecastBaselineSeasonalNaive
+   [ ] StatsForecastAutoArima
+   [ ] StatsForecastAutoETS
+   [ ] StatsForecastAutoCES
+   [ ] StatsForecastAutoTheta
+   [ ] StatsForecastAutoTbats
+   [ ] StatsForecastAutoMfles
+   [ ] StatsForecastTSB
+   [ ] StatsForecastADIDA
+   [ ] StatsForecastIMAPA
+   [ ] StatsForecastCrostonClassic
+   [ ] StatsForecastCrostonOptimized
+   [ ] StatsForecastCrostonSBA
+   [ ] SKTimeProphet
 
-   [ ] Foundation models (GPU cluster)
-       ChronosBoltTiny, ChronosBoltMini, ChronosBoltSmall, ChronosBoltBase,
-       Chronos2, Chronos2Small, Chronos2Synth, TimesFM_2_5_200m
+   GLOBAL MODELS (GPU cluster — neural network, learns across series):
+   [ ] NeuralForecastRNN
+   [ ] NeuralForecastLSTM
+   [ ] NeuralForecastNBEATSx
+   [ ] NeuralForecastNHITS
+   [ ] NeuralForecastAutoRNN
+   [ ] NeuralForecastAutoLSTM
+   [ ] NeuralForecastAutoNBEATSx
+   [ ] NeuralForecastAutoNHITS
+   [ ] NeuralForecastAutoTiDE
+   [ ] NeuralForecastAutoPatchTST
 
-   {if profile exists: 'Based on series profiling, suggested classes: {auto_detected_classes}'}
-   You can select any combination (e.g., local + foundation)."
-  Options: [local, global, foundation] (multi-select)
+   FOUNDATION MODELS (GPU cluster — pretrained, zero-shot):
+   [ ] ChronosBoltTiny
+   [ ] ChronosBoltMini
+   [ ] ChronosBoltSmall
+   [ ] ChronosBoltBase
+   [ ] Chronos2
+   [ ] Chronos2Small
+   [ ] Chronos2Synth
+   [ ] TimesFM_2_5_200m
+
+   You can select any combination (e.g., local + foundation).
+   List the model names you want to run."
 ```
 
-The user's selection determines which clusters are provisioned:
-- **Local only** → CPU cluster
-- **Global only** → GPU cluster
-- **Foundation only** → GPU cluster
-- **Local + Global** → CPU + GPU clusters
-- **Local + Foundation** → CPU + GPU clusters
-- **Global + Foundation** → GPU cluster
-- **All three** → CPU + GPU clusters
+**WAIT for the user to respond. Do NOT proceed until the user has selected their models.**
 
-### Step 2: Determine cloud provider
+Store the selected models and determine which model classes are needed:
+- **Local**: any `StatsForecast*` or `SKTime*` model selected
+- **Global**: any `NeuralForecast*` model selected
+- **Foundation**: any `Chronos*` or `TimesFM*` model selected
+
+### Step 3: Determine cloud provider
 
 Ask the user which cloud provider the workspace runs on: **AWS**, **Azure**, or **GCP**.
 This determines the specific node types.
 
-### Step 3: Check existing clusters
+### Step 4: Check existing clusters
 
 Use MCP `list_clusters` to find clusters matching the required configurations:
 - Match by runtime version (`17.3.x-cpu-ml-scala2.13` for CPU, `18.0.x-gpu-ml-scala2.13` for GPU)
@@ -81,7 +108,7 @@ else:
     → Proceed to generate ephemeral job cluster config
 ```
 
-### Step 4: Select cluster configuration
+### Step 5: Select cluster configuration
 
 Based on the model types and cloud provider, select from these configurations:
 
@@ -114,64 +141,78 @@ Suggest workers based on series count:
 | 10,000 – 100,000 | 8 | High parallelism for large-scale |
 | > 100,000 | 10 | Maximum recommended; beyond this consider partitioning |
 
-Present the suggestion and let the user override:
-
-```
-AskUserQuestion:
-  "Your dataset has {n_series} distinct time series.
-   Suggested CPU workers: {suggested_workers}
-
-   How many workers would you like?
-   (a) Use suggested: {suggested_workers} workers
-   (b) Custom: enter a number (0 for single-node, max 64)"
-```
-
 #### GPU Cluster (`{use_case}_gpu_cluster`) — for global and foundation models
+
+**GPU clusters MUST always be single-node (0 workers).** This is a hard requirement — do NOT configure multi-node GPU clusters.
 
 | Setting | Value |
 |---------|-------|
 | **Runtime** | `18.0.x-gpu-ml-scala2.13` |
 | **Node type** | User-selectable — see GPU instance options below |
-| **Workers** | 0 (single-node) |
+| **Workers** | **0 (single-node) — ALWAYS** |
 | **Spark config** | `spark.databricks.delta.formatCheck.enabled=false`, `spark.databricks.delta.schema.autoMerge.enabled=true` |
 
-**GPU instance selection:**
+### ⛔ STOP GATE — Step 6: Ask user which clusters to start
 
-The cluster runs as single-node (0 workers). The user chooses the GPU instance type, which determines the number of GPUs available:
+**Always present the cluster configuration and ask the user to confirm. Do NOT proceed until the user approves.**
+
+Present the computed configuration and let the user customize:
 
 ```
 AskUserQuestion:
-  "Select a GPU instance type:
+  "Here is the proposed cluster configuration for your selected models:
 
-   AWS:
-   (a) g5.xlarge    — 1× A10G GPU, 24 GB  (small foundation models)
-   (b) g5.2xlarge   — 1× A10G GPU, 24 GB, more CPU/RAM
-   (c) g5.12xlarge  — 4× A10G GPUs, 96 GB  (recommended for global + foundation)
-   (d) g5.48xlarge  — 8× A10G GPUs, 192 GB (large-scale training)
+   {if local models selected:
+   CPU Cluster ({use_case}_cpu_cluster):
+     • Runtime: 17.3.x-cpu-ml-scala2.13
+     • Node type: {cpu_node_type}
+     • Workers: {suggested_workers} (dataset has {n_series} series)
+   }
 
-   Azure:
-   (a) Standard_NC4as_T4_v3    — 1× T4 GPU, 16 GB
-   (b) Standard_NC8as_T4_v3    — 1× T4 GPU, 16 GB, more CPU/RAM
-   (c) Standard_NV36ads_A10_v5 — 2× A10 GPUs, 48 GB  (recommended)
-   (d) Standard_NC24ads_A100_v4 — 1× A100 GPU, 80 GB (large models)
+   {if global or foundation models selected:
+   GPU Cluster ({use_case}_gpu_cluster) — SINGLE NODE:
+     • Runtime: 18.0.x-gpu-ml-scala2.13
+     • Node type: (select one)
 
-   GCP:
-   (a) g2-standard-4   — 1× L4 GPU, 24 GB
-   (b) g2-standard-8   — 1× L4 GPU, 24 GB, more CPU/RAM
-   (c) g2-standard-48  — 4× L4 GPUs, 96 GB  (recommended)
-   (d) a2-highgpu-1g   — 1× A100 GPU, 40 GB (large models)"
+     AWS:
+     (a) g5.xlarge    — 1× A10G GPU, 24 GB  (small foundation models)
+     (b) g5.2xlarge   — 1× A10G GPU, 24 GB, more CPU/RAM
+     (c) g5.12xlarge  — 4× A10G GPUs, 96 GB  (recommended for global + foundation)
+     (d) g5.48xlarge  — 8× A10G GPUs, 192 GB (large-scale training)
+
+     Azure:
+     (a) Standard_NC4as_T4_v3    — 1× T4 GPU, 16 GB
+     (b) Standard_NC8as_T4_v3    — 1× T4 GPU, 16 GB, more CPU/RAM
+     (c) Standard_NV36ads_A10_v5 — 2× A10 GPUs, 48 GB  (recommended)
+     (d) Standard_NC24ads_A100_v4 — 1× A100 GPU, 80 GB (large models)
+
+     GCP:
+     (a) g2-standard-4   — 1× L4 GPU, 24 GB
+     (b) g2-standard-8   — 1× L4 GPU, 24 GB, more CPU/RAM
+     (c) g2-standard-48  — 4× L4 GPUs, 96 GB  (recommended)
+     (d) a2-highgpu-1g   — 1× A100 GPU, 40 GB (large models)
+   }
+
+   Would you like to:
+   (1) Accept the proposed configuration
+   (2) Change the CPU worker count (currently {suggested_workers})
+   (3) Select a different GPU instance type
+   (4) Change both"
 ```
+
+**WAIT for the user to respond. Do NOT create any clusters until the user confirms.**
 
 ### Decision logic
 
 - **Local models only** → CPU cluster only, no GPU cluster needed
-- **Global models** → GPU cluster required
-- **Foundation models** → GPU cluster required
+- **Global models** → GPU cluster required (single-node)
+- **Foundation models** → GPU cluster required (single-node)
 - **Local + global/foundation** → Both CPU and GPU clusters
+- **Global + Foundation** → GPU cluster (single-node) — both model classes share the same GPU cluster
 
 Only include clusters that are needed for the selected model types.
 
-### Step 5: Unity Catalog enablement verification
+### Step 7: Unity Catalog enablement verification
 
 All clusters MUST have UC enabled. Verify:
 ```json
@@ -185,20 +226,38 @@ All clusters MUST have UC enabled. Verify:
 
 If cluster doesn't have UC → warn user, suggest adding required Spark config.
 
-### Step 6: Present and validate
+### Step 8: Present and validate
 
 Present the complete cluster configuration to the user, including:
 - Cluster key name(s) (prefixed with `{use_case}`)
 - Runtime version(s)
 - Node type(s) for their cloud
-- Number of workers
+- Number of workers (always 0 for GPU)
 - All Spark configuration parameters
+- Selected models grouped by class (local, global, foundation)
 
-Use `AskUserQuestion` to confirm the configuration.
+### Step 9: Save configuration
 
-### Step 7: Save configuration
+Save the cluster configuration and selected models locally so `/execute-mmf-forecast` can use it when creating the Workflow jobs.
 
-Save the cluster configuration locally so `/execute-mmf-forecast` can use it when creating the Workflow job.
+### ⛔ STOP GATE — Step 10: Confirm before proceeding to next skill
+
+```
+AskUserQuestion:
+  "✅ Cluster configuration complete.
+
+   Summary:
+   • Selected models: {model_list_summary}
+   • Model classes: {classes_summary}
+   {if cpu: '• CPU cluster: {cpu_node_type}, {workers} workers'}
+   {if gpu: '• GPU cluster: {gpu_node_type}, single-node'}
+
+   Would you like to proceed to execute the forecast?
+   (a) Yes, proceed to /execute-mmf-forecast
+   (b) No, stop here — I'll come back later"
+```
+
+**Do NOT proceed until the user responds.**
 
 ## MMF Installation
 
@@ -212,4 +271,5 @@ Each notebook installs MMF at the start via `%pip`:
 - Validated cluster configuration(s) with UC enablement
 - Cluster IDs if existing clusters are reused
 - Configuration JSON for ephemeral job clusters
-- Configuration details: cluster key, runtime, node type, workers, Spark config
+- Configuration details: cluster key, runtime, node type, workers (always 0 for GPU), Spark config
+- Selected models list, grouped by class (local, global, foundation)
