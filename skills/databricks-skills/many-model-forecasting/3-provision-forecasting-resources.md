@@ -143,14 +143,16 @@ Suggest workers based on series count:
 
 #### GPU Cluster (`{use_case}_gpu_cluster`) — for global and foundation models
 
-**GPU clusters MUST always be single-node (0 workers).** This is a hard requirement — do NOT configure multi-node GPU clusters.
+**GPU clusters MUST always be single-node (0 workers).** This is a hard requirement — do NOT configure multi-node GPU clusters. Single-node mode requires explicit Spark config and custom tags beyond just setting `num_workers: 0`.
 
 | Setting | Value |
 |---------|-------|
 | **Runtime** | `18.0.x-gpu-ml-scala2.13` |
 | **Node type** | User-selectable — see GPU instance options below |
 | **Workers** | **0 (single-node) — ALWAYS** |
-| **Spark config** | `spark.databricks.delta.formatCheck.enabled=false`, `spark.databricks.delta.schema.autoMerge.enabled=true` |
+| **data_security_mode** | `SINGLE_USER` (ML runtimes do not support `USER_ISOLATION`) |
+| **Spark config** | `spark.master=local[*]`, `spark.databricks.cluster.profile=singleNode`, `spark.databricks.delta.formatCheck.enabled=false`, `spark.databricks.delta.schema.autoMerge.enabled=true` |
+| **custom_tags** | `{"ResourceClass": "SingleNode"}` |
 
 ### ⛔ STOP GATE — Step 6: Ask user which clusters to start
 
@@ -214,15 +216,29 @@ Only include clusters that are needed for the selected model types.
 
 ### Step 7: Unity Catalog enablement verification
 
-All clusters MUST have UC enabled. Verify:
+All clusters MUST have UC enabled. **All ML runtimes** (both CPU-ML and GPU-ML) require `SINGLE_USER`:
+
+**CPU clusters (ML Runtime):**
 ```json
 {
-  "data_security_mode": "USER_ISOLATION",
+  "data_security_mode": "SINGLE_USER",
   "spark_conf": {
     "spark.databricks.unityCatalog.enabled": "true"
   }
 }
 ```
+
+**GPU clusters (ML Runtime):**
+```json
+{
+  "data_security_mode": "SINGLE_USER",
+  "spark_conf": {
+    "spark.databricks.unityCatalog.enabled": "true"
+  }
+}
+```
+
+> **Why `SINGLE_USER` for all ML runtimes?** ML runtimes (both `*-cpu-ml-*` and `*-gpu-ml-*`) reject `USER_ISOLATION` with "Spark version does not support Table Access Control". `SINGLE_USER` still provides UC access for the job owner.
 
 If cluster doesn't have UC → warn user, suggest adding required Spark config.
 
@@ -261,10 +277,15 @@ AskUserQuestion:
 
 ## MMF Installation
 
-Each notebook installs MMF at the start via `%pip`:
-- Local models: `pip install "mmf_sa[local] @ git+https://github.com/databricks-industry-solutions/many-model-forecasting.git@v0.1.2"`
-- Global models: `pip install "mmf_sa[global] @ git+https://github.com/databricks-industry-solutions/many-model-forecasting.git@v0.1.2"`
-- Foundation models: `pip install "mmf_sa[foundation] @ git+https://github.com/databricks-industry-solutions/many-model-forecasting.git@v0.1.2"`
+Each notebook installs MMF at the start:
+
+- **Local models** (`run_local` notebook): Uses `%pip install "mmf_sa[local] @ git+https://...@v0.1.2"`
+- **GPU models** (`run_gpu` notebook): Uses `subprocess.check_call` with model-specific install logic:
+  - **Global (NeuralForecast)**: `mmf_sa[global] @ git+https://...@v0.1.2`
+  - **Foundation (Chronos)**: base `mmf_sa` + `chronos-forecasting==2.2.2` + `utilsforecast==0.2.15`
+  - **Foundation (TimesFM)**: base `mmf_sa` + `timesfm[torch]` from tarball URL + `utilsforecast==0.2.15`
+
+> **Why subprocess for GPU?** `%pip` does not interpolate Python variables when the notebook is called via `dbutils.notebook.run()`. Additionally, `mmf_sa[foundation]` includes a transitive `timesfm @ git+https://...@commit` dependency whose `git checkout` fails on GPU clusters. The `run_gpu` template uses `subprocess.check_call` and installs `timesfm[torch]` from a GitHub tarball URL to bypass both issues.
 
 ## Outputs
 

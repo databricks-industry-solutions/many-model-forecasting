@@ -243,6 +243,7 @@ Upload generated notebooks to the workspace:
       "spark_version": "17.3.x-cpu-ml-scala2.13",
       "node_type_id": "{cpu_node_type}",
       "num_workers": {cpu_workers},
+      "data_security_mode": "SINGLE_USER",
       "spark_conf": {
         "spark.sql.execution.arrow.enabled": "true",
         "spark.sql.adaptive.enabled": "false",
@@ -272,9 +273,15 @@ Upload generated notebooks to the workspace:
       "spark_version": "18.0.x-gpu-ml-scala2.13",
       "node_type_id": "{gpu_node_type}",
       "num_workers": 0,
+      "data_security_mode": "SINGLE_USER",
       "spark_conf": {
+        "spark.master": "local[*]",
+        "spark.databricks.cluster.profile": "singleNode",
         "spark.databricks.delta.formatCheck.enabled": "false",
         "spark.databricks.delta.schema.autoMerge.enabled": "true"
+      },
+      "custom_tags": {
+        "ResourceClass": "SingleNode"
       }
     }
   }]
@@ -299,9 +306,15 @@ Upload generated notebooks to the workspace:
       "spark_version": "18.0.x-gpu-ml-scala2.13",
       "node_type_id": "{gpu_node_type}",
       "num_workers": 0,
+      "data_security_mode": "SINGLE_USER",
       "spark_conf": {
+        "spark.master": "local[*]",
+        "spark.databricks.cluster.profile": "singleNode",
         "spark.databricks.delta.formatCheck.enabled": "false",
         "spark.databricks.delta.schema.autoMerge.enabled": "true"
+      },
+      "custom_tags": {
+        "ResourceClass": "SingleNode"
       }
     }
   }]
@@ -309,7 +322,8 @@ Upload generated notebooks to the workspace:
 ```
 
 **Important notes:**
-- GPU clusters are **always single-node** (`num_workers: 0`).
+- **All clusters** use `data_security_mode: "SINGLE_USER"` because ML runtimes (`*-cpu-ml-*` and `*-gpu-ml-*`) reject `USER_ISOLATION`.
+- GPU clusters are **always single-node** (`num_workers: 0`) with `spark.master: local[*]`, `spark.databricks.cluster.profile: singleNode`, and `custom_tags: {"ResourceClass": "SingleNode"}`. All three are required for proper single-node mode.
 - Global and foundation jobs each get their own ephemeral GPU cluster so they can run **in parallel**.
 - Only create jobs for model classes the user actually selected.
 
