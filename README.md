@@ -136,7 +136,7 @@ run_forecast(
 - ```group_id``` is a column storing the unique id that groups your dataset to each time series.
 - ```date_col``` is your time column name.
 - ```target``` is your target column name.
-- ```freq``` is your prediction frequency. "H" for hourly, "D" for daily, "W" for weekly and "M" for monthly are supported. Note that ```freq``` supported is as per the model basis, hence check the model documentation carefully. Monthly forecasting expects the timestamp column in ```train_data``` and ```scoring_output``` to be the last day of the month.
+- ```freq``` is your prediction frequency. "H" for hourly, "D" for daily, "W" for weekly and "M" for monthly are supported. Note that ```freq``` supported is as per the model basis, hence check the model documentation carefully. See the **Timestamp Alignment Requirements** section below for frequency-specific date formatting rules.
 - ```prediction_length``` is your forecasting horizon in the number of steps.
 - ```backtest_length``` specifies how many historical time points you use for backtesting. 
 - ```stride``` is the number of steps in which you update your backtesting trial start date when going from one trial to the next.
@@ -148,6 +148,27 @@ run_forecast(
 - ```experiment_path``` to keep metrics under the MLFlow.
 - ```use_case_name``` a new column will be created under the delta Table, in case you save multiple trials under 1 table.
   
+#### Timestamp Alignment Requirements
+
+The `ds` (timestamp) column in `train_data` and `scoring_data` **must** be aligned to specific boundary dates depending on the frequency. Misaligned timestamps will produce incorrect backtesting windows and forecasts.
+
+| Frequency | Timestamp requirement | Example |
+|---|---|---|
+| `H` (hourly) | Any valid timestamp | `2024-01-15 08:00:00` |
+| `D` (daily) | Any valid date | `2024-01-15` |
+| `W` (weekly) | **Sunday** (end of ISO week) | `2024-01-14` (a Sunday) |
+| `M` (monthly) | **Last day of the month** | `2024-01-31`, `2024-02-29` |
+
+This is required because the backtesting engine uses `pd.offsets.MonthEnd` for monthly offsets and `pd.DateOffset(weeks=...)` for weekly offsets. If your source data uses different conventions (e.g. first-of-month or Monday-anchored weeks), align the dates during data preparation:
+
+```sql
+-- Weekly: align to Sunday (end of ISO week)
+CAST(DATE_TRUNC('week', date_col) + INTERVAL 6 DAY AS TIMESTAMP) AS ds
+
+-- Monthly: align to month-end
+CAST(LAST_DAY(date_col) AS TIMESTAMP) AS ds
+```
+
 To modify the model hyperparameters, change the values in [mmf_sa/models/models_conf.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/models_conf.yaml) or overwrite these values, for example, in [mmf_sa/forecasting_conf_daily.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/forecasting_conf_daily.yaml) if your frequency is `D`. 
 
 MMF is fully integrated with MLflow, so once the training kicks off, the experiments will be visible in the MLflow Tracking UI with the corresponding metrics and parameters (note that we do not log all local models in MLFlow, but we store the binaries in the tables ```evaluation_output``` and ```scoring_output```). The metric you see in the MLflow Tracking UI is a simple mean over backtesting trials over all time series. Refer to the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/post-evaluation-analysis.ipynb) for guidance on performing fine-grained model selection after running `run_forecast`.

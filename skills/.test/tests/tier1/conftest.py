@@ -21,9 +21,15 @@ from skill_test.mock.mock_tools import TOOL_DEFINITIONS, create_tool_handlers
 # Mapping from mmf-agent skill names to mmf-dev-kit skill markdown files.
 # The mmf-dev-kit stores skills under databricks-skills/many-model-forecasting/.
 _SKILL_FILE_MAP = {
-    "explore-data": "1-explore-data.md",
-    "setup-cluster": "2-setup-the-mmf-cluster.md",
-    "run-mmf": "3-run-mmf.md",
+    "prep-and-clean-data": "1-prep-and-clean-data.md",
+    "profile-and-classify-series": "2-profile-and-classify-series.md",
+    "provision-forecasting-resources": "3-provision-forecasting-resources.md",
+    "execute-mmf-forecast": "4-execute-mmf-forecast.md",
+    "post-process-and-evaluate": "5-post-process-and-evaluate.md",
+    # Legacy aliases for backward compatibility in existing tests
+    "explore-data": "1-prep-and-clean-data.md",
+    "setup-cluster": "3-provision-forecasting-resources.md",
+    "run-mmf": "4-execute-mmf-forecast.md",
 }
 
 # Root of the mmf-dev-kit repo (two levels up from .test/tests/tier1/)
