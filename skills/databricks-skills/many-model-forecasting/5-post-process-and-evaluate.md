@@ -217,3 +217,81 @@ AskUserQuestion:
 | `wins_pct` | DOUBLE | Percentage of total series |
 | `avg_smape` | DOUBLE | Average sMAPE across all series |
 | `avg_wape` | DOUBLE | Average WAPE across all series |
+
+---
+
+## Deploy the Results Explorer App
+
+The `apps/` folder at the project root contains a ready-to-deploy **Dash** application
+("MMF Results Explorer") that lets the user interactively browse evaluation and
+scoring tables produced by the forecasting pipeline. It supports:
+
+- Selecting catalog, schema, training/evaluation/scoring tables from dropdowns
+- Filtering by run date, run ID, group IDs, and model(s)
+- Auto-detecting column roles and best-model selection per series
+- Plotting historical + forecast curves for selected time series
+- Browsing backtest windows with forecast-vs-actual overlays
+- A model ranking chart showing how often each model was chosen as best
+
+### Prerequisites
+
+1. A Databricks workspace with the **Apps** feature enabled.
+2. A SQL warehouse the app can connect to.
+3. The app's service principal needs `CAN USE` on the warehouse and `SELECT`
+   on the evaluation, scoring, and training tables.
+
+### Deploy Steps
+
+Run the following CLI commands (replace `<your-email>` and `YOUR_PROFILE`):
+
+```bash
+# 1. Create the app resource
+databricks apps create mmf-app --profile YOUR_PROFILE
+
+# 2. Upload the app code to the workspace
+databricks workspace import-dir apps \
+  /Workspace/Users/<your-email>/apps/mmf-app --profile YOUR_PROFILE
+
+# 3. Deploy the app
+databricks apps deploy mmf-app \
+  --source-code-path /Workspace/Users/<your-email>/apps/mmf-app --profile YOUR_PROFILE
+```
+
+After deploying, open the Databricks Apps UI and **add a SQL warehouse resource**
+with the key `sql-warehouse` so the app can auto-detect the warehouse ID.
+Alternatively, the user can paste a warehouse ID directly in the app's form.
+
+### Redeploy After Changes
+
+If the app code is updated, re-upload and redeploy:
+
+```bash
+databricks workspace delete /Workspace/Users/<your-email>/apps/mmf-app \
+  --recursive --profile YOUR_PROFILE
+
+databricks workspace import-dir apps \
+  /Workspace/Users/<your-email>/apps/mmf-app --profile YOUR_PROFILE
+
+databricks apps deploy mmf-app \
+  --source-code-path /Workspace/Users/<your-email>/apps/mmf-app --profile YOUR_PROFILE
+```
+
+### What the App Contains
+
+| File | Purpose |
+|------|---------|
+| `apps/app.py` | Dash application — layout, callbacks, SQL queries against evaluation/scoring/training tables |
+| `apps/app.yaml` | Databricks Apps manifest — sets the run command and binds the `sql-warehouse` resource |
+| `apps/requirements.txt` | Python dependencies (`dash-bootstrap-components`, `databricks-sql-connector`, `databricks-sdk`, `pandas`) |
+| `apps/README.md` | Detailed deploy/redeploy instructions and input reference |
+
+### How It Works
+
+The app connects to the SQL warehouse using `databricks-sql-connector` and the
+workspace SDK for authentication. When the user enters a catalog and schema, it
+lists available tables and auto-detects column roles (group ID, forecast arrays,
+metric values, etc.). Clicking **Load** joins the evaluation and scoring tables
+to show forecasts alongside historical training data. If backtest windows are
+present in the evaluation table, the app renders tabbed backtest charts with
+forecast-vs-actual overlays so the user can visually assess model performance
+across different holdout periods.
