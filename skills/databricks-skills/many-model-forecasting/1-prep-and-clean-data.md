@@ -144,7 +144,7 @@ WHERE {y_col} IS NOT NULL
 CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_train_data AS
 SELECT
     CAST({unique_id_col} AS STRING) AS unique_id,
-    CAST({ds_col} AS TIMESTAMP) AS ds,
+    CAST({ds_col} AS DATE) AS ds,
     CAST({y_col} AS DOUBLE) AS y
 FROM {catalog}.{schema}.{table_name}
 WHERE {y_col} IS NOT NULL
@@ -155,7 +155,7 @@ WHERE {y_col} IS NOT NULL
 CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_train_data AS
 SELECT
     CAST({unique_id_col} AS STRING) AS unique_id,
-    CAST(DATE_TRUNC('week', {ds_col}) + INTERVAL 6 DAY AS TIMESTAMP) AS ds,
+    CAST(DATE_TRUNC('week', {ds_col}) + INTERVAL 6 DAY AS DATE) AS ds,
     SUM(CAST({y_col} AS DOUBLE)) AS y
 FROM {catalog}.{schema}.{table_name}
 WHERE {y_col} IS NOT NULL
@@ -167,7 +167,7 @@ GROUP BY {unique_id_col}, DATE_TRUNC('week', {ds_col}) + INTERVAL 6 DAY
 CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_train_data AS
 SELECT
     CAST({unique_id_col} AS STRING) AS unique_id,
-    CAST(LAST_DAY({ds_col}) AS TIMESTAMP) AS ds,
+    CAST(LAST_DAY({ds_col}) AS DATE) AS ds,
     SUM(CAST({y_col} AS DOUBLE)) AS y
 FROM {catalog}.{schema}.{table_name}
 WHERE {y_col} IS NOT NULL
@@ -432,6 +432,6 @@ AskUserQuestion:
 
 ## Outputs
 
-- A Delta table `<catalog>.<schema>.{use_case}_train_data` with columns `unique_id` (STRING), `ds` (TIMESTAMP), `y` (DOUBLE)
+- A Delta table `<catalog>.<schema>.{use_case}_train_data` with columns `unique_id` (STRING), `ds` (DATE for D/W/M, TIMESTAMP for H), `y` (DOUBLE)
 - A Delta table `<catalog>.<schema>.{use_case}_cleaning_report` with columns: `unique_id`, `original_count`, `final_count`, `missing_filled`, `imputation_method`, `anomalies_capped`, `iqr_multiplier`, `excluded`, `exclusion_reason`
 - A summary: number of series, date range, detected frequency, cleaning actions taken
