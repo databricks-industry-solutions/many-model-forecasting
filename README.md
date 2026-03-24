@@ -13,13 +13,12 @@ Get started now!
 ## What's New
 Use a cluster with [Databricks Runtime 17.3LTS for ML](https://docs.databricks.com/en/release-notes/runtime/17.3lts-ml.html) for local models, and [Databricks Runtime 18.0 for ML](https://docs.databricks.com/en/release-notes/runtime/18.0-ml.html) or later for global and foundation models.
 
-
+- Mar 2026: MMF is agent native. Added skills that guide users through an end to end forecasting project (preprocess, evaluate, forecast, postprocess). Try it out [here](https://github.com/databricks-industry-solutions/many-model-forecasting/tree/main/skills/). ([lbruand-db](https://github.com/lbruand-db), [lourdesmartinezma](https://github.com/lourdesmartinezma), [puneet-jain159](https://github.com/puneet-jain159))
 - Feb 2026: Added an interactive app to explore the results of forecasting. Try it out [here](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/apps/).
 - Feb 2026: [Chronos-2](https://github.com/amazon-science/chronos-forecasting) models are now available for univariate and covariate forecasting. Decommissioned ChronosT5 models. Try the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/foundation_daily.ipynb). ([rohan-parikh-db](https://github.com/rohan-parikh-db))
 - Feb 2026: [TimesFM 2.5](https://github.com/google-research/timesfm) is available for univariate and covariate forecasting. Decommissioned TimesFM 1.0 and TimesFM 2.0. Try the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/foundation_daily.ipynb). ([rohan-parikh-db](https://github.com/rohan-parikh-db))
 - Feb 2026: Moirai models are temporarily disabled due to [uni2ts](https://github.com/SalesforceAIResearch/uni2ts) requiring torch<2.5, incompatible the latest Databricks Runtimes.
 - Feb 2026: Added multi-node multi-GPU support for global models. Try the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/global_daily.ipynb).
-- Aug 2025: MMF runs on Serverless. Try the [notebooks](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/serverless).
 
 ## Getting started
 
