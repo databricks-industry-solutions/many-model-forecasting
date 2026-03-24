@@ -185,8 +185,9 @@ AskUserQuestion:
      Azure:
      (a) Standard_NC4as_T4_v3    — 1× T4 GPU, 16 GB
      (b) Standard_NC8as_T4_v3    — 1× T4 GPU, 16 GB, more CPU/RAM
-     (c) Standard_NV36ads_A10_v5 — 2× A10 GPUs, 48 GB  (recommended)
-     (d) Standard_NC24ads_A100_v4 — 1× A100 GPU, 80 GB (large models)
+     (c) Standard_NV36ads_A10_v5 — 1× A10 GPU, 24 GB  (recommended)
+     (d) Standard_NV72ads_A10_v5 — 2× A10 GPUs, 48 GB (global + foundation)
+     (e) Standard_NC24ads_A100_v4 — 1× A100 GPU, 80 GB (large models)
 
      GCP:
      (a) g2-standard-4   — 1× L4 GPU, 24 GB
