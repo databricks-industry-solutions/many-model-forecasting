@@ -132,6 +132,7 @@ dmypy.json
 .pyre/
 
 .databricks
+.databricks-resources.json
 .dbx
 
 # Lightning Logs
