@@ -19,7 +19,7 @@ Gather these from the user (with sensible defaults):
 | `stride` | Derived from backtest strategy | Step size between backtest windows |
 | `metric` | `smape` | Evaluation metric (`smape`, `mape`, `mae`, `mse`, `rmse`) |
 | `active_models` | From Skill 3 | Models to run (grouped by class) |
-| `train_data` | `<catalog>.<schema>.{use_case}_train_data` | Input table (from `/prep-and-clean-data`) |
+| `train_data` | `<catalog>.<schema>.{use_case}_train_data` | Input table — see Step 0a for routing based on non-forecastable strategy |
 | `evaluation_output` | `<catalog>.<schema>.{use_case}_evaluation_output` | Evaluation results table |
 | `scoring_output` | `<catalog>.<schema>.{use_case}_scoring_output` | Scoring results table |
 | `group_id` | `unique_id` | Column name for series identifier |
@@ -38,6 +38,27 @@ Use these exact names in the `active_models` parameter:
 
 ## Steps
 
+### Step 0a: Read non-forecastable strategy from pipeline config
+
+Check if `{use_case}_pipeline_config` exists:
+
+```sql
+SELECT non_forecastable_strategy, fallback_method, non_forecastable_models,
+       n_forecastable, n_non_forecastable
+FROM {catalog}.{schema}.{use_case}_pipeline_config
+WHERE use_case = '{use_case}'
+```
+
+Based on the strategy, determine which training table to use for the **main pipeline**:
+
+| Strategy | Main pipeline train table | Non-forecastable handling |
+|----------|--------------------------|--------------------------|
+| `include` (or config missing) | `{use_case}_train_data` | All series run together — no separate handling |
+| `fallback` | `{use_case}_train_data_forecastable` | Already handled in Skill 2 — fallback forecasts in `{use_case}_scoring_output_non_forecastable` |
+| `separate_job` | `{use_case}_train_data_forecastable` | Separate job created in Step 5a below |
+
+Set `{train_table}` to the correct table name for all subsequent notebook generation steps.
+
 ### Step 1: Pre-flight parameter validation
 
 Before generating notebooks, validate:
@@ -52,7 +73,8 @@ Before generating notebooks, validate:
 | `train_table` exists and has required schema | Mandatory | "Training table missing or invalid schema" |
 
 ```sql
-SELECT COUNT(*) AS count FROM {catalog}.{schema}.{use_case}_train_data
+-- Use the train table determined in Step 0a
+SELECT COUNT(*) AS count FROM {catalog}.{schema}.{train_table}
 ```
 
 ### Step 1a: Profile-aware model selection (optional)
@@ -129,7 +151,7 @@ Report the resulting number of backtest windows: `(backtest_length - prediction_
 
 Confirm the input table exists:
 ```sql
-SELECT COUNT(*) AS count FROM {catalog}.{schema}.{use_case}_train_data
+SELECT COUNT(*) AS count FROM {catalog}.{schema}.{train_table}
 ```
 
 Present all parameters to the user via `AskUserQuestion` for validation.
@@ -150,7 +172,7 @@ Generate a single notebook from `mmf_local_notebook_template.ipynb` with all loc
 |-------------|-------|
 | `{catalog}` | user's catalog |
 | `{schema}` | user's schema |
-| `{train_table}` | `{use_case}_train_data` |
+| `{train_table}` | Determined by Step 0a: `{use_case}_train_data` (include), `{use_case}_train_data_forecastable` (fallback/separate_job) |
 | `{freq}` | detected or user-specified frequency |
 | `{prediction_length}` | user-specified forecast horizon (integer) |
 | `{backtest_length}` | derived from backtest strategy (integer) |
@@ -194,7 +216,7 @@ For each GPU model class (global and/or foundation), generate an **orchestrator 
 | `{catalog}` | user's catalog |
 | `{schema}` | user's schema |
 | `{use_case}` | use case name |
-| `{train_table}` | `{use_case}_train_data` |
+| `{train_table}` | Determined by Step 0a: `{use_case}_train_data` (include), `{use_case}_train_data_forecastable` (fallback/separate_job) |
 | `{freq}` | detected or user-specified frequency |
 | `{prediction_length}` | user-specified forecast horizon (integer) |
 | `{backtest_length}` | derived from backtest strategy (integer) |
@@ -352,22 +374,129 @@ If the user requests **serverless compute** for local models, omit `job_clusters
 
 GPU models require ML Runtime clusters and cannot use serverless.
 
+#### Step 5a: Non-forecastable separate job (if `separate_job` strategy)
+
+**Only create these jobs if `non_forecastable_strategy == 'separate_job'`.** Skip entirely for `include` or `fallback` strategies.
+
+Generate notebooks for the non-forecastable pipeline using the same templates, but with:
+- `{train_table}` → `{use_case}_train_data_non_forecastable`
+- `{active_models}` → the non-forecastable models selected in Skill 2/3
+- `{use_case}` output table suffix → `{use_case}_nf` (to avoid overwriting main pipeline outputs)
+
+The evaluation and scoring output tables for non-forecastable series are:
+- `{use_case}_nf_evaluation_output`
+- `{use_case}_nf_scoring_output`
+
+##### Non-forecastable local models notebook
+
+If the non-forecastable models include local (CPU) models, generate a notebook from `mmf_local_notebook_template.ipynb`:
+- Save locally as `notebooks/{use_case}/run_local_nf.ipynb`
+- Upload to workspace at `notebooks/{use_case}/run_local_nf`
+
+##### Non-forecastable GPU orchestrator notebooks
+
+If the non-forecastable models include global or foundation models, generate orchestrator notebooks:
+- `notebooks/{use_case}/orchestrator_global_nf.ipynb` — if any global models
+- `notebooks/{use_case}/orchestrator_foundation_nf.ipynb` — if any foundation models
+
+These orchestrators call the same `run_gpu` notebook (shared with the main pipeline).
+
+##### Job definitions for non-forecastable pipeline
+
+**Job NF-1: Non-forecastable local models** (if any NF local models):
+
+```json
+{
+  "name": "{use_case}_nf_local_forecasting",
+  "tasks": [{
+    "task_key": "nf_local_models",
+    "notebook_task": {
+      "notebook_path": "notebooks/{use_case}/run_local_nf"
+    },
+    "job_cluster_key": "{use_case}_nf_cpu_cluster"
+  }],
+  "job_clusters": [{
+    "job_cluster_key": "{use_case}_nf_cpu_cluster",
+    "new_cluster": {
+      "spark_version": "17.3.x-cpu-ml-scala2.13",
+      "node_type_id": "{cpu_node_type}",
+      "num_workers": {nf_cpu_workers},
+      "data_security_mode": "SINGLE_USER",
+      "spark_conf": {
+        "spark.sql.execution.arrow.enabled": "true",
+        "spark.sql.adaptive.enabled": "false",
+        "spark.databricks.delta.formatCheck.enabled": "false",
+        "spark.databricks.delta.schema.autoMerge.enabled": "true"
+      }
+    }
+  }]
+}
+```
+
+**Job NF-2: Non-forecastable global models** (if any NF global models):
+
+```json
+{
+  "name": "{use_case}_nf_global_forecasting",
+  "tasks": [{
+    "task_key": "nf_global_models",
+    "notebook_task": {
+      "notebook_path": "notebooks/{use_case}/orchestrator_global_nf"
+    },
+    "job_cluster_key": "{use_case}_nf_gpu_cluster"
+  }],
+  "job_clusters": [{
+    "job_cluster_key": "{use_case}_nf_gpu_cluster",
+    "new_cluster": {
+      "spark_version": "18.0.x-gpu-ml-scala2.13",
+      "node_type_id": "{nf_gpu_node_type}",
+      "num_workers": 0,
+      "data_security_mode": "SINGLE_USER",
+      "spark_conf": {
+        "spark.master": "local[*]",
+        "spark.databricks.cluster.profile": "singleNode",
+        "spark.databricks.delta.formatCheck.enabled": "false",
+        "spark.databricks.delta.schema.autoMerge.enabled": "true"
+      },
+      "custom_tags": {
+        "ResourceClass": "SingleNode"
+      }
+    }
+  }]
+}
+```
+
+**Job NF-3: Non-forecastable foundation models** (if any NF foundation models):
+
+Same pattern as NF-2, with `orchestrator_foundation_nf` notebook.
+
+**Launch all non-forecastable jobs in parallel with the main pipeline jobs.** All jobs (main + NF) are triggered simultaneously.
+
 ### Step 6: Monitor execution
 
 Poll all job run statuses until completion. Report progress to the user with structured status updates showing per-job progress:
 
 ```
-[HH:MM:SS] Triggered 3 jobs in parallel:
+[HH:MM:SS] Triggered {n_jobs} jobs in parallel:
 [HH:MM:SS]   Job {use_case}_local_forecasting (run_id: {local_run_id})
 [HH:MM:SS]   Job {use_case}_global_forecasting (run_id: {global_run_id})
 [HH:MM:SS]   Job {use_case}_foundation_forecasting (run_id: {foundation_run_id})
+{if separate_job:
+[HH:MM:SS]   Job {use_case}_nf_local_forecasting (run_id: {nf_local_run_id})
+}
 
 [HH:MM:SS] {use_case}_local_forecasting: RUNNING
 [HH:MM:SS] {use_case}_global_forecasting: RUNNING (orchestrator running NeuralForecastAutoNHITS...)
 [HH:MM:SS] {use_case}_foundation_forecasting: RUNNING (orchestrator running ChronosBoltBase...)
+{if separate_job:
+[HH:MM:SS] {use_case}_nf_local_forecasting: RUNNING
+}
 [HH:MM:SS] {use_case}_local_forecasting: SUCCEEDED (duration: 12m 34s)
 [HH:MM:SS] {use_case}_global_forecasting: SUCCEEDED (duration: 25m 12s)
 [HH:MM:SS] {use_case}_foundation_forecasting: SUCCEEDED (duration: 18m 45s)
+{if separate_job:
+[HH:MM:SS] {use_case}_nf_local_forecasting: SUCCEEDED (duration: 5m 20s)
+}
 [HH:MM:SS] All jobs completed. Overall status: SUCCEEDED
 ```
 
@@ -386,7 +515,9 @@ SELECT
   {backtest_length} AS backtest_length,
   {stride} AS stride,
   '{metric}' AS metric,
-  '{active_models_str}' AS active_models
+  '{active_models_str}' AS active_models,
+  '{non_forecastable_strategy}' AS non_forecastable_strategy,
+  '{train_table}' AS train_table
 ```
 
 Confirm to the user that evaluation and scoring output tables have been written, and report row counts:
@@ -398,6 +529,14 @@ SELECT COUNT(*) AS eval_rows FROM {catalog}.{schema}.{use_case}_evaluation_outpu
 SELECT COUNT(*) AS score_rows FROM {catalog}.{schema}.{use_case}_scoring_output
 ```
 
+If `separate_job` strategy, also report non-forecastable output counts:
+```sql
+SELECT COUNT(*) AS nf_eval_rows FROM {catalog}.{schema}.{use_case}_nf_evaluation_output
+```
+```sql
+SELECT COUNT(*) AS nf_score_rows FROM {catalog}.{schema}.{use_case}_nf_scoring_output
+```
+
 ### ⛔ STOP GATE — Step 8: Hand off to post-processing
 
 Present to the user and ask whether to proceed:
@@ -405,8 +544,21 @@ Present to the user and ask whether to proceed:
 ```
 AskUserQuestion:
   "✅ Forecast run complete.
+
+   Main pipeline (forecastable series):
    • Evaluation output: {eval_rows} rows in {use_case}_evaluation_output
    • Scoring output: {score_rows} rows in {use_case}_scoring_output
+
+   {if separate_job:
+   Non-forecastable pipeline:
+   • Evaluation output: {nf_eval_rows} rows in {use_case}_nf_evaluation_output
+   • Scoring output: {nf_score_rows} rows in {use_case}_nf_scoring_output
+   }
+
+   {if fallback:
+   Non-forecastable series: handled by {fallback_method} fallback (in {use_case}_scoring_output_non_forecastable)
+   }
+
    • Run metadata logged to {use_case}_run_metadata
    • MLflow experiment: /Users/{user}/mmf/{use_case}
 
@@ -421,7 +573,12 @@ AskUserQuestion:
 
 ## Outputs
 
-- Delta table `<catalog>.<schema>.{use_case}_evaluation_output` — backtest metrics per model per series
-- Delta table `<catalog>.<schema>.{use_case}_scoring_output` — forward-looking forecasts
-- Delta table `<catalog>.<schema>.{use_case}_run_metadata` — run parameters and audit trail
+**Always produced:**
+- Delta table `<catalog>.<schema>.{use_case}_evaluation_output` — backtest metrics per model per series (forecastable series only when strategy is `fallback` or `separate_job`)
+- Delta table `<catalog>.<schema>.{use_case}_scoring_output` — forward-looking forecasts (forecastable series only when strategy is `fallback` or `separate_job`)
+- Delta table `<catalog>.<schema>.{use_case}_run_metadata` — run parameters, audit trail, and non-forecastable strategy
 - MLflow experiment at `/Users/<user>/mmf/{use_case}`
+
+**Produced when `separate_job` strategy:**
+- Delta table `<catalog>.<schema>.{use_case}_nf_evaluation_output` — backtest metrics for non-forecastable series
+- Delta table `<catalog>.<schema>.{use_case}_nf_scoring_output` — forward-looking forecasts for non-forecastable series

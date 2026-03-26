@@ -165,6 +165,270 @@ Use `AskUserQuestion` to let the user review and confirm:
 - Required compute types (local/global/foundation)
 - Whether to adjust classification thresholds
 
+### ⛔ STOP GATE — Step 9: Decide how to handle non-forecastable series
+
+**Always present this decision to the user. Do NOT proceed until the user selects an option.**
+
+Query counts for the prompt:
+```sql
+SELECT
+  COUNT(CASE WHEN forecastability_class = 'high_confidence' THEN 1 END) AS n_forecastable,
+  COUNT(CASE WHEN forecastability_class = 'low_signal' THEN 1 END) AS n_non_forecastable,
+  COUNT(*) AS n_total
+FROM {catalog}.{schema}.{use_case}_series_profile
+```
+
+```
+AskUserQuestion:
+  "Your dataset contains {n_non_forecastable} non-forecastable (low-signal) series
+   out of {n_total} total ({non_forecastable_pct}%).
+
+   These series have high noise, insufficient length, or too many zeros
+   to produce reliable forecasts. How would you like to handle them?
+
+   (a) Keep all together — forecast everything with the same models
+       The non-forecastable series stay in the dataset. All models run on all series.
+       Simple, but may waste compute and pull down aggregate metrics.
+       Best when the low-signal count is small (< 5-10% of total).
+
+   (b) Exclude + automatic fallback — remove from main pipeline, apply a simple rule
+       Non-forecastable series are excluded from model training/evaluation.
+       A lightweight fallback produces their forecasts immediately:
+         • Seasonal Naive — repeat the last complete seasonal cycle
+         • Naive (last value) — carry forward the last observed value
+         • Historical mean — average of all observed values
+         • Zero — fill forecast horizon with zeros
+       Fast, cheap, and honest. Fallback results merge back in post-processing.
+
+   (c) Exclude + separate forecasting job — run them through their own pipeline
+       Non-forecastable series get their own dedicated job with models you choose
+       (e.g., baseline, intermittent demand, or even foundation models).
+       Cluster sizing will be computed from the non-forecastable dataset size.
+       Results merge back in post-processing with full evaluation metrics.
+       Best when the low-signal count is large or you suspect specialized models
+       (TSB, ADIDA, IMAPA, Croston) may recover signal."
+```
+
+**WAIT for the user to respond. Do NOT proceed until the user has selected an option.**
+
+### Step 10: Execute the chosen non-forecastable strategy
+
+Based on the user's choice in Step 9:
+
+#### Option (a): Keep all together
+
+No table changes. Record the strategy:
+
+```sql
+CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_pipeline_config AS
+SELECT
+  '{use_case}' AS use_case,
+  'include' AS non_forecastable_strategy,
+  NULL AS fallback_method,
+  NULL AS non_forecastable_models,
+  {n_forecastable} AS n_forecastable,
+  {n_non_forecastable} AS n_non_forecastable,
+  CURRENT_TIMESTAMP() AS created_at
+```
+
+The main pipeline will use `{use_case}_train_data` as-is.
+
+#### Option (b): Exclude + automatic fallback
+
+First, ask which fallback method to use:
+
+```
+AskUserQuestion:
+  "Which fallback method for the {n_non_forecastable} non-forecastable series?
+
+   (1) Seasonal Naive — repeat the last seasonal cycle (good default if data has any pattern)
+   (2) Naive (last value) — carry forward the final observation
+   (3) Historical mean — use the average of all observations
+   (4) Zero — fill with zeros (for intermittent/sparse series you want to suppress)"
+```
+
+Then create the filtered training table and compute fallback forecasts:
+
+```sql
+-- Forecastable series only (used by main pipeline in Skills 3-4)
+CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_train_data_forecastable AS
+SELECT t.*
+FROM {catalog}.{schema}.{use_case}_train_data t
+INNER JOIN {catalog}.{schema}.{use_case}_series_profile p
+  ON t.unique_id = p.unique_id
+WHERE p.forecastability_class = 'high_confidence'
+```
+
+Compute the fallback forecasts on serverless (lightweight SQL/Spark operation):
+
+**Seasonal Naive fallback:**
+```sql
+CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_scoring_output_non_forecastable AS
+WITH last_season AS (
+  SELECT unique_id, ds, y,
+         ROW_NUMBER() OVER (PARTITION BY unique_id ORDER BY ds DESC) AS rn
+  FROM {catalog}.{schema}.{use_case}_train_data t
+  INNER JOIN {catalog}.{schema}.{use_case}_series_profile p
+    ON t.unique_id = p.unique_id
+  WHERE p.forecastability_class = 'low_signal'
+),
+-- Take the last {prediction_length} observations as the forecast
+seasonal_values AS (
+  SELECT unique_id, COLLECT_LIST(y) AS y
+  FROM last_season
+  WHERE rn <= {prediction_length}
+  GROUP BY unique_id
+)
+SELECT unique_id, 'SeasonalNaiveFallback' AS model, y
+FROM seasonal_values
+```
+
+**Naive (last value) fallback:**
+```sql
+CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_scoring_output_non_forecastable AS
+WITH last_values AS (
+  SELECT unique_id,
+         FIRST_VALUE(y) OVER (PARTITION BY unique_id ORDER BY ds DESC) AS last_y
+  FROM {catalog}.{schema}.{use_case}_train_data t
+  INNER JOIN {catalog}.{schema}.{use_case}_series_profile p
+    ON t.unique_id = p.unique_id
+  WHERE p.forecastability_class = 'low_signal'
+),
+distinct_series AS (
+  SELECT DISTINCT unique_id, last_y FROM last_values
+)
+SELECT unique_id, 'NaiveFallback' AS model,
+       ARRAY_REPEAT(last_y, {prediction_length}) AS y
+FROM distinct_series
+```
+
+**Historical mean fallback:**
+```sql
+CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_scoring_output_non_forecastable AS
+WITH series_means AS (
+  SELECT t.unique_id, AVG(t.y) AS mean_y
+  FROM {catalog}.{schema}.{use_case}_train_data t
+  INNER JOIN {catalog}.{schema}.{use_case}_series_profile p
+    ON t.unique_id = p.unique_id
+  WHERE p.forecastability_class = 'low_signal'
+  GROUP BY t.unique_id
+)
+SELECT unique_id, 'HistoricalMeanFallback' AS model,
+       ARRAY_REPEAT(mean_y, {prediction_length}) AS y
+FROM series_means
+```
+
+**Zero fallback:**
+```sql
+CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_scoring_output_non_forecastable AS
+SELECT DISTINCT t.unique_id, 'ZeroFallback' AS model,
+       ARRAY_REPEAT(CAST(0.0 AS DOUBLE), {prediction_length}) AS y
+FROM {catalog}.{schema}.{use_case}_train_data t
+INNER JOIN {catalog}.{schema}.{use_case}_series_profile p
+  ON t.unique_id = p.unique_id
+WHERE p.forecastability_class = 'low_signal'
+```
+
+Record the strategy:
+```sql
+CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_pipeline_config AS
+SELECT
+  '{use_case}' AS use_case,
+  'fallback' AS non_forecastable_strategy,
+  '{fallback_method}' AS fallback_method,
+  NULL AS non_forecastable_models,
+  {n_forecastable} AS n_forecastable,
+  {n_non_forecastable} AS n_non_forecastable,
+  CURRENT_TIMESTAMP() AS created_at
+```
+
+Verify:
+```sql
+SELECT COUNT(DISTINCT unique_id) AS fallback_series
+FROM {catalog}.{schema}.{use_case}_scoring_output_non_forecastable
+```
+
+Report to the user: "{fallback_series} non-forecastable series handled with {fallback_method} fallback. Results stored in `{use_case}_scoring_output_non_forecastable`."
+
+#### Option (c): Exclude + separate forecasting job
+
+Create both filtered training tables:
+
+```sql
+-- Forecastable series only (used by main pipeline in Skills 3-4)
+CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_train_data_forecastable AS
+SELECT t.*
+FROM {catalog}.{schema}.{use_case}_train_data t
+INNER JOIN {catalog}.{schema}.{use_case}_series_profile p
+  ON t.unique_id = p.unique_id
+WHERE p.forecastability_class = 'high_confidence'
+```
+
+```sql
+-- Non-forecastable series (used by separate job in Skill 4)
+CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_train_data_non_forecastable AS
+SELECT t.*
+FROM {catalog}.{schema}.{use_case}_train_data t
+INNER JOIN {catalog}.{schema}.{use_case}_series_profile p
+  ON t.unique_id = p.unique_id
+WHERE p.forecastability_class = 'low_signal'
+```
+
+Then ask the user which models to run on the non-forecastable series:
+
+```
+AskUserQuestion:
+  "Which models should the non-forecastable series be forecasted with?
+   Recommended models for low-signal series are pre-selected.
+
+   BASELINE MODELS (recommended):
+   [x] StatsForecastBaselineNaive
+   [x] StatsForecastBaselineSeasonalNaive
+
+   INTERMITTENT DEMAND MODELS (recommended if sparsity is high):
+   [ ] StatsForecastTSB
+   [ ] StatsForecastADIDA
+   [ ] StatsForecastIMAPA
+   [ ] StatsForecastCrostonClassic
+   [ ] StatsForecastCrostonOptimized
+   [ ] StatsForecastCrostonSBA
+
+   OTHER LOCAL MODELS:
+   [ ] StatsForecastAutoArima
+   [ ] StatsForecastAutoETS
+   [ ] StatsForecastAutoCES
+
+   FOUNDATION MODELS (zero-shot, no training needed):
+   [ ] ChronosBoltTiny
+   [ ] ChronosBoltMini
+   [ ] ChronosBoltSmall
+   [ ] ChronosBoltBase
+
+   List the model names you want to run."
+```
+
+Record the strategy:
+```sql
+CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_pipeline_config AS
+SELECT
+  '{use_case}' AS use_case,
+  'separate_job' AS non_forecastable_strategy,
+  NULL AS fallback_method,
+  '{non_forecastable_models_str}' AS non_forecastable_models,
+  {n_forecastable} AS n_forecastable,
+  {n_non_forecastable} AS n_non_forecastable,
+  CURRENT_TIMESTAMP() AS created_at
+```
+
+Verify both tables:
+```sql
+SELECT 'forecastable' AS partition, COUNT(DISTINCT unique_id) AS n_series
+FROM {catalog}.{schema}.{use_case}_train_data_forecastable
+UNION ALL
+SELECT 'non_forecastable', COUNT(DISTINCT unique_id)
+FROM {catalog}.{schema}.{use_case}_train_data_non_forecastable
+```
+
 ## Statistical Properties Computed
 
 | Property | Method | Library |
@@ -204,7 +468,7 @@ Low-Signal (Non-Forecastable):
 | General / mixed characteristics | `StatsForecastAutoArima`, `NeuralForecastAutoNHITS`, `ChronosBoltBase`, `Chronos2`, `TimesFM_2_5_200m` | Broad coverage across model families |
 | Low-signal (non-forecastable) | `StatsForecastBaselineNaive`, `StatsForecastBaselineSeasonalNaive` | Baseline only; flag for human review |
 
-## ⛔ STOP GATE — Step 9: Confirm before proceeding to next skill
+## ⛔ STOP GATE — Step 11: Confirm before proceeding to next skill
 
 ```
 AskUserQuestion:
@@ -212,10 +476,16 @@ AskUserQuestion:
 
    Summary:
    • Total series profiled: {total}
-   • High-confidence: {high} ({high_pct}%)
-   • Low-signal: {low} ({low_pct}%)
+   • High-confidence (forecastable): {high} ({high_pct}%)
+   • Low-signal (non-forecastable): {low} ({low_pct}%)
+   • Non-forecastable strategy: {strategy_description}
    • Recommended model types: {model_types}
    • Profile table: {catalog}.{schema}.{use_case}_series_profile
+   • Pipeline config: {catalog}.{schema}.{use_case}_pipeline_config
+   {if strategy == 'fallback': '• Fallback forecasts: {catalog}.{schema}.{use_case}_scoring_output_non_forecastable'}
+   {if strategy != 'include': '• Forecastable training data: {catalog}.{schema}.{use_case}_train_data_forecastable'}
+   {if strategy == 'separate_job': '• Non-forecastable training data: {catalog}.{schema}.{use_case}_train_data_non_forecastable'}
+   {if strategy == 'separate_job': '• Non-forecastable models: {non_forecastable_models}'}
 
    Would you like to proceed to cluster provisioning and model selection?
    (a) Yes, proceed to /provision-forecasting-resources
@@ -243,3 +513,33 @@ AskUserQuestion:
 | `forecastability_class` | STRING | `high_confidence` or `low_signal` |
 | `recommended_models` | STRING | Comma-separated model names |
 | `model_types_needed` | STRING | `local`, `local,foundation`, etc. |
+
+**Table**: `<catalog>.<schema>.{use_case}_pipeline_config`
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `use_case` | STRING | Use case name |
+| `non_forecastable_strategy` | STRING | `include`, `fallback`, or `separate_job` |
+| `fallback_method` | STRING | Fallback method name (null if not `fallback`) |
+| `non_forecastable_models` | STRING | Comma-separated model names (null if not `separate_job`) |
+| `n_forecastable` | INT | Count of high-confidence series |
+| `n_non_forecastable` | INT | Count of low-signal series |
+| `created_at` | TIMESTAMP | When the config was created |
+
+**Table** (conditional): `<catalog>.<schema>.{use_case}_train_data_forecastable`
+
+Created when strategy is `fallback` or `separate_job`. Contains only high-confidence series from the training data. Same schema as `{use_case}_train_data`.
+
+**Table** (conditional): `<catalog>.<schema>.{use_case}_train_data_non_forecastable`
+
+Created when strategy is `separate_job`. Contains only low-signal series from the training data. Same schema as `{use_case}_train_data`.
+
+**Table** (conditional): `<catalog>.<schema>.{use_case}_scoring_output_non_forecastable`
+
+Created when strategy is `fallback`. Contains fallback forecasts for non-forecastable series.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `unique_id` | STRING | Series identifier |
+| `model` | STRING | Fallback method name (e.g., `SeasonalNaiveFallback`) |
+| `y` | ARRAY&lt;DOUBLE&gt; | Forecast values |
