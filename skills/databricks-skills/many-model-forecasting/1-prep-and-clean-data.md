@@ -183,21 +183,29 @@ SELECT COUNT(*) AS count FROM {catalog}.{schema}.{use_case}_train_data
 
 ### Step 7: Missing Data Assessment & Imputation
 
-Missing data in time series comes in two forms, both of which must be detected:
+Missing data in time series comes in three forms, all of which must be detected:
 - **Explicit NULLs**: Rows exist but `y` is NULL.
-- **Implicit gaps**: Entire rows are absent between the first and last timestamp of a series.
+- **Interior gaps**: Entire rows are absent between the first and last timestamp of a series.
+- **Trailing gaps**: A series ends before the global max date. For example, if most series run through Dec 2024 but three end at Nov 2024, those three have a one-month trailing gap. This is critical to detect because MMF expects all series to share the same end date.
 
 #### Step 7a: Generate date spine and detect all gaps
 
+Use each series' own `min_ds` (series may legitimately start at different times) but the **global** `max_ds` across all series (so trailing gaps are detected):
+
 ```sql
-WITH series_bounds AS (
-  SELECT unique_id, MIN(ds) AS min_ds, MAX(ds) AS max_ds
+WITH global_max AS (
+  SELECT MAX(ds) AS max_ds
+  FROM {catalog}.{schema}.{use_case}_train_data
+),
+series_bounds AS (
+  SELECT unique_id, MIN(ds) AS min_ds
   FROM {catalog}.{schema}.{use_case}_train_data
   GROUP BY unique_id
 ),
 date_spine AS (
-  SELECT s.unique_id, EXPLODE(SEQUENCE(s.min_ds, s.max_ds, INTERVAL 1 DAY)) AS expected_ds
+  SELECT s.unique_id, EXPLODE(SEQUENCE(s.min_ds, g.max_ds, INTERVAL 1 DAY)) AS expected_ds
   FROM series_bounds s
+  CROSS JOIN global_max g
 ),
 spine_joined AS (
   SELECT
@@ -225,17 +233,44 @@ The `SEQUENCE` interval changes by frequency:
 - Weekly (`freq=W`): `INTERVAL 7 DAY`
 - Monthly (`freq=M`): `INTERVAL 1 MONTH`
 
+Before presenting the summary, also identify series with **trailing gaps** — i.e., series whose last observed data point is earlier than the global maximum date:
+
+```sql
+WITH global_max AS (
+  SELECT MAX(ds) AS max_ds FROM {catalog}.{schema}.{use_case}_train_data
+),
+series_last AS (
+  SELECT unique_id, MAX(ds) AS last_ds
+  FROM {catalog}.{schema}.{use_case}_train_data
+  WHERE y IS NOT NULL
+  GROUP BY unique_id
+)
+SELECT s.unique_id, s.last_ds, g.max_ds,
+       DATEDIFF(g.max_ds, s.last_ds) AS trailing_gap_days
+FROM series_last s CROSS JOIN global_max g
+WHERE s.last_ds < g.max_ds
+ORDER BY trailing_gap_days DESC
+```
+
+Report the trailing-gap series as part of the summary below.
+
 #### ⛔ STOP GATE — Step 7b: Present summary and ask user for imputation strategy
 
 **Do NOT proceed until the user chooses an imputation strategy.**
 
 ```
 AskUserQuestion:
-  "Missing data summary (including implicit date gaps):
+  "Missing data summary (including interior and trailing gaps):
    - {n_clean} series are complete (no gaps)
    - {n_low} series have < 5% missing → Suggest: linear interpolation (avg of neighbors)
    - {n_mid} series have 5-20% missing → Suggest: forward fill (last known value)
    - {n_high} series have > 20% missing → Suggest: exclude from forecasting
+
+   Trailing gaps detected:
+   - {n_trailing} series end before the global max date ({global_max_ds})
+   - These series are missing the most recent data points and will show as
+     NULL rows after the spine backfill. They are included in the counts above.
+   [list each trailing-gap series, its last observed date, and the gap size]
 
    How would you like to proceed?
    (a) Apply suggested strategy
@@ -248,15 +283,29 @@ AskUserQuestion:
 
 #### Step 7c: Backfill the date spine and apply imputation
 
-First, replace `{use_case}_train_data` with the complete spine so that implicit gaps become explicit NULL rows:
+First, replace `{use_case}_train_data` with the complete spine (using global `max_ds`) so that implicit gaps and trailing gaps become explicit NULL rows:
 
 ```sql
 CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_train_data AS
+WITH global_max AS (
+  SELECT MAX(ds) AS max_ds FROM {catalog}.{schema}.{use_case}_train_data
+),
+series_bounds AS (
+  SELECT unique_id, MIN(ds) AS min_ds
+  FROM {catalog}.{schema}.{use_case}_train_data
+  GROUP BY unique_id
+),
+date_spine AS (
+  SELECT s.unique_id, EXPLODE(SEQUENCE(s.min_ds, g.max_ds, INTERVAL 1 DAY)) AS expected_ds
+  FROM series_bounds s CROSS JOIN global_max g
+)
 SELECT sp.unique_id, sp.expected_ds AS ds, t.y
 FROM date_spine sp
 LEFT JOIN {catalog}.{schema}.{use_case}_train_data t
   ON sp.unique_id = t.unique_id AND sp.expected_ds = t.ds
 ```
+
+The `SEQUENCE` interval must match the detected frequency (same as Step 7a).
 
 Then apply the chosen imputation on the now-explicit NULLs:
 
