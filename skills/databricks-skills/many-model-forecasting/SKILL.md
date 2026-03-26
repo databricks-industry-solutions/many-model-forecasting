@@ -54,7 +54,7 @@ The five skills are designed to run in sequence, but **Skill 2 (profiling) is op
 
 ### Skill 1: Prep and Clean Data (`/prep-and-clean-data`)
 
-Asks for catalog/schema, collects a use case name, discovers time series tables, maps columns to MMF schema (`unique_id`, `ds`, `y`), asks the user how to impute missing data, generates an anomaly analysis report, asks the user how to handle anomalies, and creates the `{use_case}_train_data` table.
+Asks for catalog/schema, collects a use case name, discovers time series tables, maps columns to MMF schema (`unique_id`, `ds`, `y`), asks the user how to impute missing data, generates an anomaly analysis report, asks the user how to handle anomalies, creates the `{use_case}_train_data` table, and generates a **reproducibility notebook** that records all decisions.
 
 **STOP gates:** catalog/schema, imputation strategy, anomaly handling.
 
@@ -90,7 +90,7 @@ See: [4-execute-mmf-forecast.md](4-execute-mmf-forecast.md)
 
 ### Skill 5: Post-Process and Evaluate (`/post-process-and-evaluate`)
 
-Calculates multi-metric evaluation (MAPE, sMAPE, WAPE), selects best model per series, ranks models by win count, and generates a business-ready summary report.
+Calculates multi-metric evaluation (MAPE, sMAPE, WAPE), selects best model per series, ranks models by win count, generates a business-ready summary report, and produces a **reproducibility notebook** for re-running the evaluation.
 
 See: [5-post-process-and-evaluate.md](5-post-process-and-evaluate.md)
 
@@ -113,10 +113,15 @@ See [3-provision-forecasting-resources.md](3-provision-forecasting-resources.md)
 
 ## Notebook Templates
 
+### Pipeline notebooks (generated during execution)
 - [mmf_local_notebook_template.ipynb](mmf_local_notebook_template.ipynb) — CPU models (StatsForecast, Prophet)
 - [mmf_gpu_run_notebook_template.ipynb](mmf_gpu_run_notebook_template.ipynb) — GPU single-model runner (receives model name via widget, used by orchestrators)
 - [mmf_gpu_orchestrator_notebook_template.ipynb](mmf_gpu_orchestrator_notebook_template.ipynb) — GPU orchestrator (holds model list, invokes run_gpu per model via `dbutils.notebook.run()`)
 - [mmf_profiling_notebook_template.ipynb](mmf_profiling_notebook_template.ipynb) — Series profiling (statsmodels, scipy)
+
+### Reproducibility notebooks (generated after interactive sessions)
+- [mmf_prep_notebook_template.ipynb](mmf_prep_notebook_template.ipynb) — Data preparation replay (Skill 1): records all interactive decisions (table selection, column mapping, imputation strategy, anomaly capping) and re-creates `{use_case}_train_data` and `{use_case}_cleaning_report`
+- [mmf_post_process_notebook_template.ipynb](mmf_post_process_notebook_template.ipynb) — Post-processing replay (Skill 5): re-runs best-model selection, evaluation summary, and business report generation
 
 ## Job Architecture (Skill 4)
 

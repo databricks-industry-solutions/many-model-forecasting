@@ -101,10 +101,12 @@ Replace these placeholders:
 - `{freq}` → detected frequency
 - `{prediction_length}` → user-specified forecast horizon
 
-### Step 4: Upload notebook
+### Step 4: Save notebook locally and upload
 
-Upload the generated notebook to the Databricks workspace at:
-- `notebooks/{use_case}/run_profiling`
+Save the generated notebook to the **local project directory** at:
+- `notebooks/{use_case}/run_profiling.ipynb`
+
+Then upload it to the Databricks workspace at `notebooks/{use_case}/run_profiling`.
 
 ### Step 5: Create Workflow job on serverless compute
 

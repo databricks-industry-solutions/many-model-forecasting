@@ -163,20 +163,20 @@ Generate a single notebook from `mmf_local_notebook_template.ipynb` with all loc
 | `{use_case}` | use case name (for output table names and experiment path) |
 
 Use the template from:
-- [mmf_local_notebook_template.ipynb](mmf_local_notebook_template.ipynb) for `notebooks/{use_case}/run_local`
+- [mmf_local_notebook_template.ipynb](mmf_local_notebook_template.ipynb) → save locally as `notebooks/{use_case}/run_local.ipynb`
 
 #### 3b: GPU run notebook (static — no placeholder substitution)
 
-Upload the `mmf_gpu_run_notebook_template.ipynb` **as-is** to `notebooks/{use_case}/run_gpu`. This notebook:
+Copy the `mmf_gpu_run_notebook_template.ipynb` **as-is** to `notebooks/{use_case}/run_gpu.ipynb`. This notebook:
 - Receives all parameters via `dbutils.widgets` (catalog, schema, model, run_id, etc.)
 - Auto-detects whether the model is global or foundation and installs the correct `mmf_sa` extras
 - Runs a single model per invocation
 - Is called by the orchestrator notebooks via `dbutils.notebook.run()`
 
-**Do NOT modify this template.** Upload it verbatim.
+**Do NOT modify this template.** Copy it verbatim.
 
 Use the template from:
-- [mmf_gpu_run_notebook_template.ipynb](mmf_gpu_run_notebook_template.ipynb) for `notebooks/{use_case}/run_gpu`
+- [mmf_gpu_run_notebook_template.ipynb](mmf_gpu_run_notebook_template.ipynb) → save locally as `notebooks/{use_case}/run_gpu.ipynb`
 
 #### 3c: GPU orchestrator notebooks (one per model class)
 
@@ -209,17 +209,19 @@ For each GPU model class (global and/or foundation), generate an **orchestrator 
 Use the template from:
 - [mmf_gpu_orchestrator_notebook_template.ipynb](mmf_gpu_orchestrator_notebook_template.ipynb)
 
-Generate up to two orchestrators:
-- `notebooks/{use_case}/orchestrator_global` — if any global models selected
-- `notebooks/{use_case}/orchestrator_foundation` — if any foundation models selected
+Generate up to two orchestrators, saving locally:
+- `notebooks/{use_case}/orchestrator_global.ipynb` — if any global models selected
+- `notebooks/{use_case}/orchestrator_foundation.ipynb` — if any foundation models selected
 
-### Step 4: Upload notebooks
+### Step 4: Upload notebooks to workspace
 
-Upload generated notebooks to the workspace:
+All notebooks were saved to the **local project directory** in Step 3. Now upload them to the Databricks workspace:
 - `notebooks/{use_case}/run_local` — local models (single notebook, all local models)
-- `notebooks/{use_case}/run_gpu` — GPU single-model runner (static, uploaded as-is)
+- `notebooks/{use_case}/run_gpu` — GPU single-model runner (static, copied as-is)
 - `notebooks/{use_case}/orchestrator_global` — global models orchestrator (if applicable)
 - `notebooks/{use_case}/orchestrator_foundation` — foundation models orchestrator (if applicable)
+
+The local copies in `notebooks/{use_case}/` serve as version-controllable artifacts of the generated pipeline.
 
 ### Step 5: Create one job per model class (triggered in parallel)
 

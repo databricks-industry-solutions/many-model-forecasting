@@ -405,7 +405,34 @@ FROM ...
 
 Present cleaning summary to the user.
 
-### ⛔ STOP GATE — Step 10: Confirm before proceeding to next skill
+### Step 10: Generate reproducibility notebook
+
+After all interactive decisions have been made, generate a self-contained notebook that replays the entire data preparation pipeline. This notebook allows the user (or a teammate) to re-run the exact same prep with the same parameters without going through the interactive session again.
+
+**CRITICAL: Copy the template VERBATIM from `mmf_prep_notebook_template.ipynb`, only replacing the `{placeholder}` tokens with actual values. Do NOT add, remove, or modify any other code.**
+
+Replace these placeholders:
+- `{catalog}` → user's catalog
+- `{schema}` → user's schema
+- `{use_case}` → use case name
+- `{source_table}` → selected source table name (table name only, not fully qualified)
+- `{unique_id_col}` → source column mapped to `unique_id`
+- `{ds_col}` → source column mapped to `ds`
+- `{y_col}` → source column mapped to `y`
+- `{freq}` → detected or user-specified frequency (`H`, `D`, `W`, `M`)
+- `{imputation_method}` → chosen imputation strategy (`interpolation`, `forward_fill`, `fill_zero`, `none`)
+- `{exclusion_threshold}` → exclusion threshold as integer (e.g., `20`)
+- `{iqr_multiplier}` → IQR multiplier as float (e.g., `1.5`; `0` = skip capping)
+
+Save the generated notebook to the **local project directory** at:
+- `notebooks/{use_case}/prep_data.ipynb`
+
+Then upload it to the Databricks workspace at `notebooks/{use_case}/prep_data`.
+
+Use the template from:
+- [mmf_prep_notebook_template.ipynb](mmf_prep_notebook_template.ipynb)
+
+### ⛔ STOP GATE — Step 11: Confirm before proceeding to next skill
 
 Present a summary of what was done and ask whether to proceed:
 
@@ -421,6 +448,7 @@ AskUserQuestion:
    • Imputation: {imputation_summary}
    • Anomalies: {anomaly_summary}
    • Cleaning report: {catalog}.{schema}.{use_case}_cleaning_report
+   • Reproducibility notebook: notebooks/{use_case}/prep_data
 
    Would you like to proceed to the next step?
    (a) Run profiling & classification (optional — estimates series forecastability and recommends models)
@@ -434,4 +462,5 @@ AskUserQuestion:
 
 - A Delta table `<catalog>.<schema>.{use_case}_train_data` with columns `unique_id` (STRING), `ds` (DATE for D/W/M, TIMESTAMP for H), `y` (DOUBLE)
 - A Delta table `<catalog>.<schema>.{use_case}_cleaning_report` with columns: `unique_id`, `original_count`, `final_count`, `missing_filled`, `imputation_method`, `anomalies_capped`, `iqr_multiplier`, `excluded`, `exclusion_reason`
+- A reproducibility notebook uploaded to `notebooks/{use_case}/prep_data` that can re-create the training table with the same parameters
 - A summary: number of series, date range, detected frequency, cleaning actions taken

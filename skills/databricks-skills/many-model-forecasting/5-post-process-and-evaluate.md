@@ -176,7 +176,27 @@ Based on results:
 - If `low_signal` series still have high error: confirm they should be excluded from business decisions
 - If the user wants to iterate: allow re-running with different models or parameters
 
-### ⛔ STOP GATE — Step 9: Final confirmation
+### Step 9: Generate reproducibility notebook
+
+After all evaluation queries have been run, generate a self-contained notebook that replays the entire post-processing and evaluation pipeline. This notebook allows the user (or a teammate) to re-run the exact same evaluation and best-model selection without going through the interactive session again.
+
+**CRITICAL: Copy the template VERBATIM from `mmf_post_process_notebook_template.ipynb`, only replacing the `{placeholder}` tokens with actual values. Do NOT add, remove, or modify any other code.**
+
+Replace these placeholders:
+- `{catalog}` → user's catalog
+- `{schema}` → user's schema
+- `{use_case}` → use case name
+- `{metric}` → primary evaluation metric (e.g., `smape`)
+
+Save the generated notebook to the **local project directory** at:
+- `notebooks/{use_case}/post_process.ipynb`
+
+Then upload it to the Databricks workspace at `notebooks/{use_case}/post_process`.
+
+Use the template from:
+- [mmf_post_process_notebook_template.ipynb](mmf_post_process_notebook_template.ipynb)
+
+### ⛔ STOP GATE — Step 10: Final confirmation
 
 ```
 AskUserQuestion:
@@ -189,6 +209,7 @@ AskUserQuestion:
    • Overall avg {metric}: {overall_avg}
    • Best models table: {catalog}.{schema}.{use_case}_best_models
    • Evaluation summary: {catalog}.{schema}.{use_case}_evaluation_summary
+   • Reproducibility notebook: notebooks/{use_case}/post_process
 
    What would you like to do next?
    (a) Re-run forecasting with different models or parameters
@@ -217,6 +238,8 @@ AskUserQuestion:
 | `wins_pct` | DOUBLE | Percentage of total series |
 | `avg_smape` | DOUBLE | Average sMAPE across all series |
 | `avg_wape` | DOUBLE | Average WAPE across all series |
+
+**Notebook**: `notebooks/{use_case}/post_process` — reproducibility notebook that re-creates both output tables
 
 ---
 
