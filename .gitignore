@@ -144,3 +144,4 @@ examples/m5-examples/lightning_logs
 .ai-dev-kit/
 docs/
 .cursor/
+notebooks/
