@@ -41,20 +41,39 @@ The five skills are designed to run in sequence, but **Skill 2 (profiling) is op
         ↓                          ↓                                          ↓
   Discover, clean &         Statistical profiling,                  Ask user which models,
   prepare data              classify forecastability,               configure CPU/GPU
-  → {use_case}_train_data   recommend models                       cluster(s)
+  → {use_case}_train_data   recommend models, ask user              cluster(s)
+                            how to handle non-forecastable
+                            series (include / fallback /
+                            separate job)
                             → {use_case}_series_profile
+                            → {use_case}_pipeline_config
 
                     →  /execute-mmf-forecast  →  /post-process-and-evaluate
                               ↓                            ↓
                       Generate notebooks,          Best model selection,
-                      submit 3 parallel jobs       business-ready summary
-                      → {use_case}_evaluation      → {use_case}_best_models
-                      → {use_case}_scoring         → {use_case}_evaluation_summary
+                      submit parallel jobs         merge forecastable +
+                      (+ NF job if separate)       non-forecastable results,
+                      → {use_case}_evaluation      business-ready summary
+                      → {use_case}_scoring         → {use_case}_best_models
+                                                     (with forecast_source)
+                                                   → {use_case}_evaluation_summary
 ```
+
+### Non-forecastable series handling
+
+After Skill 2 classifies series into "high-confidence" and "low-signal" groups, the user chooses one of three strategies:
+
+| Strategy | Description | Downstream effect |
+|----------|-------------|-------------------|
+| **Include** (Option A) | Keep all series together | No table splitting; all series use same models |
+| **Fallback** (Option B) | Exclude + apply simple rule (Naive, Seasonal Naive, Mean, or Zero) | Filtered training table; fallback forecasts produced immediately; no cluster needed for NF series |
+| **Separate job** (Option C) | Exclude + run a dedicated pipeline with user-selected models | Filtered training tables; separate job with its own cluster sizing; full backtest evaluation for NF series |
+
+Results from all strategies are merged in Skill 5 with a `forecast_source` column tracking provenance.
 
 ### Skill 1: Prep and Clean Data (`/prep-and-clean-data`)
 
-Asks for catalog/schema, collects a use case name, discovers time series tables, maps columns to MMF schema (`unique_id`, `ds`, `y`), asks the user how to impute missing data, generates an anomaly analysis report, asks the user how to handle anomalies, and creates the `{use_case}_train_data` table.
+Asks for catalog/schema, collects a use case name, discovers time series tables, maps columns to MMF schema (`unique_id`, `ds`, `y`), asks the user how to impute missing data, generates an anomaly analysis report, asks the user how to handle anomalies, creates the `{use_case}_train_data` table, and generates a **reproducibility notebook** that records all decisions.
 
 **STOP gates:** catalog/schema, imputation strategy, anomaly handling.
 
@@ -62,13 +81,15 @@ See: [1-prep-and-clean-data.md](1-prep-and-clean-data.md)
 
 ### Skill 2: Profile and Classify Series (`/profile-and-classify-series`) — OPTIONAL
 
-Calculates statistical properties (stationarity, seasonality, trend, entropy, SNR), partitions series into "high-confidence" and "low-signal" groups, and recommends model families. Runs on **serverless compute**.
+Calculates statistical properties (stationarity, seasonality, trend, entropy, SNR), partitions series into "high-confidence" and "low-signal" groups, recommends model families, and **asks the user how to handle non-forecastable series** (include, fallback, or separate job). Runs on **serverless compute**.
 
-**This step is optional.** If skipped, the user manually selects models in Skill 3. Inform the user of estimated runtime:
+**This step is optional.** If skipped, the user manually selects models in Skill 3 and all series are treated as forecastable. Inform the user of estimated runtime:
 - **< 100 series**: ~2–5 minutes
 - **100–1,000 series**: ~5–15 minutes
 - **1,000–10,000 series**: ~15–45 minutes
 - **> 10,000 series**: ~1–2 hours (consider sampling)
+
+**STOP gates:** catalog/schema, non-forecastable strategy selection.
 
 See: [2-profile-and-classify-series.md](2-profile-and-classify-series.md)
 
@@ -90,7 +111,7 @@ See: [4-execute-mmf-forecast.md](4-execute-mmf-forecast.md)
 
 ### Skill 5: Post-Process and Evaluate (`/post-process-and-evaluate`)
 
-Calculates multi-metric evaluation (MAPE, sMAPE, WAPE), selects best model per series, ranks models by win count, and generates a business-ready summary report.
+Calculates multi-metric evaluation (MAPE, sMAPE, WAPE), selects best model per series, ranks models by win count, generates a business-ready summary report, and produces a **reproducibility notebook** for re-running the evaluation.
 
 See: [5-post-process-and-evaluate.md](5-post-process-and-evaluate.md)
 
@@ -113,25 +134,39 @@ See [3-provision-forecasting-resources.md](3-provision-forecasting-resources.md)
 
 ## Notebook Templates
 
+### Pipeline notebooks (generated during execution)
 - [mmf_local_notebook_template.ipynb](mmf_local_notebook_template.ipynb) — CPU models (StatsForecast, Prophet)
 - [mmf_gpu_run_notebook_template.ipynb](mmf_gpu_run_notebook_template.ipynb) — GPU single-model runner (receives model name via widget, used by orchestrators)
 - [mmf_gpu_orchestrator_notebook_template.ipynb](mmf_gpu_orchestrator_notebook_template.ipynb) — GPU orchestrator (holds model list, invokes run_gpu per model via `dbutils.notebook.run()`)
 - [mmf_profiling_notebook_template.ipynb](mmf_profiling_notebook_template.ipynb) — Series profiling (statsmodels, scipy)
 
+### Reproducibility notebooks (generated after interactive sessions)
+- [mmf_prep_notebook_template.ipynb](mmf_prep_notebook_template.ipynb) — Data preparation replay (Skill 1): records all interactive decisions (table selection, column mapping, imputation strategy, anomaly capping) and re-creates `{use_case}_train_data` and `{use_case}_cleaning_report`
+- [mmf_post_process_notebook_template.ipynb](mmf_post_process_notebook_template.ipynb) — Post-processing replay (Skill 5): re-runs best-model selection, evaluation summary, and business report generation
+
 ## Job Architecture (Skill 4)
 
-Three separate jobs run **in parallel**, one per model class:
+Up to six separate jobs run **in parallel** — three for the main pipeline, plus up to three for non-forecastable series (if `separate_job` strategy):
 
 ```
+── Main Pipeline (forecastable series) ──────────────────────────────────────────────────────────────
 ┌─────────────────────────┐   ┌──────────────────────────────┐   ┌──────────────────────────────────┐
 │ Job: {use_case}_local   │   │ Job: {use_case}_global       │   │ Job: {use_case}_foundation       │
 │ Cluster: CPU            │   │ Cluster: GPU (single-node)   │   │ Cluster: GPU (single-node)       │
 │ Notebook: run_local     │   │ Notebook: orchestrator_global│   │ Notebook: orchestrator_foundation│
 │ (all local models)      │   │  └→ run_gpu (per model)      │   │  └→ run_gpu (per model)          │
 └─────────────────────────┘   └──────────────────────────────┘   └──────────────────────────────────┘
-         ▲                              ▲                                    ▲
-         └──────────────────────────────┴────────────────────────────────────┘
-                                   Triggered in parallel
+
+── Non-Forecastable Pipeline (separate_job strategy only) ───────────────────────────────────────────
+┌──────────────────────────┐   ┌───────────────────────────────┐
+│ Job: {use_case}_nf_local │   │ Job: {use_case}_nf_global/    │
+│ Cluster: NF CPU          │   │      {use_case}_nf_foundation │
+│ Notebook: run_local_nf   │   │ Cluster: NF GPU (single-node) │
+│ (NF local models)        │   │ Notebook: orchestrator_*_nf   │
+└──────────────────────────┘   └───────────────────────────────┘
+         ▲                              ▲
+         └──────────────────────────────┘
+              All jobs triggered in parallel
 ```
 
 ## Prerequisites

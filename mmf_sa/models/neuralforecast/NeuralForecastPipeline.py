@@ -335,12 +335,21 @@ class NeuralFcForecaster(ForecastingRegressor):
                 self._disable_lightning_logger()
                 self.model.fit(df=pdf, static_df=static_pdf)
 
+    def _has_future_covariates(self) -> bool:
+        return bool(
+            self.params.get("dynamic_future_numerical")
+            or self.params.get("dynamic_future_categorical")
+        )
+
     def predict(self,
                 hist_df: pd.DataFrame,
                 val_df: pd.DataFrame = None):
         df = self.prepare_data(hist_df)
-        dynamic_covariates = self.prepare_data(val_df, future=True)
-        if dynamic_covariates.empty:
+        if self._has_future_covariates():
+            dynamic_covariates = self.prepare_data(val_df, future=True)
+            if dynamic_covariates.empty:
+                dynamic_covariates = None
+        else:
             dynamic_covariates = None
         static_df = self.prepare_static_features(hist_df)
         forecast_df = self.model.predict(
@@ -369,12 +378,13 @@ class NeuralFcForecaster(ForecastingRegressor):
             & (df[self.params["date_col"]]
                <= np.datetime64(last_date + self.prediction_length_offset))
         ]
-        dynamic_future = self.prepare_data(future_df, future=True)
-        dynamic_future = None if dynamic_future.empty else dynamic_future
+        if self._has_future_covariates():
+            dynamic_future = self.prepare_data(future_df, future=True)
+            dynamic_future = None if dynamic_future.empty else dynamic_future
+        else:
+            dynamic_future = None
         static_df = self.prepare_static_features(future_df)
 
-        # Check if dynamic futures for all unique_id are provided.
-        # If not, drop unique_id without dynamic futures from scoring.
         if (dynamic_future is not None) and \
                 (not set(hist_df["unique_id"].unique().flatten())
                         .issubset(set(dynamic_future["unique_id"].unique().flatten()))):
