@@ -64,6 +64,8 @@ See: [1-prep-and-clean-data.md](1-prep-and-clean-data.md)
 
 Calculates statistical properties (stationarity, seasonality, trend, entropy, SNR), partitions series into "high-confidence" and "low-signal" groups, and recommends model families. Runs on **serverless compute**.
 
+**STOP gates:** confirm parameters before profiling; optional **deep research on feature engineering** after `{use_case}_series_profile` exists and classification/recommendations are summarized (see Step 8b in the skill file — uses profiling metadata plus `{use_case}_train_data` columns).
+
 **This step is optional.** If skipped, the user manually selects models in Skill 3. Inform the user of estimated runtime:
 - **< 100 series**: ~2–5 minutes
 - **100–1,000 series**: ~5–15 minutes
