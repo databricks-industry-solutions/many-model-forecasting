@@ -213,13 +213,43 @@ Generate up to two orchestrators:
 - `notebooks/{use_case}/orchestrator_global` — if any global models selected
 - `notebooks/{use_case}/orchestrator_foundation` — if any foundation models selected
 
-### Step 4: Upload notebooks
+### Step 4: Import notebooks into Databricks workspace
 
-Upload generated notebooks to the workspace:
-- `notebooks/{use_case}/run_local` — local models (single notebook, all local models)
-- `notebooks/{use_case}/run_gpu` — GPU single-model runner (static, uploaded as-is)
-- `notebooks/{use_case}/orchestrator_global` — global models orchestrator (if applicable)
-- `notebooks/{use_case}/orchestrator_foundation` — foundation models orchestrator (if applicable)
+> ⚠️ **Do NOT use `upload_file` for notebooks.** The `upload_file` MCP tool creates a workspace FILE, not a NOTEBOOK. Databricks job tasks require a proper NOTEBOOK object. Using `upload_file` will cause every job to fail immediately with: `'<path>' is not a notebook`.
+
+Use the **Databricks CLI** with `--format JUPYTER` to import each notebook. If a path already exists as a FILE from a prior failed `upload_file`, delete it first before importing.
+
+Import all notebooks:
+
+```bash
+# Local models notebook
+databricks workspace import /notebooks/{use_case}/run_local \
+  --file /tmp/{use_case}_run_local.ipynb \
+  --format JUPYTER --overwrite
+
+# GPU run notebook (static — uploaded verbatim)
+databricks workspace import /notebooks/{use_case}/run_gpu \
+  --file /tmp/{use_case}_run_gpu.ipynb \
+  --format JUPYTER --overwrite
+
+# Global orchestrator (if global models selected)
+databricks workspace import /notebooks/{use_case}/orchestrator_global \
+  --file /tmp/{use_case}_orchestrator_global.ipynb \
+  --format JUPYTER --overwrite
+
+# Foundation orchestrator (if foundation models selected)
+databricks workspace import /notebooks/{use_case}/orchestrator_foundation \
+  --file /tmp/{use_case}_orchestrator_foundation.ipynb \
+  --format JUPYTER --overwrite
+```
+
+### Step 4b: Verify all notebooks imported correctly
+
+```bash
+databricks workspace list /notebooks/{use_case}/
+```
+
+Confirm every path shows `object_type: NOTEBOOK` (not `FILE`). Fix any mismatches before creating jobs.
 
 ### Step 5: Create one job per model class (triggered in parallel)
 

@@ -117,12 +117,34 @@ FROM (
 
 Report the detected frequency to the user.
 
-### Step 5: Validate with user
+### ⛔ STOP GATE — Step 5: Validate with user
 
-Use `AskUserQuestion` to confirm:
-- Source table selection
-- Column mapping: `unique_id`, `ds`, `y`
-- Any optional exogenous regressors to include
+**Do NOT proceed until the user explicitly confirms the table and column mapping.**
+
+```
+AskUserQuestion:
+  "Based on the profiling above, here is my proposed setup:
+
+   • Source table:  {catalog}.{schema}.{table_name}
+   • unique_id:     {unique_id_col}   (series identifier)
+   • ds:            {ds_col}          (timestamp/date column)
+   • y:             {y_col}           (target variable to forecast)
+   • Frequency:     {detected_freq}
+
+   ⚠️  The target variable (y) determines what will be forecasted.
+   Please confirm or correct:
+   (a) Confirm — use {y_col} as the target variable and proceed
+   (b) Change target variable — specify a different column name
+   (c) Change table — specify a different table to use
+   (d) Change any column mapping — specify corrections"
+```
+
+**WAIT for the user to respond. Do NOT create any tables or run any further queries until the user confirms or corrects the mapping.**
+
+If the user selects (b), (c), or (d), update the mapping accordingly and re-present this confirmation prompt before proceeding.
+
+Also ask at this step:
+- Any optional exogenous regressors to include (columns to carry through alongside `y`)
 
 ### Step 6: Create {use_case}_train_data
 

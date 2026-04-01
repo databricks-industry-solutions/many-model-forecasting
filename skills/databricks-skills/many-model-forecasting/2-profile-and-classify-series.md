@@ -101,10 +101,39 @@ Replace these placeholders:
 - `{freq}` → detected frequency
 - `{prediction_length}` → user-specified forecast horizon
 
-### Step 4: Upload notebook
+Save the filled-in notebook locally as `/tmp/{use_case}_run_profiling.ipynb`.
 
-Upload the generated notebook to the Databricks workspace at:
-- `notebooks/{use_case}/run_profiling`
+### Step 4: Import notebook into Databricks workspace
+
+> ⚠️ **Do NOT use `upload_file` for notebooks.** The `upload_file` MCP tool creates a workspace FILE, not a NOTEBOOK. Databricks job tasks require a proper NOTEBOOK object. Using `upload_file` will cause the job to fail immediately with: `'<path>' is not a notebook`.
+
+Use the **Databricks CLI** to import the notebook with `JUPYTER` format:
+
+```bash
+databricks workspace import /notebooks/{use_case}/run_profiling \
+  --file /tmp/{use_case}_run_profiling.ipynb \
+  --format JUPYTER \
+  --overwrite
+```
+
+If the path already exists as a FILE (e.g. from a prior failed `upload_file`), delete it first:
+
+```bash
+databricks workspace delete /notebooks/{use_case}/run_profiling
+databricks workspace import /notebooks/{use_case}/run_profiling \
+  --file /tmp/{use_case}_run_profiling.ipynb \
+  --format JUPYTER
+```
+
+### Step 4b: Verify notebook type
+
+After import, confirm the workspace object is a NOTEBOOK (not a FILE):
+
+```bash
+databricks workspace get-status /notebooks/{use_case}/run_profiling
+```
+
+The returned `object_type` **must** be `NOTEBOOK`. If it is `FILE`, the job will fail — delete and re-import with `--format JUPYTER` before proceeding.
 
 ### Step 5: Create Workflow job on serverless compute
 
@@ -162,6 +191,57 @@ Use `AskUserQuestion` to let the user review and confirm:
 - Recommended model families
 - Required compute types (local/global/foundation)
 - Whether to adjust classification thresholds
+
+### ⛔ STOP GATE — Step 8b: Optional deep research on feature engineering (post-profiling)
+
+**Prerequisites (do not skip):** The profiling job has **finished successfully**, `{catalog}.{schema}.{use_case}_series_profile` exists, and you have already presented the **Step 7** classification summary and **Step 8** model-recommendation breakdown. Deep research must be grounded in **both** profiling outputs and the current training schema.
+
+**Before** asking the user, gather context with SQL (adjust placeholders):
+
+1. **Training table columns** — `{use_case}_train_data`:
+
+```sql
+SELECT column_name, data_type
+FROM information_schema.columns
+WHERE table_catalog = '{catalog}'
+  AND table_schema = '{schema}'
+  AND table_name = '{use_case}_train_data'
+ORDER BY ordinal_position
+```
+
+2. **Profiling metadata snapshot** — `{use_case}_series_profile` (dataset-level signals the research should reference):
+
+```sql
+SELECT
+  COUNT(*) AS series_count,
+  ROUND(AVG(sparsity), 4)       AS avg_sparsity,
+  ROUND(AVG(spectral_entropy), 4) AS avg_spectral_entropy,
+  ROUND(AVG(snr), 4)            AS avg_snr,
+  ROUND(AVG(seasonality_strength), 4) AS avg_seasonality,
+  ROUND(AVG(trend_strength), 4) AS avg_trend
+FROM {catalog}.{schema}.{use_case}_series_profile
+```
+
+Optionally add `MIN`/`MAX` on key metrics or a small `GROUP BY forecastability_class` recap if it helps the narrative.
+
+```
+AskUserQuestion:
+  "Profiling is complete. I can run an optional deep research pass that combines:
+
+   • Your training table columns: {column_list_summary}
+   • Profiling signals (e.g., avg sparsity {avg_sparsity}, avg spectral entropy {avg_entropy}, high vs low-signal split from Step 7)
+   • Recommended model families from Step 8
+
+   Would you like deep research on what additional feature engineering could help — aligned to intermittent demand, your domain, and the models recommended?
+
+   (a) Yes — research (web + authoritative sources as needed) and return a concise, actionable feature-engineering brief; do not alter Delta tables unless I explicitly ask
+   (b) No — skip research and continue to the handoff (Step 9)"
+```
+
+**Do NOT proceed until the user responds.**
+
+- If **(a)**: Tie recommendations to **actual column names**, **freq**, **prediction_length**, and **profiling statistics** (sparsity, entropy, SNR, seasonality/trend, forecastability split). Connect ideas to the **recommended model families** (e.g., Poisson loss for neural models on counts, ADIDA/aggregation when sparsity is high). After the brief, **do not** auto-advance — offer implementation only if the user asks, then present **Step 9**.
+- If **(b)**: Go directly to **Step 9**.
 
 ## Statistical Properties Computed
 
