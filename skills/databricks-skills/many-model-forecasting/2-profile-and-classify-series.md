@@ -31,6 +31,7 @@ The profiling involves STL decomposition, ADF tests, and spectral analysis per s
 | `train_table` | `{use_case}_train_data` | Training table created by Skill 1 |
 | `freq` | Auto-detected from data | Time series frequency (`H`, `D`, `W`, `M`) |
 | `prediction_length` | Ask user | Forecast horizon (needed for classification thresholds) |
+| `forecast_problem_brief` | From Skill 1, or capture at Step 2 | Short problem statement: what `y` means, business use, horizon intent, series shape, exogenous vs many univariate (see Skill 1 Step 0b) |
 
 ## Placeholder values
 
@@ -42,6 +43,7 @@ The profiling involves STL decomposition, ADF tests, and spectral analysis per s
 | `{train_table}` | `{use_case}_train_data` |
 | `{freq}` | detected or user-specified frequency |
 | `{prediction_length}` | user-specified forecast horizon (integer) |
+| `{forecast_problem_brief}` | from Skill 1 conversation context, or collected at Step 2 if missing |
 
 Use the template from:
 - [mmf_profiling_notebook_template.ipynb](mmf_profiling_notebook_template.ipynb)
@@ -63,6 +65,7 @@ If the table does not exist or is empty, instruct the user to run `/prep-and-cle
 Use `AskUserQuestion` to confirm:
 - `catalog` and `schema`
 - `use_case` name
+- **`{forecast_problem_brief}`** — use the brief from Skill 1 if present; if missing (skipped prep or new session), ask the same minimal questions as Skill 1 Step 0b and store a 3–6 line summary **before** running profiling
 - `freq` (detected frequency from Skill 1, or ask user)
 - `prediction_length` (forecast horizon — needed for series length classification)
 
@@ -77,6 +80,7 @@ AskUserQuestion:
    • Catalog: {catalog}
    • Schema: {schema}
    • Use case: {use_case}
+   • Forecast brief: {forecast_problem_brief}
    • Frequency: {freq}
    • Prediction length: {prediction_length}
 
@@ -194,7 +198,7 @@ Use `AskUserQuestion` to let the user review and confirm:
 
 ### ⛔ STOP GATE — Step 8b: Optional deep research on feature engineering (post-profiling)
 
-**Prerequisites (do not skip):** The profiling job has **finished successfully**, `{catalog}.{schema}.{use_case}_series_profile` exists, and you have already presented the **Step 7** classification summary and **Step 8** model-recommendation breakdown. Deep research must be grounded in **both** profiling outputs and the current training schema.
+**Prerequisites (do not skip):** The profiling job has **finished successfully**, `{catalog}.{schema}.{use_case}_series_profile` exists, and you have already presented the **Step 7** classification summary and **Step 8** model-recommendation breakdown. Optional deep research must be grounded in **three** inputs: **`{forecast_problem_brief}`** (domain, metric meaning, intermittency, horizon, exogenous intent), **profiling outputs**, and **`{use_case}_train_data` columns**.
 
 **Before** asking the user, gather context with SQL (adjust placeholders):
 
@@ -226,21 +230,22 @@ Optionally add `MIN`/`MAX` on key metrics or a small `GROUP BY forecastability_c
 
 ```
 AskUserQuestion:
-  "Profiling is complete. I can run an optional deep research pass that combines:
+  "Profiling is complete. I can run an optional deep research pass grounded in:
 
-   • Your training table columns: {column_list_summary}
+   • Forecast problem brief: {forecast_problem_brief}
+   • Training table columns: {column_list_summary}
    • Profiling signals (e.g., avg sparsity {avg_sparsity}, avg spectral entropy {avg_entropy}, high vs low-signal split from Step 7)
    • Recommended model families from Step 8
 
-   Would you like deep research on what additional feature engineering could help — aligned to intermittent demand, your domain, and the models recommended?
+   Would you like deep research on additional feature engineering — scoped to your brief, intermittent/seasonal patterns, and the models recommended?
 
-   (a) Yes — research (web + authoritative sources as needed) and return a concise, actionable feature-engineering brief; do not alter Delta tables unless I explicitly ask
+   (a) Yes — research (web + authoritative sources as needed) and return a concise, actionable feature-engineering brief; scope all findings to the forecast brief; do not alter Delta tables unless I explicitly ask
    (b) No — skip research and continue to the handoff (Step 9)"
 ```
 
 **Do NOT proceed until the user responds.**
 
-- If **(a)**: Tie recommendations to **actual column names**, **freq**, **prediction_length**, and **profiling statistics** (sparsity, entropy, SNR, seasonality/trend, forecastability split). Connect ideas to the **recommended model families** (e.g., Poisson loss for neural models on counts, ADIDA/aggregation when sparsity is high). After the brief, **do not** auto-advance — offer implementation only if the user asks, then present **Step 9**.
+- If **(a)**: Tie recommendations to **`{forecast_problem_brief}`** (domain, metric, intermittency, horizon, exogenous intent), **actual column names**, **freq**, **prediction_length**, and **profiling statistics** (sparsity, entropy, SNR, seasonality/trend, forecastability split). Connect ideas to the **recommended model families** (e.g., Poisson loss for neural models on counts, ADIDA/aggregation when sparsity is high). **Feature type preference:** recommend `static_features` (constant per series, always known) and `dynamic_historical_*` (past-only signals for NeuralForecast global models) over `dynamic_future_*`. Only suggest `dynamic_future_*` features if the user's `{forecast_problem_brief}` explicitly mentions known future regressors (e.g., planned promotions, contractual pricing, scheduled events) **and** the user confirms they can provide a scoring table with those values for every future `ds`. In all other cases, steer the user toward univariate forecasting augmented with `static_features` and `dynamic_historical_*`. After the brief, **do not** auto-advance — offer implementation only if the user asks, then present **Step 9**.
 - If **(b)**: Go directly to **Step 9**.
 
 ## Statistical Properties Computed

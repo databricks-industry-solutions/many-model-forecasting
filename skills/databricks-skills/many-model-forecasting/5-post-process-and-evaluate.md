@@ -5,6 +5,8 @@
 Calculates multiple accuracy metrics, performs best-model selection per series,
 and formats results for business consumption.
 
+**Forecast problem brief (`{forecast_problem_brief}`):** Carry from Skill 1 / Skill 2. When narrating outcomes and **business-ready** summaries (Step 6), interpret metrics and recommendations in light of the brief — what `y` represents, the stated use case, and horizon — rather than generic accuracy language alone.
+
 ## Parameters
 
 | Parameter | Default | Description |
@@ -125,6 +127,7 @@ ORDER BY wins_count DESC
 ### Step 6: Business-ready summary report
 
 Present to the user:
+- A **one-line anchor** from `{forecast_problem_brief}` (what success means for this forecast use case)
 - Total series evaluated
 - Number of distinct models that "won" at least one series
 - Top 3 models by wins count

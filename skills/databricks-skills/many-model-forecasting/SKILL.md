@@ -29,6 +29,7 @@ This workflow is **interactive by design**. At multiple points the agent MUST pa
 
 1. **Catalog & Schema** — Always ask the user which catalog and schema to use. Do NOT assume or reuse values from prior runs. Do NOT proceed until the user confirms.
 2. **Step transitions** — After completing each skill (e.g., prep-and-clean-data), present a summary of what was done and ask the user whether to proceed to the next skill. Do NOT auto-advance.
+3. **Forecast problem brief (`{forecast_problem_brief}`)** — Captured in Skill 1 (STOP GATE 0b) as a short problem statement (metric meaning, use, horizon, series shape, exogenous intent). Carry it in the conversation through all skills. If it is missing (user skipped Skill 1 or new session), **reconfirm or capture a minimal brief in Skill 2** (Step 2). Any **optional research** (web, Databricks docs, extended reasoning, Skill 2 Step 8b feature-engineering research) must stay **scoped** to `{forecast_problem_brief}` — do not run generic time-series research without tying it back to the brief.
 
 **Per-skill STOP gates are documented in each skill file.** Look for the `⛔ STOP GATE` markers.
 
@@ -54,9 +55,9 @@ The five skills are designed to run in sequence, but **Skill 2 (profiling) is op
 
 ### Skill 1: Prep and Clean Data (`/prep-and-clean-data`)
 
-Asks for catalog/schema, collects a use case name, discovers time series tables, maps columns to MMF schema (`unique_id`, `ds`, `y`), asks the user how to impute missing data, generates an anomaly analysis report, asks the user how to handle anomalies, and creates the `{use_case}_train_data` table.
+Asks for catalog/schema, collects a use case name, captures **`{forecast_problem_brief}`** (what is being forecast and why), discovers time series tables, maps columns to MMF schema (`unique_id`, `ds`, `y`), asks the user how to impute missing data, generates an anomaly analysis report, asks the user how to handle anomalies, and creates the `{use_case}_train_data` table.
 
-**STOP gates:** catalog/schema, imputation strategy, anomaly handling.
+**STOP gates:** catalog/schema, **forecast problem brief**, imputation strategy, anomaly handling.
 
 See: [1-prep-and-clean-data.md](1-prep-and-clean-data.md)
 
@@ -64,7 +65,7 @@ See: [1-prep-and-clean-data.md](1-prep-and-clean-data.md)
 
 Calculates statistical properties (stationarity, seasonality, trend, entropy, SNR), partitions series into "high-confidence" and "low-signal" groups, and recommends model families. Runs on **serverless compute**.
 
-**STOP gates:** confirm parameters before profiling; optional **deep research on feature engineering** after `{use_case}_series_profile` exists and classification/recommendations are summarized (see Step 8b in the skill file — uses profiling metadata plus `{use_case}_train_data` columns).
+**STOP gates:** confirm parameters before profiling (including **`{forecast_problem_brief}`**); optional **deep research on feature engineering** after `{use_case}_series_profile` exists and classification/recommendations are summarized (see Step 8b — grounds research in profiling metadata, `{use_case}_train_data` columns, and **`{forecast_problem_brief}`**).
 
 **This step is optional.** If skipped, the user manually selects models in Skill 3. Inform the user of estimated runtime:
 - **< 100 series**: ~2–5 minutes
@@ -84,7 +85,7 @@ See: [3-provision-forecasting-resources.md](3-provision-forecasting-resources.md
 
 ### Skill 4: Execute MMF Forecast (`/execute-mmf-forecast`)
 
-Validates parameters, asks the user about backtesting setup, generates notebooks using the **orchestrator + run_gpu** pattern (one `run_gpu` notebook invoked per model via `dbutils.notebook.run()`), creates **one job per model class** (local, global, foundation) and triggers them **in parallel**.
+Validates parameters, asks the user about backtesting setup, generates notebooks using the **orchestrator + run_gpu** pattern (one `run_gpu` notebook invoked per model via `dbutils.notebook.run()`), creates **one job per model class** (local, global, foundation) and triggers them **in parallel**. The pipeline runs in **univariate mode by default** — all covariate lists (`static_features`, `dynamic_historical_*`, `dynamic_future_*`) default to `[]` and `scoring_table` defaults to `""`. **Avoid `dynamic_future_*`** unless the user has confirmed known future regressors and a pre-built scoring table; prefer `static_features` and `dynamic_historical_*` when covariates are needed. See the Feature type decision guide in [4-execute-mmf-forecast.md](4-execute-mmf-forecast.md).
 
 **STOP gates:** backtesting setup, model confirmation.
 
@@ -115,9 +116,9 @@ See [3-provision-forecasting-resources.md](3-provision-forecasting-resources.md)
 
 ## Notebook Templates
 
-- [mmf_local_notebook_template.ipynb](mmf_local_notebook_template.ipynb) — CPU models (StatsForecast, Prophet)
-- [mmf_gpu_run_notebook_template.ipynb](mmf_gpu_run_notebook_template.ipynb) — GPU single-model runner (receives model name via widget, used by orchestrators)
-- [mmf_gpu_orchestrator_notebook_template.ipynb](mmf_gpu_orchestrator_notebook_template.ipynb) — GPU orchestrator (holds model list, invokes run_gpu per model via `dbutils.notebook.run()`)
+- [mmf_local_notebook_template.ipynb](mmf_local_notebook_template.ipynb) — CPU models (StatsForecast, Prophet); covariate lists default to `[]` (univariate). Avoid `dynamic_future_*` — see Feature type decision guide in Skill 4.
+- [mmf_gpu_run_notebook_template.ipynb](mmf_gpu_run_notebook_template.ipynb) — GPU single-model runner (widgets include covariate columns, defaulting to empty/univariate; used by orchestrators)
+- [mmf_gpu_orchestrator_notebook_template.ipynb](mmf_gpu_orchestrator_notebook_template.ipynb) — GPU orchestrator (model list + covariate lists passed into `run_gpu`; defaults to `[]` for all covariates)
 - [mmf_profiling_notebook_template.ipynb](mmf_profiling_notebook_template.ipynb) — Series profiling (statsmodels, scipy)
 
 ## Job Architecture (Skill 4)
