@@ -199,7 +199,7 @@ WHERE {y_col} IS NOT NULL
 CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_train_data AS
 SELECT
     CAST({unique_id_col} AS STRING) AS unique_id,
-    CAST({ds_col} AS TIMESTAMP) AS ds,
+    CAST({ds_col} AS DATE) AS ds,
     CAST({y_col} AS DOUBLE) AS y
 FROM {catalog}.{schema}.{table_name}
 WHERE {y_col} IS NOT NULL
@@ -210,7 +210,7 @@ WHERE {y_col} IS NOT NULL
 CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_train_data AS
 SELECT
     CAST({unique_id_col} AS STRING) AS unique_id,
-    CAST(DATE_TRUNC('week', {ds_col}) + INTERVAL 6 DAY AS TIMESTAMP) AS ds,
+    CAST(DATE_TRUNC('week', {ds_col}) + INTERVAL 6 DAY AS DATE) AS ds,
     SUM(CAST({y_col} AS DOUBLE)) AS y
 FROM {catalog}.{schema}.{table_name}
 WHERE {y_col} IS NOT NULL
@@ -222,7 +222,7 @@ GROUP BY {unique_id_col}, DATE_TRUNC('week', {ds_col}) + INTERVAL 6 DAY
 CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_train_data AS
 SELECT
     CAST({unique_id_col} AS STRING) AS unique_id,
-    CAST(LAST_DAY({ds_col}) AS TIMESTAMP) AS ds,
+    CAST(LAST_DAY({ds_col}) AS DATE) AS ds,
     SUM(CAST({y_col} AS DOUBLE)) AS y
 FROM {catalog}.{schema}.{table_name}
 WHERE {y_col} IS NOT NULL
@@ -238,21 +238,29 @@ SELECT COUNT(*) AS count FROM {catalog}.{schema}.{use_case}_train_data
 
 ### Step 7: Missing Data Assessment & Imputation
 
-Missing data in time series comes in two forms, both of which must be detected:
+Missing data in time series comes in three forms, all of which must be detected:
 - **Explicit NULLs**: Rows exist but `y` is NULL.
-- **Implicit gaps**: Entire rows are absent between the first and last timestamp of a series.
+- **Interior gaps**: Entire rows are absent between the first and last timestamp of a series.
+- **Trailing gaps**: A series ends before the global max date. For example, if most series run through Dec 2024 but three end at Nov 2024, those three have a one-month trailing gap. This is critical to detect because MMF expects all series to share the same end date.
 
 #### Step 7a: Generate date spine and detect all gaps
 
+Use each series' own `min_ds` (series may legitimately start at different times) but the **global** `max_ds` across all series (so trailing gaps are detected):
+
 ```sql
-WITH series_bounds AS (
-  SELECT unique_id, MIN(ds) AS min_ds, MAX(ds) AS max_ds
+WITH global_max AS (
+  SELECT MAX(ds) AS max_ds
+  FROM {catalog}.{schema}.{use_case}_train_data
+),
+series_bounds AS (
+  SELECT unique_id, MIN(ds) AS min_ds
   FROM {catalog}.{schema}.{use_case}_train_data
   GROUP BY unique_id
 ),
 date_spine AS (
-  SELECT s.unique_id, EXPLODE(SEQUENCE(s.min_ds, s.max_ds, INTERVAL 1 DAY)) AS expected_ds
+  SELECT s.unique_id, EXPLODE(SEQUENCE(s.min_ds, g.max_ds, INTERVAL 1 DAY)) AS expected_ds
   FROM series_bounds s
+  CROSS JOIN global_max g
 ),
 spine_joined AS (
   SELECT
@@ -280,17 +288,44 @@ The `SEQUENCE` interval changes by frequency:
 - Weekly (`freq=W`): `INTERVAL 7 DAY`
 - Monthly (`freq=M`): `INTERVAL 1 MONTH`
 
+Before presenting the summary, also identify series with **trailing gaps** — i.e., series whose last observed data point is earlier than the global maximum date:
+
+```sql
+WITH global_max AS (
+  SELECT MAX(ds) AS max_ds FROM {catalog}.{schema}.{use_case}_train_data
+),
+series_last AS (
+  SELECT unique_id, MAX(ds) AS last_ds
+  FROM {catalog}.{schema}.{use_case}_train_data
+  WHERE y IS NOT NULL
+  GROUP BY unique_id
+)
+SELECT s.unique_id, s.last_ds, g.max_ds,
+       DATEDIFF(g.max_ds, s.last_ds) AS trailing_gap_days
+FROM series_last s CROSS JOIN global_max g
+WHERE s.last_ds < g.max_ds
+ORDER BY trailing_gap_days DESC
+```
+
+Report the trailing-gap series as part of the summary below.
+
 #### ⛔ STOP GATE — Step 7b: Present summary and ask user for imputation strategy
 
 **Do NOT proceed until the user chooses an imputation strategy.**
 
 ```
 AskUserQuestion:
-  "Missing data summary (including implicit date gaps):
+  "Missing data summary (including interior and trailing gaps):
    - {n_clean} series are complete (no gaps)
    - {n_low} series have < 5% missing → Suggest: linear interpolation (avg of neighbors)
    - {n_mid} series have 5-20% missing → Suggest: forward fill (last known value)
    - {n_high} series have > 20% missing → Suggest: exclude from forecasting
+
+   Trailing gaps detected:
+   - {n_trailing} series end before the global max date ({global_max_ds})
+   - These series are missing the most recent data points and will show as
+     NULL rows after the spine backfill. They are included in the counts above.
+   [list each trailing-gap series, its last observed date, and the gap size]
 
    How would you like to proceed?
    (a) Apply suggested strategy
@@ -303,15 +338,29 @@ AskUserQuestion:
 
 #### Step 7c: Backfill the date spine and apply imputation
 
-First, replace `{use_case}_train_data` with the complete spine so that implicit gaps become explicit NULL rows:
+First, replace `{use_case}_train_data` with the complete spine (using global `max_ds`) so that implicit gaps and trailing gaps become explicit NULL rows:
 
 ```sql
 CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_train_data AS
+WITH global_max AS (
+  SELECT MAX(ds) AS max_ds FROM {catalog}.{schema}.{use_case}_train_data
+),
+series_bounds AS (
+  SELECT unique_id, MIN(ds) AS min_ds
+  FROM {catalog}.{schema}.{use_case}_train_data
+  GROUP BY unique_id
+),
+date_spine AS (
+  SELECT s.unique_id, EXPLODE(SEQUENCE(s.min_ds, g.max_ds, INTERVAL 1 DAY)) AS expected_ds
+  FROM series_bounds s CROSS JOIN global_max g
+)
 SELECT sp.unique_id, sp.expected_ds AS ds, t.y
 FROM date_spine sp
 LEFT JOIN {catalog}.{schema}.{use_case}_train_data t
   ON sp.unique_id = t.unique_id AND sp.expected_ds = t.ds
 ```
+
+The `SEQUENCE` interval must match the detected frequency (same as Step 7a).
 
 Then apply the chosen imputation on the now-explicit NULLs:
 
@@ -460,7 +509,34 @@ FROM ...
 
 Present cleaning summary to the user.
 
-### ⛔ STOP GATE — Step 10: Confirm before proceeding to next skill
+### Step 10: Generate reproducibility notebook
+
+After all interactive decisions have been made, generate a self-contained notebook that replays the entire data preparation pipeline. This notebook allows the user (or a teammate) to re-run the exact same prep with the same parameters without going through the interactive session again.
+
+**CRITICAL: Copy the template VERBATIM from `mmf_prep_notebook_template.ipynb`, only replacing the `{placeholder}` tokens with actual values. Do NOT add, remove, or modify any other code.**
+
+Replace these placeholders:
+- `{catalog}` → user's catalog
+- `{schema}` → user's schema
+- `{use_case}` → use case name
+- `{source_table}` → selected source table name (table name only, not fully qualified)
+- `{unique_id_col}` → source column mapped to `unique_id`
+- `{ds_col}` → source column mapped to `ds`
+- `{y_col}` → source column mapped to `y`
+- `{freq}` → detected or user-specified frequency (`H`, `D`, `W`, `M`)
+- `{imputation_method}` → chosen imputation strategy (`interpolation`, `forward_fill`, `fill_zero`, `none`)
+- `{exclusion_threshold}` → exclusion threshold as integer (e.g., `20`)
+- `{iqr_multiplier}` → IQR multiplier as float (e.g., `1.5`; `0` = skip capping)
+
+Save the generated notebook to the **local project directory** at:
+- `notebooks/{use_case}/prep_data.ipynb`
+
+Then upload it to the Databricks workspace at `notebooks/{use_case}/prep_data`.
+
+Use the template from:
+- [mmf_prep_notebook_template.ipynb](mmf_prep_notebook_template.ipynb)
+
+### ⛔ STOP GATE — Step 11: Confirm before proceeding to next skill
 
 Present a summary of what was done and ask whether to proceed:
 
@@ -477,6 +553,7 @@ AskUserQuestion:
    • Imputation: {imputation_summary}
    • Anomalies: {anomaly_summary}
    • Cleaning report: {catalog}.{schema}.{use_case}_cleaning_report
+   • Reproducibility notebook: notebooks/{use_case}/prep_data
 
    Would you like to proceed to the next step?
    (a) Run profiling & classification (optional — estimates series forecastability and recommends models)
@@ -489,6 +566,7 @@ AskUserQuestion:
 ## Outputs
 
 - A conversation-carried **`{forecast_problem_brief}`** (3–6 lines) for downstream skills and optional research scoping
-- A Delta table `<catalog>.<schema>.{use_case}_train_data` with columns `unique_id` (STRING), `ds` (TIMESTAMP), `y` (DOUBLE)
+- A Delta table `<catalog>.<schema>.{use_case}_train_data` with columns `unique_id` (STRING), `ds` (DATE for D/W/M, TIMESTAMP for H), `y` (DOUBLE)
 - A Delta table `<catalog>.<schema>.{use_case}_cleaning_report` with columns: `unique_id`, `original_count`, `final_count`, `missing_filled`, `imputation_method`, `anomalies_capped`, `iqr_multiplier`, `excluded`, `exclusion_reason`
+- A reproducibility notebook uploaded to `notebooks/{use_case}/prep_data` that can re-create the training table with the same parameters
 - A summary: number of series, date range, detected frequency, cleaning actions taken

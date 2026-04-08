@@ -24,6 +24,23 @@ WHERE forecastability_class = 'high_confidence'
 
 If the profile table exists, extract the recommended models as suggestions. If it does not exist, skip to the model selection step without suggestions.
 
+### Step 1a: Read non-forecastable strategy from pipeline config
+
+Check if `{use_case}_pipeline_config` exists (created by Skill 2):
+
+```sql
+SELECT non_forecastable_strategy, non_forecastable_models, n_forecastable, n_non_forecastable
+FROM {catalog}.{schema}.{use_case}_pipeline_config
+WHERE use_case = '{use_case}'
+```
+
+If the table exists, read:
+- `non_forecastable_strategy`: `include`, `fallback`, or `separate_job`
+- `non_forecastable_models`: comma-separated model names (only for `separate_job`)
+- `n_forecastable` / `n_non_forecastable`: series counts for cluster sizing
+
+If the table does NOT exist (Skill 2 was skipped), treat strategy as `include` (default — all series forecasted together).
+
 ### ⛔ STOP GATE — Step 2: Ask user which models to use
 
 **Always ask the user to select models. Do NOT proceed until the user confirms their selection.**
@@ -88,6 +105,29 @@ Store the selected models and determine which model classes are needed:
 - **Global**: any `NeuralForecast*` model selected
 - **Foundation**: any `Chronos*` or `TimesFM*` model selected
 
+### Step 2a: Confirm non-forecastable models (if `separate_job` strategy)
+
+If `non_forecastable_strategy == 'separate_job'` (from Step 1a), the user already selected non-forecastable models in Skill 2. Present them for confirmation and allow changes:
+
+```
+AskUserQuestion:
+  "For the {n_non_forecastable} non-forecastable series, you selected these models in
+   the profiling step:
+   • {non_forecastable_models}
+
+   Would you like to:
+   (1) Keep these models
+   (2) Change the model selection
+
+   {if (2): present the same model catalog as Step 2, pre-filled with the Skill 2 selections}"
+```
+
+Determine which model classes the non-forecastable models need:
+- **Local (CPU)**: any `StatsForecast*` or `SKTime*` model
+- **GPU**: any `NeuralForecast*`, `Chronos*`, or `TimesFM*` model
+
+If `non_forecastable_strategy` is `include` or `fallback`, skip this step entirely.
+
 ### Step 3: Determine cloud provider
 
 Ask the user which cloud provider the workspace runs on: **AWS**, **Azure**, or **GCP**.
@@ -127,8 +167,13 @@ Based on the model types and cloud provider, select from these configurations:
 
 **CPU worker sizing logic:**
 
-Query the number of distinct series:
+Query the number of distinct series from the **correct** training table based on the non-forecastable strategy:
 ```sql
+-- If strategy is 'fallback' or 'separate_job', use the forecastable-only table
+SELECT COUNT(DISTINCT unique_id) AS n_series
+FROM {catalog}.{schema}.{use_case}_train_data_forecastable
+
+-- If strategy is 'include' or pipeline_config does not exist, use the full table
 SELECT COUNT(DISTINCT unique_id) AS n_series
 FROM {catalog}.{schema}.{use_case}_train_data
 ```
@@ -156,6 +201,28 @@ Suggest workers based on series count:
 | **Spark config** | `spark.master=local[*]`, `spark.databricks.cluster.profile=singleNode`, `spark.databricks.delta.formatCheck.enabled=false`, `spark.databricks.delta.schema.autoMerge.enabled=true` |
 | **custom_tags** | `{"ResourceClass": "SingleNode"}` |
 
+#### Non-Forecastable CPU Cluster (`{use_case}_nf_cpu_cluster`) — for separate_job strategy, local models only
+
+Only created when `non_forecastable_strategy == 'separate_job'` and the non-forecastable models include local (CPU) models.
+
+Uses the same node type as the main CPU cluster but with workers sized to the non-forecastable series count:
+
+```sql
+SELECT COUNT(DISTINCT unique_id) AS n_nf_series
+FROM {catalog}.{schema}.{use_case}_train_data_non_forecastable
+```
+
+| Non-forecastable series count | Suggested workers | Rationale |
+|------|-------------------|-----------|
+| < 100 | 0 (single-node) | No parallelism needed |
+| 100 – 1,000 | 2 | Light parallelism |
+| 1,000 – 10,000 | 4 | Moderate parallelism |
+| > 10,000 | 6 | Higher parallelism |
+
+#### Non-Forecastable GPU Cluster (`{use_case}_nf_gpu_cluster`) — for separate_job strategy, GPU models only
+
+Only created when `non_forecastable_strategy == 'separate_job'` and the non-forecastable models include global or foundation models. Same single-node config as the main GPU cluster. A smaller GPU instance is usually sufficient since non-forecastable series are typically fewer and simpler.
+
 ### ⛔ STOP GATE — Step 6: Ask user which clusters to start
 
 **Always present the cluster configuration and ask the user to confirm. Do NOT proceed until the user approves.**
@@ -166,11 +233,13 @@ Present the computed configuration and let the user customize:
 AskUserQuestion:
   "Here is the proposed cluster configuration for your selected models:
 
+   ── MAIN PIPELINE (forecastable series: {n_forecastable}) ──
+
    {if local models selected:
    CPU Cluster ({use_case}_cpu_cluster):
      • Runtime: 17.3.x-cpu-ml-scala2.13
      • Node type: {cpu_node_type}
-     • Workers: {suggested_workers} (dataset has {n_series} series)
+     • Workers: {suggested_workers} (dataset has {n_series} forecastable series)
    }
 
    {if global or foundation models selected:
@@ -187,8 +256,9 @@ AskUserQuestion:
      Azure:
      (a) Standard_NC4as_T4_v3    — 1× T4 GPU, 16 GB
      (b) Standard_NC8as_T4_v3    — 1× T4 GPU, 16 GB, more CPU/RAM
-     (c) Standard_NV36ads_A10_v5 — 2× A10 GPUs, 48 GB  (recommended)
-     (d) Standard_NC24ads_A100_v4 — 1× A100 GPU, 80 GB (large models)
+     (c) Standard_NV36ads_A10_v5 — 1× A10 GPU, 24 GB  (recommended)
+     (d) Standard_NV72ads_A10_v5 — 2× A10 GPUs, 48 GB (global + foundation)
+     (e) Standard_NC24ads_A100_v4 — 1× A100 GPU, 80 GB (large models)
 
      GCP:
      (a) g2-standard-4   — 1× L4 GPU, 24 GB
@@ -197,24 +267,51 @@ AskUserQuestion:
      (d) a2-highgpu-1g   — 1× A100 GPU, 40 GB (large models)
    }
 
+   {if non_forecastable_strategy == 'separate_job':
+   ── NON-FORECASTABLE PIPELINE ({n_non_forecastable} series) ──
+
+     Models: {non_forecastable_models}
+
+     {if nf_local_models:
+     CPU Cluster ({use_case}_nf_cpu_cluster):
+       • Runtime: 17.3.x-cpu-ml-scala2.13
+       • Node type: {cpu_node_type}
+       • Workers: {nf_suggested_workers} (dataset has {n_nf_series} non-forecastable series)
+     }
+
+     {if nf_gpu_models:
+     GPU Cluster ({use_case}_nf_gpu_cluster) — SINGLE NODE:
+       • Runtime: 18.0.x-gpu-ml-scala2.13
+       • Node type: (select from options above — smaller instance usually sufficient)
+     }
+   }
+
    Would you like to:
    (1) Accept the proposed configuration
-   (2) Change the CPU worker count (currently {suggested_workers})
+   (2) Change the CPU worker count(s)
    (3) Select a different GPU instance type
-   (4) Change both"
+   (4) Change both
+   {if non_forecastable_strategy == 'separate_job':
+   (5) Change non-forecastable cluster configuration}"
 ```
 
 **WAIT for the user to respond. Do NOT create any clusters until the user confirms.**
 
 ### Decision logic
 
+**Main pipeline (forecastable series):**
 - **Local models only** → CPU cluster only, no GPU cluster needed
 - **Global models** → GPU cluster required (single-node)
 - **Foundation models** → GPU cluster required (single-node)
 - **Local + global/foundation** → Both CPU and GPU clusters
 - **Global + Foundation** → GPU cluster (single-node) — both model classes share the same GPU cluster
 
-Only include clusters that are needed for the selected model types.
+**Non-forecastable pipeline (separate_job strategy only):**
+- **Local-only non-forecastable models** → `{use_case}_nf_cpu_cluster` only
+- **GPU non-forecastable models** → `{use_case}_nf_gpu_cluster` (single-node)
+- **Mixed** → Both `nf_cpu_cluster` and `nf_gpu_cluster`
+
+Only include clusters that are needed for the selected model types. If `non_forecastable_strategy` is `include` or `fallback`, no non-forecastable clusters are needed.
 
 ### Step 7: Unity Catalog enablement verification
 
@@ -264,11 +361,26 @@ Save the cluster configuration and selected models locally so `/execute-mmf-fore
 AskUserQuestion:
   "✅ Cluster configuration complete.
 
-   Summary:
+   Main pipeline (forecastable series):
    • Selected models: {model_list_summary}
    • Model classes: {classes_summary}
    {if cpu: '• CPU cluster: {cpu_node_type}, {workers} workers'}
    {if gpu: '• GPU cluster: {gpu_node_type}, single-node'}
+
+   {if non_forecastable_strategy == 'separate_job':
+   Non-forecastable pipeline ({n_non_forecastable} series):
+   • Selected models: {nf_model_list_summary}
+   {if nf_cpu: '• NF CPU cluster: {cpu_node_type}, {nf_workers} workers'}
+   {if nf_gpu: '• NF GPU cluster: {nf_gpu_node_type}, single-node'}
+   }
+
+   {if non_forecastable_strategy == 'fallback':
+   Non-forecastable series ({n_non_forecastable}): handled by {fallback_method} fallback (no cluster needed)
+   }
+
+   {if non_forecastable_strategy == 'include':
+   Non-forecastable series: included in main pipeline (no separate handling)
+   }
 
    Would you like to proceed to execute the forecast?
    (a) Yes, proceed to /execute-mmf-forecast
@@ -296,3 +408,5 @@ Each notebook installs MMF at the start:
 - Configuration JSON for ephemeral job clusters
 - Configuration details: cluster key, runtime, node type, workers (always 0 for GPU), Spark config
 - Selected models list, grouped by class (local, global, foundation)
+- Non-forecastable cluster configuration (if `separate_job` strategy): cluster key, runtime, node type, workers
+- Non-forecastable models list (if `separate_job` strategy)
