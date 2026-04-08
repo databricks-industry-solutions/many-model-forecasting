@@ -63,7 +63,7 @@ AskUserQuestion:
       We need a 13-week horizon. No external regressors — just historical sales.'
 
    Things that help me tailor every downstream decision:
-   • What the target metric (y) represents
+   • What the target variable (y) represents
    • How the forecast will be used (operations, finance, capacity, etc.)
    • Rough horizon you care about
    • Whether your series are smooth, seasonal, intermittent/sparse, or unknown
