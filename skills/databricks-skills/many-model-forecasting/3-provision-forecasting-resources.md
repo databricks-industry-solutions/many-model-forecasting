@@ -10,6 +10,8 @@ use **single-node** (0 workers).
 
 ## Steps
 
+**Forecast problem brief (`{forecast_problem_brief}`):** Carry forward from Skill 1 (or Skill 2 if captured there). Any **optional research** or extended rationale when helping the user choose models must be **scoped** to the brief (domain, meaning of `y`, horizon intent, intermittency / exogenous emphasis). When summarizing the user's model selection after Step 2, restate **one line** from `{forecast_problem_brief}` so choices stay traceable to the problem.
+
 ### Step 1: Determine model classes from profiling (if available)
 
 First, check if `{use_case}_series_profile` exists to auto-detect model requirements:

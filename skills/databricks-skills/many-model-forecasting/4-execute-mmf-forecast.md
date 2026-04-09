@@ -156,6 +156,24 @@ SELECT COUNT(*) AS count FROM {catalog}.{schema}.{train_table}
 
 Present all parameters to the user via `AskUserQuestion` for validation.
 
+### Feature type decision guide
+
+`mmf_sa` supports five covariate types. **By default, always use `[]` for every covariate list and `""` for `scoring_table`** — the pipeline runs in univariate mode and all model families (local, global, foundation) work well without covariates.
+
+| Feature type | Recommended? | When values are needed | Safe default |
+|---|---|---|---|
+| `static_features` | **Yes** — use when available | Constant per `group_id`, always known (e.g. `store_state`, `dept_id`) | `[]` |
+| `dynamic_historical_numerical` | **Yes** — for global models | Past-only; NOT needed at forecast time (e.g. lagged sales, rolling averages) | `[]` |
+| `dynamic_historical_categorical` | **Yes** — for global models | Past-only; NOT needed at forecast time | `[]` |
+| `dynamic_future_numerical` | **AVOID** | Must provide values for **every future `ds`** in the forecast horizon via a separate scoring table. If missing, the pipeline errors or **silently drops series**. | `[]` |
+| `dynamic_future_categorical` | **AVOID** | Same as above — requires known future values for every forecast date | `[]` |
+
+> **Why avoid `dynamic_future_*`.** These features require the user to build and maintain a **scoring table** with one row per `unique_id` x future `ds`, pre-populated with the regressor values. Most many-series forecasting use cases (retail demand, financial metrics, IoT telemetry) do not have reliably known future regressors. When `dynamic_future_*` columns are specified but the scoring table is incomplete, `mmf_sa` either raises an error or silently removes the affected series from the forecast — producing no output for those series with no warning in the final results.
+>
+> **When `dynamic_future_*` is appropriate:** Only when the user's `{forecast_problem_brief}` explicitly mentions known future regressors (e.g., planned promotional calendars, contractual pricing schedules, weather forecasts) **and** the user confirms they have a pre-built scoring table. Even then, prefer `static_features` for attributes that are constant per series and `dynamic_historical_*` for signals derivable from past data.
+
+**Always substitute `[]` for all `dynamic_future_*` placeholders and `""` for `{scoring_table}` unless the user explicitly requests future exogenous regressors and confirms they have a scoring table.**
+
 ### Step 3: Generate notebooks
 
 **CRITICAL: Copy templates VERBATIM, only replacing `{placeholder}` tokens with actual values. Do NOT add, remove, or modify any other code. The templates are complete and production-ready.**
@@ -183,6 +201,12 @@ Generate a single notebook from `mmf_local_notebook_template.ipynb` with all loc
 | `{date_col}` | `ds` (default) |
 | `{target}` | `y` (default) |
 | `{use_case}` | use case name (for output table names and experiment path) |
+| `{static_features}` | Python list of column names constant per `group_id`, e.g. `[]` or `["dept_id","state_id"]`. Safe to use when available. |
+| `{dynamic_future_numerical}` | **AVOID — always `[]`** unless user has a scoring table with known future values. See [Feature type decision guide](#feature-type-decision-guide). |
+| `{dynamic_future_categorical}` | **AVOID — always `[]`**. Same as above. |
+| `{dynamic_historical_numerical}` | Python list; past-only signals for **NeuralForecast** global models (e.g. lagged features), or `[]`. Safe to use. |
+| `{dynamic_historical_categorical}` | Python list, or `[]`. Safe to use. |
+| `{scoring_table}` | **Always `""`** unless `dynamic_future_*` is in use (not recommended). Empty string means `scoring_data` = `train_table`. |
 
 Use the template from:
 - [mmf_local_notebook_template.ipynb](mmf_local_notebook_template.ipynb) → save locally as `notebooks/{use_case}/run_local.ipynb`
@@ -227,6 +251,12 @@ For each GPU model class (global and/or foundation), generate an **orchestrator 
 | `{date_col}` | `ds` (default) |
 | `{target}` | `y` (default) |
 | `{num_nodes}` | `1` (single-node always) |
+| `{static_features}` | Same as local notebook — Python list literal, often `[]`. Safe to use. |
+| `{dynamic_future_numerical}` | **AVOID — always `[]`** unless user has a scoring table. See [Feature type decision guide](#feature-type-decision-guide). |
+| `{dynamic_future_categorical}` | **AVOID — always `[]`**. Same as above. |
+| `{dynamic_historical_numerical}` | Past-only signals for **global** models (lag/roll features), or `[]`. Safe to use. |
+| `{dynamic_historical_categorical}` | Same — often `[]`. Safe to use. |
+| `{scoring_table}` | **Always `""`** unless `dynamic_future_*` is in use (not recommended). |
 
 Use the template from:
 - [mmf_gpu_orchestrator_notebook_template.ipynb](mmf_gpu_orchestrator_notebook_template.ipynb)
@@ -235,13 +265,55 @@ Generate up to two orchestrators, saving locally:
 - `notebooks/{use_case}/orchestrator_global.ipynb` — if any global models selected
 - `notebooks/{use_case}/orchestrator_foundation.ipynb` — if any foundation models selected
 
-### Step 4: Upload notebooks to workspace
+#### Covariates and model coverage (reference)
 
-All notebooks were saved to the **local project directory** in Step 3. Now upload them to the Databricks workspace:
-- `notebooks/{use_case}/run_local` — local models (single notebook, all local models)
-- `notebooks/{use_case}/run_gpu` — GPU single-model runner (static, copied as-is)
-- `notebooks/{use_case}/orchestrator_global` — global models orchestrator (if applicable)
-- `notebooks/{use_case}/orchestrator_foundation` — foundation models orchestrator (if applicable)
+> **Default: univariate mode.** All model families work well without covariates. Always generate notebooks with `[]` for every covariate list and `""` for `scoring_table` unless the user explicitly requests otherwise. See [Feature type decision guide](#feature-type-decision-guide).
+
+`mmf_sa.run_forecast` maps columns into StatsForecast / NeuralForecast / Chronos / TimesFM pipelines:
+
+- **StatsForecast (local)**: runs univariate by default. Can accept `dynamic_future_*` covariates but these require a scoring table — **avoid unless the user explicitly provides one**.
+- **NeuralForecast (global)**: benefits from **`static_features`** and **`dynamic_historical_*`** (past-only signals used during training). Can also accept `dynamic_future_*` but same caveat applies.
+- **Foundation (Chronos / TimesFM)**: benefits from **`static_features`**. Can accept `dynamic_future_*` in the current implementation but does not use `dynamic_historical_*`.
+
+**If the user insists on future exogenous regressors** (rare — only with confirmed known future data like promotional calendars), follow the pattern in [examples/run_external_regressors_daily.ipynb](../../examples/run_external_regressors_daily.ipynb): training table with history + target, a **separate** scoring table with future dates and exogenous columns, and set `{scoring_table}` accordingly.
+
+### Step 4: Import notebooks into Databricks workspace
+
+> ⚠️ **Do NOT use `upload_file` for notebooks.** The `upload_file` MCP tool creates a workspace FILE, not a NOTEBOOK. Databricks job tasks require a proper NOTEBOOK object. Using `upload_file` will cause every job to fail immediately with: `'<path>' is not a notebook`.
+
+Use the **Databricks CLI** with `--format JUPYTER` to import each notebook. If a path already exists as a FILE from a prior failed `upload_file`, delete it first before importing.
+
+Import all notebooks:
+
+```bash
+# Local models notebook
+databricks workspace import /notebooks/{use_case}/run_local \
+  --file /tmp/{use_case}_run_local.ipynb \
+  --format JUPYTER --overwrite
+
+# GPU run notebook (static — uploaded verbatim)
+databricks workspace import /notebooks/{use_case}/run_gpu \
+  --file /tmp/{use_case}_run_gpu.ipynb \
+  --format JUPYTER --overwrite
+
+# Global orchestrator (if global models selected)
+databricks workspace import /notebooks/{use_case}/orchestrator_global \
+  --file /tmp/{use_case}_orchestrator_global.ipynb \
+  --format JUPYTER --overwrite
+
+# Foundation orchestrator (if foundation models selected)
+databricks workspace import /notebooks/{use_case}/orchestrator_foundation \
+  --file /tmp/{use_case}_orchestrator_foundation.ipynb \
+  --format JUPYTER --overwrite
+```
+
+### Step 4b: Verify all notebooks imported correctly
+
+```bash
+databricks workspace list /notebooks/{use_case}/
+```
+
+Confirm every path shows `object_type: NOTEBOOK` (not `FILE`). Fix any mismatches before creating jobs.
 
 The local copies in `notebooks/{use_case}/` serve as version-controllable artifacts of the generated pipeline.
 

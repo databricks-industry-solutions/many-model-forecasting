@@ -2,7 +2,7 @@
 
 **Slash command:** `/prep-and-clean-data`
 
-Asks the user for catalog, schema, and use case name, connects to a Databricks workspace,
+Asks the user for catalog, schema, use case name, and a **forecast problem brief** (`{forecast_problem_brief}`), connects to a Databricks workspace,
 discovers time series tables, maps columns to the MMF schema (`unique_id`, `ds`, `y`),
 asks the user how to impute missing data, generates an anomaly analysis report,
 asks the user how to handle anomalies, and creates the `{use_case}_train_data` table
@@ -46,6 +46,38 @@ AskUserQuestion:
 **Do NOT proceed until the user provides both catalog and schema.**
 
 Store as `{catalog}` and `{schema}`.
+
+### ⛔ STOP GATE — Step 0b: Forecast problem brief
+
+**Do NOT connect to the workspace or run discovery SQL until the user has provided a minimal forecast problem brief (or one clarifying round).**
+
+```
+AskUserQuestion:
+  "What use case are we solving?
+
+   In a few sentences, describe the forecasting problem — what are you trying
+   to predict and why? For example:
+
+     'We forecast weekly unit sales per SKU×store to drive replenishment
+      orders. Demand is highly seasonal with many slow-moving items.
+      We need a 13-week horizon. No external regressors — just historical sales.'
+
+   Things that help me tailor every downstream decision:
+   • What the target variable (y) represents
+   • How the forecast will be used (operations, finance, capacity, etc.)
+   • Rough horizon you care about
+   • Whether your series are smooth, seasonal, intermittent/sparse, or unknown
+   • Mostly many univariate series (standard MMF) vs. heavy exogenous / multivariate
+
+   Reply in free text; I'll condense to a short brief for downstream steps."
+  Options: [free text]
+```
+
+Store a normalized **3–6 line** summary as `{forecast_problem_brief}`. Carry it in the conversation through all downstream skills (reconfirm in Skill 2 if context is missing).
+
+#### Optional research and deep documentation
+
+Any **web search**, **Databricks documentation**, or **extended reasoning** beyond the scripted SQL in this skill is optional and must be **scoped** to `{forecast_problem_brief}` (domain, meaning of `y`, intermittency, horizon, exogenous intent). Do **not** run broad, generic "time series cleaning" research without tying conclusions to the brief. If the brief is too vague to scope research, ask **one clarifying question** before searching. When suggesting imputation, fill-zero vs interpolation, IQR capping, or exogenous regressors, **cite the brief** in one line (e.g. "Given intermittent retail demand …").
 
 ### Step 1: Connect to workspace
 
@@ -117,12 +149,35 @@ FROM (
 
 Report the detected frequency to the user.
 
-### Step 5: Validate with user
+### ⛔ STOP GATE — Step 5: Validate with user
 
-Use `AskUserQuestion` to confirm:
-- Source table selection
-- Column mapping: `unique_id`, `ds`, `y`
-- Any optional exogenous regressors to include
+**Do NOT proceed until the user explicitly confirms the table and column mapping.**
+
+```
+AskUserQuestion:
+  "Based on the profiling above, here is my proposed setup:
+
+   • Forecast brief: {forecast_problem_brief} (one-line check: does this still match your goal?)
+   • Source table:  {catalog}.{schema}.{table_name}
+   • unique_id:     {unique_id_col}   (series identifier)
+   • ds:            {ds_col}          (timestamp/date column)
+   • y:             {y_col}           (target variable to forecast)
+   • Frequency:     {detected_freq}
+
+   ⚠️  The target variable (y) determines what will be forecasted.
+   Please confirm or correct:
+   (a) Confirm — use {y_col} as the target variable and proceed
+   (b) Change target variable — specify a different column name
+   (c) Change table — specify a different table to use
+   (d) Change any column mapping — specify corrections"
+```
+
+**WAIT for the user to respond. Do NOT create any tables or run any further queries until the user confirms or corrects the mapping.**
+
+If the user selects (b), (c), or (d), update the mapping accordingly and re-present this confirmation prompt before proceeding.
+
+Also ask at this step:
+- Any optional exogenous regressors to include (columns to carry through alongside `y`)
 
 ### Step 6: Create {use_case}_train_data
 
@@ -490,6 +545,7 @@ AskUserQuestion:
   "✅ Data preparation complete for use case '{use_case}'.
 
    Summary:
+   • Forecast brief: {forecast_problem_brief}
    • Training table: {catalog}.{schema}.{use_case}_train_data
    • Series count: {n_series}
    • Date range: {min_date} → {max_date}
@@ -509,6 +565,7 @@ AskUserQuestion:
 
 ## Outputs
 
+- A conversation-carried **`{forecast_problem_brief}`** (3–6 lines) for downstream skills and optional research scoping
 - A Delta table `<catalog>.<schema>.{use_case}_train_data` with columns `unique_id` (STRING), `ds` (DATE for D/W/M, TIMESTAMP for H), `y` (DOUBLE)
 - A Delta table `<catalog>.<schema>.{use_case}_cleaning_report` with columns: `unique_id`, `original_count`, `final_count`, `missing_filled`, `imputation_method`, `anomalies_capped`, `iqr_multiplier`, `excluded`, `exclusion_reason`
 - A reproducibility notebook uploaded to `notebooks/{use_case}/prep_data` that can re-create the training table with the same parameters
