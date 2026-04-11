@@ -159,13 +159,31 @@ Based on the model types and cloud provider, select from these configurations:
 | Setting | Value |
 |---------|-------|
 | **Runtime** | `17.3.x-cpu-ml-scala2.13` |
-| **Node type (AWS)** | `i3.xlarge` |
-| **Node type (Azure)** | `Standard_DS3_v2` |
-| **Node type (GCP)** | `n1-standard-4` |
-| **Workers** | Dynamic — see sizing logic below |
+| **Node type** | User-selectable — see CPU instance options below (default: 16 vCPU) |
+| **Workers** | **Always ask the user** — present sizing guideline as recommendation |
 | **Spark config** | `spark.sql.execution.arrow.enabled=true`, `spark.sql.adaptive.enabled=false`, `spark.databricks.delta.formatCheck.enabled=false`, `spark.databricks.delta.schema.autoMerge.enabled=true` |
 
-**CPU worker sizing logic:**
+**CPU instance options by cloud provider:**
+
+**AWS:**
+| Option | Instance | vCPUs | Memory | Notes |
+|--------|----------|-------|--------|-------|
+| **(a) recommended** | `i3.4xlarge` | 16 | 122 GB | Good balance of CPU and memory for most workloads |
+| (b) | `i3.8xlarge` | 32 | 244 GB | High-parallelism series fitting or very wide feature sets |
+
+**Azure:**
+| Option | Instance | vCPUs | Memory | Notes |
+|--------|----------|-------|--------|-------|
+| **(a) recommended** | `Standard_DS5_v2` | 16 | 56 GB | Good balance of CPU and memory for most workloads |
+| (b) | `Standard_D32ds_v5` | 32 | 128 GB | High-parallelism series fitting or very wide feature sets |
+
+**GCP:**
+| Option | Instance | vCPUs | Memory | Notes |
+|--------|----------|-------|--------|-------|
+| **(a) recommended** | `n1-standard-16` | 16 | 60 GB | Good balance of CPU and memory for most workloads |
+| (b) | `n1-standard-32` | 32 | 120 GB | High-parallelism series fitting or very wide feature sets |
+
+**CPU worker sizing — always ask the user:**
 
 Query the number of distinct series from the **correct** training table based on the non-forecastable strategy:
 ```sql
@@ -178,15 +196,41 @@ SELECT COUNT(DISTINCT unique_id) AS n_series
 FROM {catalog}.{schema}.{use_case}_train_data
 ```
 
-Suggest workers based on series count:
+Present the series count and the sizing guideline to the user, then **ask them to choose** the number of workers:
 
-| Series count | Suggested workers | Rationale |
+| Series count | Recommended workers | Rationale |
 |-------------|-------------------|-----------|
 | < 100 | 0 (single-node) | No parallelism needed |
 | 100 – 1,000 | 4 | Moderate parallelism |
 | 1,000 – 10,000 | 6 | Each worker handles ~1,500 series |
 | 10,000 – 100,000 | 8 | High parallelism for large-scale |
 | > 100,000 | 10 | Maximum recommended; beyond this consider partitioning |
+
+**⛔ Do NOT auto-apply the recommended value.** Always ask the user how many workers they want (showing the recommendation as guidance).
+
+#### Non-Forecastable CPU Cluster (`{use_case}_nf_cpu_cluster`) — for separate_job strategy, local models only
+
+Only created when `non_forecastable_strategy == 'separate_job'` and the non-forecastable models include local (CPU) models.
+
+Uses the same node type and instance selection as the main CPU cluster. Query the non-forecastable series count:
+
+```sql
+SELECT COUNT(DISTINCT unique_id) AS n_nf_series
+FROM {catalog}.{schema}.{use_case}_train_data_non_forecastable
+```
+
+Present the series count and the sizing guideline to the user, then **ask them to choose** the number of workers:
+
+| Non-forecastable series count | Recommended workers | Rationale |
+|------|-------------------|-----------|
+| < 100 | 0 (single-node) | No parallelism needed |
+| 100 – 1,000 | 2 | Light parallelism |
+| 1,000 – 10,000 | 4 | Moderate parallelism |
+| > 10,000 | 6 | Higher parallelism |
+
+**⛔ Do NOT auto-apply the recommended value.** Always ask the user how many workers they want (showing the recommendation as guidance).
+
+---
 
 #### GPU Cluster (`{use_case}_gpu_cluster`) — for global and foundation models
 
@@ -201,23 +245,32 @@ Suggest workers based on series count:
 | **Spark config** | `spark.master=local[*]`, `spark.databricks.cluster.profile=singleNode`, `spark.databricks.delta.formatCheck.enabled=false`, `spark.databricks.delta.schema.autoMerge.enabled=true` |
 | **custom_tags** | `{"ResourceClass": "SingleNode"}` |
 
-#### Non-Forecastable CPU Cluster (`{use_case}_nf_cpu_cluster`) — for separate_job strategy, local models only
+**GPU instance options by cloud provider:**
 
-Only created when `non_forecastable_strategy == 'separate_job'` and the non-forecastable models include local (CPU) models.
+**AWS:**
+| Option | Instance | GPUs | GPU Memory | Notes |
+|--------|----------|------|------------|-------|
+| (a) | `g5.xlarge` | 1× A10G | 24 GB | Small foundation models |
+| (b) | `g5.2xlarge` | 1× A10G | 24 GB | More CPU/RAM |
+| **(c) recommended** | `g5.12xlarge` | 4× A10G | 96 GB | Global + foundation |
+| (d) | `g5.48xlarge` | 8× A10G | 192 GB | Large-scale training |
 
-Uses the same node type as the main CPU cluster but with workers sized to the non-forecastable series count:
+**Azure:**
+| Option | Instance | GPUs | GPU Memory | Notes |
+|--------|----------|------|------------|-------|
+| (a) | `Standard_NC4as_T4_v3` | 1× T4 | 16 GB | Budget option |
+| (b) | `Standard_NC8as_T4_v3` | 1× T4 | 16 GB | More CPU/RAM |
+| **(c) recommended** | `Standard_NV36ads_A10_v5` | 1× A10 | 24 GB | Good balance |
+| (d) | `Standard_NV72ads_A10_v5` | 2× A10 | 48 GB | Global + foundation |
+| (e) | `Standard_NC24ads_A100_v4` | 1× A100 | 80 GB | Large models |
 
-```sql
-SELECT COUNT(DISTINCT unique_id) AS n_nf_series
-FROM {catalog}.{schema}.{use_case}_train_data_non_forecastable
-```
-
-| Non-forecastable series count | Suggested workers | Rationale |
-|------|-------------------|-----------|
-| < 100 | 0 (single-node) | No parallelism needed |
-| 100 – 1,000 | 2 | Light parallelism |
-| 1,000 – 10,000 | 4 | Moderate parallelism |
-| > 10,000 | 6 | Higher parallelism |
+**GCP:**
+| Option | Instance | GPUs | GPU Memory | Notes |
+|--------|----------|------|------------|-------|
+| (a) | `g2-standard-4` | 1× L4 | 24 GB | Small foundation models |
+| (b) | `g2-standard-8` | 1× L4 | 24 GB | More CPU/RAM |
+| **(c) recommended** | `g2-standard-48` | 4× L4 | 96 GB | Global + foundation |
+| (d) | `a2-highgpu-1g` | 1× A100 | 40 GB | Large models |
 
 #### Non-Forecastable GPU Cluster (`{use_case}_nf_gpu_cluster`) — for separate_job strategy, GPU models only
 
@@ -233,17 +286,42 @@ Present the computed configuration and let the user customize:
 AskUserQuestion:
   "Here is the proposed cluster configuration for your selected models:
 
-   ── MAIN PIPELINE (forecastable series: {n_forecastable}) ──
+   ── CPU CLUSTERS (local models) ──
 
    {if local models selected:
-   CPU Cluster ({use_case}_cpu_cluster):
+   Main CPU Cluster ({use_case}_cpu_cluster):
      • Runtime: 17.3.x-cpu-ml-scala2.13
-     • Node type: {cpu_node_type}
-     • Workers: {suggested_workers} (dataset has {n_series} forecastable series)
+     • Node type: (select one)
+
+     AWS:
+     (a) i3.4xlarge   — 16 vCPUs, 122 GB  (recommended)
+     (b) i3.8xlarge   — 32 vCPUs, 244 GB  (high-parallelism or wide features)
+
+     Azure:
+     (a) Standard_DS5_v2    — 16 vCPUs, 56 GB  (recommended)
+     (b) Standard_D32ds_v5  — 32 vCPUs, 128 GB (high-parallelism or wide features)
+
+     GCP:
+     (a) n1-standard-16 — 16 vCPUs, 60 GB  (recommended)
+     (b) n1-standard-32 — 32 vCPUs, 120 GB (high-parallelism or wide features)
+
+     • Forecastable series: {n_series}
+     • Recommended workers: {recommended_workers} (see sizing guide)
+     ❓ How many workers do you want for the CPU cluster?
+
+     {if non_forecastable_strategy == 'separate_job' and nf_local_models:
+     NF CPU Cluster ({use_case}_nf_cpu_cluster):
+       • Same node type as main CPU cluster
+       • Non-forecastable series: {n_nf_series}
+       • Recommended workers: {nf_recommended_workers} (see sizing guide)
+       ❓ How many workers do you want for the NF CPU cluster?
+     }
    }
 
+   ── GPU CLUSTERS (global & foundation models) — SINGLE NODE ──
+
    {if global or foundation models selected:
-   GPU Cluster ({use_case}_gpu_cluster) — SINGLE NODE:
+   Main GPU Cluster ({use_case}_gpu_cluster):
      • Runtime: 18.0.x-gpu-ml-scala2.13
      • Node type: (select one)
 
@@ -265,32 +343,23 @@ AskUserQuestion:
      (b) g2-standard-8   — 1× L4 GPU, 24 GB, more CPU/RAM
      (c) g2-standard-48  — 4× L4 GPUs, 96 GB  (recommended)
      (d) a2-highgpu-1g   — 1× A100 GPU, 40 GB (large models)
+
+     {if non_forecastable_strategy == 'separate_job' and nf_gpu_models:
+     NF GPU Cluster ({use_case}_nf_gpu_cluster):
+       • Same config as main GPU cluster — smaller instance usually sufficient
+       • Node type: (select from options above)
+     }
    }
 
    {if non_forecastable_strategy == 'separate_job':
-   ── NON-FORECASTABLE PIPELINE ({n_non_forecastable} series) ──
-
-     Models: {non_forecastable_models}
-
-     {if nf_local_models:
-     CPU Cluster ({use_case}_nf_cpu_cluster):
-       • Runtime: 17.3.x-cpu-ml-scala2.13
-       • Node type: {cpu_node_type}
-       • Workers: {nf_suggested_workers} (dataset has {n_nf_series} non-forecastable series)
-     }
-
-     {if nf_gpu_models:
-     GPU Cluster ({use_case}_nf_gpu_cluster) — SINGLE NODE:
-       • Runtime: 18.0.x-gpu-ml-scala2.13
-       • Node type: (select from options above — smaller instance usually sufficient)
-     }
+   Non-forecastable models: {non_forecastable_models}
    }
 
    Would you like to:
    (1) Accept the proposed configuration
-   (2) Change the CPU worker count(s)
+   (2) Change the CPU instance type or worker count
    (3) Select a different GPU instance type
-   (4) Change both
+   (4) Change both CPU and GPU configuration
    {if non_forecastable_strategy == 'separate_job':
    (5) Change non-forecastable cluster configuration}"
 ```
@@ -393,9 +462,9 @@ AskUserQuestion:
 
 Each notebook installs MMF at the start:
 
-- **Local models** (`run_local` notebook): Uses `%pip install "mmf_sa[local] @ git+https://...@v0.1.2"`
+- **Local models** (`run_local` notebook): Uses `%pip install "mmf_sa[local] @ git+https://...@main"`
 - **GPU models** (`run_gpu` notebook): Uses `subprocess.check_call` with model-specific install logic:
-  - **Global (NeuralForecast)**: `mmf_sa[global] @ git+https://...@v0.1.2`
+  - **Global (NeuralForecast)**: `mmf_sa[global] @ git+https://...@main`
   - **Foundation (Chronos)**: base `mmf_sa` + `chronos-forecasting==2.2.2` + `utilsforecast==0.2.15`
   - **Foundation (TimesFM)**: base `mmf_sa` + `timesfm[torch]` from tarball URL + `utilsforecast==0.2.15`
 

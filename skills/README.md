@@ -20,7 +20,7 @@ The Many-Model Forecasting skill teaches AI assistants how to:
 - **Prepare and clean** time series data with automated imputation and anomaly capping
 - **Profile and classify** series by forecastability using statistical properties (ADF, STL, spectral entropy, SNR)
 - **Handle non-forecastable series** — the user chooses to keep them, apply a simple fallback (Naive, Seasonal Naive, Mean, Zero), or run a separate pipeline with dedicated models
-- **Provision** the right Databricks clusters (CPU or GPU) based on model requirements and dataset size
+- **Provision** the right Databricks clusters (CPU with 16 or 32 vCPU options, or GPU) based on model requirements and dataset size
 - **Execute** forecasting pipelines using **StatsForecast**, **SKTime**, **NeuralForecast**, **Chronos**, and **TimesFM** models
 - **Evaluate** results with multi-metric analysis, best-model selection per series, and business-ready summaries with `forecast_source` tracking
 
@@ -56,7 +56,7 @@ All generated assets are prefixed with a user-provided **use case name** (e.g., 
 | ----- | ---------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | 1     | `/prep-and-clean-data`             | Discover tables, map columns, ask user about imputation and anomaly handling                           |
 | 2     | `/profile-and-classify-series`     | **(Optional)** Compute statistical properties, classify forecastability, recommend models, ask user how to handle non-forecastable series (serverless) |
-| 3     | `/provision-forecasting-resources` | Ask user which models and clusters, configure CPU/GPU; size separate NF cluster if needed              |
+| 3     | `/provision-forecasting-resources` | Ask user which models and clusters, configure CPU (16 vCPU default, 32 vCPU option) / GPU; size separate NF cluster if needed |
 | 4     | `/execute-mmf-forecast`            | Generate orchestrator + run notebooks, create one job per model class (+ NF jobs), run in parallel     |
 | 5     | `/post-process-and-evaluate`       | Best-model selection, WAPE/sMAPE metrics, merge NF results, evaluation summary with `forecast_source`  |
 
@@ -116,7 +116,9 @@ your-project/
     ├── mmf_local_notebook_template.ipynb
     ├── mmf_gpu_run_notebook_template.ipynb
     ├── mmf_gpu_orchestrator_notebook_template.ipynb
-    └── mmf_profiling_notebook_template.ipynb
+    ├── mmf_profiling_notebook_template.ipynb
+    ├── mmf_prep_notebook_template.ipynb
+    └── mmf_post_process_notebook_template.ipynb
 ```
 
 Re-running the installer is safe — it updates existing configurations without duplication.

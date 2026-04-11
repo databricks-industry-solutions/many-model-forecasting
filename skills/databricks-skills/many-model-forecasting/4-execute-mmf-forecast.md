@@ -265,6 +265,45 @@ Generate up to two orchestrators, saving locally:
 - `notebooks/{use_case}/orchestrator_global.ipynb` — if any global models selected
 - `notebooks/{use_case}/orchestrator_foundation.ipynb` — if any foundation models selected
 
+#### Frequency-specific configuration (automatic)
+
+`run_forecast` **automatically loads the correct frequency-specific YAML config** from the installed `mmf_sa` package based on the `freq` parameter. No explicit `conf` argument is needed in the generated notebooks.
+
+**Config resolution order (later overrides earlier):**
+
+1. **Base config** — auto-selected by `freq` from the `mmf_sa` package:
+   - `freq="H"` → `forecasting_conf_hourly.yaml` (`season_length: 24`, `window_size: 24`)
+   - `freq="D"` → `forecasting_conf_daily.yaml` (`season_length: 7`, `window_size: 7`)
+   - `freq="W"` → `forecasting_conf_weekly.yaml`
+   - `freq="M"` → `forecasting_conf_monthly.yaml` (`season_length: 12`, `window_size: 12`)
+2. **User `conf` kwarg** (optional) — a dict, YAML file path, or OmegaConf object merged on top of the base
+3. **Explicit keyword arguments** — `active_models`, `prediction_length`, `metric`, etc. override everything
+
+The base configs set `season_length` and `window_size` for models like `StatsForecastAutoArima`, `StatsForecastAutoETS`, `StatsForecastAutoTheta`, etc. The templates pass `freq` as a keyword argument, so the right config is loaded automatically — **do NOT pass `conf` in the generated notebooks**.
+
+The source YAML files live in the `mmf_sa` package directory (e.g., [`mmf_sa/forecasting_conf_daily.yaml`](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/forecasting_conf_daily.yaml)) and are bundled when `mmf_sa` is installed.
+
+**Advanced: overriding model hyperparameters.** If the user wants to tune `season_length` or other model-specific parameters, pass a `conf` dict to `run_forecast` that overrides only the desired keys. The base config's defaults still apply for everything else:
+
+```python
+custom_conf = {
+    "models": {
+        "StatsForecastAutoArima": {
+            "model_spec": {
+                "season_length": 52  # override for weekly with yearly seasonality
+            }
+        }
+    }
+}
+
+run_forecast(
+    ...,
+    conf=custom_conf,
+)
+```
+
+**Do NOT pass `conf` by default.** Only add it when the user explicitly requests hyperparameter tuning. The auto-selected base config is correct for the vast majority of use cases.
+
 #### Covariates and model coverage (reference)
 
 > **Default: univariate mode.** All model families work well without covariates. Always generate notebooks with `[]` for every covariate list and `""` for `scoring_table` unless the user explicitly requests otherwise. See [Feature type decision guide](#feature-type-decision-guide).

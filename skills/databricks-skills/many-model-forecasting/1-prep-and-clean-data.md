@@ -22,6 +22,7 @@ AskUserQuestion:
 ```
 
 Validation rules:
+
 - Lowercase alphanumeric + underscores only (must be valid as a Delta table name component)
 - 1-30 characters
 - Cannot start with a number
@@ -67,7 +68,7 @@ AskUserQuestion:
    • How the forecast will be used (operations, finance, capacity, etc.)
    • Rough horizon you care about
    • Whether your series are smooth, seasonal, intermittent/sparse, or unknown
-   • Mostly many univariate series (standard MMF) vs. heavy exogenous / multivariate
+   • Univariate series vs. exogenous / covariate
 
    Reply in free text; I'll condense to a short brief for downstream steps."
   Options: [free text]
@@ -102,6 +103,7 @@ DESCRIBE TABLE {catalog}.{schema}.{table_name}
 ```
 
 Identify time series candidates by checking column types:
+
 - **Timestamp/date column (`ds`)**: columns with type `TIMESTAMP`, `DATE`, or `STRING` with date-like names (`ds`, `date`, `timestamp`, `time`, `datetime`)
 - **Target numeric column (`y`)**: columns with type `DOUBLE`, `FLOAT`, `INT`, `BIGINT`, `DECIMAL` with names suggesting a metric (`y`, `value`, `target`, `amount`, `quantity`, `sales`, `count`)
 - **Group identifier (`unique_id`)**: columns with type `STRING`, `INT`, or `BIGINT` that appear to be categorical identifiers (`unique_id`, `id`, `store_id`, `product_id`, `sku`, `series_id`)
@@ -113,16 +115,19 @@ A valid time series table MUST have all three: a date column, a numeric column, 
 For each candidate table, run these queries:
 
 **Row count:**
+
 ```sql
 SELECT COUNT(*) AS count FROM {catalog}.{schema}.{table_name}
 ```
 
 **Date range:**
+
 ```sql
 SELECT MIN({ds_col}) AS min_ds, MAX({ds_col}) AS max_ds FROM {catalog}.{schema}.{table_name}
 ```
 
 **Number of distinct groups:**
+
 ```sql
 SELECT COUNT(DISTINCT {unique_id_col}) AS unique_count FROM {catalog}.{schema}.{table_name}
 ```
@@ -142,6 +147,7 @@ FROM (
 ```
 
 **Interpretation:**
+
 - `avg_gap` < 0.1 = **Hourly** (`freq=H`)
 - `avg_gap` ~1 = **Daily** (`freq=D`)
 - `avg_gap` ~7 = **Weekly** (`freq=W`)
@@ -177,6 +183,7 @@ AskUserQuestion:
 If the user selects (b), (c), or (d), update the mapping accordingly and re-present this confirmation prompt before proceeding.
 
 Also ask at this step:
+
 - Any optional exogenous regressors to include (columns to carry through alongside `y`)
 
 ### Step 6: Create {use_case}_train_data
@@ -184,6 +191,7 @@ Also ask at this step:
 Create the training table with the MMF-required schema. The SQL depends on the detected (or user-specified) frequency to ensure dates are properly aligned:
 
 **Hourly (`freq=H`) — no date transformation needed:**
+
 ```sql
 CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_train_data AS
 SELECT
@@ -195,6 +203,7 @@ WHERE {y_col} IS NOT NULL
 ```
 
 **Daily (`freq=D`) — no date transformation needed:**
+
 ```sql
 CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_train_data AS
 SELECT
@@ -206,6 +215,7 @@ WHERE {y_col} IS NOT NULL
 ```
 
 **Weekly (`freq=W`) — align dates to Sunday (end of ISO week) and aggregate:**
+
 ```sql
 CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_train_data AS
 SELECT
@@ -218,6 +228,7 @@ GROUP BY {unique_id_col}, DATE_TRUNC('week', {ds_col}) + INTERVAL 6 DAY
 ```
 
 **Monthly (`freq=M`) — align dates to month-end and aggregate:**
+
 ```sql
 CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_train_data AS
 SELECT
@@ -232,6 +243,7 @@ GROUP BY {unique_id_col}, LAST_DAY({ds_col})
 If exogenous regressors were selected, include them as additional columns (use `SUM` for numeric regressors when aggregating).
 
 Verify creation:
+
 ```sql
 SELECT COUNT(*) AS count FROM {catalog}.{schema}.{use_case}_train_data
 ```
@@ -239,6 +251,7 @@ SELECT COUNT(*) AS count FROM {catalog}.{schema}.{use_case}_train_data
 ### Step 7: Missing Data Assessment & Imputation
 
 Missing data in time series comes in three forms, all of which must be detected:
+
 - **Explicit NULLs**: Rows exist but `y` is NULL.
 - **Interior gaps**: Entire rows are absent between the first and last timestamp of a series.
 - **Trailing gaps**: A series ends before the global max date. For example, if most series run through Dec 2024 but three end at Nov 2024, those three have a one-month trailing gap. This is critical to detect because MMF expects all series to share the same end date.
@@ -283,6 +296,7 @@ ORDER BY missing_pct DESC
 ```
 
 The `SEQUENCE` interval changes by frequency:
+
 - Hourly (`freq=H`): `INTERVAL 1 HOUR`
 - Daily (`freq=D`): `INTERVAL 1 DAY`
 - Weekly (`freq=W`): `INTERVAL 7 DAY`
@@ -368,6 +382,33 @@ Then apply the chosen imputation on the now-explicit NULLs:
 - **Forward fill**: `LAST_VALUE(y IGNORE NULLS) OVER (PARTITION BY unique_id ORDER BY ds)`
 - **Fill with 0**: `COALESCE(y, 0)` — appropriate for count/demand data where absence means zero activity
 - **Exclusion**: Remove series exceeding the threshold from `{use_case}_train_data`
+
+> **Trailing-gap fallback (required after interpolation).** Linear interpolation needs a future neighbor via `LEAD(y IGNORE NULLS)`. For trailing gaps — rows beyond a series' last observed value — there is no future data point, so `LEAD` returns NULL and interpolation leaves those rows unfilled. After applying interpolation, always run a forward-fill pass on any remaining NULLs:
+>
+> ```sql
+> UPDATE {catalog}.{schema}.{use_case}_train_data t
+> SET y = (
+>   SELECT LAST_VALUE(t2.y IGNORE NULLS) OVER (
+>     PARTITION BY t2.unique_id ORDER BY t2.ds
+>     ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+>   )
+>   FROM {catalog}.{schema}.{use_case}_train_data t2
+>   WHERE t2.unique_id = t.unique_id AND t2.ds = t.ds
+> )
+> WHERE t.y IS NULL
+> ```
+>
+> This only affects trailing positions where interpolation could not reach. Forward-fill and fill-with-0 strategies do not need this extra step.
+
+After imputation, verify no NULLs remain:
+
+```sql
+SELECT COUNT(*) AS remaining_nulls
+FROM {catalog}.{schema}.{use_case}_train_data
+WHERE y IS NULL
+```
+
+If `remaining_nulls > 0`, warn the user and suggest excluding those series or switching to forward-fill.
 
 Log the count of imputed values per series and excluded series for the cleaning report.
 
@@ -516,6 +557,7 @@ After all interactive decisions have been made, generate a self-contained notebo
 **CRITICAL: Copy the template VERBATIM from `mmf_prep_notebook_template.ipynb`, only replacing the `{placeholder}` tokens with actual values. Do NOT add, remove, or modify any other code.**
 
 Replace these placeholders:
+
 - `{catalog}` → user's catalog
 - `{schema}` → user's schema
 - `{use_case}` → use case name
@@ -529,11 +571,13 @@ Replace these placeholders:
 - `{iqr_multiplier}` → IQR multiplier as float (e.g., `1.5`; `0` = skip capping)
 
 Save the generated notebook to the **local project directory** at:
+
 - `notebooks/{use_case}/prep_data.ipynb`
 
 Then upload it to the Databricks workspace at `notebooks/{use_case}/prep_data`.
 
 Use the template from:
+
 - [mmf_prep_notebook_template.ipynb](mmf_prep_notebook_template.ipynb)
 
 ### ⛔ STOP GATE — Step 11: Confirm before proceeding to next skill
@@ -565,8 +609,9 @@ AskUserQuestion:
 
 ## Outputs
 
-- A conversation-carried **`{forecast_problem_brief}`** (3–6 lines) for downstream skills and optional research scoping
+- A conversation-carried `**{forecast_problem_brief}`** (3–6 lines) for downstream skills and optional research scoping
 - A Delta table `<catalog>.<schema>.{use_case}_train_data` with columns `unique_id` (STRING), `ds` (DATE for D/W/M, TIMESTAMP for H), `y` (DOUBLE)
 - A Delta table `<catalog>.<schema>.{use_case}_cleaning_report` with columns: `unique_id`, `original_count`, `final_count`, `missing_filled`, `imputation_method`, `anomalies_capped`, `iqr_multiplier`, `excluded`, `exclusion_reason`
 - A reproducibility notebook uploaded to `notebooks/{use_case}/prep_data` that can re-create the training table with the same parameters
 - A summary: number of series, date range, detected frequency, cleaning actions taken
+
