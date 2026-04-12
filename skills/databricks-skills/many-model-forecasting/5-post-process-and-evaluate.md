@@ -370,8 +370,8 @@ Combined table of best forecasts for all series (forecastable + non-forecastable
 
 ## Deploy the Results Explorer App
 
-The `apps/` folder at the project root contains a ready-to-deploy **Dash** application
-("MMF Results Explorer") that lets the user interactively browse evaluation and
+The MMF repo contains a ready-to-deploy **Dash** application
+("MMF Results Explorer") in the [`apps/` folder](https://github.com/databricks-industry-solutions/many-model-forecasting/tree/main/apps) that lets the user interactively browse evaluation and
 scoring tables produced by the forecasting pipeline. It supports:
 
 - Selecting catalog, schema, training/evaluation/scoring tables from dropdowns
@@ -390,7 +390,17 @@ scoring tables produced by the forecasting pipeline. It supports:
 
 ### Deploy Steps
 
-Run the following CLI commands (replace `<your-email>` and `YOUR_PROFILE`):
+First, download the app files from the MMF repo. If the user has the full repo cloned, the files are at `apps/` in the project root. Otherwise, download them:
+
+```bash
+# Download the app files from GitHub (skip if full repo is cloned)
+mkdir -p apps
+curl -sL https://raw.githubusercontent.com/databricks-industry-solutions/many-model-forecasting/main/apps/app.py -o apps/app.py
+curl -sL https://raw.githubusercontent.com/databricks-industry-solutions/many-model-forecasting/main/apps/app.yaml -o apps/app.yaml
+curl -sL https://raw.githubusercontent.com/databricks-industry-solutions/many-model-forecasting/main/apps/requirements.txt -o apps/requirements.txt
+```
+
+Then run the following CLI commands (replace `<your-email>` and `YOUR_PROFILE`):
 
 ```bash
 # 1. Create the app resource
@@ -428,10 +438,10 @@ databricks apps deploy mmf-app \
 
 | File | Purpose |
 |------|---------|
-| `apps/app.py` | Dash application — layout, callbacks, SQL queries against evaluation/scoring/training tables |
-| `apps/app.yaml` | Databricks Apps manifest — sets the run command and binds the `sql-warehouse` resource |
-| `apps/requirements.txt` | Python dependencies (`dash-bootstrap-components`, `databricks-sql-connector`, `databricks-sdk`, `pandas`) |
-| `apps/README.md` | Detailed deploy/redeploy instructions and input reference |
+| [`apps/app.py`](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/apps/app.py) | Dash application — layout, callbacks, SQL queries against evaluation/scoring/training tables |
+| [`apps/app.yaml`](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/apps/app.yaml) | Databricks Apps manifest — sets the run command and binds the `sql-warehouse` resource |
+| [`apps/requirements.txt`](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/apps/requirements.txt) | Python dependencies (`dash-bootstrap-components`, `databricks-sql-connector`, `databricks-sdk`, `pandas`) |
+| [`apps/README.md`](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/apps/README.md) | Detailed deploy/redeploy instructions and input reference |
 
 ### How It Works
 
