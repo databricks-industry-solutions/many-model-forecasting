@@ -182,9 +182,95 @@ AskUserQuestion:
 
 If the user selects (b), (c), or (d), update the mapping accordingly and re-present this confirmation prompt before proceeding.
 
-Also ask at this step:
+### ⛔ STOP GATE — Step 5a: Ask about exogenous regressors
 
-- Any optional exogenous regressors to include (columns to carry through alongside `y`)
+**Only ask this after the user has confirmed the column mapping above. Ask one question at a time.**
+
+```
+AskUserQuestion:
+  "Does your source table have any exogenous regressor columns you want to
+   include alongside the target variable (y)?
+
+   (1) Yes — I have additional columns to include
+   (2) No — run in univariate mode (no exogenous regressors)"
+```
+
+**WAIT for the user to respond.**
+
+If the user selects (2), set all regressor lists to `[]` and skip to Step 6.
+
+If the user selects (1), ask which types they have:
+
+```
+AskUserQuestion:
+  "Which types of regressors do you have? Select all that apply:
+
+   (a) Static features — constant per series / group
+       (e.g., store_state, dept_id, product_category)
+   (b) Dynamic historical — past-only values, NOT needed at forecast time
+       (e.g., lagged sales, rolling averages, past event flags)
+   (c) Dynamic future — values known for BOTH past AND future dates
+       (e.g., planned price, temperature forecast, promo flag, holiday indicator)
+
+   Which types? (e.g., 'a and c', or just 'c')"
+```
+
+**WAIT for the user to respond.**
+
+For each type the user selected, ask a separate follow-up question to collect the column names:
+
+**If static features selected:**
+```
+AskUserQuestion:
+  "List the static feature column names (constant per series):
+   e.g., store_state, dept_id"
+```
+
+**WAIT for the user to respond.** Store as `{static_features}`.
+
+**If dynamic historical selected:**
+```
+AskUserQuestion:
+  "List the dynamic historical column names (past-only, not needed at forecast time).
+   Separate numerical and categorical:
+   • Numerical (e.g., lagged_sales, rolling_avg):
+   • Categorical (e.g., past_event_type):"
+```
+
+**WAIT for the user to respond.** Store as `{dynamic_historical_numerical}` and `{dynamic_historical_categorical}`.
+
+**If dynamic future selected:**
+```
+AskUserQuestion:
+  "List the dynamic future column names (known for both past AND future dates).
+   Separate numerical and categorical:
+   • Numerical (e.g., planned_price, temperature_forecast):
+   • Categorical (e.g., promo, day_of_week, holiday, open_closed):
+
+   ⚠️  You MUST have known future values for every series × every future date
+   in the forecast horizon. I will create a scoring table from this data."
+```
+
+**WAIT for the user to respond.** Store as `{dynamic_future_numerical}` and `{dynamic_future_categorical}`.
+
+### ⛔ STOP GATE — Step 5b: Ask where future regressor values come from
+
+**Only ask this if the user selected dynamic future regressors above.**
+
+```
+AskUserQuestion:
+  "Where do the future values for {dynamic_future_columns} come from?
+
+   (a) Same source table — rows beyond the last training date already contain
+       the future regressor values (e.g., a calendar or schedule table that
+       extends into the future)
+   (b) Separate table — provide the table name containing future-dated rows
+       with the regressor columns"
+```
+
+**WAIT for the user to respond.**
+
+Store the answer as `{future_regressor_source}` (`same_table` or the name of the separate table). If the user selects (b), ask for the table name in a follow-up question before proceeding.
 
 ### Step 6: Create {use_case}_train_data
 
@@ -240,13 +326,188 @@ WHERE {y_col} IS NOT NULL
 GROUP BY {unique_id_col}, LAST_DAY({ds_col})
 ```
 
-If exogenous regressors were selected, include them as additional columns (use `SUM` for numeric regressors when aggregating).
+If exogenous regressors were selected, include them as additional columns (use `SUM` for numeric regressors when aggregating, and `FIRST` or `MAX` for categorical regressors when aggregating).
 
 Verify creation:
 
 ```sql
 SELECT COUNT(*) AS count FROM {catalog}.{schema}.{use_case}_train_data
 ```
+
+### Step 6a: Create {use_case}_scoring_data (if dynamic future regressors)
+
+**Only run this step if the user selected dynamic future regressors (`dynamic_future_numerical` or `dynamic_future_categorical`) in Step 5.**
+
+The scoring table must contain one row per `unique_id` × future `ds` for each date in the forecast horizon, with all dynamic future regressor columns populated. During scoring, `run_forecast` unions this table with `train_data` via `unionByName(score_df, allowMissingColumns=True)` — columns present in `train_data` but absent from the scoring table (such as `y`) are automatically filled with NULL.
+
+**Required schema — must match the Rossmann example pattern** (see [local_univariate_external_regressors_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/external_regressors/local_univariate_external_regressors_daily.ipynb)):
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `unique_id` | STRING | Series identifier (same column as in `train_data`) |
+| `ds` | DATE or TIMESTAMP | Future dates only — dates beyond the last training date |
+| Each `dynamic_future_numerical` column | DOUBLE / FLOAT / INT | Known future numerical regressor values |
+| Each `dynamic_future_categorical` column | STRING / INT | Known future categorical regressor values |
+
+**Do NOT include the target column (`y`).** The `allowMissingColumns=True` union fills it as NULL automatically. This matches the Rossmann example where `rossmann_daily_test` has `Store`, `Date`, and the regressor columns but no `Sales`.
+
+**Do NOT include `static_features` or `dynamic_historical_*` columns.** These are either constant per series (extracted from training data by the model) or past-only (not relevant for future dates). The `allowMissingColumns=True` union handles them.
+
+#### Source: same table (option a)
+
+If the future regressor values come from the **same source table** (rows beyond the training period's end date):
+
+```sql
+CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_scoring_data AS
+SELECT
+    CAST({unique_id_col} AS STRING) AS unique_id,
+    CAST({ds_col} AS DATE) AS ds,
+    {dynamic_future_columns}
+FROM {catalog}.{schema}.{table_name}
+WHERE {ds_col} > (SELECT MAX(ds) FROM {catalog}.{schema}.{use_case}_train_data)
+```
+
+Adjust the `CAST({ds_col} ...)` and date filtering to match the detected frequency (TIMESTAMP for hourly, DATE for daily/weekly/monthly). For weekly/monthly frequencies, apply the same alignment logic as Step 6 (e.g., `DATE_TRUNC('week', ...) + INTERVAL 6 DAY` for weekly, `LAST_DAY(...)` for monthly) and aggregate regressors accordingly.
+
+#### Source: separate table (option b)
+
+If the future regressor values come from a **separate table**:
+
+```sql
+CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_scoring_data AS
+SELECT
+    CAST({future_unique_id_col} AS STRING) AS unique_id,
+    CAST({future_ds_col} AS DATE) AS ds,
+    {dynamic_future_columns}
+FROM {catalog}.{schema}.{future_regressor_table}
+WHERE {future_ds_col} > (SELECT MAX(ds) FROM {catalog}.{schema}.{use_case}_train_data)
+```
+
+Ask the user to confirm the column mapping for `unique_id` and `ds` in the separate table if the column names differ from the source training table.
+
+#### Validation
+
+After creating the scoring table, verify coverage:
+
+```sql
+-- Check row count and date range
+SELECT
+    COUNT(*) AS scoring_rows,
+    COUNT(DISTINCT unique_id) AS n_series,
+    MIN(ds) AS min_future_ds,
+    MAX(ds) AS max_future_ds
+FROM {catalog}.{schema}.{use_case}_scoring_data
+```
+
+```sql
+-- Check that every training series has scoring rows
+SELECT COUNT(*) AS series_missing_scoring
+FROM (
+    SELECT DISTINCT unique_id FROM {catalog}.{schema}.{use_case}_train_data
+    EXCEPT
+    SELECT DISTINCT unique_id FROM {catalog}.{schema}.{use_case}_scoring_data
+)
+```
+
+```sql
+-- Check for NULL values in dynamic future regressor columns
+SELECT
+    {for each col in dynamic_future_columns:
+    SUM(CASE WHEN {col} IS NULL THEN 1 ELSE 0 END) AS {col}_nulls,}
+    COUNT(*) AS total_rows
+FROM {catalog}.{schema}.{use_case}_scoring_data
+```
+
+**If `series_missing_scoring > 0`**, warn the user:
+> "⚠️ {series_missing_scoring} series in training data have no future regressor values in the scoring table. These series will be dropped from scoring. Would you like to (a) proceed anyway, (b) exclude those series from training too, or (c) provide a corrected scoring source?"
+
+#### ⛔ STOP GATE — Scoring data NULL handling
+
+**If any dynamic future columns have NULLs, always ask the user how to handle them. Do NOT proceed until the user confirms.**
+
+Present the NULL summary and ask for a strategy:
+
+```
+AskUserQuestion:
+  "The scoring table has NULL values in some dynamic future regressor columns:
+
+   {for each column with nulls:
+   • {col}: {n_nulls} NULLs out of {total_rows} rows ({null_pct}%)}
+
+   NULL regressor values will cause errors or silently drop affected series
+   during forecasting. How would you like to fill them?
+
+   (a) Forward fill — carry the last known value from training data forward
+       (good for slowly changing features like price or staffing level)
+   (b) Fill with a specific value — enter a default per column
+       (good for binary flags like promo=0, open=1)
+   (c) Fill with the column's mode (most frequent value)
+       (good for categorical columns like day_of_week or holiday)
+   (d) Fill with the column's mean (numerical columns only)
+       (good for continuous regressors like temperature)
+   (e) Drop rows with NULLs — remove incomplete future dates
+   (f) Proceed as-is — keep NULLs (⚠️ may cause pipeline errors)"
+```
+
+**WAIT for the user to respond. Do NOT apply any fill strategy until the user confirms.**
+
+Apply the chosen strategy:
+
+- **(a) Forward fill**: For each series, carry the last known value from the training table into the scoring rows:
+  ```sql
+  -- For each column with NULLs, get the last known value per series from train_data
+  UPDATE {catalog}.{schema}.{use_case}_scoring_data s
+  SET {col} = (
+      SELECT {col}
+      FROM {catalog}.{schema}.{use_case}_train_data t
+      WHERE t.unique_id = s.unique_id
+        AND t.{col} IS NOT NULL
+      ORDER BY t.ds DESC
+      LIMIT 1
+  )
+  WHERE s.{col} IS NULL
+  ```
+- **(b) Fill with specific value**: Ask the user for a default value per column, then:
+  ```sql
+  UPDATE {catalog}.{schema}.{use_case}_scoring_data
+  SET {col} = {user_specified_default}
+  WHERE {col} IS NULL
+  ```
+- **(c) Fill with mode**:
+  ```sql
+  UPDATE {catalog}.{schema}.{use_case}_scoring_data
+  SET {col} = (
+      SELECT {col} FROM {catalog}.{schema}.{use_case}_train_data
+      GROUP BY {col} ORDER BY COUNT(*) DESC LIMIT 1
+  )
+  WHERE {col} IS NULL
+  ```
+- **(d) Fill with mean** (numerical columns only):
+  ```sql
+  UPDATE {catalog}.{schema}.{use_case}_scoring_data
+  SET {col} = (SELECT AVG({col}) FROM {catalog}.{schema}.{use_case}_train_data)
+  WHERE {col} IS NULL
+  ```
+- **(e) Drop rows**: Remove incomplete rows from the scoring table:
+  ```sql
+  DELETE FROM {catalog}.{schema}.{use_case}_scoring_data
+  WHERE {col_1} IS NULL OR {col_2} IS NULL OR ...
+  ```
+- **(f) Proceed as-is**: Skip — warn the user again that this may cause pipeline errors.
+
+After applying the chosen strategy (unless option f), verify no NULLs remain:
+
+```sql
+SELECT
+    {for each col in dynamic_future_columns:
+    SUM(CASE WHEN {col} IS NULL THEN 1 ELSE 0 END) AS {col}_nulls,}
+    COUNT(*) AS total_rows
+FROM {catalog}.{schema}.{use_case}_scoring_data
+```
+
+If NULLs still remain (e.g., forward fill had no non-NULL training value), warn the user and suggest a fallback strategy.
+
+Present the final scoring table summary to the user before continuing.
 
 ### Step 7: Missing Data Assessment & Imputation
 
@@ -597,6 +858,13 @@ AskUserQuestion:
    • Imputation: {imputation_summary}
    • Anomalies: {anomaly_summary}
    • Cleaning report: {catalog}.{schema}.{use_case}_cleaning_report
+   {if dynamic_future_regressors:
+   • Scoring table: {catalog}.{schema}.{use_case}_scoring_data
+     — {scoring_n_series} series × {scoring_date_range} future dates
+     — Dynamic future columns: {dynamic_future_columns}
+   }
+   {if static_features: '• Static features: {static_features}'}
+   {if dynamic_historical: '• Dynamic historical features: {dynamic_historical_columns}'}
    • Reproducibility notebook: notebooks/{use_case}/prep_data
 
    Would you like to proceed to the next step?
@@ -609,9 +877,11 @@ AskUserQuestion:
 
 ## Outputs
 
-- A conversation-carried `**{forecast_problem_brief}`** (3–6 lines) for downstream skills and optional research scoping
-- A Delta table `<catalog>.<schema>.{use_case}_train_data` with columns `unique_id` (STRING), `ds` (DATE for D/W/M, TIMESTAMP for H), `y` (DOUBLE)
+- A conversation-carried **`{forecast_problem_brief}`** (3–6 lines) for downstream skills and optional research scoping
+- A Delta table `<catalog>.<schema>.{use_case}_train_data` with columns `unique_id` (STRING), `ds` (DATE for D/W/M, TIMESTAMP for H), `y` (DOUBLE), plus any exogenous regressor columns
 - A Delta table `<catalog>.<schema>.{use_case}_cleaning_report` with columns: `unique_id`, `original_count`, `final_count`, `missing_filled`, `imputation_method`, `anomalies_capped`, `iqr_multiplier`, `excluded`, `exclusion_reason`
+- **(If dynamic future regressors)** A Delta table `<catalog>.<schema>.{use_case}_scoring_data` with columns `unique_id` (STRING), `ds` (DATE/TIMESTAMP — future dates only), plus all dynamic future regressor columns. Does NOT include `y`, `static_features`, or `dynamic_historical_*` columns — `run_forecast` unions this with `train_data` via `allowMissingColumns=True`. This table is passed as `scoring_data` to `run_forecast` in Skill 4.
+- Exogenous regressor column lists carried forward: `{static_features}`, `{dynamic_future_numerical}`, `{dynamic_future_categorical}`, `{dynamic_historical_numerical}`, `{dynamic_historical_categorical}`
 - A reproducibility notebook uploaded to `notebooks/{use_case}/prep_data` that can re-create the training table with the same parameters
 - A summary: number of series, date range, detected frequency, cleaning actions taken
 

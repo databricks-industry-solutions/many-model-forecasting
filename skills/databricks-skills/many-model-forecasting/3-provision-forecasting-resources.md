@@ -280,91 +280,115 @@ Only created when `non_forecastable_strategy == 'separate_job'` and the non-fore
 
 **Always present the cluster configuration and ask the user to confirm. Do NOT proceed until the user approves.**
 
-Present the computed configuration and let the user customize:
+Ask about each cluster one at a time. Only ask about cluster types the user's selected models require.
+
+#### Step 6a: CPU cluster configuration (if local models selected)
 
 ```
 AskUserQuestion:
-  "Here is the proposed cluster configuration for your selected models:
-
-   ── CPU CLUSTERS (local models) ──
-
-   {if local models selected:
-   Main CPU Cluster ({use_case}_cpu_cluster):
+  "CPU Cluster ({use_case}_cpu_cluster) — for local models:
      • Runtime: 17.3.x-cpu-ml-scala2.13
-     • Node type: (select one)
 
-     AWS:
-     (a) i3.4xlarge   — 16 vCPUs, 122 GB  (recommended)
-     (b) i3.8xlarge   — 32 vCPUs, 244 GB  (high-parallelism or wide features)
+   Which instance type?
 
-     Azure:
-     (a) Standard_DS5_v2    — 16 vCPUs, 56 GB  (recommended)
-     (b) Standard_D32ds_v5  — 32 vCPUs, 128 GB (high-parallelism or wide features)
+   {cloud-specific options for the user's provider only:}
 
-     GCP:
-     (a) n1-standard-16 — 16 vCPUs, 60 GB  (recommended)
-     (b) n1-standard-32 — 32 vCPUs, 120 GB (high-parallelism or wide features)
+   AWS:
+   (a) i3.4xlarge   — 16 vCPUs, 122 GB  (recommended)
+   (b) i3.8xlarge   — 32 vCPUs, 244 GB  (high-parallelism or wide features)
 
-     • Forecastable series: {n_series}
-     • Recommended workers: {recommended_workers} (see sizing guide)
-     ❓ How many workers do you want for the CPU cluster?
+   Azure:
+   (a) Standard_DS5_v2    — 16 vCPUs, 56 GB  (recommended)
+   (b) Standard_D32ds_v5  — 32 vCPUs, 128 GB (high-parallelism or wide features)
 
-     {if non_forecastable_strategy == 'separate_job' and nf_local_models:
-     NF CPU Cluster ({use_case}_nf_cpu_cluster):
-       • Same node type as main CPU cluster
-       • Non-forecastable series: {n_nf_series}
-       • Recommended workers: {nf_recommended_workers} (see sizing guide)
-       ❓ How many workers do you want for the NF CPU cluster?
-     }
-   }
-
-   ── GPU CLUSTERS (global & foundation models) — SINGLE NODE ──
-
-   {if global or foundation models selected:
-   Main GPU Cluster ({use_case}_gpu_cluster):
-     • Runtime: 18.0.x-gpu-ml-scala2.13
-     • Node type: (select one)
-
-     AWS:
-     (a) g5.xlarge    — 1× A10G GPU, 24 GB  (small foundation models)
-     (b) g5.2xlarge   — 1× A10G GPU, 24 GB, more CPU/RAM
-     (c) g5.12xlarge  — 4× A10G GPUs, 96 GB  (recommended for global + foundation)
-     (d) g5.48xlarge  — 8× A10G GPUs, 192 GB (large-scale training)
-
-     Azure:
-     (a) Standard_NC4as_T4_v3    — 1× T4 GPU, 16 GB
-     (b) Standard_NC8as_T4_v3    — 1× T4 GPU, 16 GB, more CPU/RAM
-     (c) Standard_NV36ads_A10_v5 — 1× A10 GPU, 24 GB  (recommended)
-     (d) Standard_NV72ads_A10_v5 — 2× A10 GPUs, 48 GB (global + foundation)
-     (e) Standard_NC24ads_A100_v4 — 1× A100 GPU, 80 GB (large models)
-
-     GCP:
-     (a) g2-standard-4   — 1× L4 GPU, 24 GB
-     (b) g2-standard-8   — 1× L4 GPU, 24 GB, more CPU/RAM
-     (c) g2-standard-48  — 4× L4 GPUs, 96 GB  (recommended)
-     (d) a2-highgpu-1g   — 1× A100 GPU, 40 GB (large models)
-
-     {if non_forecastable_strategy == 'separate_job' and nf_gpu_models:
-     NF GPU Cluster ({use_case}_nf_gpu_cluster):
-       • Same config as main GPU cluster — smaller instance usually sufficient
-       • Node type: (select from options above)
-     }
-   }
-
-   {if non_forecastable_strategy == 'separate_job':
-   Non-forecastable models: {non_forecastable_models}
-   }
-
-   Would you like to:
-   (1) Accept the proposed configuration
-   (2) Change the CPU instance type or worker count
-   (3) Select a different GPU instance type
-   (4) Change both CPU and GPU configuration
-   {if non_forecastable_strategy == 'separate_job':
-   (5) Change non-forecastable cluster configuration}"
+   GCP:
+   (a) n1-standard-16 — 16 vCPUs, 60 GB  (recommended)
+   (b) n1-standard-32 — 32 vCPUs, 120 GB (high-parallelism or wide features)"
 ```
 
-**WAIT for the user to respond. Do NOT create any clusters until the user confirms.**
+**WAIT for the user to respond.**
+
+Then ask about worker count separately:
+
+```
+AskUserQuestion:
+  "How many workers for the CPU cluster?
+
+   • Forecastable series: {n_series}
+   • Recommended workers: {recommended_workers}
+
+   Sizing guide:
+     < 100 series → 0 (single-node)
+     100–1,000    → 4
+     1,000–10,000 → 6
+     10,000–100,000 → 8
+     > 100,000    → 10
+
+   Enter the number of workers:"
+```
+
+**WAIT for the user to respond.**
+
+{if non_forecastable_strategy == 'separate_job' and nf_local_models, ask in a separate question:}
+
+```
+AskUserQuestion:
+  "How many workers for the NF CPU cluster ({use_case}_nf_cpu_cluster)?
+
+   • Non-forecastable series: {n_nf_series}
+   • Recommended workers: {nf_recommended_workers}
+   • Instance type: same as main CPU cluster ({cpu_node_type})
+
+   Enter the number of workers:"
+```
+
+**WAIT for the user to respond.**
+
+#### Step 6b: GPU cluster configuration (if global or foundation models selected)
+
+```
+AskUserQuestion:
+  "GPU Cluster ({use_case}_gpu_cluster) — single-node, for global & foundation models:
+     • Runtime: 18.0.x-gpu-ml-scala2.13
+     • Workers: 0 (always single-node)
+
+   Which instance type?
+
+   {cloud-specific options for the user's provider only:}
+
+   AWS:
+   (a) g5.xlarge    — 1× A10G GPU, 24 GB  (small foundation models)
+   (b) g5.2xlarge   — 1× A10G GPU, 24 GB, more CPU/RAM
+   (c) g5.12xlarge  — 4× A10G GPUs, 96 GB  (recommended for global + foundation)
+   (d) g5.48xlarge  — 8× A10G GPUs, 192 GB (large-scale training)
+
+   Azure:
+   (a) Standard_NC4as_T4_v3    — 1× T4 GPU, 16 GB
+   (b) Standard_NC8as_T4_v3    — 1× T4 GPU, 16 GB, more CPU/RAM
+   (c) Standard_NV36ads_A10_v5 — 1× A10 GPU, 24 GB  (recommended)
+   (d) Standard_NV72ads_A10_v5 — 2× A10 GPUs, 48 GB (global + foundation)
+   (e) Standard_NC24ads_A100_v4 — 1× A100 GPU, 80 GB (large models)
+
+   GCP:
+   (a) g2-standard-4   — 1× L4 GPU, 24 GB
+   (b) g2-standard-8   — 1× L4 GPU, 24 GB, more CPU/RAM
+   (c) g2-standard-48  — 4× L4 GPUs, 96 GB  (recommended)
+   (d) a2-highgpu-1g   — 1× A100 GPU, 40 GB (large models)"
+```
+
+**WAIT for the user to respond.**
+
+{if non_forecastable_strategy == 'separate_job' and nf_gpu_models, ask in a separate question:}
+
+```
+AskUserQuestion:
+  "Which GPU instance for the NF GPU cluster ({use_case}_nf_gpu_cluster)?
+   A smaller instance is usually sufficient for non-forecastable series.
+
+   (select from the same GPU options above)"
+```
+
+**WAIT for the user to respond.**
 
 ### Decision logic
 
@@ -466,9 +490,9 @@ Each notebook installs MMF at the start:
 - **GPU models** (`run_gpu` notebook): Uses `subprocess.check_call` with model-specific install logic:
   - **Global (NeuralForecast)**: `mmf_sa[global] @ git+https://...@main`
   - **Foundation (Chronos)**: base `mmf_sa` + `chronos-forecasting==2.2.2` + `utilsforecast==0.2.15`
-  - **Foundation (TimesFM)**: base `mmf_sa` + `timesfm[torch]` from tarball URL + `utilsforecast==0.2.15`
+  - **Foundation (TimesFM)**: base `mmf_sa` + `timesfm[torch,xreg]` from tarball URL + `utilsforecast==0.2.15`
 
-> **Why subprocess for GPU?** `%pip` does not interpolate Python variables when the notebook is called via `dbutils.notebook.run()`. Additionally, `mmf_sa[foundation]` includes a transitive `timesfm @ git+https://...@commit` dependency whose `git checkout` fails on GPU clusters. The `run_gpu` template uses `subprocess.check_call` and installs `timesfm[torch]` from a GitHub tarball URL to bypass both issues.
+> **Why subprocess for GPU?** `%pip` does not interpolate Python variables when the notebook is called via `dbutils.notebook.run()`. Additionally, `mmf_sa[foundation]` includes a transitive `timesfm @ git+https://...@commit` dependency whose `git checkout` fails on GPU clusters. The `run_gpu` template uses `subprocess.check_call` and installs `timesfm[torch,xreg]` from a GitHub tarball URL to bypass both issues.
 
 ## Outputs
 
