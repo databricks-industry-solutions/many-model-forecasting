@@ -315,7 +315,6 @@ class Chronos2Forecaster(ChronosForecaster):
         """
         dyn_num_vars = list(self.params.get("dynamic_future_numerical", []))
         dyn_cat_vars = list(self.params.get("dynamic_future_categorical", []))
-        static_vars = list(self.params.get("static_features", []))
         dynamic_vars = dyn_num_vars + dyn_cat_vars
 
         hist_pdf = self.prepare_data(hist_df)
@@ -344,16 +343,6 @@ class Chronos2Forecaster(ChronosForecaster):
             cov_sdf = cov_sdf.groupBy("unique_id").agg(*cov_agg)
             core_sdf = core_sdf.join(cov_sdf, on="unique_id", how="left")
 
-        if static_vars:
-            static_pdf = hist_df[
-                [self.params.group_id] + static_vars
-            ].drop_duplicates(subset=[self.params.group_id])
-            static_pdf = static_pdf.rename(
-                columns={self.params.group_id: "unique_id"}
-            )
-            static_sdf = spark.createDataFrame(static_pdf)
-            core_sdf = core_sdf.join(static_sdf, on="unique_id", how="left")
-
         return core_sdf
 
     def predict(self,
@@ -371,25 +360,12 @@ class Chronos2Forecaster(ChronosForecaster):
         """Distributed prediction using Spark pandas UDFs across GPUs."""
         dyn_num_vars = list(self.params.get("dynamic_future_numerical", []))
         dyn_cat_vars = list(self.params.get("dynamic_future_categorical", []))
-        static_vars = list(self.params.get("static_features", []))
-
-        stat_num_vars = []
-        stat_cat_vars = []
-        for var in static_vars:
-            if pd.api.types.is_numeric_dtype(hist_df[var]):
-                stat_num_vars.append(var)
-            else:
-                stat_cat_vars.append(var)
 
         col_map = []
         for var in dyn_num_vars:
             col_map.append(("dyn_num", var))
         for var in dyn_cat_vars:
             col_map.append(("dyn_cat", var))
-        for var in stat_num_vars:
-            col_map.append(("stat_num", var))
-        for var in stat_cat_vars:
-            col_map.append(("stat_cat", var))
 
         hist_sdf = self.prepare_data_for_spark(hist_df, spark, val_df)
         horizon_timestamps_udf = self.create_horizon_timestamps_udf()
@@ -436,9 +412,8 @@ class Chronos2Forecaster(ChronosForecaster):
 
         dyn_num_vars = list(self.params.get("dynamic_future_numerical", []))
         dyn_cat_vars = list(self.params.get("dynamic_future_categorical", []))
-        static_vars = list(self.params.get("static_features", []))
         dynamic_vars = dyn_num_vars + dyn_cat_vars
-        has_covariates = bool(dynamic_vars or static_vars)
+        has_covariates = bool(dynamic_vars)
 
         if has_covariates and future_pdf is not None:
             union_pdf = pd.concat(
@@ -468,10 +443,6 @@ class Chronos2Forecaster(ChronosForecaster):
                 past_covariates[var] = full_arr[:hist_len]
                 if future_pdf is not None and len(full_arr) > hist_len:
                     future_covariates[var] = full_arr[hist_len:]
-
-            for var in static_vars:
-                val = hist_group[var].iloc[0]
-                past_covariates[var] = np.full(hist_len, val)
 
             entry = {"target": target_arr, "past_covariates": past_covariates}
             if future_covariates:
@@ -643,16 +614,6 @@ class Chronos2Forecaster(ChronosForecaster):
                                     past_cov[name] = full_arr[:hist_len]
                                     if len(full_arr) > hist_len:
                                         future_cov[name] = full_arr[hist_len:]
-                                elif category in ("stat_num", "stat_cat"):
-                                    val = raw
-                                    if category == "stat_num":
-                                        past_cov[name] = np.full(
-                                            hist_len, float(val), dtype=np.float64
-                                        )
-                                    else:
-                                        past_cov[name] = np.full(
-                                            hist_len, str(val)
-                                        )
 
                             entry = {
                                 "target": target_arr,

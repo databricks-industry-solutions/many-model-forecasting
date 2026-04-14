@@ -482,7 +482,6 @@ class NeuralFcRNN(NeuralFcForecaster):
                     encoder_n_layers=self.params.encoder_n_layers,
                     encoder_hidden_size=self.params.encoder_hidden_size,
                     encoder_activation=self.params.encoder_activation,
-                    context_size=self.params.context_size,
                     decoder_hidden_size=self.params.decoder_hidden_size,
                     decoder_layers=self.params.decoder_layers,
                     learning_rate=self.params.learning_rate,
@@ -519,7 +518,6 @@ class NeuralFcLSTM(NeuralFcForecaster):
                     batch_size=self.params.batch_size,
                     encoder_n_layers=self.params.encoder_n_layers,
                     encoder_hidden_size=self.params.encoder_hidden_size,
-                    context_size=self.params.context_size,
                     decoder_hidden_size=self.params.decoder_hidden_size,
                     decoder_layers=self.params.decoder_layers,
                     learning_rate=self.params.learning_rate,
@@ -633,8 +631,13 @@ class NeuralFcAutoRNN(NeuralFcForecaster):
             ),
         }
 
+        input_size = int(
+            self.params.input_size_factor * self.params.prediction_length
+        )
+
         def config(trial):
             return dict(
+                input_size=input_size,
                 learning_rate=trial.suggest_float('learning_rate', 1e-4, 1e-1, log=True),
                 batch_size=trial.suggest_int("batch_size", 16, 32, step=8),
                 max_steps=self.params.max_steps,
@@ -643,8 +646,6 @@ class NeuralFcAutoRNN(NeuralFcForecaster):
                     'encoder_hidden_size', list(self.params.encoder_hidden_size)),
                 encoder_n_layers=trial.suggest_categorical(
                     'encoder_n_layers', list(self.params.encoder_n_layers)),
-                context_size=trial.suggest_categorical(
-                    'context_size', list(self.params.context_size)),
                 decoder_hidden_size=trial.suggest_categorical(
                     'decoder_hidden_size', list(self.params.decoder_hidden_size)),
                 **self.exogs,
@@ -690,8 +691,13 @@ class NeuralFcAutoLSTM(NeuralFcForecaster):
             ),
         }
 
+        input_size = int(
+            self.params.input_size_factor * self.params.prediction_length
+        )
+
         def config(trial):
             return dict(
+                input_size=input_size,
                 learning_rate=trial.suggest_float('learning_rate', 1e-4, 1e-1, log=True),
                 batch_size=trial.suggest_int("batch_size", 16, 32, step=8),
                 max_steps=self.params.max_steps,
@@ -699,8 +705,6 @@ class NeuralFcAutoLSTM(NeuralFcForecaster):
                     'encoder_hidden_size', list(self.params.encoder_hidden_size)),
                 encoder_n_layers=trial.suggest_categorical(
                     'encoder_n_layers', list(self.params.encoder_n_layers)),
-                context_size=trial.suggest_categorical(
-                    'context_size', list(self.params.context_size)),
                 decoder_hidden_size=trial.suggest_categorical(
                     'decoder_hidden_size', list(self.params.decoder_hidden_size)),
                 **self.exogs,

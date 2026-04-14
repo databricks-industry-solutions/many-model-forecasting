@@ -346,12 +346,15 @@ The scoring table must contain one row per `unique_id` × future `ds` for each d
 |--------|------|-------------|
 | `unique_id` | STRING | Series identifier (same column as in `train_data`) |
 | `ds` | DATE or TIMESTAMP | Future dates only — dates beyond the last training date |
+| Each `static_features` column | DOUBLE (if label-encoded) or original type | Static feature values (constant per series — joined from `train_data`) |
 | Each `dynamic_future_numerical` column | DOUBLE / FLOAT / INT | Known future numerical regressor values |
 | Each `dynamic_future_categorical` column | STRING / INT | Known future categorical regressor values |
 
 **Do NOT include the target column (`y`).** The `allowMissingColumns=True` union fills it as NULL automatically. This matches the Rossmann example where `rossmann_daily_test` has `Store`, `Date`, and the regressor columns but no `Sales`.
 
-**Do NOT include `static_features` or `dynamic_historical_*` columns.** These are either constant per series (extracted from training data by the model) or past-only (not relevant for future dates). The `allowMissingColumns=True` union handles them.
+**Do NOT include `dynamic_historical_*` columns.** These are past-only (not relevant for future dates) and have no meaningful values for the forecast horizon. The `allowMissingColumns=True` union fills them with NULL for scoring rows. Models that use dynamic historical features (NeuralForecast) only consume them from the historical context window, not from the future scoring rows.
+
+**MUST include `static_features` columns.** When `run_forecast` unions `train_data` and `scoring_data` via `unionByName(..., allowMissingColumns=True)`, any columns missing from the scoring table are filled with NULL. Models that use static features at inference time (NeuralForecast, Chronos-2, TimesFM) would receive NaN instead of the actual category, degrading forecast quality. Populating the static feature columns in the scoring table by joining each `unique_id` against its static values from `train_data` avoids this.
 
 #### Source: same table (option a)
 
@@ -360,14 +363,27 @@ If the future regressor values come from the **same source table** (rows beyond 
 ```sql
 CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_scoring_data AS
 SELECT
-    CAST({unique_id_col} AS STRING) AS unique_id,
-    CAST({ds_col} AS DATE) AS ds,
-    {dynamic_future_columns}
-FROM {catalog}.{schema}.{table_name}
-WHERE {ds_col} > (SELECT MAX(ds) FROM {catalog}.{schema}.{use_case}_train_data)
+    s.unique_id,
+    s.ds,
+    {for each static_feature col: t.{col},}
+    {for each dynamic_future col: s.{col},}
+FROM (
+    SELECT
+        CAST({unique_id_col} AS STRING) AS unique_id,
+        CAST({ds_col} AS DATE) AS ds,
+        {dynamic_future_columns}
+    FROM {catalog}.{schema}.{table_name}
+    WHERE {ds_col} > (SELECT MAX(ds) FROM {catalog}.{schema}.{use_case}_train_data)
+) s
+JOIN (
+    SELECT DISTINCT unique_id, {static_feature_columns}
+    FROM {catalog}.{schema}.{use_case}_train_data
+) t ON s.unique_id = t.unique_id
 ```
 
 Adjust the `CAST({ds_col} ...)` and date filtering to match the detected frequency (TIMESTAMP for hourly, DATE for daily/weekly/monthly). For weekly/monthly frequencies, apply the same alignment logic as Step 6 (e.g., `DATE_TRUNC('week', ...) + INTERVAL 6 DAY` for weekly, `LAST_DAY(...)` for monthly) and aggregate regressors accordingly.
+
+If no `static_features` were selected, omit the `JOIN` and the static columns — the scoring table only needs `unique_id`, `ds`, and the dynamic future columns.
 
 #### Source: separate table (option b)
 
@@ -376,12 +392,25 @@ If the future regressor values come from a **separate table**:
 ```sql
 CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_scoring_data AS
 SELECT
-    CAST({future_unique_id_col} AS STRING) AS unique_id,
-    CAST({future_ds_col} AS DATE) AS ds,
-    {dynamic_future_columns}
-FROM {catalog}.{schema}.{future_regressor_table}
-WHERE {future_ds_col} > (SELECT MAX(ds) FROM {catalog}.{schema}.{use_case}_train_data)
+    s.unique_id,
+    s.ds,
+    {for each static_feature col: t.{col},}
+    {for each dynamic_future col: s.{col},}
+FROM (
+    SELECT
+        CAST({future_unique_id_col} AS STRING) AS unique_id,
+        CAST({future_ds_col} AS DATE) AS ds,
+        {dynamic_future_columns}
+    FROM {catalog}.{schema}.{future_regressor_table}
+    WHERE {future_ds_col} > (SELECT MAX(ds) FROM {catalog}.{schema}.{use_case}_train_data)
+) s
+JOIN (
+    SELECT DISTINCT unique_id, {static_feature_columns}
+    FROM {catalog}.{schema}.{use_case}_train_data
+) t ON s.unique_id = t.unique_id
 ```
+
+If no `static_features` were selected, omit the `JOIN` and the static columns.
 
 Ask the user to confirm the column mapping for `unique_id` and `ds` in the separate table if the column names differ from the source training table.
 
@@ -508,6 +537,150 @@ FROM {catalog}.{schema}.{use_case}_scoring_data
 If NULLs still remain (e.g., forward fill had no non-NULL training value), warn the user and suggest a fallback strategy.
 
 Present the final scoring table summary to the user before continuing.
+
+### Step 6b: Encode and type-safe categorical covariates
+
+**Run this step whenever categorical covariate columns are present** — i.e., any of `{static_features}`, `{dynamic_future_categorical}`, or `{dynamic_historical_categorical}` are listed, regardless of whether they are string-typed or already numeric.
+
+#### Step 6b-i: Detect covariate columns that need encoding or type-casting
+
+```sql
+DESCRIBE TABLE {catalog}.{schema}.{use_case}_train_data
+```
+
+Inspect every column listed in `{static_features}`, `{dynamic_future_categorical}`, and `{dynamic_historical_categorical}`. Classify each into one of two buckets:
+
+1. **Needs encoding** — data type is non-numerical (`STRING`, `BOOLEAN`, `BINARY`, etc.). These must be label-encoded and cast to DOUBLE (Steps 6b-ii through 6b-v).
+
+2. **Needs type-cast only** — data type is an integer type (`INT`, `BIGINT`, `SMALLINT`, `TINYINT`) but not yet `DOUBLE` or `FLOAT`. These are already numeric (possibly pre-encoded from the source) and do not need label encoding, but **must be cast to DOUBLE** for compatibility with the forecasting pipeline.
+
+3. **No action needed** — data type is already `DOUBLE`, `FLOAT`, or `DECIMAL`. Skip.
+
+If **no columns need encoding** (bucket 1 is empty), skip the encoding steps (6b-ii through 6b-v) but still execute Step 6b-i-a below for type-casting, then skip to Step 6b-vi.
+
+If **no columns need encoding or type-casting** (both bucket 1 and bucket 2 are empty), skip Step 6b entirely.
+
+#### Step 6b-i-a: Cast pre-encoded integer covariate columns to DOUBLE
+
+For each column in **bucket 2** (integer-typed, no encoding needed), cast to DOUBLE in `train_data`:
+
+```sql
+ALTER TABLE {catalog}.{schema}.{use_case}_train_data
+    ALTER COLUMN {col} TYPE DOUBLE
+```
+
+If `{use_case}_scoring_data` exists and contains the same column, cast it there too:
+
+```sql
+ALTER TABLE {catalog}.{schema}.{use_case}_scoring_data
+    ALTER COLUMN {col} TYPE DOUBLE
+```
+
+> **Note:** If `ALTER COLUMN ... TYPE` is not supported by the runtime, recreate the table with `CREATE OR REPLACE TABLE ... AS SELECT ..., CAST({col} AS DOUBLE) AS {col}, ...`.
+
+This step runs **before** any label encoding and ensures that all categorical covariate columns — whether they arrived as strings or pre-encoded integers — end up as DOUBLE in both tables.
+
+#### ⛔ STOP GATE — Step 6b-ii: Warn user and confirm encoding strategy
+
+**Do NOT apply any encoding until the user confirms.**
+
+```
+AskUserQuestion:
+  "⚠️  The following categorical covariate columns have non-numerical data types
+   and need to be encoded before forecasting:
+
+   {for each non-numerical column:
+   • {col} (type: {data_type}, {n_unique} unique values) — in list: {which_list}}
+
+   The default encoding strategy is LABEL ENCODING (ordinal):
+   each unique string value is mapped to an integer (0, 1, 2, …) via
+   alphabetical ordering. A lookup table is saved for decoding in post-processing.
+
+   ⚠️  IMPORTANT TRADE-OFF: Label encoding implies a false ordinal relationship
+   between categories (e.g., 'holiday'=0 < 'none'=1 < 'sale'=2). This is
+   acceptable for neural network models (global/foundation) which learn non-linear
+   mappings, but is statistically inappropriate for linear models (StatsForecast).
+   For this reason, categorical covariates are excluded from local model runs
+   in Skill 4 regardless of encoding.
+
+   How would you like to proceed?
+   (a) Apply label encoding (default — recommended for this pipeline)
+   (b) Skip encoding — I'll handle encoding myself and come back
+   (c) Drop these categorical columns entirely — run without them"
+```
+
+**WAIT for the user to respond.**
+
+- If **(a)**: proceed with Step 6b-iii below.
+- If **(b)**: stop the pipeline here. Inform the user they can re-run Skill 1 from this step after applying their own encoding to the `{use_case}_train_data` and `{use_case}_scoring_data` tables.
+- If **(c)**: remove the listed columns from `{use_case}_train_data` and `{use_case}_scoring_data`, clear them from the covariate lists (`{static_features}`, `{dynamic_future_categorical}`, `{dynamic_historical_categorical}`), and skip to Step 7.
+
+#### Step 6b-iii: Create encoding lookup table
+
+For each string-typed categorical column, build a deterministic mapping from string values to integer codes:
+
+```sql
+CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_label_encoding AS
+SELECT '{col}' AS column_name, {col} AS original_value,
+       DENSE_RANK() OVER (ORDER BY {col}) - 1 AS encoded_value
+FROM (
+    SELECT DISTINCT {col} FROM {catalog}.{schema}.{use_case}_train_data
+    WHERE {col} IS NOT NULL
+    UNION
+    SELECT DISTINCT {col} FROM {catalog}.{schema}.{use_case}_scoring_data
+    WHERE {col} IS NOT NULL
+)
+```
+
+If multiple categorical columns need encoding, union the results for all columns into the same lookup table. Using `UNION` across both train and scoring tables ensures every category value gets a consistent code.
+
+#### Step 6b-iv: Apply encoding to train_data
+
+For each categorical column, replace string values with DOUBLE-typed encoded values:
+
+```sql
+MERGE INTO {catalog}.{schema}.{use_case}_train_data AS t
+USING (
+    SELECT original_value, encoded_value
+    FROM {catalog}.{schema}.{use_case}_label_encoding
+    WHERE column_name = '{col}'
+) AS enc
+ON t.{col} = enc.original_value
+WHEN MATCHED THEN UPDATE SET {col} = CAST(enc.encoded_value AS STRING)
+```
+
+Then cast the column to DOUBLE type:
+
+```sql
+ALTER TABLE {catalog}.{schema}.{use_case}_train_data
+    ALTER COLUMN {col} TYPE DOUBLE
+```
+
+> **Note:** If `ALTER COLUMN ... TYPE` is not supported by the runtime, recreate the table with the correct types using `CREATE OR REPLACE TABLE ... AS SELECT ..., CAST({col} AS DOUBLE) AS {col}, ...`.
+
+#### Step 6b-v: Apply the same encoding to scoring_data
+
+**Only if `{use_case}_scoring_data` exists and contains the same categorical columns.**
+
+Apply the identical `MERGE` and `ALTER COLUMN ... TYPE DOUBLE` steps from Step 6b-iv to `{use_case}_scoring_data`, using the same `{use_case}_label_encoding` lookup table. This ensures consistent encoding and type across training and scoring.
+
+Because Step 6a now includes `static_features` in the scoring table, any string-typed static feature columns that were encoded in `train_data` must also be encoded in `scoring_data`. Apply encoding to **all** categorical columns present in the scoring table — both dynamic future categoricals and static feature columns. All encoded columns must be DOUBLE in both tables.
+
+#### Step 6b-vi: Report encoding summary
+
+Present the encoding summary to the user:
+
+```
+"Categorical columns encoded (label encoding):
+ {for each encoded column:
+ • {col}: {n_unique} unique values → codes 0.0..{max_code}.0
+   (mapping saved to {catalog}.{schema}.{use_case}_label_encoding)}
+
+ The lookup table can be used to decode values back to original labels
+ in post-processing."
+```
+
+The covariate lists carried forward remain unchanged — columns stay in their original lists (`{dynamic_future_categorical}`, `{dynamic_historical_categorical}`, `{static_features}`). The encoding converts the storage type from string to DOUBLE, but the semantic classification as "categorical" is preserved for downstream model configuration.
 
 ### Step 7: Missing Data Assessment & Imputation
 
@@ -880,7 +1053,7 @@ AskUserQuestion:
 - A conversation-carried **`{forecast_problem_brief}`** (3–6 lines) for downstream skills and optional research scoping
 - A Delta table `<catalog>.<schema>.{use_case}_train_data` with columns `unique_id` (STRING), `ds` (DATE for D/W/M, TIMESTAMP for H), `y` (DOUBLE), plus any exogenous regressor columns
 - A Delta table `<catalog>.<schema>.{use_case}_cleaning_report` with columns: `unique_id`, `original_count`, `final_count`, `missing_filled`, `imputation_method`, `anomalies_capped`, `iqr_multiplier`, `excluded`, `exclusion_reason`
-- **(If dynamic future regressors)** A Delta table `<catalog>.<schema>.{use_case}_scoring_data` with columns `unique_id` (STRING), `ds` (DATE/TIMESTAMP — future dates only), plus all dynamic future regressor columns. Does NOT include `y`, `static_features`, or `dynamic_historical_*` columns — `run_forecast` unions this with `train_data` via `allowMissingColumns=True`. This table is passed as `scoring_data` to `run_forecast` in Skill 4.
+- **(If dynamic future regressors)** A Delta table `<catalog>.<schema>.{use_case}_scoring_data` with columns `unique_id` (STRING), `ds` (DATE/TIMESTAMP — future dates only), all `static_features` columns (joined from `train_data`), plus all dynamic future regressor columns. Does NOT include `y` or `dynamic_historical_*` columns — `run_forecast` unions this with `train_data` via `allowMissingColumns=True`. This table is passed as `scoring_data` to `run_forecast` in Skill 4.
 - Exogenous regressor column lists carried forward: `{static_features}`, `{dynamic_future_numerical}`, `{dynamic_future_categorical}`, `{dynamic_historical_numerical}`, `{dynamic_historical_categorical}`
 - A reproducibility notebook uploaded to `notebooks/{use_case}/prep_data` that can re-create the training table with the same parameters
 - A summary: number of series, date range, detected frequency, cleaning actions taken
