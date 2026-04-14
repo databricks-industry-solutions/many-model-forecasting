@@ -170,7 +170,7 @@ models:
     framework: NeuralForecast
     model_type: global
     max_steps: 500
-    input_size_factor: 2
+    input_size_factor: 1
     loss: smape
     learning_rate: 0.001
     batch_size: 32
@@ -178,7 +178,6 @@ models:
     encoder_n_layers: 2
     encoder_hidden_size: 100
     encoder_activation: tanh
-    context_size: 10
     decoder_hidden_size: 100
     decoder_layers: 2
 
@@ -188,14 +187,13 @@ models:
     framework: NeuralForecast
     model_type: global
     max_steps: 500
-    input_size_factor: 2
+    input_size_factor: 1
     loss: smape
     learning_rate: 0.001
     batch_size: 32
     dropout_prob_theta: 0.0
     encoder_n_layers: 2
     encoder_hidden_size: 100
-    context_size: 10
     decoder_hidden_size: 100
     decoder_layers: 2
 
@@ -205,7 +203,7 @@ models:
     framework: NeuralForecast
     model_type: global
     max_steps: 500
-    input_size_factor: 2
+    input_size_factor: 1
     loss: smape
     learning_rate: 0.001
     batch_size: 32
@@ -219,7 +217,7 @@ models:
     framework: NeuralForecast
     model_type: global
     max_steps: 500
-    input_size_factor: 2
+    input_size_factor: 1
     loss: smape
     learning_rate: 0.001
     batch_size: 32
@@ -239,9 +237,9 @@ models:
     max_steps: 500
     num_samples: 20
     loss: smape
+    input_size_factor: 1
     encoder_hidden_size: [ 50, 100, 200, 300 ]
     encoder_n_layers: [ 1, 2, 3, 4 ]
-    context_size: [ 5, 10, 50 ]
     decoder_hidden_size: [ 64, 128, 256, 512 ]
 
   NeuralForecastAutoLSTM:
@@ -252,9 +250,9 @@ models:
     max_steps: 500
     num_samples: 20
     loss: smape
+    input_size_factor: 1
     encoder_hidden_size: [ 50, 100, 200, 300 ]
     encoder_n_layers: [ 1, 2, 3, 4 ]
-    context_size: [ 5, 10, 50 ]
     decoder_hidden_size: [ 64, 128, 256, 512 ]
 
   NeuralForecastAutoNBEATSx:

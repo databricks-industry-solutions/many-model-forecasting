@@ -161,6 +161,7 @@ Based on the model types and cloud provider, select from these configurations:
 | **Runtime** | `17.3.x-cpu-ml-scala2.13` |
 | **Node type** | User-selectable — see CPU instance options below (default: 16 vCPU) |
 | **Workers** | **Always ask the user** — present sizing guideline as recommendation |
+| **Availability** | **On-demand only** — do NOT use spot/preemptible instances (see note below) |
 | **Spark config** | `spark.sql.execution.arrow.enabled=true`, `spark.sql.adaptive.enabled=false`, `spark.databricks.delta.formatCheck.enabled=false`, `spark.databricks.delta.schema.autoMerge.enabled=true` |
 
 **CPU instance options by cloud provider:**
@@ -241,6 +242,7 @@ Present the series count and the sizing guideline to the user, then **ask them t
 | **Runtime** | `18.0.x-gpu-ml-scala2.13` |
 | **Node type** | User-selectable — see GPU instance options below |
 | **Workers** | **0 (single-node) — ALWAYS** |
+| **Availability** | **On-demand only** — do NOT use spot/preemptible instances (see note below) |
 | **data_security_mode** | `SINGLE_USER` (ML runtimes do not support `USER_ISOLATION`) |
 | **Spark config** | `spark.master=local[*]`, `spark.databricks.cluster.profile=singleNode`, `spark.databricks.delta.formatCheck.enabled=false`, `spark.databricks.delta.schema.autoMerge.enabled=true` |
 | **custom_tags** | `{"ResourceClass": "SingleNode"}` |
@@ -271,6 +273,43 @@ Present the series count and the sizing guideline to the user, then **ask them t
 | (b) | `g2-standard-8` | 1× L4 | 24 GB | More CPU/RAM |
 | **(c) recommended** | `g2-standard-48` | 4× L4 | 96 GB | Global + foundation |
 | (d) | `a2-highgpu-1g` | 1× A100 | 40 GB | Large models |
+
+#### On-demand instance requirement (all clusters)
+
+**All clusters MUST use on-demand (non-spot) instances for both driver and worker nodes.** Spot/preemptible instances can be reclaimed mid-run, causing long-running forecasting jobs to fail partway through with no automatic recovery.
+
+When generating the job cluster JSON, include the cloud-specific availability settings:
+
+**AWS:**
+```json
+{
+  "aws_attributes": {
+    "first_on_demand": 100,
+    "availability": "ON_DEMAND"
+  }
+}
+```
+
+**Azure:**
+```json
+{
+  "azure_attributes": {
+    "first_on_demand": 100,
+    "availability": "ON_DEMAND_AZURE"
+  }
+}
+```
+
+**GCP:**
+```json
+{
+  "gcp_attributes": {
+    "availability": "ON_DEMAND_GCP"
+  }
+}
+```
+
+`first_on_demand: 100` ensures all nodes (driver + up to 99 workers) are on-demand. Apply these attributes to **every** cluster configuration — CPU, GPU, and non-forecastable clusters alike.
 
 #### Non-Forecastable GPU Cluster (`{use_case}_nf_gpu_cluster`) — for separate_job strategy, GPU models only
 

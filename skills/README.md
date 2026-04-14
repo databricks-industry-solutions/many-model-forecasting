@@ -52,23 +52,26 @@ All generated assets are prefixed with a user-provided **use case name** (e.g., 
 ```
 
 
-| Skill | Command                            | Description                                                                                            |
-| ----- | ---------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| 1     | `/prep-and-clean-data`             | Discover tables, map columns, ask user about imputation and anomaly handling                           |
+| Skill | Command                            | Description                                                                                                                                            |
+| ----- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1     | `/prep-and-clean-data`             | Discover tables, map columns, ask user about imputation and anomaly handling                                                                           |
 | 2     | `/profile-and-classify-series`     | **(Optional)** Compute statistical properties, classify forecastability, recommend models, ask user how to handle non-forecastable series (serverless) |
-| 3     | `/provision-forecasting-resources` | Ask user which models and clusters, configure CPU (16 vCPU default, 32 vCPU option) / GPU; size separate NF cluster if needed |
-| 4     | `/execute-mmf-forecast`            | Generate orchestrator + run notebooks, create one job per model class (+ NF jobs), run in parallel     |
-| 5     | `/post-process-and-evaluate`       | Best-model selection, WAPE/sMAPE metrics, merge NF results, evaluation summary with `forecast_source`  |
+| 3     | `/provision-forecasting-resources` | Ask user which models and clusters, configure CPU (16 vCPU default, 32 vCPU option) / GPU; size separate NF cluster if needed                          |
+| 4     | `/execute-mmf-forecast`            | Generate orchestrator + run notebooks, create one job per model class (+ NF jobs), run in parallel                                                     |
+| 5     | `/post-process-and-evaluate`       | Best-model selection, WAPE/sMAPE metrics, merge NF results, evaluation summary with `forecast_source`                                                  |
+
 
 ### Non-Forecastable Series Handling
 
 After Skill 2 classifies series, the user chooses how to handle low-signal (non-forecastable) series:
 
-| Strategy | Description | Downstream effect |
-|----------|-------------|-------------------|
-| **Include** (Option A) | Keep all series together | No table splitting; all series use same models |
-| **Fallback** (Option B) | Exclude + apply simple rule (Naive, Seasonal Naive, Mean, or Zero) | Filtered training table; fallback forecasts produced immediately; no cluster needed |
-| **Separate job** (Option C) | Exclude + run a dedicated pipeline with user-selected models | Filtered training tables; separate job with its own cluster sizing; full backtest evaluation |
+
+| Strategy                    | Description                                                        | Downstream effect                                                                            |
+| --------------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| **Include** (Option A)      | Keep all series together                                           | No table splitting; all series use same models                                               |
+| **Fallback** (Option B)     | Exclude + apply simple rule (Naive, Seasonal Naive, Mean, or Zero) | Filtered training table; fallback forecasts produced immediately; no cluster needed          |
+| **Separate job** (Option C) | Exclude + run a dedicated pipeline with user-selected models       | Filtered training tables; separate job with its own cluster sizing; full backtest evaluation |
+
 
 The user's choice is stored in `{use_case}_pipeline_config` and read by Skills 3–5. Results from all strategies are merged in Skill 5 with a `forecast_source` column tracking provenance (`main_pipeline`, `fallback`, or `non_forecastable_pipeline`).
 
@@ -141,4 +144,3 @@ uv run --extra dev python scripts/run_eval.py many-model-forecasting
 ## Demo
 
 The following demo shows the MMF slash commands in action against a real Databricks workspace. These commands are implemented as Claude Code slash commands backed by Databricks MCP tools: `/prep-and-clean-data` discovers and cleans the time series data, `/provision-forecasting-resources` configures the right cluster type based on the models you want to run, and `/execute-mmf-forecast` launches the full forecasting pipeline — all from the terminal, driven by an AI coding assistant.
-
