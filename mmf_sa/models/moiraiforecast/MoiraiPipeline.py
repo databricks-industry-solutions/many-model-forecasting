@@ -113,33 +113,52 @@ class MoiraiForecaster(ForecastingRegressor):
         keys = pred_df[self.params["group_id"]].unique()
         metrics = []
         metric_name = self.params["metric"]
-        if metric_name not in ("smape", "mape", "mae", "mse", "rmse"):
-            raise UnsupportedMetricError(f"Metric {self.params['metric']} not supported!")
+
+        # Metric class instantiated once (outside the loop).
+        metric_classes = {
+            "smape": MeanAbsolutePercentageError(symmetric=True),
+            "mape": MeanAbsolutePercentageError(symmetric=False),
+            "mae": MeanAbsoluteError(),
+            "mse": MeanSquaredError(square_root=False),
+            "rmse": MeanSquaredError(square_root=True),
+        }
+        if metric_name not in metric_classes:
+            raise UnsupportedMetricError(f"Metric {metric_name} not supported!")
+        metric_function = metric_classes[metric_name]
+
+        # Build per-key lookups in a single pass (O(n)) instead of repeating
+        # boolean-mask filters per key (O(n^2)).
+        group_col = self.params["group_id"]
+        target_col = self.params["target"]
+        actuals_map = {
+            k: np.asarray(v)
+            for k, v in val_df.groupby(group_col, sort=False)[target_col]
+        }
+        # pred_df has one row per key whose `target_col` cell is an array-like
+        # (list/ndarray) of horizon values. Build a key→forecast dict directly.
+        forecasts_map = dict(
+            zip(
+                pred_df[group_col].to_numpy(),
+                pred_df[target_col].to_numpy(),
+            )
+        )
+
         for key in keys:
-            actual = val_df[val_df[self.params["group_id"]] == key][self.params["target"]].to_numpy()
-            forecast = pred_df[pred_df[self.params["group_id"]] == key][self.params["target"]].to_numpy()[0]
-            # Mapping metric names to their respective classes
-            metric_classes = {
-                "smape": MeanAbsolutePercentageError(symmetric=True),
-                "mape": MeanAbsolutePercentageError(symmetric=False),
-                "mae": MeanAbsoluteError(),
-                "mse": MeanSquaredError(square_root=False),
-                "rmse": MeanSquaredError(square_root=True),
-            }
             try:
-                if metric_name in metric_classes:
-                    metric_function = metric_classes[metric_name]
-                    metric_value = metric_function(actual, forecast)
-                metrics.extend(
-                    [(
+                actual = actuals_map[key]
+                forecast = np.asarray(forecasts_map[key])
+                metric_value = metric_function(actual, forecast)
+                metrics.append(
+                    (
                         key,
                         curr_date,
                         metric_name,
                         metric_value,
                         forecast,
                         actual,
-                        b'',
-                    )])
+                        b"",
+                    )
+                )
             except (ModelPredictionError, DataPreparationError) as err:
                 _logger.warning(f"Failed to calculate metric for key {key}: {err}")
             except Exception as err:

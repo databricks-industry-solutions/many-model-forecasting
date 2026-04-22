@@ -409,34 +409,52 @@ class NeuralFcForecaster(ForecastingRegressor):
         keys = pred_df[self.params["group_id"]].unique()
         metrics = []
         metric_name = self.params["metric"]
-        if metric_name not in ("smape", "mape", "mae", "mse", "rmse"):
-            raise UnsupportedMetricError(f"Metric {self.params['metric']} not supported!")
+
+        # Metric class instantiated once (outside the loop).
+        metric_classes = {
+            "smape": MeanAbsolutePercentageError(symmetric=True),
+            "mape": MeanAbsolutePercentageError(symmetric=False),
+            "mae": MeanAbsoluteError(),
+            "mse": MeanSquaredError(square_root=False),
+            "rmse": MeanSquaredError(square_root=True),
+        }
+        if metric_name not in metric_classes:
+            raise UnsupportedMetricError(f"Metric {metric_name} not supported!")
+        metric_function = metric_classes[metric_name]
+
+        # Build per-key lookups in a single pass (O(n)) instead of repeating
+        # boolean-mask filters per key (O(n^2)).  pred_df is long-format
+        # (one row per forecast timestep per key), so we keep the last
+        # ``prediction_length`` rows per group, matching the previous
+        # ``.iloc[-prediction_length:]`` slice.
+        group_col = self.params["group_id"]
+        target_col = self.params["target"]
+        prediction_length = self.params["prediction_length"]
+        actuals_map = {
+            k: v.to_numpy()
+            for k, v in val_df.groupby(group_col, sort=False)[target_col]
+        }
+        forecasts_map = {
+            k: v.iloc[-prediction_length:].to_numpy()
+            for k, v in pred_df.groupby(group_col, sort=False)[target_col]
+        }
+
         for key in keys:
-            actual = val_df[val_df[self.params["group_id"]] == key][self.params["target"]].reset_index(drop=True)
-            forecast = pred_df[pred_df[self.params["group_id"]] == key][self.params["target"]].\
-                         iloc[-self.params["prediction_length"]:].reset_index(drop=True)
-            # Mapping metric names to their respective classes
-            metric_classes = {
-                "smape": MeanAbsolutePercentageError(symmetric=True),
-                "mape": MeanAbsolutePercentageError(symmetric=False),
-                "mae": MeanAbsoluteError(),
-                "mse": MeanSquaredError(square_root=False),
-                "rmse": MeanSquaredError(square_root=True),
-            }
             try:
-                if metric_name in metric_classes:
-                    metric_function = metric_classes[metric_name]
-                    metric_value = metric_function(actual, forecast)
-                metrics.extend(
-                    [(
+                actual = actuals_map[key]
+                forecast = forecasts_map[key]
+                metric_value = metric_function(actual, forecast)
+                metrics.append(
+                    (
                         key,
                         curr_date,
                         metric_name,
                         metric_value,
-                        forecast.to_numpy(),
-                        actual.to_numpy(),
-                        b'',
-                    )])
+                        forecast,
+                        actual,
+                        b"",
+                    )
+                )
             except (ModelPredictionError, DataPreparationError) as err:
                 _logger.warning(f"Failed to calculate metric for key {key}: {err}")
             except Exception as err:
