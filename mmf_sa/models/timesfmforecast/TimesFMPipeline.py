@@ -32,6 +32,13 @@ class TimesFMForecaster(ForecastingRegressor):
     def _get_or_create_model(self):
         """Lazy-load the TimesFM model on the driver (for single-GPU fallback with covariates)."""
         if self.model is None:
+            import os
+            # Pin JAX (used by timesfm's XReg solver in forecast_with_covariates) to CPU
+            # so it does not fight PyTorch for the GPU that holds the TimesFM weights.
+            # Must be set before `import timesfm` triggers the first `import jax`.
+            os.environ.setdefault("JAX_PLATFORMS", "cpu")
+            os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
+            os.environ.setdefault("XLA_PYTHON_CLIENT_MEM_FRACTION", "0.1")
             import timesfm
             self.model = timesfm.TimesFM_2p5_200M_torch.from_pretrained(self.repo)
             forecast_config = timesfm.ForecastConfig(
@@ -210,6 +217,13 @@ class TimesFMForecaster(ForecastingRegressor):
         def predict_udf(
             bulk_iterator: Iterator[Tuple[pd.Series, ...]]
         ) -> Iterator[pd.Series]:
+            import os
+            # Pin JAX (used by timesfm's XReg solver in forecast_with_covariates) to CPU
+            # so it does not fight PyTorch for the GPU that holds the TimesFM weights.
+            # Must be set before `import timesfm` triggers the first `import jax`.
+            os.environ.setdefault("JAX_PLATFORMS", "cpu")
+            os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
+            os.environ.setdefault("XLA_PYTHON_CLIENT_MEM_FRACTION", "0.1")
             import torch
             import timesfm
             import numpy as np

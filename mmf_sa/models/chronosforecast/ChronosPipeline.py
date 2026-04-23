@@ -3,6 +3,12 @@ import numpy as np
 import logging
 import torch
 import mlflow
+
+# Disable MLflow transformers autologging to avoid a circular import between
+# `mlflow`'s monkey-patching of `transformers.PreTrainedModel.from_pretrained`
+# and `chronos`'s import of `transformers` symbols at module load time.
+mlflow.transformers.autolog(disable=True)
+
 from mlflow.types import Schema, TensorSpec
 from mlflow.models.signature import ModelSignature
 from sktime.performance_metrics.forecasting import (
