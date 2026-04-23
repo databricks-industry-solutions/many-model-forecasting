@@ -317,16 +317,22 @@ class DataQualityChecks:
         Returns:
             ValidationResult with check outcome and processed data
         """
-        # Strip time components so all month-end timestamps align at 00:00:00.
-        # Without this, Spark's UTC-internal storage creates a DST-dependent
-        # hour offset (e.g. 05:00 EST vs 04:00 EDT) that causes reindex mismatches.
-        df[self.conf["date_col"]] = df[self.conf["date_col"]].dt.normalize()
+        # For non-hourly frequencies, strip time components so timestamps
+        # (e.g. month-end) align at 00:00:00. Without this, Spark's UTC-internal
+        # storage creates a DST-dependent hour offset (e.g. 05:00 EST vs 04:00 EDT)
+        # that causes reindex mismatches. Skip this for hourly data, since
+        # normalizing would collapse all 24 hourly timestamps of a day onto the
+        # same midnight value and produce duplicate index labels.
+        if self.conf["freq"] != SupportedFrequencies.HOURLY.value:
+            df[self.conf["date_col"]] = df[self.conf["date_col"]].dt.normalize()
 
         # Use group's own max date for detecting missing entries within the group
         if max_date is None:
             max_date = df[self.conf["date_col"]].max()
-        else:
+        elif self.conf["freq"] != SupportedFrequencies.HOURLY.value:
             max_date = pd.Timestamp(max_date).normalize()
+        else:
+            max_date = pd.Timestamp(max_date)
     
         # Create complete date range and resample
         df_indexed = df.set_index(self.conf["date_col"])
