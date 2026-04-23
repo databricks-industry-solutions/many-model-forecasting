@@ -220,6 +220,7 @@ AskUserQuestion:
 For each type the user selected, ask a separate follow-up question to collect the column names:
 
 **If static features selected:**
+
 ```
 AskUserQuestion:
   "List the static feature column names (constant per series):
@@ -229,6 +230,7 @@ AskUserQuestion:
 **WAIT for the user to respond.** Store as `{static_features}`.
 
 **If dynamic historical selected:**
+
 ```
 AskUserQuestion:
   "List the dynamic historical column names (past-only, not needed at forecast time).
@@ -240,6 +242,7 @@ AskUserQuestion:
 **WAIT for the user to respond.** Store as `{dynamic_historical_numerical}` and `{dynamic_historical_categorical}`.
 
 **If dynamic future selected:**
+
 ```
 AskUserQuestion:
   "List the dynamic future column names (known for both past AND future dates).
@@ -342,17 +345,19 @@ The scoring table must contain one row per `unique_id` × future `ds` for each d
 
 **Required schema — must match the Rossmann example pattern** (see [local_univariate_external_regressors_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/external_regressors/local_univariate_external_regressors_daily.ipynb)):
 
-| Column | Type | Description |
-|--------|------|-------------|
-| `unique_id` | STRING | Series identifier (same column as in `train_data`) |
-| `ds` | DATE or TIMESTAMP | Future dates only — dates beyond the last training date |
-| Each `static_features` column | DOUBLE (if label-encoded) or original type | Static feature values (constant per series — joined from `train_data`) |
-| Each `dynamic_future_numerical` column | DOUBLE / FLOAT / INT | Known future numerical regressor values |
-| Each `dynamic_future_categorical` column | STRING / INT | Known future categorical regressor values |
+
+| Column                                   | Type                                       | Description                                                            |
+| ---------------------------------------- | ------------------------------------------ | ---------------------------------------------------------------------- |
+| `unique_id`                              | STRING                                     | Series identifier (same column as in `train_data`)                     |
+| `ds`                                     | DATE or TIMESTAMP                          | Future dates only — dates beyond the last training date                |
+| Each `static_features` column            | DOUBLE (if label-encoded) or original type | Static feature values (constant per series — joined from `train_data`) |
+| Each `dynamic_future_numerical` column   | DOUBLE / FLOAT / INT                       | Known future numerical regressor values                                |
+| Each `dynamic_future_categorical` column | STRING / INT                               | Known future categorical regressor values                              |
+
 
 **Do NOT include the target column (`y`).** The `allowMissingColumns=True` union fills it as NULL automatically. This matches the Rossmann example where `rossmann_daily_test` has `Store`, `Date`, and the regressor columns but no `Sales`.
 
-**Do NOT include `dynamic_historical_*` columns.** These are past-only (not relevant for future dates) and have no meaningful values for the forecast horizon. The `allowMissingColumns=True` union fills them with NULL for scoring rows. Models that use dynamic historical features (NeuralForecast) only consume them from the historical context window, not from the future scoring rows.
+**Do NOT include `dynamic_historical_`* columns.** These are past-only (not relevant for future dates) and have no meaningful values for the forecast horizon. The `allowMissingColumns=True` union fills them with NULL for scoring rows. Models that use dynamic historical features (NeuralForecast) only consume them from the historical context window, not from the future scoring rows.
 
 **MUST include `static_features` columns.** When `run_forecast` unions `train_data` and `scoring_data` via `unionByName(..., allowMissingColumns=True)`, any columns missing from the scoring table are filled with NULL. Models that use static features at inference time (NeuralForecast, Chronos-2, TimesFM) would receive NaN instead of the actual category, degrading forecast quality. Populating the static feature columns in the scoring table by joining each `unique_id` against its static values from `train_data` avoids this.
 
@@ -448,6 +453,7 @@ FROM {catalog}.{schema}.{use_case}_scoring_data
 ```
 
 **If `series_missing_scoring > 0`**, warn the user:
+
 > "⚠️ {series_missing_scoring} series in training data have no future regressor values in the scoring table. These series will be dropped from scoring. Would you like to (a) proceed anyway, (b) exclude those series from training too, or (c) provide a corrected scoring source?"
 
 #### ⛔ STOP GATE — Scoring data NULL handling
@@ -551,9 +557,7 @@ DESCRIBE TABLE {catalog}.{schema}.{use_case}_train_data
 Inspect every column listed in `{static_features}`, `{dynamic_future_categorical}`, and `{dynamic_historical_categorical}`. Classify each into one of two buckets:
 
 1. **Needs encoding** — data type is non-numerical (`STRING`, `BOOLEAN`, `BINARY`, etc.). These must be label-encoded and cast to DOUBLE (Steps 6b-ii through 6b-v).
-
 2. **Needs type-cast only** — data type is an integer type (`INT`, `BIGINT`, `SMALLINT`, `TINYINT`) but not yet `DOUBLE` or `FLOAT`. These are already numeric (possibly pre-encoded from the source) and do not need label encoding, but **must be cast to DOUBLE** for compatibility with the forecasting pipeline.
-
 3. **No action needed** — data type is already `DOUBLE`, `FLOAT`, or `DECIMAL`. Skip.
 
 If **no columns need encoding** (bucket 1 is empty), skip the encoding steps (6b-ii through 6b-v) but still execute Step 6b-i-a below for type-casting, then skip to Step 6b-vi.
@@ -600,8 +604,6 @@ AskUserQuestion:
    between categories (e.g., 'holiday'=0 < 'none'=1 < 'sale'=2). This is
    acceptable for neural network models (global/foundation) which learn non-linear
    mappings, but is statistically inappropriate for linear models (StatsForecast).
-   For this reason, categorical covariates are excluded from local model runs
-   in Skill 4 regardless of encoding.
 
    How would you like to proceed?
    (a) Apply label encoding (default — recommended for this pipeline)
@@ -1050,10 +1052,10 @@ AskUserQuestion:
 
 ## Outputs
 
-- A conversation-carried **`{forecast_problem_brief}`** (3–6 lines) for downstream skills and optional research scoping
+- A conversation-carried `**{forecast_problem_brief}`** (3–6 lines) for downstream skills and optional research scoping
 - A Delta table `<catalog>.<schema>.{use_case}_train_data` with columns `unique_id` (STRING), `ds` (DATE for D/W/M, TIMESTAMP for H), `y` (DOUBLE), plus any exogenous regressor columns
 - A Delta table `<catalog>.<schema>.{use_case}_cleaning_report` with columns: `unique_id`, `original_count`, `final_count`, `missing_filled`, `imputation_method`, `anomalies_capped`, `iqr_multiplier`, `excluded`, `exclusion_reason`
-- **(If dynamic future regressors)** A Delta table `<catalog>.<schema>.{use_case}_scoring_data` with columns `unique_id` (STRING), `ds` (DATE/TIMESTAMP — future dates only), all `static_features` columns (joined from `train_data`), plus all dynamic future regressor columns. Does NOT include `y` or `dynamic_historical_*` columns — `run_forecast` unions this with `train_data` via `allowMissingColumns=True`. This table is passed as `scoring_data` to `run_forecast` in Skill 4.
+- **(If dynamic future regressors)** A Delta table `<catalog>.<schema>.{use_case}_scoring_data` with columns `unique_id` (STRING), `ds` (DATE/TIMESTAMP — future dates only), all `static_features` columns (joined from `train_data`), plus all dynamic future regressor columns. Does NOT include `y` or `dynamic_historical_`* columns — `run_forecast` unions this with `train_data` via `allowMissingColumns=True`. This table is passed as `scoring_data` to `run_forecast` in Skill 4.
 - Exogenous regressor column lists carried forward: `{static_features}`, `{dynamic_future_numerical}`, `{dynamic_future_categorical}`, `{dynamic_historical_numerical}`, `{dynamic_historical_categorical}`
 - A reproducibility notebook uploaded to `notebooks/{use_case}/prep_data` that can re-create the training table with the same parameters
 - A summary: number of series, date range, detected frequency, cleaning actions taken
