@@ -1,5 +1,7 @@
 # Profile and Classify Series (OPTIONAL)
 
+> ⛔ **MANDATORY:** If you have not read [SKILL.md](SKILL.md) yet, read it now before proceeding. Do NOT take any action until you have read both SKILL.md and this file in full.
+
 **Slash command:** `/profile-and-classify-series`
 
 **This skill is optional.** If the user skips it, they manually select models in Skill 3.
@@ -44,6 +46,9 @@ The profiling involves STL decomposition, ADF tests, and spectral analysis per s
 | `{freq}` | detected or user-specified frequency |
 | `{prediction_length}` | user-specified forecast horizon (integer) |
 | `{forecast_problem_brief}` | from Skill 1 conversation context, or collected at Step 2 if missing |
+| `{username}` | current user (without `@domain`) — from `get_current_user()` |
+| `{project_folder}` | user's project folder name — asked in Step 2b (default: `{use_case}`) |
+| `{notebook_base_path}` | `/Users/{full_email}/{project_folder}/notebooks` — derived from `get_current_user()` + user choice |
 
 Use the template from:
 - [mmf_profiling_notebook_template.ipynb](mmf_profiling_notebook_template.ipynb)
@@ -93,6 +98,31 @@ AskUserQuestion:
 
 **Do NOT proceed until the user confirms.**
 
+### Step 2b: Get current user and project folder
+
+Call `get_current_user()` to obtain `{full_email}` and derive `{username}` (local part before `@`).
+
+If `{project_folder}` and `{notebook_base_path}` were already confirmed in Skill 1, reuse them. If not known (new session or Skill 1 was skipped), ask:
+
+```
+AskUserQuestion:
+  "Where would you like to store the notebooks for this project?
+
+   (a) Use an existing folder — provide the folder name (e.g. 'my-project')
+   (b) Create a new folder — provide a name and I will create /Users/{full_email}/{name}/notebooks/
+   (c) Use default — I will create /Users/{full_email}/{use_case}/notebooks/
+
+  Options: [free text — user picks (a), (b), or (c) and provides a name if needed]"
+```
+
+**WAIT for the user to respond. Do NOT create any folders or upload any notebooks until the user answers.**
+
+Set:
+- `{project_folder}` = user-provided name, or `{use_case}` if they pick (c)
+- `{notebook_base_path}` = `/Users/{full_email}/{project_folder}/notebooks`
+
+Store these for use in all subsequent steps.
+
 ### Step 3: Generate notebook from template
 
 **CRITICAL: Copy the template VERBATIM from `mmf_profiling_notebook_template.ipynb`, only replacing the `{placeholder}` tokens with actual values. Do NOT add, remove, or modify any other code.**
@@ -109,47 +139,81 @@ Save the filled-in notebook locally as `/tmp/{use_case}_run_profiling.ipynb`.
 
 ### Step 4: Import notebook into Databricks workspace
 
-> ⚠️ **Do NOT use `upload_file` for notebooks.** The `upload_file` MCP tool creates a workspace FILE, not a NOTEBOOK. Databricks job tasks require a proper NOTEBOOK object. Using `upload_file` will cause the job to fail immediately with: `'<path>' is not a notebook`.
+The notebook **must** be imported as a proper NOTEBOOK object (not a FILE). Databricks job tasks require this — a FILE will cause the job to fail immediately with: `'<path>' is not a notebook`.
 
-Use the **Databricks CLI** to import the notebook with `JUPYTER` format:
+Use the method available in your environment:
 
+**External agent (Claude Code, Cursor, Copilot, etc.) — Databricks CLI:**
 ```bash
-databricks workspace import /notebooks/{use_case}/run_profiling \
+databricks workspace import {notebook_base_path}/run_profiling \
   --file /tmp/{use_case}_run_profiling.ipynb \
   --format JUPYTER \
   --overwrite
 ```
+> ⚠️ Do NOT use the `upload_file` MCP tool — it creates a FILE, not a NOTEBOOK.
 
-If the path already exists as a FILE (e.g. from a prior failed `upload_file`), delete it first:
-
+If the path already exists as a FILE (e.g. from a prior failed upload), delete it first:
 ```bash
-databricks workspace delete /notebooks/{use_case}/run_profiling
-databricks workspace import /notebooks/{use_case}/run_profiling \
+databricks workspace delete {notebook_base_path}/run_profiling
+databricks workspace import {notebook_base_path}/run_profiling \
   --file /tmp/{use_case}_run_profiling.ipynb \
   --format JUPYTER
 ```
 
-### Step 4b: Verify notebook type
+**Genie Code (Databricks-native) — Python SDK:**
+```python
+from databricks.sdk import WorkspaceClient
+from databricks.sdk.service.workspace import ImportFormat
+import base64
 
-After import, confirm the workspace object is a NOTEBOOK (not a FILE):
-
-```bash
-databricks workspace get-status /notebooks/{use_case}/run_profiling
+w = WorkspaceClient()
+with open("/tmp/{use_case}_run_profiling.ipynb", "rb") as f:
+    content = base64.b64encode(f.read()).decode("utf-8")
+w.workspace.import_(
+    path="{notebook_base_path}/run_profiling",
+    format=ImportFormat.JUPYTER,
+    overwrite=True,
+    content=content
+)
 ```
 
-The returned `object_type` **must** be `NOTEBOOK`. If it is `FILE`, the job will fail — delete and re-import with `--format JUPYTER` before proceeding.
+### Step 4b: Verify notebook type
+
+After import, confirm the workspace object is a NOTEBOOK (not a FILE).
+
+**External agent — Databricks CLI:**
+```bash
+databricks workspace get-status {notebook_base_path}/run_profiling
+```
+
+**Genie Code — Python SDK:**
+```python
+obj = w.workspace.get_status(path="{notebook_base_path}/run_profiling")
+print(obj.object_type)  # must be NOTEBOOK
+```
+
+The returned `object_type` **must** be `NOTEBOOK`. If it is `FILE`, the job will fail — delete and re-import before proceeding.
 
 ### Step 5: Create Workflow job on serverless compute
 
-Create a single-task Workflow job on **serverless compute** (profiling is CPU-bound and benefits from instant startup):
+Job name: `{use_case}_profiling_{username}` (no date — one persistent job per user, upsert approach).
+
+**Upsert:** search for an existing job with that exact name owned by `{full_email}`. If found → update it. If not found → create it.
+
+Create a single-task Workflow job on **serverless compute** (profiling benefits from instant startup):
 
 ```json
 {
-  "name": "{use_case}_profiling",
+  "name": "{use_case}_profiling_{username}",
+  "description": "MMF profiling | use_case={use_case} | catalog={catalog}.{schema} | created={YYYYMMDD}",
+  "tags": {
+    "aidevkit_project": "mmf-agent",
+    "created_by": "databricks-ai-dev-kit"
+  },
   "tasks": [{
     "task_key": "profile_series",
     "notebook_task": {
-      "notebook_path": "notebooks/{use_case}/run_profiling"
+      "notebook_path": "{notebook_base_path}/run_profiling"
     },
     "environment_key": "Default"
   }],

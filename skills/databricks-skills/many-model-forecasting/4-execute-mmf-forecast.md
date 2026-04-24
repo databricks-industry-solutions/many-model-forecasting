@@ -1,5 +1,7 @@
 # Execute MMF Forecast
 
+> ⛔ **MANDATORY:** If you have not read [SKILL.md](SKILL.md) yet, read it now before proceeding. Do NOT take any action until you have read both SKILL.md and this file in full.
+
 **Slash command:** `/execute-mmf-forecast`
 
 Validates parameters, asks the user about backtesting setup, generates notebooks
@@ -58,6 +60,33 @@ Based on the strategy, determine which training table to use for the **main pipe
 | `separate_job` | `{use_case}_train_data_forecastable` | Separate job created in Step 5a below |
 
 Set `{train_table}` to the correct table name for all subsequent notebook generation steps.
+
+### ⛔ STOP GATE — Step 0b: Get current user and confirm project folder
+
+Call `get_current_user()` to obtain the authenticated user's full email (e.g. `user@databricks.com`). Derive:
+- `{username}` = local part before `@` (e.g. `user`)
+- `{YYYYMMDD}` = today's date (e.g. `20260420`)
+
+If `{project_folder}` and `{notebook_base_path}` were already confirmed in Skill 1, reuse them. If not known (new session or Skill 1 was skipped), ask:
+
+```
+AskUserQuestion:
+  "Where would you like to store the notebooks for this project?
+
+   (a) Use an existing folder — provide the folder name (e.g. 'my-project')
+   (b) Create a new folder — provide a name and I will create /Users/{full_email}/{name}/notebooks/
+   (c) Use default — I will create /Users/{full_email}/{use_case}/notebooks/
+
+  Options: [free text — user picks (a), (b), or (c) and provides a name if needed]"
+```
+
+**WAIT for the user to respond. Do NOT create any folders or upload any notebooks until the user answers.**
+
+Set:
+- `{project_folder}` = user-provided name, or `{use_case}` if they pick (c)
+- `{notebook_base_path}` = `/Users/{full_email}/{project_folder}/notebooks`
+
+Store these for use in all subsequent steps (notebook paths, job names, tags).
 
 ### Step 1: Pre-flight parameter validation
 
@@ -318,45 +347,104 @@ run_forecast(
 
 ### Step 4: Import notebooks into Databricks workspace
 
-> ⚠️ **Do NOT use `upload_file` for notebooks.** The `upload_file` MCP tool creates a workspace FILE, not a NOTEBOOK. Databricks job tasks require a proper NOTEBOOK object. Using `upload_file` will cause every job to fail immediately with: `'<path>' is not a notebook`.
+The notebooks **must** be imported as proper NOTEBOOK objects (not FILEs). Databricks job tasks require this — a FILE will cause every job to fail immediately with: `'<path>' is not a notebook`.
 
-Use the **Databricks CLI** with `--format JUPYTER` to import each notebook. If a path already exists as a FILE from a prior failed `upload_file`, delete it first before importing.
+Use the method available in your environment:
 
-Import all notebooks:
+**External agent (Claude Code, Cursor, Copilot, etc.) — Databricks CLI:**
 
 ```bash
 # Local models notebook
-databricks workspace import /notebooks/{use_case}/run_local \
+databricks workspace import {notebook_base_path}/run_local \
   --file /tmp/{use_case}_run_local.ipynb \
   --format JUPYTER --overwrite
 
 # GPU run notebook (static — uploaded verbatim)
-databricks workspace import /notebooks/{use_case}/run_gpu \
+databricks workspace import {notebook_base_path}/run_gpu \
   --file /tmp/{use_case}_run_gpu.ipynb \
   --format JUPYTER --overwrite
 
 # Global orchestrator (if global models selected)
-databricks workspace import /notebooks/{use_case}/orchestrator_global \
+databricks workspace import {notebook_base_path}/orchestrator_global \
   --file /tmp/{use_case}_orchestrator_global.ipynb \
   --format JUPYTER --overwrite
 
 # Foundation orchestrator (if foundation models selected)
-databricks workspace import /notebooks/{use_case}/orchestrator_foundation \
+databricks workspace import {notebook_base_path}/orchestrator_foundation \
   --file /tmp/{use_case}_orchestrator_foundation.ipynb \
   --format JUPYTER --overwrite
+```
+> ⚠️ Do NOT use the `upload_file` MCP tool — it creates a FILE, not a NOTEBOOK. If a path already exists as a FILE from a prior failed upload, delete it first before importing.
+
+**Genie Code (Databricks-native) — Python SDK:**
+
+```python
+from databricks.sdk import WorkspaceClient
+from databricks.sdk.service.workspace import ImportFormat
+import base64
+
+w = WorkspaceClient()
+
+notebooks = {
+    "run_local": "/tmp/{use_case}_run_local.ipynb",
+    "run_gpu": "/tmp/{use_case}_run_gpu.ipynb",
+    "orchestrator_global": "/tmp/{use_case}_orchestrator_global.ipynb",      # if global models selected
+    "orchestrator_foundation": "/tmp/{use_case}_orchestrator_foundation.ipynb",  # if foundation models selected
+}
+
+for name, local_path in notebooks.items():
+    with open(local_path, "rb") as f:
+        content = base64.b64encode(f.read()).decode("utf-8")
+    w.workspace.import_(
+        path=f"{notebook_base_path}/{name}",
+        format=ImportFormat.JUPYTER,
+        overwrite=True,
+        content=content
+    )
 ```
 
 ### Step 4b: Verify all notebooks imported correctly
 
+**External agent — Databricks CLI:**
 ```bash
-databricks workspace list /notebooks/{use_case}/
+databricks workspace list {notebook_base_path}/
+```
+
+**Genie Code — Python SDK:**
+```python
+for item in w.workspace.list(path="{notebook_base_path}/"):
+    print(item.path, item.object_type)
 ```
 
 Confirm every path shows `object_type: NOTEBOOK` (not `FILE`). Fix any mismatches before creating jobs.
 
 The local copies in `notebooks/{use_case}/` serve as version-controllable artifacts of the generated pipeline.
 
-### Step 5: Create one job per model class (triggered in parallel)
+### Step 5: Upsert one job per model class
+
+Job names follow the pattern `{use_case}_{type}_forecasting_{username}` (no date — one persistent job per type per user):
+- Local: `{use_case}_local_forecasting_{username}`
+- Global: `{use_case}_global_forecasting_{username}`
+- Foundation: `{use_case}_foundation_forecasting_{username}`
+
+For each model class selected, **upsert** the job:
+1. Search for an existing job with that exact name owned by `{full_email}`
+2. If found → **update** it with the new notebook path and cluster config
+3. If not found → **create** it
+
+This ensures there is always exactly one job per type per user — no accumulation of stale jobs.
+
+> ⚠️ **One job per model class — no exceptions.** Do NOT combine model classes into a single multi-task job. Local, global, and foundation models require different compute (CPU vs GPU) and must run independently in parallel.
+
+---
+
+### Step 5b: Create one job per model class (triggered in parallel)
+
+> ⚠️ **One job per model class — no exceptions.** Do NOT combine model classes into a single multi-task job. Create separate jobs for local, global, and foundation models. This is required for correct cluster assignment (CPU vs GPU) and independent parallelism.
+
+All jobs must include:
+- `tags`: `{ "mmf-agent": "", "databricks-ai-dev-kit": "" }`
+- `description`: human-readable summary — e.g. `"MMF {type} forecasting | use_case={use_case} | catalog={catalog}.{schema} | models={active_models} | horizon={prediction_length} | created={YYYYMMDD}"`
 
 **Create separate Workflow jobs for each model class and trigger them all in parallel.** This maximizes throughput — local models run on CPU while GPU models run concurrently.
 
@@ -364,11 +452,16 @@ The local copies in `notebooks/{use_case}/` serve as version-controllable artifa
 
 ```json
 {
-  "name": "{use_case}_local_forecasting",
+  "name": "{use_case}_local_forecasting_{username}",
+  "description": "MMF local forecasting | use_case={use_case} | catalog={catalog}.{schema} | models={active_local_models} | horizon={prediction_length} | created={YYYYMMDD}",
+  "tags": {
+    "aidevkit_project": "mmf-agent",
+    "created_by": "databricks-ai-dev-kit"
+  },
   "tasks": [{
     "task_key": "local_models",
     "notebook_task": {
-      "notebook_path": "notebooks/{use_case}/run_local"
+      "notebook_path": "{notebook_base_path}/run_local"
     },
     "job_cluster_key": "{use_case}_cpu_cluster"
   }],
@@ -394,11 +487,16 @@ The local copies in `notebooks/{use_case}/` serve as version-controllable artifa
 
 ```json
 {
-  "name": "{use_case}_global_forecasting",
+  "name": "{use_case}_global_forecasting_{username}",
+  "description": "MMF global forecasting | use_case={use_case} | catalog={catalog}.{schema} | models={active_global_models} | horizon={prediction_length} | created={YYYYMMDD}",
+  "tags": {
+    "aidevkit_project": "mmf-agent",
+    "created_by": "databricks-ai-dev-kit"
+  },
   "tasks": [{
     "task_key": "global_models",
     "notebook_task": {
-      "notebook_path": "notebooks/{use_case}/orchestrator_global"
+      "notebook_path": "{notebook_base_path}/orchestrator_global"
     },
     "job_cluster_key": "{use_case}_gpu_cluster"
   }],
@@ -427,11 +525,16 @@ The local copies in `notebooks/{use_case}/` serve as version-controllable artifa
 
 ```json
 {
-  "name": "{use_case}_foundation_forecasting",
+  "name": "{use_case}_foundation_forecasting_{username}",
+  "description": "MMF foundation forecasting | use_case={use_case} | catalog={catalog}.{schema} | models={active_foundation_models} | horizon={prediction_length} | created={YYYYMMDD}",
+  "tags": {
+    "aidevkit_project": "mmf-agent",
+    "created_by": "databricks-ai-dev-kit"
+  },
   "tasks": [{
     "task_key": "foundation_models",
     "notebook_task": {
-      "notebook_path": "notebooks/{use_case}/orchestrator_foundation"
+      "notebook_path": "{notebook_base_path}/orchestrator_foundation"
     },
     "job_cluster_key": "{use_case}_gpu_cluster"
   }],

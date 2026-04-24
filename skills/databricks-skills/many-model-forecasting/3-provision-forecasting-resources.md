@@ -1,5 +1,7 @@
 # Provision Forecasting Resources
 
+> ⛔ **MANDATORY:** If you have not read [SKILL.md](SKILL.md) yet, read it now before proceeding. Do NOT take any action until you have read both SKILL.md and this file in full.
+
 **Slash command:** `/provision-forecasting-resources`
 
 Asks the user which models to run, determines required cluster types, asks the
@@ -133,24 +135,15 @@ If `non_forecastable_strategy` is `include` or `fallback`, skip this step entire
 Ask the user which cloud provider the workspace runs on: **AWS**, **Azure**, or **GCP**.
 This determines the specific node types.
 
-### Step 4: Check existing clusters
+<!-- 
+  NOTE — Step 4 (Check existing clusters) removed.
+  MMF jobs always use ephemeral job clusters defined in the Workflow spec (Skill 4).
+  There is no scenario in the normal flow where an existing all-purpose cluster needs to be listed or reused.
+  `list_clusters` was previously called here but returns 300k+ chars in shared workspaces with no actionable result.
+  PENDING: validate with the team whether there is a legitimate reuse scenario that requires this step.
+-->
 
-Use MCP `list_clusters` to find clusters matching the required configurations:
-- Match by runtime version (`17.3.x-cpu-ml-scala2.13` for CPU, `18.0.x-gpu-ml-scala2.13` for GPU)
-- Match by node type for the target cloud provider
-
-Decision logic:
-```
-if matching_cluster.state == "RUNNING":
-    → "Found running cluster {name}. Reuse it?"
-elif matching_cluster.state == "TERMINATED":
-    → "Found terminated cluster {name}. Start it?"
-    → Use start_cluster MCP tool if confirmed
-else:
-    → Proceed to generate ephemeral job cluster config
-```
-
-### Step 5: Select cluster configuration
+### Step 4: Select cluster configuration
 
 Based on the model types and cloud provider, select from these configurations:
 

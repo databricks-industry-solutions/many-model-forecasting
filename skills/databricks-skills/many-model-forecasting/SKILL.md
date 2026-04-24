@@ -5,6 +5,9 @@ description: "Kickstart Many Models Forecasting (MMF) projects on Databricks —
 
 # Many Models Forecasting (MMF)
 
+> ⛔ **MANDATORY — Read before taking any action.**
+> Before doing anything in an MMF project — querying data, creating resources, generating notebooks, or running jobs — read this file completely. Then identify which skill the user needs and read that skill file in full before proceeding. Do NOT act on user instructions until you have read the relevant skill file.
+
 ## Overview
 
 Automates the full [Many Models Forecasting](https://github.com/databricks-industry-solutions/many-model-forecasting) workflow on Databricks. Five skills walk you through data preparation, series profiling, cluster setup, pipeline execution, and post-evaluation interactively using Databricks MCP tools and `AskUserQuestion`.
@@ -177,6 +180,8 @@ Up to six separate jobs run **in parallel** — three for the main pipeline, plu
 - Databricks MCP server configured
 - A Databricks workspace with time series data
 - Unity Catalog access to the target catalog/schema
+- **Skill files uploaded** to `/Workspace/Users/{your_email}/.assistant/skills/many-model-forecasting/`
+- **Assistant instructions configured** at `/Workspace/Users/{your_email}/.assistant_instructions.md` — this file is loaded automatically by Genie Code at the start of every conversation. It should include instructions to always read the MMF skill files before taking any action, and to respect all STOP gates. Without this file, the agent may ignore skill instructions and proceed autonomously.
 
 ## MMF Installation
 
