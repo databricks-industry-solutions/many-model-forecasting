@@ -1,5 +1,7 @@
 # Prep and Clean Data
 
+> ⛔ **MANDATORY:** If you have not read [SKILL.md](SKILL.md) yet, read it now before proceeding. Do NOT take any action until you have read both SKILL.md and this file in full.
+
 **Slash command:** `/prep-and-clean-data`
 
 Asks the user for catalog, schema, use case name, and a **forecast problem brief** (`{forecast_problem_brief}`), connects to a Databricks workspace,
@@ -75,6 +77,29 @@ AskUserQuestion:
 ```
 
 Store a normalized **3–6 line** summary as `{forecast_problem_brief}`. Carry it in the conversation through all downstream skills (reconfirm in Skill 2 if context is missing).
+
+### ⛔ STOP GATE — Step 0c: Confirm project folder
+
+Call `get_current_user()` to obtain `{full_email}`. Then ask:
+
+```
+AskUserQuestion:
+  "Where would you like to store the notebooks for this project?
+
+   (a) Use an existing folder — provide the folder name (e.g. 'my-project')
+   (b) Create a new folder — provide a name and I will create /Users/{full_email}/{name}/notebooks/
+   (c) Use default — I will create /Users/{full_email}/{use_case}/notebooks/
+
+  Options: [free text — user picks (a), (b), or (c) and provides a name if needed]"
+```
+
+**WAIT for the user to respond. Do NOT create any folders or notebooks until the user answers.**
+
+Set:
+- `{project_folder}` = user-provided name, or `{use_case}` if they pick (c)
+- `{notebook_base_path}` = `/Users/{full_email}/{project_folder}/notebooks`
+
+**Carry `{project_folder}` and `{notebook_base_path}` through all subsequent skills.**
 
 #### Optional research and deep documentation
 

@@ -1,5 +1,7 @@
 # Post-Process and Evaluate
 
+> ⛔ **MANDATORY:** If you have not read [SKILL.md](SKILL.md) yet, read it now before proceeding. Do NOT take any action until you have read both SKILL.md and this file in full.
+
 **Slash command:** `/post-process-and-evaluate`
 
 Calculates multiple accuracy metrics, performs best-model selection per series,
@@ -33,6 +35,28 @@ AskUserQuestion:
 ```
 
 **Do NOT proceed until the user provides catalog, schema, and use case name.**
+
+### Step 0a-ii: Confirm project folder
+
+Call `get_current_user()` to obtain `{full_email}`.
+
+If `{project_folder}` and `{notebook_base_path}` were already confirmed in a previous skill, reuse them. If not known, ask:
+
+```
+AskUserQuestion:
+  "Where are the project notebooks stored?
+
+   (a) Use an existing folder — provide the folder name (e.g. 'my-project')
+   (b) Use default — /Users/{full_email}/{use_case}/notebooks/
+
+  Options: [free text — user picks (a) or (b)]"
+```
+
+**WAIT for the user to respond.**
+
+Set:
+- `{project_folder}` = user-provided name, or `{use_case}` if they pick (b)
+- `{notebook_base_path}` = `/Users/{full_email}/{project_folder}/notebooks`
 
 ### Step 0a: Read non-forecastable strategy from pipeline config
 
