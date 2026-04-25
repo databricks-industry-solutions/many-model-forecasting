@@ -8,6 +8,51 @@ Validates parameters, asks the user about backtesting setup, generates notebooks
 using the **orchestrator + run_gpu** pattern, creates **one job per model class**
 (local, global, foundation), and triggers them **in parallel**.
 
+## ⛔ Preconditions — DO NOT SKIP
+
+> **This skill is NOT the entry point of the MMF workflow.** Even if the user said "let's forecast" or "use MMF" or "run the forecast," the agent must NOT start here unless ALL preconditions below are satisfied. If any are missing, route the user back to the earliest unmet skill — do not improvise inputs.
+
+| Precondition | How to verify | If missing |
+|---|---|---|
+| `{catalog}.{schema}.{use_case}_train_data` exists (or `_train_data_forecastable` for fallback/separate_job) | `get_table` or `SELECT 1 FROM ... LIMIT 1` | Go back to **Skill 1 (`/prep-and-clean-data`)** |
+| `active_models` has been chosen by the user (grouped by local / global / foundation) | Check conversation state | Go back to **Skill 3 (`/provision-forecasting-resources`)** |
+| Cluster config has been confirmed by the user | Check conversation state | Go back to **Skill 3** |
+| `{forecast_problem_brief}` is in conversation context | Check prior turns | Reconfirm with the user |
+| `{use_case}` name is known | Check conversation state | Go back to **Skill 1** |
+
+**Verification routine the agent MUST run before any other Step in this skill:**
+
+1. Ask the user (or recall from context) the `{use_case}`, `{catalog}`, `{schema}`, and `{freq}`.
+2. Run `SELECT 1 FROM {catalog}.{schema}.{use_case}_train_data LIMIT 1` (or `_train_data_forecastable`). If it errors, **stop** and tell the user: *"I can't find your training table — Skill 1 needs to run first. Want me to start Skill 1 (`/prep-and-clean-data`)?"*
+3. Confirm the user has an `active_models` selection. If not, **stop** and route to Skill 3.
+4. **Verify date-alignment of the training table against `{freq}`.** Skill 4 must NOT run the forecast if `{use_case}_train_data` contains misaligned dates (e.g. monthly data not snapped to month-end). Run the check matching `{freq}`:
+
+   - For `{freq} == "M"`:
+
+     ```sql
+     SELECT COUNT(*) AS misaligned
+     FROM {catalog}.{schema}.{use_case}_train_data
+     WHERE ds <> LAST_DAY(ds)
+     ```
+
+   - For `{freq} == "W"`:
+
+     ```sql
+     SELECT COUNT(*) AS misaligned
+     FROM {catalog}.{schema}.{use_case}_train_data
+     WHERE ds <> DATE_TRUNC('week', ds) + INTERVAL 6 DAY
+     ```
+
+   - For `{freq} ∈ {D, H}`: skip this check.
+
+   If `misaligned > 0`, **stop**, tell the user the training table is misaligned for the declared frequency, and offer to re-run Skill 1 Step 6 to rebuild it. **Do NOT attempt the forecast** — `run_forecast` indexes by `ds` and a misaligned monthly column produces silently wrong results.
+
+   If `{use_case}_scoring_data` exists, run the same check against it.
+
+5. Only then proceed to Step 0a below.
+
+**Never default `active_models`, `prediction_length`, or `freq` silently** — these come from prior skills or must be explicitly asked.
+
 ## Parameters
 
 Gather these from the user (with sensible defaults):
@@ -67,7 +112,7 @@ Call `get_current_user()` to obtain the authenticated user's full email (e.g. `u
 - `{username}` = local part before `@` (e.g. `user`)
 - `{YYYYMMDD}` = today's date (e.g. `20260420`)
 
-If `{project_folder}` and `{notebook_base_path}` were already confirmed in Skill 1, reuse them. If not known (new session or Skill 1 was skipped), ask:
+If `{project_folder}`, `{notebook_base_path}`, and `{experiment_path}` were already confirmed in Skill 1, reuse them. If not known (new session or Skill 1 was skipped), ask:
 
 ```
 AskUserQuestion:
@@ -85,8 +130,11 @@ AskUserQuestion:
 Set:
 - `{project_folder}` = user-provided name, or `{use_case}` if they pick (c)
 - `{notebook_base_path}` = `/Users/{full_email}/{project_folder}/notebooks`
+- `{experiment_path}` = `/Users/{full_email}/{project_folder}/experiments/{use_case}` *(MLflow experiment — sibling of `notebooks/`, NEVER overlapping)*
 
-Store these for use in all subsequent steps (notebook paths, job names, tags).
+> ⚠️ **MLflow path-collision rule.** `{experiment_path}` must be a disjoint sibling of `{notebook_base_path}`. The pattern above is the only safe default — Databricks silently fails to register an experiment whose path is equal to, an ancestor of, or a descendant of a notebook folder, and the failure surfaces deep inside `run_forecast` as `AttributeError: 'NoneType' object has no attribute 'experiment_id'`. Step 1c below re-validates and pre-creates the experiment via the API to fail-fast on any collision. **Never** fall back to legacy patterns like `/Users/{full_email}/mmf/{use_case}` or any path that overlaps `{notebook_base_path}`.
+
+Store these for use in all subsequent steps (notebook paths, job names, tags, **and notebook/job parameters that pass `experiment_path` into `run_forecast`**).
 
 ### Step 1: Pre-flight parameter validation
 
@@ -175,6 +223,118 @@ Derive `backtest_length` and `stride` from the user's choice. For option (e), as
 - `stride <= backtest_length`
 
 Report the resulting number of backtest windows: `(backtest_length - prediction_length) / stride + 1`.
+
+### Step 1c: Validate and pre-create the MLflow experiment (MANDATORY — fail-fast)
+
+> ⛔ **This step is not optional.** It exists to prevent the most common silent failure of `mmf_sa.run_forecast`:
+>
+> ```
+> AttributeError: 'NoneType' object has no attribute 'experiment_id'
+>   at Forecaster.set_mlflow_experiment ...
+>   MlflowClient().get_experiment_by_name(self.conf["experiment_path"]).experiment_id
+> ```
+>
+> The cause is a Workspace **path collision**: `{experiment_path}` either equals, lives inside, or is the parent of a folder that already contains notebooks. MLflow on Databricks cannot reliably create or look up an experiment whose path overlaps a notebook folder, so `get_experiment_by_name(...)` returns `None`. We must validate the path and pre-create the experiment **before** any job is launched.
+
+#### 1c.1 — Disjointness check
+
+`{experiment_path}` must be a strict sibling of `{notebook_base_path}` — not equal, not an ancestor, not a descendant. Run this check (the agent's tool of choice — Python locally or Genie Code):
+
+```python
+def _is_inside(child, parent):
+    child = child.rstrip("/") + "/"
+    parent = parent.rstrip("/") + "/"
+    return child == parent or child.startswith(parent)
+
+assert experiment_path != notebook_base_path, (
+    "experiment_path equals notebook_base_path — they must be different folders."
+)
+assert not _is_inside(experiment_path, notebook_base_path), (
+    f"experiment_path ({experiment_path}) is INSIDE notebook_base_path "
+    f"({notebook_base_path}). MLflow will fail with AttributeError on experiment_id."
+)
+assert not _is_inside(notebook_base_path, experiment_path), (
+    f"notebook_base_path ({notebook_base_path}) is INSIDE experiment_path "
+    f"({experiment_path}). MLflow will fail with AttributeError on experiment_id."
+)
+print(f"Path disjointness OK:\n  notebooks   : {notebook_base_path}\n  experiments : {experiment_path}")
+```
+
+If any assertion fails, **stop**, tell the user the chosen folders overlap, and ask them to rename `{project_folder}` (or pick a fully-disjoint custom `{experiment_path}`). Do NOT proceed.
+
+#### 1c.2 — Workspace-object check
+
+The Workspace path that will host the experiment must NOT already exist as a `NOTEBOOK` or `DIRECTORY` containing notebooks.
+
+**Genie Code (Databricks-native) — Python SDK:**
+
+```python
+from databricks.sdk import WorkspaceClient
+from databricks.sdk.errors import NotFound
+
+w = WorkspaceClient()
+
+try:
+    obj = w.workspace.get_status(path=experiment_path)
+    if obj.object_type.value == "NOTEBOOK":
+        raise RuntimeError(
+            f"{experiment_path} already exists as a NOTEBOOK. "
+            "Pick a different experiment_path that does not overlap any notebook."
+        )
+    if obj.object_type.value == "DIRECTORY":
+        # Directory is OK only if it is empty or already an MLflow experiment parent.
+        children = list(w.workspace.list(path=experiment_path))
+        if any(c.object_type.value == "NOTEBOOK" for c in children):
+            raise RuntimeError(
+                f"{experiment_path} is a workspace folder containing notebooks. "
+                "MLflow cannot create an experiment at this path. Pick a disjoint path."
+            )
+except NotFound:
+    pass  # Path does not exist yet — perfect, MLflow will create it.
+```
+
+**External agent — Databricks CLI:**
+
+```bash
+databricks workspace get-status "{experiment_path}" || true
+# If the command prints object_type=NOTEBOOK or a DIRECTORY containing notebooks, abort.
+```
+
+#### 1c.3 — Pre-create the experiment via the API
+
+Create the MLflow experiment up-front so any remaining issue surfaces here, not deep inside `run_forecast`. Idempotent — if it already exists, capture the existing experiment_id.
+
+```python
+from mlflow.tracking import MlflowClient
+from mlflow.exceptions import RestException
+
+client = MlflowClient()
+
+existing = client.get_experiment_by_name(experiment_path)
+if existing is not None:
+    experiment_id = existing.experiment_id
+    print(f"MLflow experiment already exists: {experiment_path} (id={experiment_id})")
+else:
+    try:
+        experiment_id = client.create_experiment(name=experiment_path)
+        print(f"Created MLflow experiment: {experiment_path} (id={experiment_id})")
+    except RestException as e:
+        # RESOURCE_ALREADY_EXISTS race-condition fallback
+        existing = client.get_experiment_by_name(experiment_path)
+        if existing is None:
+            raise RuntimeError(
+                f"Failed to create MLflow experiment at {experiment_path}: {e}. "
+                "This usually means the path collides with a notebook folder. "
+                "Rename the project folder so experiments/ and notebooks/ are siblings, "
+                "then retry."
+            )
+        experiment_id = existing.experiment_id
+        print(f"MLflow experiment already exists (race): {experiment_path} (id={experiment_id})")
+
+assert experiment_id is not None, "MLflow experiment_id is None after create — refuse to launch jobs."
+```
+
+If this step succeeds, the experiment is registered and `Forecaster.set_mlflow_experiment` will resolve it cleanly inside every job. If it fails, **do NOT launch any job** — instead route the user back to Step 0b to pick a different `{project_folder}` or `{experiment_path}`.
 
 ### Step 2: Gather and validate parameters
 
@@ -442,9 +602,28 @@ This ensures there is always exactly one job per type per user — no accumulati
 
 > ⚠️ **One job per model class — no exceptions.** Do NOT combine model classes into a single multi-task job. Create separate jobs for local, global, and foundation models. This is required for correct cluster assignment (CPU vs GPU) and independent parallelism.
 
+> ⛔ **MANDATORY `spark_version` per job class — DO NOT SUBSTITUTE.**
+> The three JSON templates below have intentionally different `spark_version` values. They are **not interchangeable** and must be used exactly as written:
+>
+> | Job | `spark_version` (required) |
+> |---|---|
+> | Local models | `17.3.x-cpu-ml-scala2.13` |
+> | Global models | `18.0.x-gpu-ml-scala2.13` |
+> | Foundation models | `18.0.x-gpu-ml-scala2.13` |
+> | NF Local models *(if `separate_job`)* | `17.3.x-cpu-ml-scala2.13` |
+> | NF Global / NF Foundation *(if `separate_job`)* | `18.0.x-gpu-ml-scala2.13` |
+>
+> The agent is FORBIDDEN from:
+> - Reusing the local job's `spark_version` (`17.3.x-cpu-ml-scala2.13`) inside the global or foundation JSON. A GPU node type with a CPU runtime fails to start or silently runs on CPU.
+> - Substituting `17.3.x-gpu-ml-scala2.13` for the GPU jobs because it "looks like LTS." The GPU pipeline is pinned to **18.0** and `mmf_sa[global]` / `mmf_sa[foundation]` are tested against it.
+> - Using a non-ML runtime (anything not ending in `-ml-scala2.13`).
+> - Copy-pasting one job's `job_clusters` block into another. Build each job's `job_clusters` block from its own template.
+>
+> **Step 5c (immediately after job creation) reads back the `spark_version` of every job cluster via `get_job` and aborts if any does not match this table. The verification is not optional.**
+
 All jobs must include:
 - `tags`: `{ "mmf-agent": "", "databricks-ai-dev-kit": "" }`
-- `description`: human-readable summary — e.g. `"MMF {type} forecasting | use_case={use_case} | catalog={catalog}.{schema} | models={active_models} | horizon={prediction_length} | created={YYYYMMDD}"`
+- `description`: human-readable summary — e.g. `"MMF {type} forecasting | use_case={use_case} | catalog={catalog}.{schema} | models={active_models} | horizon={prediction_length} | runtime={spark_version} | created={YYYYMMDD}"`
 
 **Create separate Workflow jobs for each model class and trigger them all in parallel.** This maximizes throughput — local models run on CPU while GPU models run concurrently.
 
@@ -461,7 +640,10 @@ All jobs must include:
   "tasks": [{
     "task_key": "local_models",
     "notebook_task": {
-      "notebook_path": "{notebook_base_path}/run_local"
+      "notebook_path": "{notebook_base_path}/run_local",
+      "base_parameters": {
+        "experiment_path": "{experiment_path}"
+      }
     },
     "job_cluster_key": "{use_case}_cpu_cluster"
   }],
@@ -496,7 +678,10 @@ All jobs must include:
   "tasks": [{
     "task_key": "global_models",
     "notebook_task": {
-      "notebook_path": "{notebook_base_path}/orchestrator_global"
+      "notebook_path": "{notebook_base_path}/orchestrator_global",
+      "base_parameters": {
+        "experiment_path": "{experiment_path}"
+      }
     },
     "job_cluster_key": "{use_case}_gpu_cluster"
   }],
@@ -534,7 +719,10 @@ All jobs must include:
   "tasks": [{
     "task_key": "foundation_models",
     "notebook_task": {
-      "notebook_path": "{notebook_base_path}/orchestrator_foundation"
+      "notebook_path": "{notebook_base_path}/orchestrator_foundation",
+      "base_parameters": {
+        "experiment_path": "{experiment_path}"
+      }
     },
     "job_cluster_key": "{use_case}_gpu_cluster"
   }],
@@ -565,7 +753,45 @@ All jobs must include:
 - Global and foundation jobs each get their own ephemeral GPU cluster so they can run **in parallel**.
 - Only create jobs for model classes the user actually selected.
 
-Use `create_job` to create each job, then `run_job` to start **all jobs simultaneously**.
+Use `create_job` (or `update_job` on upsert) to create each job. **After `create_job` / `update_job` and BEFORE `run_job`, run Step 5c.**
+
+### Step 5c: Verify each job's cluster runtime (MANDATORY)
+
+> ⛔ **This step is not optional and cannot be skipped.** It exists to catch the most common failure mode: the agent copying the local job's `spark_version` into the global or foundation JSON (e.g. using `17.3.x-cpu-ml-scala2.13` for a GPU cluster). The verification reads the runtime back from the API after job creation, so it does not depend on the agent's intent.
+
+For every job created in Step 5b (and Step 5a if `separate_job`), call `get_job` and inspect each entry in `job_clusters[*].new_cluster.spark_version`. Required values:
+
+| Job name | Required `spark_version` |
+|---|---|
+| `{use_case}_local_forecasting_{username}` | `17.3.x-cpu-ml-scala2.13` |
+| `{use_case}_global_forecasting_{username}` | `18.0.x-gpu-ml-scala2.13` |
+| `{use_case}_foundation_forecasting_{username}` | `18.0.x-gpu-ml-scala2.13` |
+| `{use_case}_nf_local_forecasting_{username}` | `17.3.x-cpu-ml-scala2.13` |
+| `{use_case}_nf_global_forecasting_{username}` | `18.0.x-gpu-ml-scala2.13` |
+| `{use_case}_nf_foundation_forecasting_{username}` | `18.0.x-gpu-ml-scala2.13` |
+
+For each job:
+
+1. Call `get_job(job_id=...)`.
+2. For each cluster in `settings.job_clusters[*]`, check `new_cluster.spark_version`.
+3. Compare to the expected value from the table above.
+4. If **any** value does not match, do NOT call `run_job`. Instead:
+   - Print a clear error including the job name, the cluster key, the actual `spark_version`, and the expected `spark_version`.
+   - Call `update_job` with the corrected JSON template from Step 5b (or 5a) — using the exact `spark_version` from the table above.
+   - Re-run Step 5c to verify the fix.
+   - Only after the check passes for **all** jobs may the agent proceed to `run_job`.
+
+Report a one-line summary to the user before triggering runs:
+
+```
+Cluster runtime check:
+  • {use_case}_local_forecasting_{username}      → 17.3.x-cpu-ml-scala2.13  ✓
+  • {use_case}_global_forecasting_{username}     → 18.0.x-gpu-ml-scala2.13  ✓
+  • {use_case}_foundation_forecasting_{username} → 18.0.x-gpu-ml-scala2.13  ✓
+All runtimes match the pinned versions. Proceeding to run_job.
+```
+
+Then call `run_job` for **all jobs simultaneously**.
 
 #### Serverless alternative (local models only)
 
@@ -625,7 +851,10 @@ These orchestrators call the same `run_gpu` notebook (shared with the main pipel
   "tasks": [{
     "task_key": "nf_local_models",
     "notebook_task": {
-      "notebook_path": "notebooks/{use_case}/run_local_nf"
+      "notebook_path": "notebooks/{use_case}/run_local_nf",
+      "base_parameters": {
+        "experiment_path": "{experiment_path}"
+      }
     },
     "job_cluster_key": "{use_case}_nf_cpu_cluster"
   }],
@@ -655,7 +884,10 @@ These orchestrators call the same `run_gpu` notebook (shared with the main pipel
   "tasks": [{
     "task_key": "nf_global_models",
     "notebook_task": {
-      "notebook_path": "notebooks/{use_case}/orchestrator_global_nf"
+      "notebook_path": "notebooks/{use_case}/orchestrator_global_nf",
+      "base_parameters": {
+        "experiment_path": "{experiment_path}"
+      }
     },
     "job_cluster_key": "{use_case}_nf_gpu_cluster"
   }],
@@ -774,7 +1006,7 @@ AskUserQuestion:
    }
 
    • Run metadata logged to {use_case}_run_metadata
-   • MLflow experiment: /Users/{user}/mmf/{use_case}
+   • MLflow experiment: {experiment_path}
 
    Would you like to proceed to post-processing and evaluation?
    (a) Yes, proceed to /post-process-and-evaluate
@@ -791,8 +1023,30 @@ AskUserQuestion:
 - Delta table `<catalog>.<schema>.{use_case}_evaluation_output` — backtest metrics per model per series (forecastable series only when strategy is `fallback` or `separate_job`)
 - Delta table `<catalog>.<schema>.{use_case}_scoring_output` — forward-looking forecasts (forecastable series only when strategy is `fallback` or `separate_job`)
 - Delta table `<catalog>.<schema>.{use_case}_run_metadata` — run parameters, audit trail, and non-forecastable strategy
-- MLflow experiment at `/Users/<user>/mmf/{use_case}`
+- MLflow experiment at `{experiment_path}` (default: `/Users/{full_email}/{project_folder}/experiments/{use_case}`) — pre-created and validated in Step 1c, never overlapping `{notebook_base_path}`
 
 **Produced when `separate_job` strategy:**
 - Delta table `<catalog>.<schema>.{use_case}_nf_evaluation_output` — backtest metrics for non-forecastable series
 - Delta table `<catalog>.<schema>.{use_case}_nf_scoring_output` — forward-looking forecasts for non-forecastable series
+
+## ⛔ Step-transition gate — Ask the user before moving on
+
+After all forecast jobs have been triggered (or completed), the agent MUST stop and ask before starting Skill 5. **Do NOT auto-advance.**
+
+```
+AskUserQuestion:
+  "Skill 4 (Execute MMF Forecast) is complete.
+
+  Triggered jobs:
+    {list of job names with run URLs}
+
+  Outputs (once jobs finish):
+    • {catalog}.{schema}.{use_case}_evaluation_output
+    • {catalog}.{schema}.{use_case}_scoring_output
+
+  Ready to proceed to Skill 5 (Post-Process and Evaluate) once jobs complete?
+    (a) Yes — wait for jobs, then run Skill 5
+    (b) Run Skill 5 now (jobs are already complete)
+    (c) Stop here for now"
+  Options: [a, b, c]
+```

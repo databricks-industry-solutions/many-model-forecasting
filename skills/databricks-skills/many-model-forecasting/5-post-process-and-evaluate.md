@@ -9,6 +9,18 @@ and formats results for business consumption.
 
 **Forecast problem brief (`{forecast_problem_brief}`):** Carry from Skill 1 / Skill 2. When narrating outcomes and **business-ready** summaries (Step 6), interpret metrics and recommendations in light of the brief — what `y` represents, the stated use case, and horizon — rather than generic accuracy language alone.
 
+## Preconditions
+
+> ⛔ **Verify before starting this skill.** If preconditions are missing, do NOT improvise — route the user back.
+
+| Precondition | How to verify | If missing |
+|---|---|---|
+| `{catalog}.{schema}.{use_case}_evaluation_output` exists and is populated | `SELECT COUNT(*) FROM ...` | Go back to **Skill 4 (`/execute-mmf-forecast`)** — jobs must finish first |
+| `{catalog}.{schema}.{use_case}_scoring_output` exists and is populated | `SELECT COUNT(*) FROM ...` | Go back to **Skill 4** |
+| `{forecast_problem_brief}` is in conversation context | Check prior turns | Reconfirm with the user before generating the business summary |
+
+If the Skill 4 jobs are still running, tell the user and wait — do not run partial post-processing.
+
 ## Parameters
 
 | Parameter | Default | Description |

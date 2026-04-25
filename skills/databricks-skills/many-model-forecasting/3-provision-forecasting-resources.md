@@ -10,6 +10,20 @@ use **single-node** (0 workers).
 
 **Note:** Clusters are created as **ephemeral job clusters** within the Databricks Workflow (see Skill 4). This skill validates the configuration and lets the user customize it before the job is created. No long-lived clusters are provisioned.
 
+## Preconditions
+
+> ⛔ **Verify before starting this skill.** If preconditions are missing, do NOT improvise — route the user back to the earliest unmet skill.
+
+| Precondition | How to verify | If missing |
+|---|---|---|
+| `{catalog}.{schema}.{use_case}_train_data` exists | `get_table` or `SELECT 1 FROM ... LIMIT 1` | Go back to **Skill 1 (`/prep-and-clean-data`)** |
+| `{forecast_problem_brief}` is in conversation context | Check prior turns | Reconfirm with the user |
+| *(Optional)* `{use_case}_series_profile` and `{use_case}_pipeline_config` | Check existence | Treat strategy as `include` if missing (Skill 2 was skipped) — this is allowed |
+
+**On completion this skill produces** (used as preconditions by Skill 4):
+- `active_models` selection (grouped by class: local, global, foundation)
+- Confirmed cluster configuration(s)
+
 ## Steps
 
 **Forecast problem brief (`{forecast_problem_brief}`):** Carry forward from Skill 1 (or Skill 2 if captured there). Any **optional research** or extended rationale when helping the user choose models must be **scoped** to the brief (domain, meaning of `y`, horizon intent, intermittency / exogenous emphasis). When summarizing the user's model selection after Step 2, restate **one line** from `{forecast_problem_brief}` so choices stay traceable to the problem.
@@ -144,6 +158,22 @@ This determines the specific node types.
 -->
 
 ### Step 4: Select cluster configuration
+
+> ⛔ **MANDATORY runtime pinning — DO NOT SUBSTITUTE.**
+> Each cluster class has exactly one allowed `spark_version`. They are **not interchangeable**:
+>
+> | Cluster class | Required `spark_version` | Used by |
+> |---|---|---|
+> | CPU (local models) | `17.3.x-cpu-ml-scala2.13` | `{use_case}_cpu_cluster`, `{use_case}_nf_cpu_cluster` |
+> | GPU (global & foundation models) | `18.0.x-gpu-ml-scala2.13` | `{use_case}_gpu_cluster`, `{use_case}_nf_gpu_cluster` |
+>
+> The agent is FORBIDDEN from:
+> - Using `17.3.x-cpu-ml-scala2.13` on a GPU cluster (it has no GPU drivers — global/foundation models will fail or silently run on CPU).
+> - Using `17.3.x-gpu-ml-scala2.13` on the GPU cluster because it "looks like LTS." The GPU pipeline is pinned to **18.0** and tested against it.
+> - Using `18.0.x-cpu-ml-scala2.13` on the CPU cluster.
+> - Copying the CPU job's `spark_version` into the GPU job templates in Skill 4. Each job class has its own pinned runtime.
+>
+> Skill 4 Step 5c reads back the `spark_version` of every job cluster after creation and aborts if it doesn't match this table.
 
 Based on the model types and cloud provider, select from these configurations:
 
@@ -535,3 +565,23 @@ Each notebook installs MMF at the start:
 - Selected models list, grouped by class (local, global, foundation)
 - Non-forecastable cluster configuration (if `separate_job` strategy): cluster key, runtime, node type, workers
 - Non-forecastable models list (if `separate_job` strategy)
+
+## ⛔ Step-transition gate — Ask the user before moving on
+
+After model and cluster selections are confirmed, the agent MUST stop and ask before starting Skill 4. **Do NOT auto-advance to executing the forecast.**
+
+```
+AskUserQuestion:
+  "Skill 3 (Provision Forecasting Resources) is complete.
+
+  Selected models:
+    • Local (CPU): {local_models}
+    • Global (GPU): {global_models}
+    • Foundation (GPU): {foundation_models}
+  Cluster config: {cluster_summary}
+
+  Ready to proceed to Skill 4 (Execute MMF Forecast) — generate notebooks, create jobs, and run the forecast?
+    (a) Yes, continue to Skill 4
+    (b) Stop here for now"
+  Options: [a, b]
+```
