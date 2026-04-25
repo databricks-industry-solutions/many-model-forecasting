@@ -10,6 +10,17 @@ asks the user how to impute missing data, generates an anomaly analysis report,
 asks the user how to handle anomalies, and creates the `{use_case}_train_data` table
 ready for forecasting.
 
+## Preconditions and entry-point rule
+
+> ⛔ **This is the entry point of the MMF workflow.** If the user said anything that triggered the MMF workflow (e.g. "use MMF", "let's forecast", "build a forecasting pipeline"), the agent MUST start here — even if the user used the word "forecast." Do not jump to Skill 4. See `SKILL.md` → "Workflow Entry Point" for the routing rules.
+
+**Preconditions:** none beyond a Databricks workspace and a source time-series table the user can name.
+
+**On completion this skill produces** (used as preconditions by later skills):
+- `{catalog}.{schema}.{use_case}_train_data` — required by Skills 2, 3, 4
+- `{forecast_problem_brief}` — carried in conversation through Skills 2, 3, 4, 5
+- Optional `{use_case}_scoring_data` if the user opts into dynamic future regressors
+
 ## Steps
 
 ### Step 0: Collect use case name
@@ -98,8 +109,11 @@ AskUserQuestion:
 Set:
 - `{project_folder}` = user-provided name, or `{use_case}` if they pick (c)
 - `{notebook_base_path}` = `/Users/{full_email}/{project_folder}/notebooks`
+- `{experiment_path}` = `/Users/{full_email}/{project_folder}/experiments/{use_case}` *(MLflow experiment — sibling of `notebooks/`, NEVER overlapping)*
 
-**Carry `{project_folder}` and `{notebook_base_path}` through all subsequent skills.**
+> ⚠️ **MLflow path-collision rule.** `{experiment_path}` MUST be a disjoint sibling of `{notebook_base_path}`. The pattern above (`experiments/{use_case}` next to `notebooks/`) is the only safe default. Do NOT pick legacy patterns like `/Users/{full_email}/mmf/{use_case}` or any path that is equal to, contained in, or a parent of `{notebook_base_path}` — Databricks MLflow silently fails to create or look up an experiment whose path overlaps a notebook folder, and the failure surfaces only inside `run_forecast` as `AttributeError: 'NoneType' object has no attribute 'experiment_id'`. Skill 4 Step 1c re-validates this before launching jobs.
+
+**Carry `{project_folder}`, `{notebook_base_path}`, and `{experiment_path}` through all subsequent skills.**
 
 #### Optional research and deep documentation
 
@@ -180,6 +194,8 @@ FROM (
 
 Report the detected frequency to the user.
 
+**Persist the result as `{freq}` ∈ `{H, D, W, M}` for the rest of the skill.** Every subsequent SQL block (Steps 6, 6a, 6b, and the imputation/anomaly steps) MUST be selected by `{freq}` — the agent does NOT pick a template freely. **For `{freq} == "M"` and `{freq} == "W"` the date-alignment rule in Step 6 is mandatory and is verified by Step 6b — it is not optional and cannot be skipped.**
+
 ### ⛔ STOP GATE — Step 5: Validate with user
 
 **Do NOT proceed until the user explicitly confirms the table and column mapping.**
@@ -194,6 +210,12 @@ AskUserQuestion:
    • ds:            {ds_col}          (timestamp/date column)
    • y:             {y_col}           (target variable to forecast)
    • Frequency:     {detected_freq}
+   {if detected_freq == "M"}:
+   • Date alignment: All dates will be aligned to MONTH-END via LAST_DAY({ds_col}).
+                     Values within the same month will be SUM-aggregated.
+   {if detected_freq == "W"}:
+   • Date alignment: All dates will be aligned to ISO-week-end (Sunday) via
+                     DATE_TRUNC('week', {ds_col}) + INTERVAL 6 DAY. SUM-aggregated.
 
    ⚠️  The target variable (y) determines what will be forecasted.
    Please confirm or correct:
@@ -302,6 +324,18 @@ Store the answer as `{future_regressor_source}` (`same_table` or the name of the
 
 ### Step 6: Create {use_case}_train_data
 
+> ⛔ **MANDATORY frequency alignment — DO NOT IMPROVISE.**
+> The CREATE TABLE statement MUST be selected by `{freq}` exactly as written below.
+> The agent is FORBIDDEN from:
+> - Using the Daily template (`CAST({ds_col} AS DATE)`) when `{freq} == "M"` or `{freq} == "W"`.
+> - Omitting `SUM(...)` and `GROUP BY` for `{freq} ∈ {W, M}`.
+> - Casting monthly dates to `TIMESTAMP` or to the raw source date.
+>
+> For `{freq} == "M"`, every produced `ds` value MUST satisfy `ds = LAST_DAY(ds)`.
+> For `{freq} == "W"`, every produced `ds` value MUST satisfy `ds = DATE_TRUNC('week', ds) + INTERVAL 6 DAY`.
+>
+> **Step 6b (immediately below) runs SQL assertions that abort and re-create the table if these rules are violated. The verification is not optional.**
+
 Create the training table with the MMF-required schema. The SQL depends on the detected (or user-specified) frequency to ensure dates are properly aligned:
 
 **Hourly (`freq=H`) — no date transformation needed:**
@@ -362,6 +396,32 @@ Verify creation:
 SELECT COUNT(*) AS count FROM {catalog}.{schema}.{use_case}_train_data
 ```
 
+### Step 6b: Verify date alignment (MANDATORY)
+
+> ⛔ **This step is not optional and cannot be skipped.** It exists to catch any case where Step 6 produced misaligned `ds` values (e.g. the Daily template was used for monthly data). Run the check matching `{freq}`. **If `misaligned_rows > 0`, abort, log the failure, and re-create `{use_case}_train_data` using the correct template from Step 6 — do NOT proceed to imputation, anomaly handling, or scoring data creation until this check passes.**
+
+**Monthly (`freq=M`):**
+
+```sql
+SELECT COUNT(*) AS misaligned_rows
+FROM {catalog}.{schema}.{use_case}_train_data
+WHERE ds <> LAST_DAY(ds)
+```
+
+**Weekly (`freq=W`):**
+
+```sql
+SELECT COUNT(*) AS misaligned_rows
+FROM {catalog}.{schema}.{use_case}_train_data
+WHERE ds <> DATE_TRUNC('week', ds) + INTERVAL 6 DAY
+```
+
+**Daily (`freq=D`) and Hourly (`freq=H`):** no alignment check required (any date / timestamp value is valid). Skip this step.
+
+Report the verification result to the user as a single line:
+- On success: `Date alignment check (freq={freq}): PASS (0 misaligned rows)`
+- On failure: `Date alignment check (freq={freq}): FAIL (N misaligned rows) — re-creating the table.` Then re-run Step 6 with the correct template and re-run this check before proceeding.
+
 ### Step 6a: Create {use_case}_scoring_data (if dynamic future regressors)
 
 **Only run this step if the user selected dynamic future regressors (`dynamic_future_numerical` or `dynamic_future_categorical`) in Step 5.**
@@ -412,6 +472,8 @@ JOIN (
 ```
 
 Adjust the `CAST({ds_col} ...)` and date filtering to match the detected frequency (TIMESTAMP for hourly, DATE for daily/weekly/monthly). For weekly/monthly frequencies, apply the same alignment logic as Step 6 (e.g., `DATE_TRUNC('week', ...) + INTERVAL 6 DAY` for weekly, `LAST_DAY(...)` for monthly) and aggregate regressors accordingly.
+
+> ⛔ **The Step 6b verification applies to `{use_case}_scoring_data` as well.** After creating it, re-run the matching `misaligned_rows` check against `{use_case}_scoring_data`. If `misaligned_rows > 0`, abort and re-create the scoring table — `run_forecast` aligns scoring rows to training rows by exact `(unique_id, ds)` match, so any drift here silently breaks scoring.
 
 If no `static_features` were selected, omit the `JOIN` and the static columns — the scoring table only needs `unique_id`, `ds`, and the dynamic future columns.
 
@@ -1084,4 +1146,36 @@ AskUserQuestion:
 - Exogenous regressor column lists carried forward: `{static_features}`, `{dynamic_future_numerical}`, `{dynamic_future_categorical}`, `{dynamic_historical_numerical}`, `{dynamic_historical_categorical}`
 - A reproducibility notebook uploaded to `notebooks/{use_case}/prep_data` that can re-create the training table with the same parameters
 - A summary: number of series, date range, detected frequency, cleaning actions taken
+- **Frequency alignment guarantees** (verified by Step 6b):
+  - For `freq=M`, every `ds` value in `{use_case}_train_data` (and `{use_case}_scoring_data` if produced) is the last day of its month.
+  - For `freq=W`, every `ds` value is an ISO-week-end (Sunday).
+  - For `freq=D` and `freq=H`, no alignment transformation is applied.
+
+## ⛔ Step-transition gate — Ask the user before moving on
+
+After the outputs above are produced, the agent MUST stop and ask. **Do NOT auto-advance to Skill 2 or Skill 3.**
+
+```
+AskUserQuestion:
+  "Skill 1 (Prep and Clean Data) is complete.
+
+  Created:
+    • {catalog}.{schema}.{use_case}_train_data ({n_series} series, {n_rows} rows, freq={freq})
+    • {catalog}.{schema}.{use_case}_cleaning_report
+    {if scoring_data: '• {catalog}.{schema}.{use_case}_scoring_data'}
+
+  The next step is OPTIONAL: Skill 2 — Profile and Classify Series.
+  It computes statistical properties (stationarity, seasonality, intermittency, SNR),
+  partitions series into high-confidence vs low-signal groups, and recommends
+  model families for you. Estimated runtime depends on series count
+  ({n_series} series ≈ {estimated_runtime}).
+
+  How would you like to proceed?
+    (a) Run Skill 2 (profiling) now — recommended if you're unsure which models to pick
+    (b) Skip Skill 2 and go directly to Skill 3 (Provision Forecasting Resources) — I'll select models manually
+    (c) Stop here for now"
+  Options: [a, b, c]
+```
+
+**Do NOT pick (a) or (b) on the user's behalf — always ask.** Only after the user answers should the agent read and start the chosen next skill.
 

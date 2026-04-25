@@ -10,6 +10,17 @@ Calculates statistical properties for each time series, partitions data into
 "High-Confidence" (forecastable) and "Low-Signal" (non-forecastable) groups,
 and recommends specific MMF model classes for each partition. Runs on **serverless compute**.
 
+## Preconditions
+
+> ⛔ **Verify before starting this skill.** If preconditions are missing, do NOT improvise — route the user back to Skill 1.
+
+| Precondition | How to verify | If missing |
+|---|---|---|
+| `{catalog}.{schema}.{use_case}_train_data` exists | `get_table` or `SELECT 1 FROM ... LIMIT 1` | Go back to **Skill 1 (`/prep-and-clean-data`)** |
+| `{forecast_problem_brief}` is in conversation context | Check prior turns | Reconfirm with the user (Step 2 of this skill) |
+
+**This skill must only run because the user explicitly chose to run it** (Skill 1's transition gate offered options a/b/c). Never enter this skill silently — the user must have answered "yes, run profiling."
+
 ## Estimated Runtime
 
 Inform the user of approximate profiling times before they commit:
@@ -689,3 +700,26 @@ Created when strategy is `fallback`. Contains fallback forecasts for non-forecas
 | `unique_id` | STRING | Series identifier |
 | `model` | STRING | Fallback method name (e.g., `SeasonalNaiveFallback`) |
 | `y` | ARRAY&lt;DOUBLE&gt; | Forecast values |
+
+## ⛔ Step-transition gate — Ask the user before moving on
+
+After profiling completes, the agent MUST stop and ask before starting Skill 3. **Do NOT auto-advance.**
+
+```
+AskUserQuestion:
+  "Skill 2 (Profile and Classify Series) is complete.
+
+  Created:
+    • {catalog}.{schema}.{use_case}_series_profile ({n_forecastable} high-confidence,
+      {n_non_forecastable} low-signal)
+    • {catalog}.{schema}.{use_case}_pipeline_config (strategy = {strategy})
+    {if fallback: '• {catalog}.{schema}.{use_case}_scoring_output_non_forecastable'}
+    {if fallback or separate_job: '• {catalog}.{schema}.{use_case}_train_data_forecastable'}
+
+  Recommended models for high-confidence series: {recommended_models}
+
+  Ready to proceed to Skill 3 (Provision Forecasting Resources) — model and cluster selection?
+    (a) Yes, continue to Skill 3
+    (b) Stop here for now"
+  Options: [a, b]
+```
