@@ -70,8 +70,8 @@ The checklist is the primary mechanism that prevents silent gate-skipping. Treat
 
 ### MMF / Forecasting — CRITICAL
 - **Whenever the user asks ANYTHING related to MMF, Many Model Forecasting, forecasting, or time series**, the FIRST action — before exploring data, writing code, or executing anything — MUST be:
-  1. Read the full `SKILL.md` at `.assistant/skills/many-model-forecasting/SKILL.md`
-  2. Read the specific sub-skill file for the step being requested (e.g., `3-provision-forecasting-resources.md`, `4-execute-mmf-forecast.md`)
+  1. Read the full `SKILL.md` at `.assistant/skills/SKILL.md`
+  2. Read the specific sub-skill file for the step being requested under `.assistant/skills/` (e.g., `3-provision-forecasting-resources.md`, `4-execute-mmf-forecast.md`)
   3. Follow every STOP gate in those files without exception
 - **Do NOT skip this even if you think you already know how to do it.** The skill files contain the user's exact workflow, templates, and decision points. Ignoring them is unacceptable.
 - **Frequency-alignment is non-negotiable.** When `freq == "M"`, every `ds` value in `{use_case}_train_data` and `{use_case}_scoring_data` MUST equal `LAST_DAY(ds)` (month-end). When `freq == "W"`, every `ds` value MUST equal `DATE_TRUNC('week', ds) + INTERVAL 6 DAY` (ISO-week-end / Sunday). The Daily SQL template (`CAST({ds_col} AS DATE)` with no aggregation) is FORBIDDEN for monthly or weekly data. Skill 1 Step 6b and Skill 4's Preconditions verification will assert these invariants; never bypass either check.

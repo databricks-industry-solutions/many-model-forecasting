@@ -1,8 +1,6 @@
-[Skills CI](https://github.com/databricks-industry-solutions/many-model-forecasting/actions/workflows/skills-ci.yml)
+# Many-Model Forecasting (MMF) Agent
 
-# Many-Model Forecasting (MMF) Dev Kit
-
-A focused development kit for the **Many-Model Forecasting** skill, enabling AI coding assistants to build time series forecasting pipelines on Databricks.
+A focused skill set for the **Many-Model Forecasting**, enabling AI coding assistants to build time series forecasting pipelines on Databricks.
 
 ## What's Included
 
@@ -77,20 +75,93 @@ The user's choice is stored in `{use_case}_pipeline_config` and read by Skills 3
 
 The workflow is **interactive** — the agent pauses at STOP gates to ask the user for decisions (catalog/schema, imputation strategy, anomaly handling, non-forecastable strategy, model selection, cluster configuration, backtesting setup). Skills can be run end-to-end or individually. Skill 2 (profiling) is optional — Skills 3 and 4 fall back to manual configuration if the profile table doesn't exist.
 
-## Prerequisites
+## Prerequisites & Installation
 
-This skill depends on the **Databricks MCP tools** (e.g., `connect_to_workspace`, `execute_parameterized_sql`) provided by `[ai-dev-kit](https://github.com/databricks-solutions/ai-dev-kit)`. Make sure the Databricks MCP server from `ai-dev-kit` is configured in your AI coding tool before using the skill.
+The skill ships as a set of Markdown files plus notebook templates that are loaded into the AI coding assistant's context at runtime. How you install them depends on which assistant you use.
 
-## Installing the Skill into Your Project
+In **all** cases, the skill calls Databricks MCP tools (e.g., `connect_to_workspace`, `execute_parameterized_sql`) provided by [ai-dev-kit](https://github.com/databricks-solutions/ai-dev-kit). Make sure the Databricks MCP server from `ai-dev-kit` is configured (or available) in your assistant before running any skill command.
 
-Download `install.py` and run it — no need to clone the entire repo:
+Pick the section that matches your assistant:
+
+- [Databricks Genie Code (Databricks Assistant)](#option-a--databricks-genie-code-databricks-assistant) — runs inside the Databricks workspace
+- [Claude Code, Cursor, GitHub Copilot, Gemini CLI](#option-b--claude-code-cursor-github-copilot-gemini-cli) — local IDE / CLI assistants
+
+### Option A — Databricks Genie Code
+
+Genie Code loads context from your Databricks **Workspace** files. Install the skill once into your home folder and the assistant will pick it up on every session.
+
+The expected layout, where `{user}` is your Databricks user folder name (typically your email address):
+
+```
+/Workspace/Users/{user}/
+├── .assistant_instructions.md             # global agent instructions
+└── .assistant/
+    └── skills/
+        ├── SKILL.md
+        ├── 1-prep-and-clean-data.md
+        ├── 2-profile-and-classify-series.md
+        ├── 3-provision-forecasting-resources.md
+        ├── 4-execute-mmf-forecast.md
+        ├── 5-post-process-and-evaluate.md
+        ├── mmf_local_notebook_template.ipynb
+        ├── mmf_gpu_run_notebook_template.ipynb
+        ├── mmf_gpu_orchestrator_notebook_template.ipynb
+        ├── mmf_profiling_notebook_template.ipynb
+        ├── mmf_prep_notebook_template.ipynb
+        └── mmf_post_process_notebook_template.ipynb
+```
+
+There are two files / folders to upload:
+
+1. **The skill bundle** — the **contents** of `[skills/databricks-skills/many-model-forecasting/](databricks-skills/many-model-forecasting/)` go directly into `/Workspace/Users/{user}/.assistant/skills/`.
+2. **The agent instructions** — the contents of `[skills/assistant_instructions.md](assistant_instructions.md)` should be copied to `/Workspace/Users/{user}/.assistant_instructions.md` (note the leading dot and the `.md` extension; this file lives **at the root** of your user folder, not inside `.assistant/`).
+
+Before uploading, edit the `### User Context` section near the bottom of `assistant_instructions.md` to set your workspace URL and email.
+
+#### Upload via the Databricks CLI (recommended)
+
+From a clone of this repo:
+
+```bash
+# Set your Databricks user folder name (usually your email)
+USER_FOLDER="your-email@your-domain.com"
+
+# 1) Upload the skill bundle directly into .assistant/skills/
+#    (contents of many-model-forecasting/ land at the root of skills/)
+databricks workspace import-dir \
+  skills/databricks-skills/many-model-forecasting \
+  /Users/${USER_FOLDER}/.assistant/skills \
+  --overwrite
+
+# 2) Upload the agent instructions to the user folder root
+databricks workspace import \
+  skills/assistant_instructions.md \
+  /Users/${USER_FOLDER}/.assistant_instructions.md \
+  --format AUTO --language MARKDOWN --overwrite
+```
+
+#### Upload via the Workspace UI
+
+1. In the Databricks workspace, navigate to your user folder (`/Users/{user}/`).
+2. Import every file from `skills/databricks-skills/many-model-forecasting/` directly into `.assistant/skills/`.
+3. Import `skills/assistant_instructions.md` into your user folder root and rename it to `.assistant_instructions.md` simply copy and paste the content over to the exisiting `.assistant_instructions.md`.
+
+#### Verify
+
+Open Databricks Genie Code and ask: `What skills do you have access to?` — it should mention the Many-Model Forecasting skill and the five sub-skills. If not, double-check that the files are at the exact paths above (Genie Code is path-sensitive) and that the leading dots on `.assistant/` and `.assistant_instructions.md` were preserved.
+
+Re-uploading is safe — it overwrites the existing files and picks up any updates to the skill.
+
+### Option B — Claude Code, Cursor, GitHub Copilot, Gemini CLI
+
+These assistants read the skill files from your local project directory. Use the bundled `install.py` script — no need to clone the repo.
 
 ```bash
 curl -O https://raw.githubusercontent.com/databricks-industry-solutions/many-model-forecasting/main/skills/install.py
 python3 install.py --target /path/to/your-project
 ```
 
-The installer downloads the skill files from GitHub automatically and configures your AI coding tools (Claude Code, Cursor, Gemini CLI).
+The installer downloads the skill files from GitHub automatically and configures your AI coding tools (Claude Code, Cursor, Gemini CLI, Copilot).
 
 ```bash
 # Preview what will be created
