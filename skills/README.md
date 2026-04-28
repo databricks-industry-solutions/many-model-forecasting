@@ -79,8 +79,6 @@ The workflow is **interactive** — the agent pauses at STOP gates to ask the us
 
 The skill ships as a set of Markdown files plus notebook templates that are loaded into the AI coding assistant's context at runtime. How you install them depends on which assistant you use.
 
-In **all** cases, the skill calls Databricks MCP tools (e.g., `connect_to_workspace`, `execute_parameterized_sql`) provided by [ai-dev-kit](https://github.com/databricks-solutions/ai-dev-kit). Make sure the Databricks MCP server from `ai-dev-kit` is configured (or available) in your assistant before running any skill command.
-
 Pick the section that matches your assistant:
 
 - [Databricks Genie Code (Databricks Assistant)](#option-a--databricks-genie-code-databricks-assistant) — runs inside the Databricks workspace
@@ -153,6 +151,8 @@ Open Databricks Genie Code and ask: `What skills do you have access to?` — it 
 Re-uploading is safe — it overwrites the existing files and picks up any updates to the skill.
 
 ### Option B — Claude Code, Cursor, GitHub Copilot, Gemini CLI
+
+In this case, the skill calls Databricks MCP tools (e.g., `connect_to_workspace`, `execute_parameterized_sql`) provided by [ai-dev-kit](https://github.com/databricks-solutions/ai-dev-kit). Make sure the Databricks MCP server from `ai-dev-kit` is configured (or available) in your assistant before running any skill command.
 
 These assistants read the skill files from your local project directory. Use the bundled `install.py` script — no need to clone the repo.
 
