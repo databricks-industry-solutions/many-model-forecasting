@@ -197,21 +197,68 @@ your-project/
 
 Re-running the installer is safe — it updates existing configurations without duplication.
 
-## Running Tests
+## Quickstart
 
-From the `.test/` directory:
+Want to try the MMF agent end-to-end without bringing your own data? You can generate a synthetic time series dataset directly in your Databricks workspace and then point the agent at it.
 
-```bash
-# Unit tests
-uv run --extra dev python -m pytest tests/test_scorers.py -v
+1. Upload [`skills/synthetic_data_generation.ipynb`](synthetic_data_generation.ipynb) to your Databricks workspace.
+2. Open the notebook, attach it to **serverless compute**, and run all cells. It will write a synthetic training table into the catalog/schema you specify in the notebook widgets.
+3. Start a session with the MMF agent (Genie Code, Claude Code, Cursor, etc.) and run `/prep-and-clean-data`, pointing it at the table you just created. From there, continue through the rest of the 5-skill pipeline (`/profile-and-classify-series` → `/provision-forecasting-resources` → `/execute-mmf-forecast` → `/post-process-and-evaluate`).
 
-# Tier 1 agent tests
-uv run --extra tier1 python -m pytest tests/tier1/ -v
-
-# Skill evaluation
-uv run --extra dev python scripts/run_eval.py many-model-forecasting
-```
+This is the fastest way to see the full forecasting workflow run against a real Databricks workspace.
 
 ## Demo
 
-The following demo shows the MMF slash commands in action against a real Databricks workspace. These commands are implemented as Claude Code slash commands backed by Databricks MCP tools: `/prep-and-clean-data` discovers and cleans the time series data, `/provision-forecasting-resources` configures the right cluster type based on the models you want to run, and `/execute-mmf-forecast` launches the full forecasting pipeline — all from the terminal, driven by an AI coding assistant.
+The following recordings show the MMF Agent in action against a real Databricks workspace, driven from **Genie Code**. Start with the highlight reel for a feel of the end-to-end flow, then dive into the per-skill recordings for a closer look at each step.
+
+### Highlight reel — end-to-end workflow
+
+A short, sped-up walkthrough of the full 5-skill pipeline, from raw table to evaluated forecasts.
+
+<!-- TODO: Drag the highlight .mov into a GitHub issue/PR comment and paste the resulting user-attachments URL on its own line below. -->
+
+<!-- HIGHLIGHT_VIDEO_URL -->
+
+### Step-by-step recordings
+
+Each section below shows a detailed recording of a single skill, with commentary on what the agent is doing and the decisions the user is asked to make.
+
+#### 1. `/prep-and-clean-data`
+
+Discovers the source table, maps columns, and walks the user through imputation and anomaly handling. Produces `{use_case}_train_data`.
+
+<!-- TODO: Paste the user-attachments URL for the prep-and-clean-data recording on its own line below. -->
+
+<!-- PREP_AND_CLEAN_VIDEO_URL -->
+
+#### 2. `/profile-and-classify-series` *(optional)*
+
+Computes statistical properties (ADF, STL, spectral entropy, SNR), classifies series by forecastability, recommends models, and asks how to handle non-forecastable series. Produces `{use_case}_series_profile` and `{use_case}_pipeline_config`.
+
+<!-- TODO: Paste the user-attachments URL for the profile-and-classify-series recording on its own line below. -->
+
+<!-- PROFILE_AND_CLASSIFY_VIDEO_URL -->
+
+#### 3. `/provision-forecasting-resources`
+
+Asks which models to run, then sizes and provisions the appropriate CPU (16 or 32 vCPU) or GPU cluster — including a separate cluster for non-forecastable series if requested.
+
+<!-- TODO: Paste the user-attachments URL for the provision-forecasting-resources recording on its own line below. -->
+
+<!-- PROVISION_RESOURCES_VIDEO_URL -->
+
+#### 4. `/execute-mmf-forecast`
+
+Generates the orchestrator and per-model run notebooks, then submits one Databricks job per model class (plus any non-forecastable jobs) and runs them in parallel. Produces `{use_case}_evaluation` and `{use_case}_scoring`.
+
+<!-- TODO: Paste the user-attachments URL for the execute-mmf-forecast recording on its own line below. -->
+
+<!-- EXECUTE_FORECAST_VIDEO_URL -->
+
+#### 5. `/post-process-and-evaluate`
+
+Selects the best model per series, merges main-pipeline and non-forecastable results, and produces a business-ready summary with `forecast_source` provenance. Produces `{use_case}_best_models` and `{use_case}_evaluation_summary`.
+
+<!-- TODO: Paste the user-attachments URL for the post-process-and-evaluate recording on its own line below. -->
+
+<!-- POST_PROCESS_VIDEO_URL -->
