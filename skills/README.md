@@ -215,9 +215,7 @@ The following recordings show the MMF Agent in action against a real Databricks 
 
 A short, sped-up walkthrough of the full 5-skill pipeline, from raw table to evaluated forecasts.
 
-<!-- TODO: Drag the highlight .mov into a GitHub issue/PR comment and paste the resulting user-attachments URL on its own line below. -->
-
-<!-- HIGHLIGHT_VIDEO_URL -->
+https://github.com/user-attachments/assets/3cda5e11-6dbb-41f7-aca0-6ed11c123fc5
 
 ### Step-by-step recordings
 
@@ -227,38 +225,28 @@ Each section below shows a detailed recording of a single skill, with commentary
 
 Discovers the source table, maps columns, and walks the user through imputation and anomaly handling. Produces `{use_case}_train_data`.
 
-<!-- TODO: Paste the user-attachments URL for the prep-and-clean-data recording on its own line below. -->
-
-<!-- PREP_AND_CLEAN_VIDEO_URL -->
+https://github.com/user-attachments/assets/7d31cc20-c91f-489e-a820-1f8ae254dd80
 
 #### 2. `/profile-and-classify-series` *(optional)*
 
 Computes statistical properties (ADF, STL, spectral entropy, SNR), classifies series by forecastability, recommends models, and asks how to handle non-forecastable series. Produces `{use_case}_series_profile` and `{use_case}_pipeline_config`.
 
-<!-- TODO: Paste the user-attachments URL for the profile-and-classify-series recording on its own line below. -->
-
-<!-- PROFILE_AND_CLASSIFY_VIDEO_URL -->
+https://github.com/user-attachments/assets/9a9d9e09-68fa-4fda-a2b8-545752ae9a83
 
 #### 3. `/provision-forecasting-resources`
 
 Asks which models to run, then sizes and provisions the appropriate CPU (16 or 32 vCPU) or GPU cluster — including a separate cluster for non-forecastable series if requested.
 
-<!-- TODO: Paste the user-attachments URL for the provision-forecasting-resources recording on its own line below. -->
-
-<!-- PROVISION_RESOURCES_VIDEO_URL -->
+https://github.com/user-attachments/assets/9586f2a5-abfb-4f00-b255-dd177a2b87eb
 
 #### 4. `/execute-mmf-forecast`
 
 Generates the orchestrator and per-model run notebooks, then submits one Databricks job per model class (plus any non-forecastable jobs) and runs them in parallel. Produces `{use_case}_evaluation` and `{use_case}_scoring`.
 
-<!-- TODO: Paste the user-attachments URL for the execute-mmf-forecast recording on its own line below. -->
-
-<!-- EXECUTE_FORECAST_VIDEO_URL -->
+https://github.com/user-attachments/assets/d7dd8ee6-8f2e-402b-9548-c386a663df0e
 
 #### 5. `/post-process-and-evaluate`
 
 Selects the best model per series, merges main-pipeline and non-forecastable results, and produces a business-ready summary with `forecast_source` provenance. Produces `{use_case}_best_models` and `{use_case}_evaluation_summary`.
 
-<!-- TODO: Paste the user-attachments URL for the post-process-and-evaluate recording on its own line below. -->
-
-<!-- POST_PROCESS_VIDEO_URL -->
+https://github.com/user-attachments/assets/e03a61d5-4c88-4521-b151-fc55e0e7495a
