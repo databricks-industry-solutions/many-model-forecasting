@@ -70,6 +70,7 @@ class Forecaster:
         self.data_conf = data_conf
         self.model_registry = ModelRegistry(self.conf)
         self.spark = spark
+        self.serverless = bool(self.conf.get("serverless", False))
         if experiment_id:
             self.experiment_id = experiment_id
         elif self.conf.get("experiment_path"):
@@ -402,6 +403,7 @@ class Forecaster:
         val_df: pd.DataFrame,
         model_uri: str,
         write: bool = True,
+        serverless_predict: bool = False,
     ):
         """
         Performs detailed backtesting of a global model using the provided model, training DataFrame,
@@ -413,13 +415,17 @@ class Forecaster:
             val_df (pd.DataFrame): A pandas DataFrame.
             model_uri (str): A string specifying the model URI.
             write (bool, optional): A boolean specifying whether to write the results to a table. Default is True.
+            serverless_predict (bool, optional): When True, dispatch model.backtest with spark=None so the
+                model's driver-only predict path is used. There is no multi-GPU data parallelism across Spark workers. 
+                Required on serverless GPU compute, where Pandas UDF workers are CPU-only. Default is False.
         Returns: metric_value (float): A float specifying the mean metric value.
         """
+        model_spark = None if serverless_predict else self.spark
         res_pdf = (
             model.backtest(
                 pd.concat([train_df, val_df]),
                 start=train_df[self.conf["date_col"]].max(),
-                spark=self.spark,
+                spark=model_spark,
                 # backtest_retrain=self.conf["backtest_retrain"],
             ))
         group_id_dtype = IntegerType() \
@@ -478,6 +484,12 @@ class Forecaster:
             self (Forecaster): A Forecaster object.
             model_conf (dict): A dictionary specifying the model configuration.
         """
+        if self.serverless and model_conf.get("framework") == "Moirai":
+            raise ModelError(
+                "Moirai does not support serverless=True because it has no driver-only "
+                "single-GPU predict path. Use Chronos or TimesFM models on serverless GPU, "
+                "or run Moirai on a classic GPU cluster."
+            )
         with mlflow.start_run(experiment_id=self.experiment_id) as run:
             model_name = model_conf["name"]
             model = self.model_registry.get_model(model_name)
@@ -496,6 +508,7 @@ class Forecaster:
                 val_df=val_df,
                 model_uri=model_uri,
                 write=True,
+                serverless_predict=self.serverless,
             )
             mlflow.log_metric(self.conf["metric"], metrics)
             mlflow.set_tag("model_name", model.params["name"])
@@ -663,12 +676,30 @@ class Forecaster:
             self (Forecaster): A Forecaster object.
             model_conf (dict): A dictionary specifying the model configuration.
         """
+        if self.serverless and model_conf.get("framework") == "Moirai":
+            raise ModelError(
+                "Moirai does not support serverless=True because it has no driver-only "
+                "single-GPU predict path. Use Chronos or TimesFM models on serverless GPU, "
+                "or run Moirai on a classic GPU cluster."
+            )
         print(f"Running scoring for {model_conf['name']}...")
         model_name = model_conf["name"]
         _, model_uri = self.get_model_for_scoring(model_conf)
         model = self.model_registry.get_model(model_name)
         score_df, removed = self.prepare_data_for_global_model("scoring")
-        prediction_df, model_pretrained = model.forecast(score_df, spark=self.spark)
+        forecast_spark = None if self.serverless else self.spark
+        prediction_df, model_pretrained = model.forecast(score_df, spark=forecast_spark)
+        # Driver-only single-GPU predict paths build ds arrays as numpy
+        # datetime64[ns]; Spark Connect (serverless) Arrow rejects nanosecond
+        # timestamps. Coerce to microsecond precision before createDataFrame.
+        date_col = self.conf["date_col"]
+        if date_col in prediction_df.columns and len(prediction_df) > 0:
+            sample = prediction_df[date_col].iloc[0]
+            if isinstance(sample, np.ndarray) and np.issubdtype(sample.dtype, np.datetime64):
+                prediction_df = prediction_df.copy()
+                prediction_df[date_col] = prediction_df[date_col].apply(
+                    lambda arr: np.asarray(arr, dtype="datetime64[us]")
+                )
         sdf = self.spark.createDataFrame(prediction_df).drop('index')
         (
             sdf.withColumn(self.conf["group_id"], col(self.conf["group_id"]).cast(StringType()))

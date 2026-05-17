@@ -11,8 +11,10 @@ MMF integrates a variety of well-established and cutting-edge algorithms, includ
 Get started now!
 
 ## What's New
+
 Use a cluster with [Databricks Runtime 17.3LTS for ML](https://docs.databricks.com/en/release-notes/runtime/17.3lts-ml.html) for local models, and [Databricks Runtime 18.0 for ML](https://docs.databricks.com/en/release-notes/runtime/18.0-ml.html) or later for global and foundation models.
 
+- May 2026: All model classes (local, global and foundation) run on serverless. Try it out [here](https://github.com/databricks-industry-solutions/many-model-forecasting/tree/main/examples/serverless).
 - Mar 2026: Introduced MMF Agent. Added skills that guide users through an end to end forecasting project (preprocess, profile, provision resources, forecast, evaluate). MMF Agent runs on Genie Code, Claude Code, Cursor and GitHub Copilot. Try it out [here](https://github.com/databricks-industry-solutions/many-model-forecasting/tree/main/skills/). ([lbruand-db](https://github.com/lbruand-db), [lourdesmartinezma](https://github.com/lourdesmartinezma), [puneet-jain159](https://github.com/puneet-jain159))
 - Feb 2026: Added an interactive app to explore the results of forecasting. Try it out [here](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/apps/).
 - Feb 2026: [Chronos-2](https://github.com/amazon-science/chronos-forecasting) models are now available for univariate and covariate forecasting. Decommissioned ChronosT5 models. Try the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/foundation_daily.ipynb). ([rohan-parikh-db](https://github.com/rohan-parikh-db))
@@ -66,7 +68,7 @@ MMF is also available as a **skill** for AI coding assistants such as [Genie Cod
 
 Local models are used to model individual time series. They could be advantageous over other types of model for their capabilities to tailor fit to individual series, offer greater interpretability, and require lower data requirements. We support models from [statsforecast](https://github.com/Nixtla/statsforecast), and [sktime](https://www.sktime.net/en/stable/). Covariates (i.e. exogenous regressors) are currently only supported for some models from statsforecast. 
 
-To get started, attach the [examples/daily/local_univariate_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/local_univariate_daily.ipynb) notebook to a cluster running [DBR 17.3LTS for ML](https://docs.databricks.com/en/release-notes/runtime/17.3lts-ml.html) or later versions. The cluster can be either a single-node or multi-node CPU cluster. Make sure to set the following [Spark configurations](https://spark.apache.org/docs/latest/configuration.html) on the cluster before you start using MMF: ```spark.sql.execution.arrow.enabled true``` and ```spark.sql.adaptive.enabled false``` (more detailed explanation can be found [here](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/local_univariate_daily.ipynb)). 
+To get started, attach the [examples/daily/local_univariate_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/local_univariate_daily.ipynb) notebook to a cluster running [DBR 17.3LTS for ML](https://docs.databricks.com/en/release-notes/runtime/17.3lts-ml.html) or later versions. The cluster can be either a single-node or multi-node CPU cluster. Make sure to set the following [Spark configurations](https://spark.apache.org/docs/latest/configuration.html) on the cluster before you start using MMF: `spark.sql.execution.arrow.enabled true` and `spark.sql.adaptive.enabled false` (more detailed explanation can be found [here](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/local_univariate_daily.ipynb)). 
 
 In this notebook, we will apply 20+ models to 100 time series. You can specify the models to use in a list:
 
@@ -94,7 +96,7 @@ active_models = [
 
 A comprehensive list of local models currently supported by MMF is available [here](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/README.md). 
 
-Now, run the forecasting using ```run_forecast``` function with the ```active_models``` list specified above:
+Now, run the forecasting using `run_forecast` function with the `active_models` list specified above:
 
 ```python
 
@@ -126,35 +128,37 @@ run_forecast(
 
 #### Parameters description:
 
-- ```train_data``` is a delta table name that stores the input dataset.
-- ```scoring_data``` is a delta table name that stores the [dynamic future regressors](https://nixtlaverse.nixtla.io/statsforecast/docs/how-to-guides/exogenous.html). If not provided or if the same name as ```train_data``` is provided, the models will ignore the future dynamical regressors. 
-- ```scoring_output``` is a delta table where you write your forecasting output. This table will be created if does not exist
-- ```evaluation_output``` is a delta table where you write the evaluation results from all backtesting trials from all time series and all models. This table will be created if does not exist.
-- ```group_id``` is a column storing the unique id that groups your dataset to each time series.
-- ```date_col``` is your time column name.
-- ```target``` is your target column name.
-- ```freq``` is your prediction frequency. "H" for hourly, "D" for daily, "W" for weekly and "M" for monthly are supported. Note that ```freq``` supported is as per the model basis, hence check the model documentation carefully. See the **Timestamp Alignment Requirements** section below for frequency-specific date formatting rules.
-- ```prediction_length``` is your forecasting horizon in the number of steps.
-- ```backtest_length``` specifies how many historical time points you use for backtesting. 
-- ```stride``` is the number of steps in which you update your backtesting trial start date when going from one trial to the next.
-- ```metric``` is the metric to log in the evaluation table and MLFlow. Supported metrics are mae, mse, rmse, mape and smape. Default is smape.
-- ```train_predict_ratio``` specifies the minimum length required for your training dataset with respect to ```prediction_length```. If ```train_predict_ratio```=2, you need to have training dataset that is at least twice as long as ```prediciton_length```.
-- ```data_quality_check``` checks the quality of the input data if set to True (default False). See [data_quality_checks.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/data_quality_checks.py) for the full details of the checks. 
-- ```resample``` backfills skipped entries with 0 if set to True. Only relevant when data_quality_check is True. Default is False. If data_quality_check is True and resample is False, the check removes all time series with skipped dates.
-- ```active_models``` is a list of models you want to use.
-- ```experiment_path``` to keep metrics under the MLFlow.
-- ```use_case_name``` a new column will be created under the delta Table, in case you save multiple trials under 1 table.
-  
+- `train_data` is a delta table name that stores the input dataset.
+- `scoring_data` is a delta table name that stores the [dynamic future regressors](https://nixtlaverse.nixtla.io/statsforecast/docs/how-to-guides/exogenous.html). If not provided or if the same name as `train_data` is provided, the models will ignore the future dynamical regressors. 
+- `scoring_output` is a delta table where you write your forecasting output. This table will be created if does not exist
+- `evaluation_output` is a delta table where you write the evaluation results from all backtesting trials from all time series and all models. This table will be created if does not exist.
+- `group_id` is a column storing the unique id that groups your dataset to each time series.
+- `date_col` is your time column name.
+- `target` is your target column name.
+- `freq` is your prediction frequency. "H" for hourly, "D" for daily, "W" for weekly and "M" for monthly are supported. Note that `freq` supported is as per the model basis, hence check the model documentation carefully. See the **Timestamp Alignment Requirements** section below for frequency-specific date formatting rules.
+- `prediction_length` is your forecasting horizon in the number of steps.
+- `backtest_length` specifies how many historical time points you use for backtesting. 
+- `stride` is the number of steps in which you update your backtesting trial start date when going from one trial to the next.
+- `metric` is the metric to log in the evaluation table and MLFlow. Supported metrics are mae, mse, rmse, mape and smape. Default is smape.
+- `train_predict_ratio` specifies the minimum length required for your training dataset with respect to `prediction_length`. If `train_predict_ratio`=2, you need to have training dataset that is at least twice as long as `prediciton_length`.
+- `data_quality_check` checks the quality of the input data if set to True (default False). See [data_quality_checks.py](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/data_quality_checks.py) for the full details of the checks. 
+- `resample` backfills skipped entries with 0 if set to True. Only relevant when data_quality_check is True. Default is False. If data_quality_check is True and resample is False, the check removes all time series with skipped dates.
+- `active_models` is a list of models you want to use.
+- `experiment_path` to keep metrics under the MLFlow.
+- `use_case_name` a new column will be created under the delta Table, in case you save multiple trials under 1 table.
+
 #### Timestamp Alignment Requirements
 
 The `ds` (timestamp) column in `train_data` and `scoring_data` **must** be aligned to specific boundary dates depending on the frequency. Misaligned timestamps will produce incorrect backtesting windows and forecasts.
 
-| Frequency | Timestamp requirement | Example |
-|---|---|---|
-| `H` (hourly) | Any valid timestamp | `2024-01-15 08:00:00` |
-| `D` (daily) | Any valid date | `2024-01-15` |
-| `W` (weekly) | **Sunday** (end of ISO week) | `2024-01-14` (a Sunday) |
-| `M` (monthly) | **Last day of the month** | `2024-01-31`, `2024-02-29` |
+
+| Frequency     | Timestamp requirement        | Example                    |
+| ------------- | ---------------------------- | -------------------------- |
+| `H` (hourly)  | Any valid timestamp          | `2024-01-15 08:00:00`      |
+| `D` (daily)   | Any valid date               | `2024-01-15`               |
+| `W` (weekly)  | **Sunday** (end of ISO week) | `2024-01-14` (a Sunday)    |
+| `M` (monthly) | **Last day of the month**    | `2024-01-31`, `2024-02-29` |
+
 
 This is required because the backtesting engine uses `pd.offsets.MonthEnd` for monthly offsets and `pd.DateOffset(weeks=...)` for weekly offsets. If your source data uses different conventions (e.g. first-of-month or Monday-anchored weeks), align the dates during data preparation:
 
@@ -168,7 +172,7 @@ CAST(LAST_DAY(date_col) AS TIMESTAMP) AS ds
 
 To modify the model hyperparameters, change the values in [mmf_sa/models/models_conf.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/models_conf.yaml) or overwrite these values, for example, in [mmf_sa/forecasting_conf_daily.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/forecasting_conf_daily.yaml) if your frequency is `D`. 
 
-MMF is fully integrated with MLflow, so once the training kicks off, the experiments will be visible in the MLflow Tracking UI with the corresponding metrics and parameters (note that we do not log all local models in MLFlow, but we store the binaries in the tables ```evaluation_output``` and ```scoring_output```). The metric you see in the MLflow Tracking UI is a simple mean over backtesting trials over all time series. Refer to the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/post-evaluation-analysis.ipynb) for guidance on performing fine-grained model selection after running `run_forecast`.
+MMF is fully integrated with MLflow, so once the training kicks off, the experiments will be visible in the MLflow Tracking UI with the corresponding metrics and parameters (note that we do not log all local models in MLFlow, but we store the binaries in the tables `evaluation_output` and `scoring_output`). The metric you see in the MLflow Tracking UI is a simple mean over backtesting trials over all time series. Refer to the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/post-evaluation-analysis.ipynb) for guidance on performing fine-grained model selection after running `run_forecast`.
 
 We encourage you to read through [examples/daily/local_univariate_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/local_univariate_daily.ipynb) notebook to better understand how local models can be applied to your time series using MMF. An example notebook for forecasting with exogenous regressors can be found in [examples/external_regressors/local_univariate_external_regressors_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/external_regressors/local_univariate_external_regressors_daily.ipynb). See how to define the backtesting parameters [here](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/README.md#how-backtesting-works).
 
@@ -197,7 +201,7 @@ active_models = [
 
 The models prefixed with "Auto" perform hyperparameter optimization within a specified range (see below for more detail). A comprehensive list of models currently supported by MMF is available [here](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/README.md).
 
-Now, with the following command, we run the [examples/run_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/run_daily.ipynb) notebook that will in turn call ```run_forecast``` function and loop through the ```active_models``` list. 
+Now, with the following command, we run the [examples/run_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/run_daily.ipynb) notebook that will in turn call `run_forecast` function and loop through the `active_models` list. 
 
 ```python
 # Number of nodes for distributed training. Use 1 for single-node multi-GPU,
@@ -211,7 +215,7 @@ for model in active_models:
     arguments={"catalog": catalog, "db": db, "model": model, "run_id": run_id, "num_nodes": str(num_nodes)})
 ```
 
-Inside the [examples/run_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/run_daily.ipynb), we have the ```run_forecast``` function specified as:
+Inside the [examples/run_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/run_daily.ipynb), we have the `run_forecast` function specified as:
 
 ```python
 run_forecast(
@@ -244,11 +248,12 @@ run_forecast(
 #### Parameters description:
 
 The parameters are all the same except:
--  ```model_output``` is where you store your model.
--  ```use_case_name``` will be used to suffix the model name when registered to Unity Catalog.
--  ```accelerator``` tells MMF to use GPU instead of CPU.
--  ```num_nodes``` specifies the number of nodes for distributed training (default: `1`). Use `1` for single-node multi-GPU clusters. For multi-node clusters, set this to the number of **worker** nodes. When `num_nodes > 1`, training data is shared across nodes via the DBFS FUSE mount. Autoscaling must be disabled on multi-node GPU clusters to prevent workers from being removed mid-training.
-  
+
+- `model_output` is where you store your model.
+- `use_case_name` will be used to suffix the model name when registered to Unity Catalog.
+- `accelerator` tells MMF to use GPU instead of CPU.
+- `num_nodes` specifies the number of nodes for distributed training (default: `1`). Use `1` for single-node multi-GPU clusters. For multi-node clusters, set this to the number of **worker** nodes. When `num_nodes > 1`, training data is shared across nodes via the DBFS FUSE mount. Autoscaling must be disabled on multi-node GPU clusters to prevent workers from being removed mid-training.
+
 To modify the model hyperparameters or reset the range of the hyperparameter search, change the values in [mmf_sa/models/models_conf.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/models_conf.yaml) or overwrite these values, for example, in [mmf_sa/forecasting_conf_daily.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/forecasting_conf_daily.yaml) if your frequency is `D`. Different loss functions (e.g. `smape`, `mae`, `mse`, `rmse`, `mape`, `mase`) are supported for training and evaluating global models and can be configured via the `loss` field in [mmf_sa/models/models_conf.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/models_conf.yaml).
 
 MMF is fully integrated with MLflow and so once the training kicks off, the experiments will be visible in the MLflow Tracking UI with the corresponding metrics and parameters. Once the training is complete the models will be logged to MLFlow and registered to Unity Catalog. 
@@ -260,6 +265,8 @@ We encourage you to read through [examples/daily/global_daily.ipynb](https://git
 Foundation time series models are mostly transformer based models pretrained on millions or billions of time points. These models can perform analysis (i.e. forecasting, anomaly detection, classification) on a previously unseen time series without training or tuning. We support open source models from multiple sources: [chronos](https://github.com/amazon-science/chronos-forecasting) (Chronos-Bolt and Chronos-2) and [timesfm](https://github.com/google-research/timesfm). This is a rapidly changing field, and we are working on updating the supported models and new features as the field evolves.
 
 To get started, attach the [examples/daily/foundation_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/foundation_daily.ipynb) notebook to a cluster running [DBR 18.0 for ML](https://docs.databricks.com/en/release-notes/runtime/18.0-ml.html) or later. We recommend using a single-node cluster with multiple GPU instances such as [g5.12xlarge [A10G]](https://aws.amazon.com/ec2/instance-types/g5/) on AWS or [Standard_NV36ads_A10_v5](https://learn.microsoft.com/en-us/azure/virtual-machines/nva10v5-series) on Azure. Multi-node setup is currently not supported. 
+
+Alternatively, you can run foundation models on [serverless GPU](https://docs.databricks.com/aws/en/compute/serverless/gpu) compute by passing `serverless=True` to `run_forecast`. This routes Chronos and TimesFM inference through a driver-only predict path instead of Spark Pandas UDFs. Required on serverless GPU because Spark Connect Python workers are CPU-only; the trade-off vs the classic-cluster path is no multi-GPU data parallelism. See [examples/serverless/foundation_serverless.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/serverless/foundation_serverless.ipynb) for a runnable example.
 
 You can choose the models you want to evaluate and forecast by specifying them in a list:
 
@@ -278,7 +285,7 @@ active_models = [
 
 A comprehensive list of models currently supported by MMF is available [here](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/README.md). 
 
-Now, with the following command, we run [examples/run_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/run_daily.ipynb) notebook that will in turn run ```run_forecast``` function. We loop through the ```active_models``` list for the same reason mentioned above (see the global model section).
+Now, with the following command, we run [examples/run_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/run_daily.ipynb) notebook that will in turn run `run_forecast` function. We loop through the `active_models` list for the same reason mentioned above (see the global model section).
 
 ```python
 for model in active_models:
@@ -288,8 +295,8 @@ for model in active_models:
     arguments={"catalog": catalog, "db": db, "model": model, "run_id": run_id})
 ```
 
-Inside the [examples/run_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/run_daily.ipynb), we have the same ```run_forecast``` function as above. 
-  
+Inside the [examples/run_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/run_daily.ipynb), we have the same `run_forecast` function as above. 
+
 To modify the model hyperparameters, change the values in [mmf_sa/models/models_conf.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/models_conf.yaml) or overwrite these values, for example, in [mmf_sa/forecasting_conf_daily.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/forecasting_conf_daily.yaml) if your frequency is `D`. 
 
 MMF is fully integrated with MLflow and so once the training kicks off, the experiments will be visible in the MLflow Tracking UI with the corresponding metrics and parameters. During the evaluation, the models are logged and registered to Unity Catalog.
@@ -302,24 +309,28 @@ If you want to try out time series foundation models on Databricks without MMF, 
 
 ## [Vector Lab](https://www.youtube.com/@VectorLab) - Many Model Forecasting
 
-[![IMAGE ALT TEXT HERE](https://img.youtube.com/vi/wYeuPxtap-8/0.jpg)](https://www.youtube.com/watch?v=wYeuPxtap-8)
+[IMAGE ALT TEXT HERE](https://www.youtube.com/watch?v=wYeuPxtap-8)
 
 ## Authors
 
-<ryuta.yoshimatsu@databricks.com>, <puneet.jain@databricks.com>, <lucas.bruand@databricks.com>, <lourdes.martinez@databricks.com>
+[ryuta.yoshimatsu@databricks.com](mailto:ryuta.yoshimatsu@databricks.com), [puneet.jain@databricks.com](mailto:puneet.jain@databricks.com), [lucas.bruand@databricks.com](mailto:lucas.bruand@databricks.com), [lourdes.martinez@databricks.com](mailto:lourdes.martinez@databricks.com)
 
 ## Project support
+
 Please note the code in this project is provided for your exploration only, and are not formally supported by Databricks with Service Level Agreements (SLAs). They are provided AS-IS and we do not make any guarantees of any kind. Please do not submit a support ticket relating to any issues arising from the use of these projects. The source in this project is provided subject to the Databricks License. All included or referenced third party libraries are subject to the licenses set forth below.
 
 Any issues discovered through the use of this project should be filed as GitHub Issues on the Repo. They will be reviewed as time permits, but there are no formal SLAs for support.
 
-| library                                | description             | license    | source                                              |
-|----------------------------------------|-------------------------|------------|-----------------------------------------------------|
-| omegaconf | A flexible configuration library | BSD | https://pypi.org/project/omegaconf/
-| datasetsforecast | Datasets for Time series forecasting | MIT | https://pypi.org/project/datasetsforecast/
-| statsforecast | Time series forecasting suite using statistical models | Apache 2.0 | https://pypi.org/project/statsforecast/
-| neuralforecast | Time series forecasting suite using deep learning models | Apache 2.0 | https://pypi.org/project/neuralforecast/
-| sktime | A unified framework for machine learning with time series | BSD 3-Clause | https://pypi.org/project/sktime/
-| Chronos | Pretrained (Language) Models for Probabilistic Time Series Forecasting | Apache 2.0 | https://github.com/amazon-science/chronos-forecasting
-| Moirai | Unified Training of Universal Time Series Forecasting Transformers | Apache 2.0 | https://github.com/SalesforceAIResearch/uni2ts
-| TimesFM | A pretrained time-series foundation model developed by Google Research for time-series forecasting | Apache 2.0 | https://github.com/google-research/timesfm
+
+| library          | description                                                                                        | license      | source                                                                                                         |
+| ---------------- | -------------------------------------------------------------------------------------------------- | ------------ | -------------------------------------------------------------------------------------------------------------- |
+| omegaconf        | A flexible configuration library                                                                   | BSD          | [https://pypi.org/project/omegaconf/](https://pypi.org/project/omegaconf/)                                     |
+| datasetsforecast | Datasets for Time series forecasting                                                               | MIT          | [https://pypi.org/project/datasetsforecast/](https://pypi.org/project/datasetsforecast/)                       |
+| statsforecast    | Time series forecasting suite using statistical models                                             | Apache 2.0   | [https://pypi.org/project/statsforecast/](https://pypi.org/project/statsforecast/)                             |
+| neuralforecast   | Time series forecasting suite using deep learning models                                           | Apache 2.0   | [https://pypi.org/project/neuralforecast/](https://pypi.org/project/neuralforecast/)                           |
+| sktime           | A unified framework for machine learning with time series                                          | BSD 3-Clause | [https://pypi.org/project/sktime/](https://pypi.org/project/sktime/)                                           |
+| Chronos          | Pretrained (Language) Models for Probabilistic Time Series Forecasting                             | Apache 2.0   | [https://github.com/amazon-science/chronos-forecasting](https://github.com/amazon-science/chronos-forecasting) |
+| Moirai           | Unified Training of Universal Time Series Forecasting Transformers                                 | Apache 2.0   | [https://github.com/SalesforceAIResearch/uni2ts](https://github.com/SalesforceAIResearch/uni2ts)               |
+| TimesFM          | A pretrained time-series foundation model developed by Google Research for time-series forecasting | Apache 2.0   | [https://github.com/google-research/timesfm](https://github.com/google-research/timesfm)                       |
+
+

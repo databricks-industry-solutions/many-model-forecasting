@@ -49,6 +49,7 @@ def run_forecast(
     active_models: List[str] = None,
     accelerator: str = "cpu",
     num_nodes: int = 1,
+    serverless: bool = False,
     backtest_retrain: bool = None,
     train_predict_ratio: int = None,
     data_quality_check: bool = False,
@@ -87,6 +88,7 @@ def run_forecast(
         active_models (List[str]): A list of strings specifying the active models.
         accelerator (str): A string specifying the accelerator to use: cpu or gpu. Default is cpu.
         num_nodes (int): Number of nodes for distributed training. Use 1 (default) for single-node multi-GPU, or >1 for multi-node multi-GPU clusters.
+        serverless (bool): A boolean specifying whether the run is on serverless GPU compute. When True, foundation-model predict (Chronos, TimesFM) runs on the driver instead of being distributed via Spark Pandas UDFs. This is required on serverless GPU because Spark Connect Python workers are CPU-only. No-op for global and local models, which already run driver-side. Default is False.
         backtest_retrain (bool): A boolean specifying whether to retrain the model during backtesting. Currently, not supported.
         train_predict_ratio (int): An integer specifying the train predict ratio.
         data_quality_check (bool): A boolean specifying whether to check the data quality. Default is False.
@@ -166,6 +168,8 @@ def run_forecast(
         _conf["accelerator"] = accelerator
     if num_nodes is not None:
         _conf["num_nodes"] = num_nodes
+    if serverless is not None:
+        _conf["serverless"] = serverless
     if backtest_retrain is not None:
         _conf["backtest_retrain"] = backtest_retrain
     if train_predict_ratio is not None:

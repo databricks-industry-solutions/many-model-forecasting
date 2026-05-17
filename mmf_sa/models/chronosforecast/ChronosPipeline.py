@@ -87,18 +87,23 @@ class ChronosForecaster(ForecastingRegressor):
                 val_df: pd.DataFrame = None,
                 curr_date=None,
                 spark=None):
-        hist_df = self.prepare_data(hist_df, spark=spark)
+        if spark is not None:
+            return self._predict_distributed(hist_df, spark)
+        return self._predict_single(hist_df)
+
+    def _predict_distributed(self, hist_df: pd.DataFrame, spark):
+        hist_sdf = self.prepare_data(hist_df, spark=spark)
         horizon_timestamps_udf = self.create_horizon_timestamps_udf()
         device_count = torch.cuda.device_count()
         if device_count == 0:
             device_count = 1
         forecast_udf = self.create_predict_udf(device_count)
         forecast_df = (
-            hist_df.repartition(device_count, self.params.group_id)
+            hist_sdf.repartition(device_count, self.params.group_id)
             .select(
-                hist_df.unique_id,
-                horizon_timestamps_udf(hist_df.ds).alias("ds"),
-                forecast_udf(hist_df.y).alias("y"))
+                hist_sdf.unique_id,
+                horizon_timestamps_udf(hist_sdf.ds).alias("ds"),
+                forecast_udf(hist_sdf.y).alias("y"))
         ).toPandas()
         forecast_df = forecast_df.reset_index(drop=False).rename(
             columns={
@@ -109,6 +114,71 @@ class ChronosForecaster(ForecastingRegressor):
         )
         # Todo
         # forecast_df[self.params.target] = forecast_df[self.params.target].clip(0.01)
+        return forecast_df, self.model
+
+    def _predict_single(self, hist_df: pd.DataFrame):
+        """Driver-only single-GPU prediction path for serverless GPU compute.
+
+        Builds inputs on the driver and runs ChronosPipeline.predict sequentially over
+        groups. Used when a Spark session is not available for Pandas UDF dispatch
+        (e.g. on Databricks serverless GPU compute, where workers are CPU-only).
+        """
+        from chronos import BaseChronosPipeline
+
+        pipeline = BaseChronosPipeline.from_pretrained(
+            self.repo,
+            device_map="cuda" if torch.cuda.is_available() else "cpu",
+            dtype=torch.bfloat16,
+        )
+
+        group_col = self.params.group_id
+        date_col = self.params.date_col
+        target_col = self.params.target
+        prediction_length = self.params["prediction_length"]
+        batch_size = self.params["batch_size"]
+
+        sorted_pdf = hist_df.sort_values(by=[group_col, date_col])
+        groups = list(sorted_pdf.groupby(group_col, sort=False))
+
+        unique_ids = []
+        contexts = []
+        last_dates = []
+        for uid, group in groups:
+            unique_ids.append(uid)
+            contexts.append(torch.tensor(group[target_col].to_numpy(), dtype=torch.float32))
+            last_dates.append(group[date_col].max())
+
+        forecasts_median = []
+        for i in range(0, len(contexts), batch_size):
+            batch = contexts[i:i + batch_size]
+            forecasts = pipeline.predict(
+                inputs=batch,
+                prediction_length=prediction_length,
+            )
+            forecasts_median.extend(
+                [np.median(forecast, axis=0).astype(np.float64) for forecast in forecasts]
+            )
+
+        horizon_timestamps = []
+        for last in last_dates:
+            ts = []
+            current = pd.Timestamp(last)
+            for _ in range(prediction_length):
+                current = current + self.one_ts_offset
+                ts.append(current.to_numpy())
+            horizon_timestamps.append(np.array(ts))
+
+        forecast_df = pd.DataFrame({
+            "unique_id": unique_ids,
+            "ds": horizon_timestamps,
+            "y": forecasts_median,
+        }).reset_index(drop=False).rename(
+            columns={
+                "unique_id": self.params.group_id,
+                "ds": self.params.date_col,
+                "y": self.params.target,
+            }
+        )
         return forecast_df, self.model
 
     def forecast(self, df: pd.DataFrame, spark=None):
