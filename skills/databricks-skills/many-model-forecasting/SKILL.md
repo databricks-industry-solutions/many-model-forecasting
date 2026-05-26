@@ -191,7 +191,7 @@ See: [2-profile-and-classify-series.md](2-profile-and-classify-series.md)
 
 ### Skill 3: Provision Forecasting Resources (`/provision-forecasting-resources`)
 
-Asks the user which models to run, determines required cluster types, asks the user which clusters to start and confirms configuration. GPU clusters always use **single-node**.
+Asks the user which models to run, determines required cluster types, asks the user which clusters to start and confirms configuration. **GPU clusters and the global ML CPU cluster always use single-node**; the local CPU cluster is multi-node (sized by series count).
 
 **STOP gates:** model selection, cluster selection.
 
@@ -199,7 +199,7 @@ See: [3-provision-forecasting-resources.md](3-provision-forecasting-resources.md
 
 ### Skill 4: Execute MMF Forecast (`/execute-mmf-forecast`)
 
-Validates parameters, asks the user about backtesting setup, generates notebooks using the **orchestrator + run_gpu** pattern (one `run_gpu` notebook invoked per model via `dbutils.notebook.run()`), creates **one job per model class** (local, global, foundation) and triggers them **in parallel**. The pipeline runs in **univariate mode by default** — all covariate lists (`static_features`, `dynamic_historical_*`, `dynamic_future_*`) default to `[]` and `scoring_table` defaults to `""`. **Avoid `dynamic_future_*`** unless the user has confirmed known future regressors and a pre-built scoring table; prefer `static_features` and `dynamic_historical_*` when covariates are needed. See the Feature type decision guide in [4-execute-mmf-forecast.md](4-execute-mmf-forecast.md).
+Validates parameters, asks the user about backtesting setup, generates notebooks using the **orchestrator + run_gpu** pattern for GPU classes and a single-shot `run_global_ml` notebook for the MLForecast CPU class, creates **one job per model class** (local, global_ml, global, foundation) and triggers them **in parallel**. The pipeline runs in **univariate mode by default** — all covariate lists (`static_features`, `dynamic_historical_*`, `dynamic_future_*`) default to `[]` and `scoring_table` defaults to `""`. **Avoid `dynamic_future_*`** unless the user has confirmed known future regressors and a pre-built scoring table; prefer `static_features` and `dynamic_historical_*` when covariates are needed. **`global_ml` (MLForecast LightGBM) is the most expressive choice when known future regressors and a scoring table are available** — its native covariate plumbing is end-to-end validated. See the Feature type decision guide in [4-execute-mmf-forecast.md](4-execute-mmf-forecast.md).
 
 **STOP gates:** backtesting setup, model confirmation.
 
@@ -215,23 +215,26 @@ See: [5-post-process-and-evaluate.md](5-post-process-and-evaluate.md)
 
 | Category | Models | Compute |
 |----------|--------|---------|
-| **Local (CPU)** | StatsForecastAutoArima, AutoETS, AutoCES, AutoTheta, AutoTbats, AutoMfles, SKTimeProphet, and baseline/intermittent models | CPU cluster |
-| **Global (GPU)** | NeuralForecastAutoNHITS, AutoPatchTST, AutoRNN, AutoLSTM, AutoNBEATSx, AutoTiDE, and non-auto variants | GPU cluster (single-node) |
+| **Local (CPU)** | StatsForecastAutoArima, AutoETS, AutoCES, AutoTheta, AutoTbats, AutoMfles, SKTimeProphet, and baseline/intermittent models | CPU cluster (multi-node Pandas UDF) |
+| **Global ML (CPU)** | MLForecastLGBM (fixed-hyperparameter LightGBM), MLForecastAutoLGBM (Optuna HPO + feature tuning) | ML cluster (single-node CPU) |
+| **Global DL (GPU)** | NeuralForecastAutoNHITS, AutoPatchTST, AutoRNN, AutoLSTM, AutoNBEATSx, AutoTiDE, and non-auto variants | GPU cluster (single-node) |
 | **Foundation (GPU)** | ChronosBoltTiny/Mini/Small/Base, Chronos2, Chronos2Small, Chronos2Synth, TimesFM_2_5_200m | GPU cluster (single-node) |
 
 ## Cluster Configurations
 
 | Cluster | Runtime | Node type (AWS) | Workers | Use case |
 |---------|---------|-----------------|---------|----------|
-| `{use_case}_cpu_cluster` | `17.3.x-cpu-ml-scala2.13` | `i3.xlarge` | Dynamic (0-10 based on series count) | Local models |
-| `{use_case}_gpu_cluster` | `18.0.x-gpu-ml-scala2.13` | User-selectable (e.g., `g5.12xlarge`) | **0 (single-node always)** | Global & foundation models |
+| `{use_case}_cpu_cluster` | `17.3.x-cpu-ml-scala2.13` | `i3.xlarge` | Dynamic (0-10 based on series count) | Local models (multi-node Pandas UDF parallelism) |
+| `{use_case}_ml_cluster` | `17.3.x-cpu-ml-scala2.13` | `i3.4xlarge` (default) | **0 (single-node always)** | Global ML models (MLForecast/LightGBM — driver-only Python process) |
+| `{use_case}_gpu_cluster` | `18.0.x-gpu-ml-scala2.13` | User-selectable (e.g., `g5.12xlarge`) | **0 (single-node always)** | Global DL & foundation models |
 
 See [3-provision-forecasting-resources.md](3-provision-forecasting-resources.md) for Azure and GCP node types.
 
 ## Notebook Templates
 
 ### Pipeline notebooks (generated during execution)
-- [mmf_local_notebook_template.ipynb](mmf_local_notebook_template.ipynb) — CPU models (StatsForecast, Prophet); covariate lists default to `[]` (univariate). Avoid `dynamic_future_*` — see Feature type decision guide in Skill 4.
+- [mmf_local_notebook_template.ipynb](mmf_local_notebook_template.ipynb) — Local CPU models (StatsForecast, Prophet); covariate lists default to `[]` (univariate). Avoid `dynamic_future_*` — see Feature type decision guide in Skill 4.
+- [mmf_global_ml_notebook_template.ipynb](mmf_global_ml_notebook_template.ipynb) — Global ML CPU models (MLForecast LightGBM). Same single-shot run_forecast pattern as the local template, but installs `mmf_sa[global]` and runs on the single-node ML cluster. Full covariate support including `dynamic_future_*` when Skill 1 produced a scoring table.
 - [mmf_gpu_run_notebook_template.ipynb](mmf_gpu_run_notebook_template.ipynb) — GPU single-model runner (widgets include covariate columns, defaulting to empty/univariate; used by orchestrators)
 - [mmf_gpu_orchestrator_notebook_template.ipynb](mmf_gpu_orchestrator_notebook_template.ipynb) — GPU orchestrator (model list + covariate lists passed into `run_gpu`; defaults to `[]` for all covariates)
 - [mmf_profiling_notebook_template.ipynb](mmf_profiling_notebook_template.ipynb) — Series profiling (statsmodels, scipy)
@@ -242,27 +245,27 @@ See [3-provision-forecasting-resources.md](3-provision-forecasting-resources.md)
 
 ## Job Architecture (Skill 4)
 
-Up to six separate jobs run **in parallel** — three for the main pipeline, plus up to three for non-forecastable series (if `separate_job` strategy):
+Up to eight separate jobs run **in parallel** — four for the main pipeline, plus up to four for non-forecastable series (if `separate_job` strategy):
 
 ```
 ── Main Pipeline (forecastable series) ──────────────────────────────────────────────────────────────
-┌─────────────────────────┐   ┌──────────────────────────────┐   ┌──────────────────────────────────┐
-│ Job: {use_case}_local   │   │ Job: {use_case}_global       │   │ Job: {use_case}_foundation       │
-│ Cluster: CPU            │   │ Cluster: GPU (single-node)   │   │ Cluster: GPU (single-node)       │
-│ Notebook: run_local     │   │ Notebook: orchestrator_global│   │ Notebook: orchestrator_foundation│
-│ (all local models)      │   │  └→ run_gpu (per model)      │   │  └→ run_gpu (per model)          │
-└─────────────────────────┘   └──────────────────────────────┘   └──────────────────────────────────┘
+┌─────────────────────────┐ ┌─────────────────────────────┐ ┌──────────────────────────────┐ ┌──────────────────────────────────┐
+│ Job: {use_case}_local   │ │ Job: {use_case}_global_ml   │ │ Job: {use_case}_global       │ │ Job: {use_case}_foundation       │
+│ Cluster: CPU multi-node │ │ Cluster: ML single-node CPU │ │ Cluster: GPU (single-node)   │ │ Cluster: GPU (single-node)       │
+│ Notebook: run_local     │ │ Notebook: run_global_ml     │ │ Notebook: orchestrator_global│ │ Notebook: orchestrator_foundation│
+│ (all local models)      │ │ (all MLForecast LGBM)       │ │  └→ run_gpu (per model)      │ │  └→ run_gpu (per model)          │
+└─────────────────────────┘ └─────────────────────────────┘ └──────────────────────────────┘ └──────────────────────────────────┘
 
 ── Non-Forecastable Pipeline (separate_job strategy only) ───────────────────────────────────────────
-┌──────────────────────────┐   ┌───────────────────────────────┐
-│ Job: {use_case}_nf_local │   │ Job: {use_case}_nf_global/    │
-│ Cluster: NF CPU          │   │      {use_case}_nf_foundation │
-│ Notebook: run_local_nf   │   │ Cluster: NF GPU (single-node) │
-│ (NF local models)        │   │ Notebook: orchestrator_*_nf   │
-└──────────────────────────┘   └───────────────────────────────┘
-         ▲                              ▲
-         └──────────────────────────────┘
-              All jobs triggered in parallel
+┌──────────────────────────┐ ┌─────────────────────────────────┐ ┌───────────────────────────────┐
+│ Job: {use_case}_nf_local │ │ Job: {use_case}_nf_global_ml    │ │ Job: {use_case}_nf_global/    │
+│ Cluster: NF CPU          │ │ Cluster: NF ML single-node CPU  │ │      {use_case}_nf_foundation │
+│ Notebook: run_local_nf   │ │ Notebook: run_global_ml_nf      │ │ Cluster: NF GPU (single-node) │
+│ (NF local models)        │ │ (NF MLForecast LGBM)            │ │ Notebook: orchestrator_*_nf   │
+└──────────────────────────┘ └─────────────────────────────────┘ └───────────────────────────────┘
+         ▲                              ▲                                  ▲
+         └──────────────────────────────┴──────────────────────────────────┘
+                          All jobs triggered in parallel
 ```
 
 ## Prerequisites
@@ -277,5 +280,6 @@ Up to six separate jobs run **in parallel** — three for the main pipeline, plu
 
 Each generated notebook installs `mmf_sa` at the start:
 - Local: `pip install "mmf_sa[local] @ git+https://github.com/databricks-industry-solutions/many-model-forecasting.git@main"`
-- Global: `pip install "mmf_sa[global] @ git+https://github.com/databricks-industry-solutions/many-model-forecasting.git@main"`
+- Global ML: `pip install "mmf_sa[global] @ git+https://github.com/databricks-industry-solutions/many-model-forecasting.git@main"` (the `[global]` extras include `mlforecast`, `lightgbm`, `optuna` — used by `MLForecastLGBM` / `MLForecastAutoLGBM`)
+- Global DL: `pip install "mmf_sa[global] @ git+https://github.com/databricks-industry-solutions/many-model-forecasting.git@main"` (same extras — NeuralForecast is also in `[global]`)
 - Foundation: `pip install "mmf_sa[foundation] @ git+https://github.com/databricks-industry-solutions/many-model-forecasting.git@main"`

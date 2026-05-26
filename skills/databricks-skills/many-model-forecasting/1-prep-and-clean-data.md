@@ -298,7 +298,12 @@ AskUserQuestion:
    • Categorical (e.g., promo, day_of_week, holiday, open_closed):
 
    ⚠️  You MUST have known future values for every series × every future date
-   in the forecast horizon. I will create a scoring table from this data."
+   in the forecast horizon. I will create a scoring table from this data.
+
+   Note: The `global_ml` model class (MLForecastLGBM / MLForecastAutoLGBM) has
+   end-to-end validated support for dynamic future regressors via its native
+   X_df mechanism. If you supply these and a scoring table, global_ml is a
+   strong default — see Skill 3 model selection."
 ```
 
 **WAIT for the user to respond.** Store as `{dynamic_future_numerical}` and `{dynamic_future_categorical}`.

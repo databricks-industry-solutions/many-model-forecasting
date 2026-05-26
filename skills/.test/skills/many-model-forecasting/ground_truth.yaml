@@ -275,6 +275,77 @@ test_cases:
     - workflow
     created_at: '2026-03-23T10:20:00.000000'
 
+- id: mmf_20260526_execute_forecast_global_ml
+  inputs:
+    prompt: >
+      Run MMF with MLForecast LightGBM models (MLForecastLGBM, MLForecastAutoLGBM) on catalog `mmf` schema `m4`,
+      use case "m4_daily", daily frequency, prediction_length 14
+  outputs:
+    response: ""
+    execution_success: true
+  expectations:
+    expected_facts:
+    - Uses MLForecastLGBM and MLForecastAutoLGBM model names
+    - Sets prediction_length to 14
+    - Derives backtest_length and stride from backtest strategy
+    - Uses daily frequency (D)
+    - References {use_case}_train_data
+    - Creates a Workflow job with the ML CPU cluster (not the local CPU cluster)
+    - ML cluster is single-node (num_workers = 0)
+    - ML cluster uses 17.3.x-cpu-ml-scala2.13 (same runtime as local CPU but different topology)
+    - ML cluster includes spark.master=local[*], spark.databricks.cluster.profile=singleNode, custom_tags ResourceClass=SingleNode
+    - Generates a single run_global_ml notebook (no orchestrator pattern — no CUDA memory issue)
+    - Notebook installs mmf_sa[global] (same extras as NeuralForecast)
+    - Job name is {use_case}_global_ml_forecasting_{username}
+    - Job is created separately from any local CPU job (one job per model class invariant)
+    - All output table names use {use_case} prefix
+    - Hands off to post-processing (Skill 5) for analysis
+    expected_patterns:
+    - pattern: MLForecastLGBM
+      min_count: 1
+      description: Must use correct ML model name (fixed-HP variant)
+    - pattern: MLForecastAutoLGBM
+      min_count: 1
+      description: Must use correct ML model name (HPO variant)
+    - pattern: _ml_cluster
+      min_count: 1
+      description: Must use the dedicated ML CPU cluster (not _cpu_cluster)
+    - pattern: run_global_ml
+      min_count: 1
+      description: Must reference the run_global_ml notebook
+    - pattern: 17\.3\.x-cpu-ml-scala2\.13
+      min_count: 1
+      description: Must use the CPU 17.3 LTS ML runtime for the ML cluster
+    - pattern: singleNode
+      min_count: 1
+      description: ML cluster must be single-node (Spark conf or topology)
+    - pattern: mmf_sa\[global\]
+      min_count: 1
+      description: Notebook must install mmf_sa[global] extras
+    - pattern: _global_ml_forecasting_
+      min_count: 1
+      description: Job name must follow the {use_case}_global_ml_forecasting_{username} pattern
+    guidelines:
+    - Must use exact MMF model names (MLForecastLGBM, MLForecastAutoLGBM)
+    - Must route MLForecast models to a SEPARATE single-node CPU cluster ({use_case}_ml_cluster), NOT the multi-node local CPU cluster ({use_case}_cpu_cluster)
+    - The ML cluster and local CPU cluster share the same runtime (17.3.x-cpu-ml-scala2.13) but have different topologies — single-node vs multi-node — and MUST be separate clusters
+    - Must generate a single run_global_ml notebook (no orchestrator + run_gpu pattern — LightGBM has no CUDA memory issue)
+    - Must install mmf_sa[global] (which includes mlforecast, lightgbm, optuna)
+    - Job must be {use_case}_global_ml_forecasting_{username}, separate from any local job
+    - Runtime verification (Step 5c) must check both spark_version AND topology (single-node Spark conf) for the ML cluster
+  metadata:
+    category: happy_path
+    difficulty: medium
+    source: interactive
+    tags:
+    - execute-forecast
+    - global-ml-models
+    - mlforecast
+    - lightgbm
+    - workflow
+    - cpu-single-node
+    created_at: '2026-05-26T10:00:00.000000'
+
 - id: mmf_20260323_execute_forecast_foundation
   inputs:
     prompt: >

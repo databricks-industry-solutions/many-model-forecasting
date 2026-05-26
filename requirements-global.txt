@@ -1,3 +1,6 @@
 -r requirements.txt
 pandas==2.2.3
 neuralforecast==3.1.4
+mlforecast==1.0.31
+lightgbm==4.6.0
+optuna==3.6.1

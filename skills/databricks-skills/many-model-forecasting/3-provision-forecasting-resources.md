@@ -69,7 +69,7 @@ AskUserQuestion:
 
    {if profile exists: '📊 Based on series profiling, suggested models: {recommended_models}'}
 
-   LOCAL MODELS (CPU cluster — statistical, fast):
+   LOCAL MODELS (CPU multi-node — statistical, fast, Pandas UDF parallelism):
    [ ] StatsForecastBaselineWindowAverage
    [ ] StatsForecastBaselineSeasonalWindowAverage
    [ ] StatsForecastBaselineNaive
@@ -88,7 +88,11 @@ AskUserQuestion:
    [ ] StatsForecastCrostonSBA
    [ ] SKTimeProphet
 
-   GLOBAL MODELS (GPU cluster — neural network, learns across series):
+   GLOBAL ML MODELS (CPU single-node — gradient-boosted, learns across series):
+   [ ] MLForecastLGBM           — LightGBM with fixed hyperparameters
+   [ ] MLForecastAutoLGBM       — LightGBM with Optuna HPO + feature-pipeline tuning
+
+   GLOBAL DL MODELS (GPU single-node — neural network, learns across series):
    [ ] NeuralForecastRNN
    [ ] NeuralForecastLSTM
    [ ] NeuralForecastNBEATSx
@@ -100,7 +104,7 @@ AskUserQuestion:
    [ ] NeuralForecastAutoTiDE
    [ ] NeuralForecastAutoPatchTST
 
-   FOUNDATION MODELS (GPU cluster — pretrained, zero-shot):
+   FOUNDATION MODELS (GPU single-node — pretrained, zero-shot):
    [ ] ChronosBoltTiny
    [ ] ChronosBoltMini
    [ ] ChronosBoltSmall
@@ -110,16 +114,17 @@ AskUserQuestion:
    [ ] Chronos2Synth
    [ ] TimesFM_2_5_200m
 
-   You can select any combination (e.g., local + foundation).
+   You can select any combination (e.g., local + global_ml + foundation).
    List the model names you want to run."
 ```
 
 **WAIT for the user to respond. Do NOT proceed until the user has selected their models.**
 
 Store the selected models and determine which model classes are needed:
-- **Local**: any `StatsForecast*` or `SKTime*` model selected
-- **Global**: any `NeuralForecast*` model selected
-- **Foundation**: any `Chronos*` or `TimesFM*` model selected
+- **Local** (CPU multi-node): any `StatsForecast*` or `SKTime*` model selected
+- **Global ML** (CPU single-node): any `MLForecast*` model selected → routes to `{use_case}_ml_cluster`, NOT the local CPU cluster
+- **Global DL** (GPU single-node): any `NeuralForecast*` model selected
+- **Foundation** (GPU single-node): any `Chronos*` or `TimesFM*` model selected
 
 ### Step 2a: Confirm non-forecastable models (if `separate_job` strategy)
 
@@ -139,8 +144,9 @@ AskUserQuestion:
 ```
 
 Determine which model classes the non-forecastable models need:
-- **Local (CPU)**: any `StatsForecast*` or `SKTime*` model
-- **GPU**: any `NeuralForecast*`, `Chronos*`, or `TimesFM*` model
+- **Local (CPU multi-node)**: any `StatsForecast*` or `SKTime*` model
+- **Global ML (CPU single-node)**: any `MLForecast*` model
+- **GPU (single-node)**: any `NeuralForecast*`, `Chronos*`, or `TimesFM*` model
 
 If `non_forecastable_strategy` is `include` or `fallback`, skip this step entirely.
 
@@ -162,18 +168,22 @@ This determines the specific node types.
 > ⛔ **MANDATORY runtime pinning — DO NOT SUBSTITUTE.**
 > Each cluster class has exactly one allowed `spark_version`. They are **not interchangeable**:
 >
-> | Cluster class | Required `spark_version` | Used by |
-> |---|---|---|
-> | CPU (local models) | `17.3.x-cpu-ml-scala2.13` | `{use_case}_cpu_cluster`, `{use_case}_nf_cpu_cluster` |
-> | GPU (global & foundation models) | `18.0.x-gpu-ml-scala2.13` | `{use_case}_gpu_cluster`, `{use_case}_nf_gpu_cluster` |
+> | Cluster class | Required `spark_version` | Topology | Used by |
+> |---|---|---|---|
+> | CPU local (statistical / Prophet) | `17.3.x-cpu-ml-scala2.13` | **Multi-node** (Pandas UDF parallelism) | `{use_case}_cpu_cluster`, `{use_case}_nf_cpu_cluster` |
+> | CPU ML (MLForecast LightGBM) | `17.3.x-cpu-ml-scala2.13` | **Single-node always** (`num_workers: 0`, `spark.master=local[*]`) | `{use_case}_ml_cluster`, `{use_case}_nf_ml_cluster` |
+> | GPU (global DL & foundation models) | `18.0.x-gpu-ml-scala2.13` | Single-node always | `{use_case}_gpu_cluster`, `{use_case}_nf_gpu_cluster` |
+>
+> **CPU local vs CPU ML — same runtime, different topology.** They share `17.3.x-cpu-ml-scala2.13` but the topology is fundamentally different: local models distribute one-series-per-task across Spark workers via Pandas UDFs, while MLForecast LightGBM runs in a single driver Python process (workers would sit idle). The CPU ML cluster requires the same single-node Spark config as the GPU cluster (`spark.master=local[*]`, `spark.databricks.cluster.profile=singleNode`, `custom_tags: {"ResourceClass": "SingleNode"}`). They MUST be separate clusters.
 >
 > The agent is FORBIDDEN from:
-> - Using `17.3.x-cpu-ml-scala2.13` on a GPU cluster (it has no GPU drivers — global/foundation models will fail or silently run on CPU).
+> - Using `17.3.x-cpu-ml-scala2.13` on a GPU cluster (it has no GPU drivers — global DL / foundation models will fail or silently run on CPU).
 > - Using `17.3.x-gpu-ml-scala2.13` on the GPU cluster because it "looks like LTS." The GPU pipeline is pinned to **18.0** and tested against it.
-> - Using `18.0.x-cpu-ml-scala2.13` on the CPU cluster.
-> - Copying the CPU job's `spark_version` into the GPU job templates in Skill 4. Each job class has its own pinned runtime.
+> - Using `18.0.x-cpu-ml-scala2.13` on either CPU cluster.
+> - Combining the local CPU cluster and the ML CPU cluster into one job_cluster — their Spark topologies are incompatible.
+> - Copying the CPU local job's `spark_version` or topology into the CPU ML / GPU job templates in Skill 4. Each job class has its own pinned runtime and topology.
 >
-> Skill 4 Step 5c reads back the `spark_version` of every job cluster after creation and aborts if it doesn't match this table.
+> Skill 4 Step 5c reads back the `spark_version` and `num_workers` of every job cluster after creation and aborts if either doesn't match this table.
 
 Based on the model types and cloud provider, select from these configurations:
 
@@ -256,7 +266,38 @@ Present the series count and the sizing guideline to the user, then **ask them t
 
 ---
 
-#### GPU Cluster (`{use_case}_gpu_cluster`) — for global and foundation models
+#### ML Cluster (`{use_case}_ml_cluster`) — for global ML models (MLForecast LightGBM)
+
+**The ML cluster MUST always be single-node (0 workers).** MLForecast LightGBM trains in a single Python process on the driver; workers would sit idle. The cluster requires the same single-node Spark config as the GPU cluster but on the CPU runtime.
+
+| Setting | Value |
+|---------|-------|
+| **Runtime** | `17.3.x-cpu-ml-scala2.13` |
+| **Node type** | User-selectable — same options as the local CPU cluster (default: `i3.4xlarge` on AWS, `Standard_DS5_v2` on Azure, `n1-standard-16` on GCP) |
+| **Workers** | **0 (single-node) — ALWAYS** |
+| **Availability** | **On-demand only** — do NOT use spot/preemptible instances |
+| **data_security_mode** | `SINGLE_USER` (ML runtimes do not support `USER_ISOLATION`) |
+| **Spark config** | `spark.master=local[*]`, `spark.databricks.cluster.profile=singleNode`, `spark.databricks.delta.formatCheck.enabled=false`, `spark.databricks.delta.schema.autoMerge.enabled=true` |
+| **custom_tags** | `{"ResourceClass": "SingleNode"}` |
+
+**ML cluster instance options by cloud provider:**
+
+Use the same instance tables as the **local CPU cluster** (see above):
+- **AWS**: (a) `i3.4xlarge` recommended (16 vCPU, 122 GB), (b) `i3.8xlarge` (32 vCPU, 244 GB)
+- **Azure**: (a) `Standard_DS5_v2` recommended (16 vCPU, 56 GB), (b) `Standard_D32ds_v5` (32 vCPU, 128 GB)
+- **GCP**: (a) `n1-standard-16` recommended (16 vCPU, 60 GB), (b) `n1-standard-32` (32 vCPU, 120 GB)
+
+**When to upsize.** LightGBM HPO with deep search spaces (`num_samples >= 20`, multiple CV windows) on panels >50K series benefits from option (b). For smaller panels, option (a) matches what was end-to-end validated. No worker-count decision — single-node always.
+
+#### Non-Forecastable ML Cluster (`{use_case}_nf_ml_cluster`) — for separate_job strategy, MLForecast models only
+
+Only created when `non_forecastable_strategy == 'separate_job'` and the non-forecastable models include `MLForecast*` models.
+
+Same config as the main ML cluster (single-node, CPU 17.3 LTS ML). A smaller instance (option (a)) is usually sufficient since non-forecastable series are typically fewer and simpler.
+
+---
+
+#### GPU Cluster (`{use_case}_gpu_cluster`) — for global DL and foundation models
 
 **GPU clusters MUST always be single-node (0 workers).** This is a hard requirement — do NOT configure multi-node GPU clusters. Single-node mode requires explicit Spark config and custom tags beyond just setting `num_workers: 0`.
 
@@ -406,7 +447,48 @@ AskUserQuestion:
 
 **WAIT for the user to respond.**
 
-#### Step 6b: GPU cluster configuration (if global or foundation models selected)
+#### Step 6a-bis: ML cluster configuration (if any MLForecast model selected)
+
+Only ask this if the user selected at least one `MLForecast*` model. No worker-count question — the cluster is single-node by definition.
+
+```
+AskUserQuestion:
+  "ML Cluster ({use_case}_ml_cluster) — single-node, for global ML (MLForecast LightGBM) models:
+     • Runtime: 17.3.x-cpu-ml-scala2.13
+     • Workers: 0 (always single-node)
+
+   Which instance type?
+
+   {cloud-specific options for the user's provider only — same as the local CPU cluster:}
+
+   AWS:
+   (a) i3.4xlarge   — 16 vCPUs, 122 GB  (recommended)
+   (b) i3.8xlarge   — 32 vCPUs, 244 GB  (large panels / deep HPO search spaces)
+
+   Azure:
+   (a) Standard_DS5_v2    — 16 vCPUs, 56 GB  (recommended)
+   (b) Standard_D32ds_v5  — 32 vCPUs, 128 GB (large panels / deep HPO search spaces)
+
+   GCP:
+   (a) n1-standard-16 — 16 vCPUs, 60 GB  (recommended)
+   (b) n1-standard-32 — 32 vCPUs, 120 GB (large panels / deep HPO search spaces)"
+```
+
+**WAIT for the user to respond.**
+
+{if non_forecastable_strategy == 'separate_job' and nf_ml_models, ask in a separate question:}
+
+```
+AskUserQuestion:
+  "Which instance type for the NF ML cluster ({use_case}_nf_ml_cluster)?
+   A smaller instance (option (a)) is usually sufficient for non-forecastable series.
+
+   (select from the same ML options above)"
+```
+
+**WAIT for the user to respond.**
+
+#### Step 6b: GPU cluster configuration (if global DL or foundation models selected)
 
 ```
 AskUserQuestion:
@@ -455,16 +537,21 @@ AskUserQuestion:
 ### Decision logic
 
 **Main pipeline (forecastable series):**
-- **Local models only** → CPU cluster only, no GPU cluster needed
-- **Global models** → GPU cluster required (single-node)
+- **Local models only** → CPU cluster only (multi-node), no others needed
+- **Global ML models only** → ML cluster only (single-node CPU), no others needed
+- **Global DL models** → GPU cluster required (single-node)
 - **Foundation models** → GPU cluster required (single-node)
-- **Local + global/foundation** → Both CPU and GPU clusters
-- **Global + Foundation** → GPU cluster (single-node) — both model classes share the same GPU cluster
+- **Local + global ML** → Both CPU (multi-node) and ML (single-node) clusters — they are **separate clusters** with the same runtime but different topologies
+- **Local + global DL/foundation** → CPU + GPU clusters
+- **Global ML + global DL/foundation** → ML + GPU clusters
+- **Global DL + Foundation** → GPU cluster (single-node) — both model classes share the same GPU cluster
+- **All four** → CPU + ML + GPU clusters (three separate clusters)
 
 **Non-forecastable pipeline (separate_job strategy only):**
 - **Local-only non-forecastable models** → `{use_case}_nf_cpu_cluster` only
+- **MLForecast-only non-forecastable models** → `{use_case}_nf_ml_cluster` only
 - **GPU non-forecastable models** → `{use_case}_nf_gpu_cluster` (single-node)
-- **Mixed** → Both `nf_cpu_cluster` and `nf_gpu_cluster`
+- **Mixed** → any combination of `nf_cpu_cluster`, `nf_ml_cluster`, `nf_gpu_cluster` as needed
 
 Only include clusters that are needed for the selected model types. If `non_forecastable_strategy` is `include` or `fallback`, no non-forecastable clusters are needed.
 
@@ -519,13 +606,15 @@ AskUserQuestion:
    Main pipeline (forecastable series):
    • Selected models: {model_list_summary}
    • Model classes: {classes_summary}
-   {if cpu: '• CPU cluster: {cpu_node_type}, {workers} workers'}
-   {if gpu: '• GPU cluster: {gpu_node_type}, single-node'}
+   {if cpu:    '• CPU cluster: {cpu_node_type}, {workers} workers (multi-node)'}
+   {if ml:     '• ML cluster: {ml_node_type}, single-node'}
+   {if gpu:    '• GPU cluster: {gpu_node_type}, single-node'}
 
    {if non_forecastable_strategy == 'separate_job':
    Non-forecastable pipeline ({n_non_forecastable} series):
    • Selected models: {nf_model_list_summary}
    {if nf_cpu: '• NF CPU cluster: {cpu_node_type}, {nf_workers} workers'}
+   {if nf_ml:  '• NF ML cluster: {nf_ml_node_type}, single-node'}
    {if nf_gpu: '• NF GPU cluster: {nf_gpu_node_type}, single-node'}
    }
 
@@ -549,8 +638,9 @@ AskUserQuestion:
 Each notebook installs MMF at the start:
 
 - **Local models** (`run_local` notebook): Uses `%pip install "mmf_sa[local] @ git+https://...@main"`
+- **Global ML models** (`run_global_ml` notebook): Uses `%pip install "mmf_sa[global] @ git+https://...@main"` — same install as the GPU-bound NeuralForecast models because the `[global]` extras include `mlforecast`, `lightgbm`, and `optuna` alongside `neuralforecast`. Single-shot pattern (all selected `MLForecast*` models run in one Python process — no CUDA memory issue to work around).
 - **GPU models** (`run_gpu` notebook): Uses `subprocess.check_call` with model-specific install logic:
-  - **Global (NeuralForecast)**: `mmf_sa[global] @ git+https://...@main`
+  - **Global DL (NeuralForecast)**: `mmf_sa[global] @ git+https://...@main`
   - **Foundation (Chronos)**: base `mmf_sa` + `chronos-forecasting==2.2.2` + `utilsforecast==0.2.15`
   - **Foundation (TimesFM)**: base `mmf_sa` + `timesfm[torch,xreg]` from tarball URL + `utilsforecast==0.2.15`
 
@@ -575,9 +665,10 @@ AskUserQuestion:
   "Skill 3 (Provision Forecasting Resources) is complete.
 
   Selected models:
-    • Local (CPU): {local_models}
-    • Global (GPU): {global_models}
-    • Foundation (GPU): {foundation_models}
+    • Local (CPU multi-node): {local_models}
+    • Global ML (CPU single-node): {global_ml_models}
+    • Global DL (GPU single-node): {global_dl_models}
+    • Foundation (GPU single-node): {foundation_models}
   Cluster config: {cluster_summary}
 
   Ready to proceed to Skill 4 (Execute MMF Forecast) — generate notebooks, create jobs, and run the forecast?
