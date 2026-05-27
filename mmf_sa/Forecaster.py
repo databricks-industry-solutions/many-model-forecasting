@@ -657,6 +657,13 @@ class Forecaster:
             .agg(
                 collect_list(self.conf["date_col"]).alias(self.conf["date_col"]),
                 collect_list(self.conf["target"]).alias(self.conf["target"]))
+        # Defensive: align with score_local_model's explicit ArrayType(TimestampType())
+        # so the scoring_output table schema stays consistent across all writers,
+        # even if a future global model wrapper changes its predict() return shape.
+        sdf = sdf.withColumn(
+            self.conf["date_col"],
+            sdf[self.conf["date_col"]].cast(ArrayType(TimestampType())),
+        )
         (
             sdf.withColumn(self.conf["group_id"], col(self.conf["group_id"]).cast(StringType()))
             .withColumn("model", lit(model_conf["name"]))
@@ -701,6 +708,12 @@ class Forecaster:
                     lambda arr: np.asarray(arr, dtype="datetime64[us]")
                 )
         sdf = self.spark.createDataFrame(prediction_df).drop('index')
+        # Normalize the date column to TIMESTAMP (LTZ) so the schema matches the
+        # table created by score_local_model (which uses ArrayType(TimestampType())).
+        # No-op on classic compute (already LTZ); applies NTZ -> LTZ on Spark Connect,
+        # where Arrow inference of object-dtype columns containing numpy datetime64
+        # arrays produces array<timestamp_ntz> and would otherwise fail Delta merge.
+        sdf = sdf.withColumn(date_col, sdf[date_col].cast(ArrayType(TimestampType())))
         (
             sdf.withColumn(self.conf["group_id"], col(self.conf["group_id"]).cast(StringType()))
             .withColumn("model", lit(model_conf["name"]))
