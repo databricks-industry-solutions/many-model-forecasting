@@ -344,7 +344,7 @@ models:
     model_class: MLForecastAutoLGBM
     framework: MLForecast
     model_type: global
-    num_samples: 20         # Optuna trials
+    num_samples: 50         # Optuna trials
     num_windows: 1          # rolling-origin windows during HPO
     num_threads: -1
     reuse_cv_splits: true
