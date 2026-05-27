@@ -36,6 +36,13 @@ MODEL_PIP_REQUIREMENTS = {
         "uni2ts==2.0.0",
         MMF_PACKAGE,
     ],
+    "mlforecast": [
+        "cloudpickle==3.0.0",
+        "mlforecast==1.0.31",
+        "lightgbm==4.6.0",
+        "optuna==3.6.1",
+        MMF_PACKAGE,
+    ],
 }
 
 

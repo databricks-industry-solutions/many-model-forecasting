@@ -9,6 +9,7 @@
 # MAGIC | omegaconf | A flexible configuration library | BSD | https://pypi.org/project/omegaconf/
 # MAGIC | datasetsforecast | Datasets for Time series forecasting | MIT | https://pypi.org/project/datasetsforecast/
 # MAGIC | statsforecast | Time series forecasting suite using statistical models | Apache 2.0 | https://pypi.org/project/statsforecast/
+# MAGIC | mlforecast | Time series forecasting suite using machine learning models | Apache 2.0 | https://pypi.org/project/mlforecast/
 # MAGIC | neuralforecast | Time series forecasting suite using deep learning models | Apache 2.0 | https://pypi.org/project/neuralforecast/
 # MAGIC | sktime | A unified framework for machine learning with time series | BSD 3-Clause | https://pypi.org/project/sktime/
 # MAGIC | tbats | BATS and TBATS for time series forecasting | MIT | https://pypi.org/project/tbats/

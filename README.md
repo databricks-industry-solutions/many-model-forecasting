@@ -4,9 +4,9 @@
 
 Bootstrap your large-scale forecasting solutions on Databricks with the Many Models Forecasting (MMF) Solution Accelerator.
 
-MMF accelerates the development of sales and demand forecasting solutions on Databricks, including critical phases of data preparation, training, backtesting, cross-validation, scoring, and deployment. Adopting a configuration-over-code approach, MMF minimizes the need for extensive coding. But with its extensible architecture, MMF allows technically proficient users to incorporate new models and algorithms. We recommend users to read through the source code, and modify it to their specific requirements.
+MMF accelerates the development of forecasting solutions on Databricks, including critical phases of data preparation, training, backtesting, evaluation, scoring, and deployment. Adopting a configuration-over-code approach, MMF minimizes the need for extensive coding. But with its open and extensible architecture, MMF allows technically proficient users to incorporate new models and features. We recommend users to read through the source code, and modify it to their specific requirements.
 
-MMF integrates a variety of well-established and cutting-edge algorithms, including [local statistical models](https://github.com/databricks-industry-solutions/many-model-forecasting?tab=readme-ov-file#local-models), [global deep learning models](https://github.com/databricks-industry-solutions/many-model-forecasting?tab=readme-ov-file#global-models), and [foundation time series models](https://github.com/databricks-industry-solutions/many-model-forecasting?tab=readme-ov-file#foundation-models). MMF enables parallel modeling of hundreds or thousands of time series leveraging Spark's distributed compute. Users can apply multiple models at once and select the best performing one for each time series based on their custom metrics.
+MMF integrates a variety of well-established and cutting-edge algorithms, including [local statistical models](https://github.com/databricks-industry-solutions/many-model-forecasting?tab=readme-ov-file#local-models), [global machine learning / deep learning models](https://github.com/databricks-industry-solutions/many-model-forecasting?tab=readme-ov-file#global-models), and [foundation time series models](https://github.com/databricks-industry-solutions/many-model-forecasting?tab=readme-ov-file#foundation-models). MMF enables parallel modeling of hundreds or thousands of time series leveraging Spark's distributed compute. Users can apply multiple models at once and select the best performing one for each time series based on their custom metrics.
 
 Get started now!
 
@@ -14,13 +14,14 @@ Get started now!
 
 Use a cluster with [Databricks Runtime 17.3LTS for ML](https://docs.databricks.com/en/release-notes/runtime/17.3lts-ml.html) for local models, and [Databricks Runtime 18.0 for ML](https://docs.databricks.com/en/release-notes/runtime/18.0-ml.html) or later for global and foundation models.
 
+- May 2026: Added MLForecast for LightGBM support. Try it out [here](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/global_daily_ml.ipynb) or with [MMF Agent](https://github.com/databricks-industry-solutions/many-model-forecasting/tree/main/skills/).
 - May 2026: All model classes (local, global and foundation) run on serverless. Try it out [here](https://github.com/databricks-industry-solutions/many-model-forecasting/tree/main/examples/serverless).
-- Mar 2026: Introduced MMF Agent. Added skills that guide users through an end to end forecasting project (preprocess, profile, provision resources, forecast, evaluate). MMF Agent runs on Genie Code, Claude Code, Cursor and GitHub Copilot. Try it out [here](https://github.com/databricks-industry-solutions/many-model-forecasting/tree/main/skills/). ([lbruand-db](https://github.com/lbruand-db), [lourdesmartinezma](https://github.com/lourdesmartinezma), [puneet-jain159](https://github.com/puneet-jain159))
+- Mar 2026: Introduced **MMF Agent**: a set of skills that guide users through an end-to-end forecasting project (preprocess, profile, provision resources, forecast, evaluate). MMF Agent runs on Genie Code, Claude Code, Cursor and GitHub Copilot. Try it out [here](https://github.com/databricks-industry-solutions/many-model-forecasting/tree/main/skills/). ([lbruand-db](https://github.com/lbruand-db), [lourdesmartinezma](https://github.com/lourdesmartinezma), [puneet-jain159](https://github.com/puneet-jain159))
 - Feb 2026: Added an interactive app to explore the results of forecasting. Try it out [here](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/apps/).
 - Feb 2026: [Chronos-2](https://github.com/amazon-science/chronos-forecasting) models are now available for univariate and covariate forecasting. Decommissioned ChronosT5 models. Try the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/foundation_daily.ipynb). ([rohan-parikh-db](https://github.com/rohan-parikh-db))
 - Feb 2026: [TimesFM 2.5](https://github.com/google-research/timesfm) is available for univariate and covariate forecasting. Decommissioned TimesFM 1.0 and TimesFM 2.0. Try the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/foundation_daily.ipynb). ([rohan-parikh-db](https://github.com/rohan-parikh-db))
 - Feb 2026: Moirai models are temporarily disabled due to [uni2ts](https://github.com/SalesforceAIResearch/uni2ts) requiring torch<2.5, incompatible the latest Databricks Runtimes.
-- Feb 2026: Added multi-node multi-GPU support for global models. Try the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/global_daily.ipynb).
+- Feb 2026: Added multi-node multi-GPU support for global models. Try the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/global_daily_dl.ipynb).
 
 ## Getting started
 
@@ -50,7 +51,7 @@ pip install "mmf_sa[foundation] @ git+https://github.com/databricks-industry-sol
 To pin to a specific version, you can use a commit hash or a tag:
 
 ```bash
-pip install "mmf_sa @ git+https://github.com/databricks-industry-solutions/many-model-forecasting.git@v0.1.0"
+pip install "mmf_sa @ git+https://github.com/databricks-industry-solutions/many-model-forecasting.git@v0.1.5"
 ```
 
 On Databricks, use `%pip` in a notebook cell:
@@ -60,9 +61,9 @@ On Databricks, use `%pip` in a notebook cell:
 dbutils.library.restartPython()
 ```
 
-### Using MMF with AI Coding Assistants (Skills)
+### Using MMF with AI Coding Assistants (MMF Agent)
 
-MMF is also available as a **skill** for AI coding assistants such as [Genie Code](https://docs.databricks.com/aws/en/genie-code/), [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview) and [Cursor](https://www.cursor.com/). The MMF skill is a focused development kit that teaches AI assistants how to prepare and clean time series data, profile and classify series, provision the right Databricks clusters, execute forecasting pipelines, and evaluate results — all through natural language commands. For installation instructions and full details, see the [skills README](https://github.com/databricks-industry-solutions/many-model-forecasting/tree/main/skills).
+MMF is available as **skills** for AI coding assistants such as [Genie Code](https://docs.databricks.com/aws/en/genie-code/), [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview) and [Cursor](https://www.cursor.com/). The MMF skills are a focused development kit that teaches AI assistants how to prepare and clean time series data, profile and classify series, provision the right Databricks clusters, execute forecasting pipelines, and evaluate results — all through natural language commands. For installation instructions and full details, see the [skills README](https://github.com/databricks-industry-solutions/many-model-forecasting/tree/main/skills).
 
 ### Local Models
 
@@ -178,9 +179,9 @@ We encourage you to read through [examples/daily/local_univariate_daily.ipynb](h
 
 ### Global Models
 
-Global models leverage patterns across multiple time series, enabling shared learning and improved predictions for each series. You would typically train one big model for many or all time series. They can often deliver better performance and robustness for forecasting large and similar datasets. We support deep learning based models from [neuralforecast](https://nixtlaverse.nixtla.io/neuralforecast/index.html). Covariates (i.e. exogenous regressors) and hyperparameter tuning are both supported for some models. 
+Global models leverage patterns across multiple time series, enabling shared learning and improved predictions for each series. You train one model for many or all time series. They can often deliver better performance and robustness for forecasting large and similar datasets. We support machine learning models with [mlforecast](https://nixtlaverse.nixtla.io/mlforecast/index.html) and deep learning based models with [neuralforecast](https://nixtlaverse.nixtla.io/neuralforecast/index.html). Covariates (i.e. exogenous regressors) and hyperparameter tuning are both supported for some models. 
 
-To get started, attach the [examples/daily/global_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/global_daily.ipynb) notebook to a cluster running [DBR 18.0 for ML](https://docs.databricks.com/en/release-notes/runtime/18.0-ml.html) or later version. We recommend using a GPU cluster such as [g5.12xlarge [A10G]](https://aws.amazon.com/ec2/instance-types/g5/) on AWS or [Standard_NV36ads_A10_v5](https://learn.microsoft.com/en-us/azure/virtual-machines/nva10v5-series) on Azure. Both single-node multi-GPU and multi-node multi-GPU clusters are supported. When using a multi-node cluster, set `num_nodes` to the number of worker nodes (see below).
+To get started, attach the [examples/daily/global_daily_dl.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/global_daily_dl.ipynb) notebook to a cluster running [DBR 18.0 for ML](https://docs.databricks.com/en/release-notes/runtime/18.0-ml.html) or later version. We recommend using a GPU cluster such as [g5.12xlarge [A10G]](https://aws.amazon.com/ec2/instance-types/g5/) on AWS or [Standard_NV36ads_A10_v5](https://learn.microsoft.com/en-us/azure/virtual-machines/nva10v5-series) on Azure. Both single-node multi-GPU and multi-node multi-GPU clusters are supported. When using a multi-node cluster, set `num_nodes` to the number of worker nodes (see below).
 
 You can choose the models to train and put them in a list:
 
@@ -258,7 +259,7 @@ To modify the model hyperparameters or reset the range of the hyperparameter sea
 
 MMF is fully integrated with MLflow and so once the training kicks off, the experiments will be visible in the MLflow Tracking UI with the corresponding metrics and parameters. Once the training is complete the models will be logged to MLFlow and registered to Unity Catalog. 
 
-We encourage you to read through [examples/daily/global_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/global_daily.ipynb) notebook to better understand how global models can be applied to your time series using MMF. An example notebook for forecasting with exogenous regressors can be found in [examples/external_regressors/global_external_regressors_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/external_regressors/global_external_regressors_daily.ipynb). Refer to the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/post-evaluation-analysis.ipynb) for guidance on performing fine-grained model selection after running `run_forecast`. See how to define the backtesting parameters [here](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/README.md#how-backtesting-works).
+We encourage you to read through [examples/daily/global_daily_dl.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/global_daily_dl.ipynb) notebook to better understand how global models can be applied to your time series using MMF. An example notebook for forecasting with exogenous regressors can be found in [examples/external_regressors/global_external_regressors_daily_dl.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/external_regressors/global_external_regressors_daily_dl.ipynb). Refer to the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/post-evaluation-analysis.ipynb) for guidance on performing fine-grained model selection after running `run_forecast`. See how to define the backtesting parameters [here](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/README.md#how-backtesting-works).
 
 ### Foundation Models
 
@@ -303,17 +304,13 @@ MMF is fully integrated with MLflow and so once the training kicks off, the expe
 
 We encourage you to read through [examples/daily/foundation_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/foundation_daily.ipynb) notebook to better understand how foundation models can be applied to your time series using MMF. An example notebook for forecasting with exogenous regressors can be found in [examples/external_regressors/foundation_external_regressors_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/external_regressors/foundation_external_regressors_daily.ipynb). Refer to the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/post-evaluation-analysis.ipynb) for guidance on performing fine-grained model selection after running `run_forecast`. See how to define the backtesting parameters [here](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/README.md#how-backtesting-works).
 
-#### Using Time Series Foundation Models on Databricks
-
-If you want to try out time series foundation models on Databricks without MMF, you can find example notebooks in [databricks-industry-solutions/transformer_forecasting](https://github.com/databricks-industry-solutions/transformer_forecasting). These notebooks will show you how you can load, distribute the inference, fine-tune, register, deploy a model and generate online forecasts on it. We have notebooks for [TimeGPT](https://docs.nixtla.io/), [Chronos](https://github.com/amazon-science/chronos-forecasting), and [TimesFM](https://github.com/google-research/timesfm).
-
 ## [Vector Lab](https://www.youtube.com/@VectorLab) - Many Model Forecasting
 
 [IMAGE ALT TEXT HERE](https://www.youtube.com/watch?v=wYeuPxtap-8)
 
 ## Authors
 
-[ryuta.yoshimatsu@databricks.com](mailto:ryuta.yoshimatsu@databricks.com), [puneet.jain@databricks.com](mailto:puneet.jain@databricks.com), [lucas.bruand@databricks.com](mailto:lucas.bruand@databricks.com), [lourdes.martinez@databricks.com](mailto:lourdes.martinez@databricks.com)
+[ryuta.yoshimatsu@databricks.com](mailto:ryuta.yoshimatsu@databricks.com), [puneet.jain@databricks.com](mailto:puneet.jain@databricks.com), [lucas.bruand@databricks.com](mailto:lucas.bruand@databricks.com), [lourdes.martinez@databricks.com, rohan.parikh@databricks.com](mailto:lourdes.martinez@databricks.com)
 
 ## Project support
 
@@ -327,6 +324,7 @@ Any issues discovered through the use of this project should be filed as GitHub 
 | omegaconf        | A flexible configuration library                                                                   | BSD          | [https://pypi.org/project/omegaconf/](https://pypi.org/project/omegaconf/)                                     |
 | datasetsforecast | Datasets for Time series forecasting                                                               | MIT          | [https://pypi.org/project/datasetsforecast/](https://pypi.org/project/datasetsforecast/)                       |
 | statsforecast    | Time series forecasting suite using statistical models                                             | Apache 2.0   | [https://pypi.org/project/statsforecast/](https://pypi.org/project/statsforecast/)                             |
+| mlforecast       | Time series forecasting suite using machine learning models                                        | Apache 2.0   | [https://pypi.org/project/mlforecast/](https://pypi.org/project/mlforecast/)                                   |
 | neuralforecast   | Time series forecasting suite using deep learning models                                           | Apache 2.0   | [https://pypi.org/project/neuralforecast/](https://pypi.org/project/neuralforecast/)                           |
 | sktime           | A unified framework for machine learning with time series                                          | BSD 3-Clause | [https://pypi.org/project/sktime/](https://pypi.org/project/sktime/)                                           |
 | Chronos          | Pretrained (Language) Models for Probabilistic Time Series Forecasting                             | Apache 2.0   | [https://github.com/amazon-science/chronos-forecasting](https://github.com/amazon-science/chronos-forecasting) |

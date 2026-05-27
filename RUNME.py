@@ -57,7 +57,7 @@ job_json = {
             {
                 "job_cluster_key": "mmf_gpu_cluster",
                 "notebook_task": {
-                    "notebook_path": f"examples/daily/global_daily"
+                    "notebook_path": f"examples/daily/global_daily_dl"
                 },
                 "task_key": "mmf_03_global_models"
             },

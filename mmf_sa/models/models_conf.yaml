@@ -312,6 +312,72 @@ models:
     scaler_type: [ "robust", "standard" ]
     revin: [ False, True ]
 
+  MLForecastLGBM:
+    module: mmf_sa.models.mlforecast.MLForecastPipeline
+    model_class: MLForecastLGBM
+    framework: MLForecast
+    model_type: global
+    num_threads: -1
+    # → kwargs for LGBMRegressor(**model_params)
+    model_params:
+      learning_rate: 0.05
+      num_leaves: 64
+      n_estimators: 500
+      feature_fraction: 0.9
+      bagging_fraction: 0.9
+      min_child_samples: 20
+    # → kwargs for MLForecast(__init__)
+    features:
+      lags: [1, 7, 14, 28]
+      date_features: ["dayofweek", "month", "quarter"]
+      target_transforms: ["differences_1"]
+      lag_transforms:
+        1: ["rolling_mean_7", "rolling_mean_28"]
+        7: ["rolling_mean_28"]
+    # → kwargs for MLForecast.fit
+    fit_params:
+      use_static_features: true
+      dropna: true
+
+  MLForecastAutoLGBM:
+    module: mmf_sa.models.mlforecast.MLForecastPipeline
+    model_class: MLForecastAutoLGBM
+    framework: MLForecast
+    model_type: global
+    num_samples: 50         # Optuna trials
+    num_windows: 1          # rolling-origin windows during HPO
+    num_threads: -1
+    reuse_cv_splits: true
+    season_length: 7        # only honored when feature_space is empty
+    # → AutoModel(config=...) → LGBMRegressor hyperparameters
+    model_hp_space:
+      learning_rate:     [0.01, 0.3]
+      num_leaves:        [15, 255]
+      n_estimators:      [100, 1000]
+      feature_fraction:  [0.5, 1.0]
+      bagging_fraction:  [0.5, 1.0]
+      min_child_samples: [5, 100]
+    # → AutoMLForecast(init_config=...) → MLForecast.__init__ args
+    feature_space:
+      lags:
+        - [1, 7, 14]
+        - [1, 7, 14, 28]
+      date_features:
+        - ["dayofweek", "month"]
+        - ["dayofweek", "week", "month", "quarter"]
+      target_transforms:
+        - "none"
+        - "differences_1"
+        - "local_standard_scaler"
+      lag_transforms:
+        - "none"
+        - "rolling_mean_7"
+        - "rolling_mean_28"
+    # → AutoMLForecast(fit_config=...) → MLForecast.fit args
+    fit_space:
+      use_static_features: [true, false]
+      dropna: [true]
+
   ChronosBoltTiny:
     module: mmf_sa.models.chronosforecast.ChronosPipeline
     model_class: ChronosBoltTiny

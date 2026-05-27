@@ -56,6 +56,8 @@ active_models:
   - Chronos2Small
   - Chronos2Synth
   - TimesFM_2_5_200m
+  - MLForecastLGBM
+  - MLForecastAutoLGBM
 
 #Here we can override hyperparameters for built-in models
 models:
@@ -93,5 +95,31 @@ models:
     model_spec:
       season_length: 4
       decomposition_type: "multiplicative"
+
+  MLForecastLGBM:
+    features:
+      lags: [1, 4, 13, 26, 52]
+      date_features: ["week", "month"]
+      target_transforms: ["differences_1"]
+      lag_transforms:
+        1: ["rolling_mean_4", "rolling_mean_13"]
+
+  MLForecastAutoLGBM:
+    season_length: 52
+    feature_space:
+      lags:
+        - [1, 4, 13]
+        - [1, 4, 13, 26]
+        - [1, 4, 13, 26, 52]
+      date_features:
+        - ["week"]
+        - ["week", "month"]
+      target_transforms:
+        - "none"
+        - "differences_1"
+      lag_transforms:
+        - "none"
+        - "rolling_mean_4"
+        - "rolling_mean_13"
 
 temp_path: /Volumes/mmf/tmp/partitions

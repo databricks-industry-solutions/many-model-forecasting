@@ -15,6 +15,9 @@ local = [
 global = [
     "pandas==2.2.3",
     "neuralforecast==3.1.4",
+    "mlforecast==1.0.31",
+    "lightgbm==4.6.0",
+    "optuna==3.6.1",
 ]
 foundation = [
     "timesfm[torch,xreg] @ git+https://github.com/google-research/timesfm.git@a83dbf3f163cf15993dac6a45bbb5dcb160e14e8",
