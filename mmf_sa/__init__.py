@@ -10,6 +10,7 @@ from omegaconf import OmegaConf
 from omegaconf.basecontainer import BaseContainer
 from pyspark.sql import SparkSession, DataFrame
 from mmf_sa.Forecaster import Forecaster
+from mmf_sa.reconciliation import run_reconciliation
 
 
 def _configure_logging():
@@ -40,6 +41,7 @@ def run_forecast(
     scoring_output: str = None,
     evaluation_output: str = None,
     model_output: str = None,
+    fitted_output: str = None,
     use_case_name: str = None,
     static_features: List[str] = None,
     dynamic_future_numerical: List[str] = None,
@@ -180,6 +182,8 @@ def run_forecast(
         _conf["evaluation_output"] = evaluation_output
     if model_output is not None:
         _conf["model_output"] = model_output
+    if fitted_output is not None:
+        _conf["fitted_output"] = fitted_output
     if data_quality_check is not None:
         _conf["data_quality_check"] = data_quality_check
     if static_features is not None:
@@ -207,4 +211,4 @@ def run_forecast(
     return run_id
 
 
-__all__ = ["run_forecast", "Forecaster"]
+__all__ = ["run_forecast", "run_reconciliation", "Forecaster"]

@@ -1142,6 +1142,131 @@ AskUserQuestion:
 
 **Do NOT proceed until the user responds.**
 
+## Step 7 (Optional): Hierarchical prep — detect and aggregate hierarchy
+
+> Run this step only if the user's use case involves forecasting at multiple levels of a hierarchy (e.g., SKU → Category → Total, Store → Region → Country). If the use case is flat (one level of series), skip this step entirely.
+
+### Step 7a: Detect hierarchy — two cases
+
+Inspect `unique_id` values in `{use_case}_train_data`:
+
+**Case A — Leaves only (no `/` in unique_id):**
+Data has leaf-level series only (e.g., `Store1`, `Store2`). Check if hierarchy columns exist (`country`, `region`, `store`, etc.). If yes, `aggregate()` must be called to build all levels.
+
+**Case B — Already aggregated (`/` in unique_id):**
+Data already has all hierarchy levels (e.g., `USA`, `USA/California`, `USA/California/Store1`). Skip `aggregate()` but **still build and save `_hierarchy_S` and `_hierarchy_tags`** from the existing `unique_id` values — Skill 6 needs them regardless.
+
+```sql
+-- Detect case
+SELECT
+  COUNT(CASE WHEN unique_id LIKE '%/%' THEN 1 END) AS n_aggregated,
+  COUNT(CASE WHEN unique_id NOT LIKE '%/%' THEN 1 END) AS n_leaves
+FROM {catalog}.{schema}.{use_case}_train_data
+```
+
+Propose the hierarchy to the user — do NOT ask open-ended questions:
+
+> "I identified potential hierarchy columns in your data: `{col_1}` → `{col_2}` → `{col_3}` (top → bottom). This looks like a **{description}** hierarchy with {n_levels} levels and {n_leaf} leaf series.
+>
+> If you plan to reconcile forecasts across these levels (making sure store forecasts sum to region, which sums to country), I can prepare the data now. This will:
+> - Build aggregated series at all levels (adds ~{n_agg} series to `_train_data`)
+> - Save the hierarchy structure as `_hierarchy_S` and `_hierarchy_tags` tables (needed by Skill 6)
+>
+> Should I proceed with hierarchical prep?"
+
+**Wait for user confirmation before proceeding.**
+
+If the user says no, or no hierarchy columns are found, skip to the Outputs section.
+
+### Step 7b: Validate hierarchy prerequisite
+
+**⛔ Critical check:** The input data MUST have columns that identify each hierarchy level (e.g., `country`, `region`, `store`). A generic `unique_id` alone is not sufficient — `aggregate()` needs the individual level columns to build the hierarchy.
+
+Verify the columns exist:
+
+```sql
+SELECT {col_1}, {col_2}, {col_3}, COUNT(*) AS n
+FROM {catalog}.{schema}.{source_table}
+GROUP BY {col_1}, {col_2}, {col_3}
+ORDER BY 1, 2, 3
+LIMIT 20
+```
+
+If the hierarchy columns are missing, tell the user:
+> "Hierarchical reconciliation requires columns identifying each hierarchy level (`{col_1}`, `{col_2}`, `{col_3}`). These columns are not present in your data. To use Skill 6 later, add these columns to your source data before running Skill 1."
+
+### Step 7c: Run aggregate() and persist hierarchy metadata
+
+**Case A (leaves only):** Run `aggregate()` to build all levels, then persist everything.
+
+**Case B (already aggregated):** Skip `aggregate()` but still build and persist `_hierarchy_S` and `_hierarchy_tags` from existing `unique_id` values — Skill 6 requires them.
+
+```python
+import pandas as pd
+from hierarchicalforecast.utils import aggregate
+
+# Load train_data
+train_df = spark.table(f"{catalog}.{schema}.{use_case}_train_data").toPandas()
+train_df["ds"] = pd.to_datetime(train_df["ds"])
+
+# Detect case: already aggregated if unique_id contains '/'
+already_aggregated = train_df["unique_id"].str.contains("/").any()
+
+if not already_aggregated:
+    # Case A: run aggregate() to build all hierarchy levels
+    spec = [
+        ["{col_1}"],
+        ["{col_1}", "{col_2}"],
+        ["{col_1}", "{col_2}", "{col_3}"],  # bottom level
+    ]
+    Y_hier_df, S_df, tags = aggregate(df=train_df.drop(columns=["unique_id"], errors="ignore"), spec=spec)
+
+    # Overwrite train_data with all hierarchy levels
+    spark.createDataFrame(Y_hier_df).write.format("delta").mode("overwrite") \
+        .option("overwriteSchema", "true") \
+        .saveAsTable(f"{catalog}.{schema}.{use_case}_train_data")
+else:
+    # Case B: data already has all levels — build S_df and tags from existing unique_ids
+    spec = [
+        ["{col_1}"],
+        ["{col_1}", "{col_2}"],
+        ["{col_1}", "{col_2}", "{col_3}"],
+    ]
+    # Use leaf rows only (bottom level) to reconstruct the hierarchy
+    leaf_df = train_df[~train_df["unique_id"].str.contains("/")].copy() if not train_df["unique_id"].str.contains("/").all() else train_df.copy()
+    # Parse hierarchy from unique_id paths
+    parts = train_df["unique_id"].str.split("/", expand=True)
+    for i, col in enumerate(["{col_1}", "{col_2}", "{col_3}"][:parts.shape[1]]):
+        train_df[col] = parts[i]
+    _, S_df, tags = aggregate(df=train_df.drop(columns=["unique_id", "ds", "y"], errors="ignore").drop_duplicates(), spec=spec)
+
+# Persist S_df (summation matrix) — needed by both cases
+if "unique_id" not in S_df.columns:
+    S_df = S_df.reset_index(names="unique_id")
+spark.createDataFrame(S_df).write.format("delta").mode("overwrite") \
+    .option("overwriteSchema", "true") \
+    .saveAsTable(f"{catalog}.{schema}.{use_case}_hierarchy_S")
+
+# Persist tags (level membership) — needed by both cases
+tags_rows = [{"level_name": level, "unique_id": uid} for level, ids in tags.items() for uid in ids]
+spark.createDataFrame(pd.DataFrame(tags_rows)).write.format("delta").mode("overwrite") \
+    .option("overwriteSchema", "true") \
+    .saveAsTable(f"{catalog}.{schema}.{use_case}_hierarchy_tags")
+```
+
+Verify the results:
+
+```sql
+SELECT level_name, COUNT(*) AS n_series
+FROM {catalog}.{schema}.{use_case}_hierarchy_tags
+GROUP BY level_name ORDER BY n_series
+```
+
+Tell the user:
+> "Hierarchical prep complete. Hierarchy structure saved to `_hierarchy_S` and `_hierarchy_tags`. You can run Skill 6 (`/reconcile-hierarchical`) after Skill 5 to reconcile the forecasts."
+
+---
+
 ## Outputs
 
 - A conversation-carried `**{forecast_problem_brief}`** (3–6 lines) for downstream skills and optional research scoping
@@ -1149,6 +1274,7 @@ AskUserQuestion:
 - A Delta table `<catalog>.<schema>.{use_case}_cleaning_report` with columns: `unique_id`, `original_count`, `final_count`, `missing_filled`, `imputation_method`, `anomalies_capped`, `iqr_multiplier`, `excluded`, `exclusion_reason`
 - **(If dynamic future regressors)** A Delta table `<catalog>.<schema>.{use_case}_scoring_data` with columns `unique_id` (STRING), `ds` (DATE/TIMESTAMP — future dates only), all `static_features` columns (joined from `train_data`), plus all dynamic future regressor columns. Does NOT include `y` or `dynamic_historical_`* columns — `run_forecast` unions this with `train_data` via `allowMissingColumns=True`. This table is passed as `scoring_data` to `run_forecast` in Skill 4.
 - Exogenous regressor column lists carried forward: `{static_features}`, `{dynamic_future_numerical}`, `{dynamic_future_categorical}`, `{dynamic_historical_numerical}`, `{dynamic_historical_categorical}`
+- **(If hierarchical prep — Step 7)** A Delta table `{use_case}_hierarchy_S` (summation matrix) and `{use_case}_hierarchy_tags` (level membership), required by Skill 6
 - A reproducibility notebook uploaded to `notebooks/{use_case}/prep_data` that can re-create the training table with the same parameters
 - A summary: number of series, date range, detected frequency, cleaning actions taken
 - **Frequency alignment guarantees** (verified by Step 6b):
