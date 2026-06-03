@@ -10,7 +10,7 @@ from omegaconf import OmegaConf
 from omegaconf.basecontainer import BaseContainer
 from pyspark.sql import SparkSession, DataFrame
 from mmf_sa.Forecaster import Forecaster
-from mmf_sa.reconciliation import run_reconciliation
+from mmf_sa.reconciliation import run_reconciliation, run_aggregation
 
 
 def _configure_logging():
@@ -211,4 +211,4 @@ def run_forecast(
     return run_id
 
 
-__all__ = ["run_forecast", "run_reconciliation", "Forecaster"]
+__all__ = ["run_forecast", "run_aggregation", "run_reconciliation", "Forecaster"]

@@ -563,7 +563,7 @@ class Forecaster:
             src_df = src_df.unionByName(score_df, allowMissingColumns=True)
 
         # Specify output schema for Pandas UDF
-        # fitted_ds and fitted_y_hat capture in-sample predictions needed for MinTrace mint_shrink reconciliation
+        # fitted_ds, fitted_y, fitted_y_hat: in-sample predictions, written to fitted_output if configured
         output_schema = StructType(
             [
                 StructField(
@@ -586,7 +586,7 @@ class Forecaster:
             .applyInPandas(score_one_local_model_fn, schema=output_schema)
         )
 
-        # Write the forecast results to scoring_output (drop fitted columns)
+        # Write the results to a delta table
         (
             res_sdf.drop("fitted_ds", "fitted_y", "fitted_y_hat")
             .withColumn(self.conf["group_id"], col(self.conf["group_id"]).cast(StringType()))
@@ -599,7 +599,7 @@ class Forecaster:
             .saveAsTable(self.conf["scoring_output"])
         )
 
-        # Write fitted values to fitted_output if configured — used by MinTrace mint_shrink reconciliation
+        # Write fitted values to fitted_output if configured
         if self.conf.get("fitted_output", None) is not None:
             (
                 res_sdf.filter(col("fitted_ds").isNotNull())
@@ -631,10 +631,7 @@ class Forecaster:
         group_id = pdf[model.params["group_id"]].iloc[0]
         res_df, model_fitted = model.forecast(pdf)
         try:
-            # Extract fitted values (in-sample predictions) for MinTrace mint_shrink reconciliation.
-            # These are set as model.fitted_values by models that support forecast_fitted_values().
-            # Extract fitted values (in-sample predictions + actuals) for MinTrace mint_shrink reconciliation.
-            # forecast_fitted_values() returns y (actuals) and model columns (fitted predictions).
+            # Extract in-sample fitted values from model.fitted_values if available
             fitted_values = getattr(model_fitted, "fitted_values", None) or getattr(model, "fitted_values", None)
             if fitted_values is not None:
                 fitted_ds = fitted_values[model.params["date_col"]].to_numpy()

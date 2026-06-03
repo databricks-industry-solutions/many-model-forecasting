@@ -29,6 +29,59 @@ def _build_reconciler(method: str):
     return reconcilers[method]
 
 
+def run_aggregation(
+    spark: SparkSession,
+    train_table: str,
+    hierarchy_s_table: str,
+    hierarchy_tags_table: str,
+    hierarchy_cols: List[str],
+) -> None:
+    # Case A (leaves only): calls aggregate() to build upper levels, overwrites train_table.
+    # Case B (already aggregated): skips aggregate() but still builds and persists S_df and tags.
+    try:
+        from hierarchicalforecast.utils import aggregate
+    except ImportError:
+        raise ImportError(
+            "hierarchicalforecast is required for aggregation. "
+            "Install with: pip install mmf_sa[hierarchical]"
+        )
+
+    train_df = spark.table(train_table).toPandas()
+    train_df["ds"] = pd.to_datetime(train_df["ds"])
+
+    spec = [[hierarchy_cols[0]]]
+    for i in range(2, len(hierarchy_cols) + 1):
+        spec.append(hierarchy_cols[:i])
+
+    already_aggregated = train_df["unique_id"].str.contains("/").any()
+
+    if not already_aggregated:
+        Y_hier_df, S_df, tags = aggregate(
+            df=train_df.drop(columns=["unique_id"], errors="ignore"), spec=spec
+        )
+        spark.createDataFrame(Y_hier_df).write.format("delta").mode("overwrite") \
+            .option("overwriteSchema", "true").saveAsTable(train_table)
+    else:
+        parts = train_df["unique_id"].str.split("/", expand=True)
+        for i, col in enumerate(hierarchy_cols[:parts.shape[1]]):
+            train_df[col] = parts[i]
+        _, S_df, tags = aggregate(
+            df=train_df.drop(columns=["unique_id", "ds", "y"], errors="ignore").drop_duplicates(),
+            spec=spec,
+        )
+
+    if "unique_id" not in S_df.columns:
+        S_df = S_df.reset_index(names="unique_id")
+    spark.createDataFrame(S_df).write.format("delta").mode("overwrite") \
+        .option("overwriteSchema", "true").saveAsTable(hierarchy_s_table)
+
+    tags_rows = [{"level_name": level, "unique_id": uid} for level, ids in tags.items() for uid in ids]
+    spark.createDataFrame(pd.DataFrame(tags_rows)).write.format("delta").mode("overwrite") \
+        .option("overwriteSchema", "true").saveAsTable(hierarchy_tags_table)
+
+    logger.info(f"Aggregation complete: {hierarchy_s_table}, {hierarchy_tags_table}")
+
+
 def run_reconciliation(
     spark: SparkSession,
     best_models_table: str,
@@ -40,6 +93,7 @@ def run_reconciliation(
     target: str = "y",
     method: str = "MinTrace",
 ) -> None:
+    # Reconciles forecasts across hierarchy levels and writes output to Delta table.
     try:
         from hierarchicalforecast.core import HierarchicalReconciliation
     except ImportError:
@@ -50,9 +104,8 @@ def run_reconciliation(
 
     logger.info(f"Starting hierarchical reconciliation with method={method}")
 
-    # Read best_models output from Skill 5.
-    # scoring_output stores ds and y as arrays — explode to individual rows if needed.
     best_models_sdf = spark.table(best_models_table)
+    # Explode array-typed ds/y columns if present
     if isinstance(best_models_sdf.schema[date_col].dataType, __import__("pyspark.sql.types", fromlist=["ArrayType"]).ArrayType):
         from pyspark.sql.functions import explode, arrays_zip, col as scol
         best_models_sdf = (
@@ -67,19 +120,16 @@ def run_reconciliation(
     Y_df[date_col] = pd.to_datetime(Y_df[date_col])
     Y_df = Y_df.rename(columns={date_col: "ds", target: "y"})
 
-    # Read tags from Delta table (written by Skill 1) and reconstruct dict
+    # Reconstruct tags dict from hierarchy_tags table
     tags_df = spark.table(hierarchy_tags_table).toPandas()
     tags = {
         level: list(group["unique_id"])
         for level, group in tags_df.groupby("level_name")
     }
 
-    # Reconstruct S_df in memory from tags — avoids Delta roundtrip dtype issues
-    # and narwhals type conversion problems in hierarchicalforecast 1.5.x.
-    # tags has all the information needed: leaves = level with most series.
-    # Aggregated levels first, leaves last — required for the identity matrix check.
+    # Rebuild S_df from tags: aggregated levels first, leaves last
     _bottom_series = max(tags.values(), key=len)
-    _levels_ordered = sorted(tags.values(), key=len)  # top (fewest) → bottom (most)
+    _levels_ordered = sorted(tags.values(), key=len)
     _all_series = [uid for level in _levels_ordered for uid in level]
     _rows = [
         [1.0 if (uid == leaf or leaf.startswith(uid + "/")) else 0.0 for leaf in _bottom_series]
@@ -88,11 +138,11 @@ def run_reconciliation(
     S_df = pd.DataFrame(_rows, columns=list(_bottom_series), dtype="float64")
     S_df.insert(0, "unique_id", _all_series)
 
-    # Build Y_hat_df — hierarchicalforecast expects one column per model
+    # Y_hat_df: one column per model, required by HierarchicalReconciliation
     Y_hat_df = Y_df[["unique_id", "ds", "y"]].copy()
     Y_hat_df = Y_hat_df.rename(columns={"y": "BestModel"})
 
-    # Load fitted values for MinTrace mint_shrink — in-sample predictions needed to estimate error covariance
+    # Load in-sample fitted values for error covariance estimation
     Y_fitted_df = None
     if fitted_output is not None:
         fitted_raw = spark.table(fitted_output).toPandas()
@@ -114,7 +164,6 @@ def run_reconciliation(
                 Y_fitted_df = pd.DataFrame(rows)
                 logger.info(f"Loaded {len(Y_fitted_df)} fitted value rows for MinTrace")
 
-    # Reconcile
     reconciler = _build_reconciler(method)
     hrec = HierarchicalReconciliation(reconcilers=[reconciler])
     Y_rec_df = hrec.reconcile(
@@ -124,9 +173,7 @@ def run_reconciliation(
         tags=tags,
     )
 
-    # Build output with y_base and y_reconciled for auditability.
-    # hrec.reconcile() returns both the original forecast (BestModel) and reconciled (BestModel/{method}).
-    # We identify the reconciled column by looking for the '/' separator in column names.
+    # Identify reconciled column — named 'BestModel/{method}' by hrec.reconcile()
     reconciled_col = [c for c in Y_rec_df.columns if "/" in str(c)]
     if not reconciled_col:
         reconciled_col = [c for c in Y_rec_df.columns if c not in ("unique_id", "ds", "BestModel")]
@@ -134,11 +181,9 @@ def run_reconciliation(
     Y_out = Y_rec_df[["unique_id", "ds", "BestModel", reconciled_col]].copy()
     Y_out = Y_out.rename(columns={"BestModel": "y_base", reconciled_col: "y_reconciled"})
 
-    # Add hierarchy level label
     level_map = {uid: level for level, ids in tags.items() for uid in ids}
     Y_out["hierarchy_level"] = Y_out["unique_id"].map(level_map)
     Y_out["reconciliation_method"] = method
 
-    # Write to Delta table
     spark.createDataFrame(Y_out).write.format("delta").mode("overwrite").option("overwriteSchema", "true").saveAsTable(reconciliation_output)
     logger.info(f"Reconciliation output written to {reconciliation_output}")

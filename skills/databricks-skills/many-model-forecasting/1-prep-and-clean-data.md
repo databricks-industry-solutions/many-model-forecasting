@@ -1202,56 +1202,15 @@ If the hierarchy columns are missing, tell the user:
 **Case B (already aggregated):** Skip `aggregate()` but still build and persist `_hierarchy_S` and `_hierarchy_tags` from existing `unique_id` values — Skill 6 requires them.
 
 ```python
-import pandas as pd
-from hierarchicalforecast.utils import aggregate
+from mmf_sa import run_aggregation
 
-# Load train_data
-train_df = spark.table(f"{catalog}.{schema}.{use_case}_train_data").toPandas()
-train_df["ds"] = pd.to_datetime(train_df["ds"])
-
-# Detect case: already aggregated if unique_id contains '/'
-already_aggregated = train_df["unique_id"].str.contains("/").any()
-
-if not already_aggregated:
-    # Case A: run aggregate() to build all hierarchy levels
-    spec = [
-        ["{col_1}"],
-        ["{col_1}", "{col_2}"],
-        ["{col_1}", "{col_2}", "{col_3}"],  # bottom level
-    ]
-    Y_hier_df, S_df, tags = aggregate(df=train_df.drop(columns=["unique_id"], errors="ignore"), spec=spec)
-
-    # Overwrite train_data with all hierarchy levels
-    spark.createDataFrame(Y_hier_df).write.format("delta").mode("overwrite") \
-        .option("overwriteSchema", "true") \
-        .saveAsTable(f"{catalog}.{schema}.{use_case}_train_data")
-else:
-    # Case B: data already has all levels — build S_df and tags from existing unique_ids
-    spec = [
-        ["{col_1}"],
-        ["{col_1}", "{col_2}"],
-        ["{col_1}", "{col_2}", "{col_3}"],
-    ]
-    # Use leaf rows only (bottom level) to reconstruct the hierarchy
-    leaf_df = train_df[~train_df["unique_id"].str.contains("/")].copy() if not train_df["unique_id"].str.contains("/").all() else train_df.copy()
-    # Parse hierarchy from unique_id paths
-    parts = train_df["unique_id"].str.split("/", expand=True)
-    for i, col in enumerate(["{col_1}", "{col_2}", "{col_3}"][:parts.shape[1]]):
-        train_df[col] = parts[i]
-    _, S_df, tags = aggregate(df=train_df.drop(columns=["unique_id", "ds", "y"], errors="ignore").drop_duplicates(), spec=spec)
-
-# Persist S_df (summation matrix) — needed by both cases
-if "unique_id" not in S_df.columns:
-    S_df = S_df.reset_index(names="unique_id")
-spark.createDataFrame(S_df).write.format("delta").mode("overwrite") \
-    .option("overwriteSchema", "true") \
-    .saveAsTable(f"{catalog}.{schema}.{use_case}_hierarchy_S")
-
-# Persist tags (level membership) — needed by both cases
-tags_rows = [{"level_name": level, "unique_id": uid} for level, ids in tags.items() for uid in ids]
-spark.createDataFrame(pd.DataFrame(tags_rows)).write.format("delta").mode("overwrite") \
-    .option("overwriteSchema", "true") \
-    .saveAsTable(f"{catalog}.{schema}.{use_case}_hierarchy_tags")
+run_aggregation(
+    spark=spark,
+    train_table=f"{catalog}.{schema}.{use_case}_train_data",
+    hierarchy_s_table=f"{catalog}.{schema}.{use_case}_hierarchy_S",
+    hierarchy_tags_table=f"{catalog}.{schema}.{use_case}_hierarchy_tags",
+    hierarchy_cols=["{col_1}", "{col_2}", "{col_3}"],
+)
 ```
 
 Verify the results:

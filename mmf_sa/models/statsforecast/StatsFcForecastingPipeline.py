@@ -110,8 +110,7 @@ class StatsFcForecaster(ForecastingRegressor):
         _df = self.prepare_data(_df)
         self.fit(_df)
 
-        # Store fitted values for MinTrace mint_shrink reconciliation.
-        # forecast_fitted_values() requires forecast(fitted=True) to have been called first — fit() alone is not enough.
+        # Extract in-sample fitted values — requires forecast(fitted=True) before forecast_fitted_values()
         try:
             self.model.forecast(df=_df, h=self.params["prediction_length"], fitted=True)
             self.fitted_values = self.model.forecast_fitted_values().rename(
