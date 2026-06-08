@@ -30,7 +30,7 @@ tests = [
     "pyyaml",
     "pytest",
     "pytest-cov",
-    "pyspark==3.3.2",
+    "pyspark==3.4.4",
     "PyArrow>=1.0.0",
     "sqlalchemy",
     "alembic",
