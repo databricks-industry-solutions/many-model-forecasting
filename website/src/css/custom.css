@@ -1,0 +1,100 @@
+/**
+ * Custom styles for the Many Model Forecasting docs site.
+ * Uses a Databricks-inspired red/charcoal palette.
+ */
+
+:root {
+  --ifm-color-primary: #c8270d;
+  --ifm-color-primary-dark: #b42309;
+  --ifm-color-primary-darker: #a92108;
+  --ifm-color-primary-darkest: #8b1b07;
+  --ifm-color-primary-light: #e02f15;
+  --ifm-color-primary-lighter: #ed3318;
+  --ifm-color-primary-lightest: #f15136;
+  --ifm-code-font-size: 95%;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+  --ifm-navbar-background-color: #1b3139;
+  --ifm-navbar-link-color: #ffffff;
+  --ifm-navbar-link-hover-color: #ff6f61;
+}
+
+[data-theme='dark'] {
+  --ifm-color-primary: #ff6f61;
+  --ifm-color-primary-dark: #ff5446;
+  --ifm-color-primary-darker: #ff463a;
+  --ifm-color-primary-darkest: #ff1c0c;
+  --ifm-color-primary-light: #ff8a7c;
+  --ifm-color-primary-lighter: #ff988b;
+  --ifm-color-primary-lightest: #ffc2bb;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+  --ifm-navbar-background-color: #11262c;
+}
+
+.navbar__title {
+  color: #ffffff;
+}
+
+/* Hero banner on the landing page */
+.heroBanner {
+  padding: 5rem 0;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, #1b3139 0%, #c8270d 100%);
+  color: #ffffff;
+}
+
+.heroBanner h1 {
+  font-size: 3rem;
+  font-weight: 800;
+}
+
+.heroSubtitle {
+  font-size: 1.25rem;
+  max-width: 760px;
+  margin: 0 auto 2rem auto;
+  opacity: 0.95;
+}
+
+.buttons {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+@media screen and (max-width: 996px) {
+  .heroBanner {
+    padding: 3rem 1rem;
+  }
+  .heroBanner h1 {
+    font-size: 2.25rem;
+  }
+}
+
+/* Feature cards */
+.features {
+  display: flex;
+  align-items: stretch;
+  padding: 3rem 0;
+  width: 100%;
+}
+
+.featureCard {
+  height: 100%;
+  padding: 1.5rem;
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-radius: 12px;
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.featureCard:hover {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+  transform: translateY(-2px);
+}
+
+.featureTitle {
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
