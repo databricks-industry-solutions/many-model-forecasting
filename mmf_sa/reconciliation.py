@@ -1,17 +1,25 @@
 import logging
-from typing import List
+from typing import Dict, List, Optional
 
 import pandas as pd
+import polars as pl
 from pyspark.sql import SparkSession
 
 logger = logging.getLogger(__name__)
 
 SUPPORTED_METHODS = {"BottomUp", "TopDown", "MiddleOut", "MinTrace", "ERM"}
 
+# Maps MMF freq codes to pandas offset aliases (used in monthly ds reconstruction)
+_MMF_FREQ_TO_PANDAS = {"H": "h", "D": "D", "W": "W", "M": "MS"}
+
+
+def _spark_to_polars(spark: SparkSession, table_name: str) -> pl.DataFrame:
+    return pl.from_arrow(spark.table(table_name).toArrow())
+
 
 def _build_reconciler(method: str):
     try:
-        from hierarchicalforecast.methods import BottomUp, TopDown, MiddleOut, MinTrace, ERM
+        from hierarchicalforecast.methods import BottomUp, ERM, MiddleOut, MinTrace, TopDown
     except ImportError:
         raise ImportError(
             "hierarchicalforecast is required for reconciliation. "
@@ -27,6 +35,156 @@ def _build_reconciler(method: str):
     if method not in reconcilers:
         raise ValueError(f"Unsupported method '{method}'. Supported: {sorted(SUPPORTED_METHODS)}")
     return reconcilers[method]
+
+
+def _add_ds_from_window_start(df: pl.DataFrame, freq: str) -> pl.DataFrame:
+    """Add 'ds' column by offsetting backtest_window_start_date by _step periods at freq."""
+    # Ensure backtest_window_start_date is Datetime for duration arithmetic
+    df = df.with_columns(
+        pl.col("backtest_window_start_date").cast(pl.Datetime("us")).alias("backtest_window_start_date")
+    )
+    if freq == "H":
+        return df.with_columns(
+            (pl.col("backtest_window_start_date") + pl.duration(hours=pl.col("_step"))).alias("ds")
+        )
+    elif freq == "D":
+        return df.with_columns(
+            (pl.col("backtest_window_start_date") + pl.duration(days=pl.col("_step"))).alias("ds")
+        )
+    elif freq == "W":
+        return df.with_columns(
+            (pl.col("backtest_window_start_date") + pl.duration(weeks=pl.col("_step"))).alias("ds")
+        )
+    elif freq == "M":
+        # Monthly offsets require pandas round-trip due to variable month lengths
+        pdf = df.to_pandas()
+        pdf["ds"] = pd.to_datetime(pdf["backtest_window_start_date"]) + pdf["_step"].apply(
+            lambda n: pd.DateOffset(months=int(n))
+        )
+        return pl.from_pandas(pdf)
+    else:
+        raise ValueError(f"Unsupported freq '{freq}'. Supported: {sorted(_MMF_FREQ_TO_PANDAS.keys())}")
+
+
+def build_residual_Y_df_from_evaluation(
+    eval_frame: pl.DataFrame,
+    best_models_frame: pl.DataFrame,
+    freq: str,
+    model_col: str = "BestModel",
+) -> pl.DataFrame:
+    """Build a residual frame from evaluation_output ⋈ best_models.
+
+    Args:
+        eval_frame: Polars frame of evaluation_output — must have columns:
+            unique_id, backtest_window_start_date, forecast (List[Float64]),
+            actual (List[Float64]), model
+        best_models_frame: Polars frame with at least (unique_id, model) columns
+        freq: MMF frequency code — H | D | W | M
+        model_col: column name to assign to the forecast values in the output
+
+    Returns:
+        Polars DataFrame with columns: unique_id, ds, y, {model_col}
+        where y = backtest actual and {model_col} = backtest forecast.
+        Residual = y − {model_col}.
+    """
+    if freq not in _MMF_FREQ_TO_PANDAS:
+        raise ValueError(f"Unsupported freq '{freq}'. Supported: {sorted(_MMF_FREQ_TO_PANDAS.keys())}")
+
+    # Keep only the best model per series from evaluation_output
+    bm = best_models_frame.select(["unique_id", "model"]).unique()
+    joined = eval_frame.join(bm, on=["unique_id", "model"], how="inner")
+
+    if joined.is_empty():
+        raise ValueError(
+            "No matching rows after joining evaluation_output with best_models on (unique_id, model). "
+            "Verify that the model names in both tables match."
+        )
+
+    # Add step index [0, 1, ..., prediction_length-1] per row, then explode arrays
+    exploded = (
+        joined
+        .with_columns(
+            pl.int_ranges(pl.col("forecast").list.len()).alias("_step")
+        )
+        .explode(["forecast", "actual", "_step"])
+    )
+
+    # Reconstruct ds from backtest_window_start_date + _step * freq
+    exploded = _add_ds_from_window_start(exploded, freq)
+
+    # Deduplicate overlapping backtest windows — for the same (unique_id, ds) keep the
+    # residual from the most recent window (largest backtest_window_start_date)
+    result = (
+        exploded
+        .sort(["unique_id", "ds", "backtest_window_start_date"])
+        .unique(subset=["unique_id", "ds"], keep="last", maintain_order=False)
+        .rename({"actual": "y", "forecast": model_col})
+        .select(["unique_id", "ds", "y", model_col])
+    )
+
+    return result
+
+
+def reconcile_core(
+    Y_hat_df: pl.DataFrame,
+    Y_df: pl.DataFrame,
+    S_df: pl.DataFrame,
+    tags: Dict[str, List[str]],
+    method: str = "MinTrace",
+) -> pl.DataFrame:
+    """Apply hierarchical reconciliation — pure function, no Spark, no Delta.
+
+    Args:
+        Y_hat_df: Polars DataFrame (unique_id, ds, BestModel) — future forecasts to reconcile
+        Y_df: Polars DataFrame (unique_id, ds, y, BestModel) — backtest residuals for W estimation.
+              y = actual, BestModel = backtest forecast; residual = y − BestModel
+        S_df: Polars DataFrame (unique_id, leaf1, leaf2, ...) — summation matrix
+        tags: dict mapping level_name → list of unique_ids at that level
+        method: reconciliation method — BottomUp | TopDown | MiddleOut | MinTrace | ERM
+
+    Returns:
+        Polars DataFrame (unique_id, ds, y_base, y_reconciled, hierarchy_level, reconciliation_method)
+    """
+    try:
+        from hierarchicalforecast.core import HierarchicalReconciliation
+    except ImportError:
+        raise ImportError(
+            "hierarchicalforecast is required. Install with: pip install mmf_sa[hierarchical]"
+        )
+
+    reconciler = _build_reconciler(method)
+    hrec = HierarchicalReconciliation(reconcilers=[reconciler])
+
+    # hierarchicalforecast works on pandas
+    Y_hat_pd = Y_hat_df.to_pandas()
+    Y_pd = Y_df.to_pandas()
+    S_pd = S_df.to_pandas()
+
+    Y_rec_pd = hrec.reconcile(
+        Y_hat_df=Y_hat_pd,
+        Y_df=Y_pd,
+        S_df=S_pd,
+        tags=tags,
+    )
+
+    # Identify the reconciled column — named 'BestModel/{method}' by hrec.reconcile()
+    reconciled_col = next(
+        (c for c in Y_rec_pd.columns if "/" in str(c)),
+        next((c for c in Y_rec_pd.columns if c not in ("unique_id", "ds", "BestModel")), None),
+    )
+    if reconciled_col is None:
+        raise RuntimeError(
+            f"Could not identify reconciled column in output. Columns: {list(Y_rec_pd.columns)}"
+        )
+
+    Y_out = Y_rec_pd[["unique_id", "ds", "BestModel", reconciled_col]].copy()
+    Y_out = Y_out.rename(columns={"BestModel": "y_base", reconciled_col: "y_reconciled"})
+
+    level_map = {uid: level for level, ids in tags.items() for uid in ids}
+    Y_out["hierarchy_level"] = Y_out["unique_id"].map(level_map)
+    Y_out["reconciliation_method"] = method
+
+    return pl.from_pandas(Y_out)
 
 
 def run_aggregation(
@@ -63,7 +221,7 @@ def run_aggregation(
             .option("overwriteSchema", "true").saveAsTable(train_table)
     else:
         parts = train_df["unique_id"].str.split("/", expand=True)
-        for i, col in enumerate(hierarchy_cols[:parts.shape[1]]):
+        for i, col in enumerate(hierarchy_cols[: parts.shape[1]]):
             train_df[col] = parts[i]
         _, S_df, tags = aggregate(
             df=train_df.drop(columns=["unique_id", "ds", "y"], errors="ignore").drop_duplicates(),
@@ -85,105 +243,82 @@ def run_aggregation(
 def run_reconciliation(
     spark: SparkSession,
     best_models_table: str,
+    evaluation_output_table: str,
     hierarchy_s_table: str,
     hierarchy_tags_table: str,
     reconciliation_output: str,
-    fitted_output: str = None,
+    freq: str,
     date_col: str = "ds",
     target: str = "y",
     method: str = "MinTrace",
 ) -> None:
-    # Reconciles forecasts across hierarchy levels and writes output to Delta table.
-    try:
-        from hierarchicalforecast.core import HierarchicalReconciliation
-    except ImportError:
-        raise ImportError(
-            "hierarchicalforecast is required for reconciliation. "
-            "Install with: pip install mmf_sa[hierarchical]"
-        )
+    """Reconcile hierarchical forecasts using out-of-sample backtest residuals.
 
+    Args:
+        spark: active SparkSession
+        best_models_table: Delta table with best-model forecasts per series.
+            Expected columns: unique_id, {date_col} (Array[Timestamp] or Timestamp),
+            {target} (Array[Double] or Double), model
+        evaluation_output_table: Delta table with backtest results.
+            Expected columns: unique_id, backtest_window_start_date, forecast (Array[Double]),
+            actual (Array[Double]), model
+        hierarchy_s_table: Delta table with the summation matrix (from run_aggregation)
+        hierarchy_tags_table: Delta table with level→unique_id mapping (from run_aggregation)
+        reconciliation_output: Delta table to write reconciled forecasts
+        freq: MMF frequency code — H | D | W | M
+        date_col: date column name in best_models_table (default: ds)
+        target: target column name in best_models_table (default: y)
+        method: reconciliation method — BottomUp | TopDown | MiddleOut | MinTrace | ERM
+    """
     logger.info(f"Starting hierarchical reconciliation with method={method}")
 
-    best_models_sdf = spark.table(best_models_table)
-    # Explode array-typed ds/y columns if present
-    if isinstance(best_models_sdf.schema[date_col].dataType, __import__("pyspark.sql.types", fromlist=["ArrayType"]).ArrayType):
-        from pyspark.sql.functions import explode, arrays_zip, col as scol
-        best_models_sdf = (
-            best_models_sdf
-            .withColumn("_zipped", arrays_zip(scol(date_col), scol(target)))
-            .withColumn("_row", explode("_zipped"))
-            .withColumn(date_col, scol("_row")[date_col])
-            .withColumn(target, scol("_row")[target])
-            .drop("_zipped", "_row")
+    # Load Delta tables via Spark → Arrow → Polars
+    best_models_pl = _spark_to_polars(spark, best_models_table)
+    eval_pl = _spark_to_polars(spark, evaluation_output_table)
+    tags_pl = _spark_to_polars(spark, hierarchy_tags_table)
+
+    # Build Y_hat_df (forecasts to reconcile)
+    # best_models_table may have array-typed date/target columns (from scoring_output)
+    is_list_col = "list" in str(best_models_pl.schema.get(date_col, "")).lower()
+    if is_list_col:
+        y_hat_df = (
+            best_models_pl
+            .explode([date_col, target])
+            .rename({date_col: "ds", target: "BestModel"})
+            .select(["unique_id", "ds", "BestModel"])
         )
-    Y_df = best_models_sdf.toPandas()
-    Y_df[date_col] = pd.to_datetime(Y_df[date_col])
-    Y_df = Y_df.rename(columns={date_col: "ds", target: "y"})
+    else:
+        y_hat_df = (
+            best_models_pl
+            .rename({date_col: "ds", target: "BestModel"})
+            .select(["unique_id", "ds", "BestModel"])
+        )
 
-    # Reconstruct tags dict from hierarchy_tags table
-    tags_df = spark.table(hierarchy_tags_table).toPandas()
-    tags = {
-        level: list(group["unique_id"])
-        for level, group in tags_df.groupby("level_name")
-    }
+    # Build Y_df (unbiased out-of-sample residuals from evaluation_output ⋈ best_models)
+    y_df = build_residual_Y_df_from_evaluation(eval_pl, best_models_pl, freq)
 
-    # Rebuild S_df from tags: aggregated levels first, leaves last
-    _bottom_series = max(tags.values(), key=len)
-    _levels_ordered = sorted(tags.values(), key=len)
-    _all_series = [uid for level in _levels_ordered for uid in level]
-    _rows = [
-        [1.0 if (uid == leaf or leaf.startswith(uid + "/")) else 0.0 for leaf in _bottom_series]
-        for uid in _all_series
+    # Reconstruct tags dict
+    tags: Dict[str, List[str]] = {}
+    for row in tags_pl.to_dicts():
+        tags.setdefault(row["level_name"], []).append(row["unique_id"])
+
+    # Build S_df from tags (dense matrix — sparse deferred to v3)
+    bottom_series = max(tags.values(), key=len)
+    levels_ordered = sorted(tags.values(), key=len)
+    all_series = [uid for level in levels_ordered for uid in level]
+    rows = [
+        [1.0 if (uid == leaf or leaf.startswith(uid + "/")) else 0.0 for leaf in bottom_series]
+        for uid in all_series
     ]
-    S_df = pd.DataFrame(_rows, columns=list(_bottom_series), dtype="float64")
-    S_df.insert(0, "unique_id", _all_series)
-
-    # Y_hat_df: one column per model, required by HierarchicalReconciliation
-    Y_hat_df = Y_df[["unique_id", "ds", "y"]].copy()
-    Y_hat_df = Y_hat_df.rename(columns={"y": "BestModel"})
-
-    # Load in-sample fitted values for error covariance estimation
-    Y_fitted_df = None
-    if fitted_output is not None:
-        fitted_raw = spark.table(fitted_output).toPandas()
-        if not fitted_raw.empty and "fitted_ds" in fitted_raw.columns:
-            rows = []
-            for _, row in fitted_raw.iterrows():
-                if row["fitted_ds"] is not None and row["fitted_y_hat"] is not None:
-                    uid = row.get("unique_id", None)
-                    y_actuals = row.get("fitted_y", None)
-                    for i, (ds, y_hat) in enumerate(zip(row["fitted_ds"], row["fitted_y_hat"])):
-                        entry = {
-                            "unique_id": uid,
-                            "ds": pd.Timestamp(ds),
-                            "y": float(y_actuals[i]) if y_actuals is not None else float("nan"),
-                            "BestModel": float(y_hat),
-                        }
-                        rows.append(entry)
-            if rows:
-                Y_fitted_df = pd.DataFrame(rows)
-                logger.info(f"Loaded {len(Y_fitted_df)} fitted value rows for MinTrace")
-
-    reconciler = _build_reconciler(method)
-    hrec = HierarchicalReconciliation(reconcilers=[reconciler])
-    Y_rec_df = hrec.reconcile(
-        Y_hat_df=Y_hat_df,
-        Y_df=Y_fitted_df if Y_fitted_df is not None else Y_df[["unique_id", "ds", "y"]],
-        S_df=S_df,
-        tags=tags,
+    s_df = pl.DataFrame(
+        {leaf: [row[i] for row in rows] for i, leaf in enumerate(bottom_series)},
+        schema={leaf: pl.Float64 for leaf in bottom_series},
+    ).with_columns(pl.Series("unique_id", all_series)).select(
+        ["unique_id"] + list(bottom_series)
     )
 
-    # Identify reconciled column — named 'BestModel/{method}' by hrec.reconcile()
-    reconciled_col = [c for c in Y_rec_df.columns if "/" in str(c)]
-    if not reconciled_col:
-        reconciled_col = [c for c in Y_rec_df.columns if c not in ("unique_id", "ds", "BestModel")]
-    reconciled_col = reconciled_col[0]
-    Y_out = Y_rec_df[["unique_id", "ds", "BestModel", reconciled_col]].copy()
-    Y_out = Y_out.rename(columns={"BestModel": "y_base", reconciled_col: "y_reconciled"})
+    result = reconcile_core(y_hat_df, y_df, s_df, tags, method)
 
-    level_map = {uid: level for level, ids in tags.items() for uid in ids}
-    Y_out["hierarchy_level"] = Y_out["unique_id"].map(level_map)
-    Y_out["reconciliation_method"] = method
-
-    spark.createDataFrame(Y_out).write.format("delta").mode("overwrite").option("overwriteSchema", "true").saveAsTable(reconciliation_output)
+    spark.createDataFrame(result.to_pandas()).write.format("delta").mode("overwrite") \
+        .option("overwriteSchema", "true").saveAsTable(reconciliation_output)
     logger.info(f"Reconciliation output written to {reconciliation_output}")

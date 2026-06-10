@@ -15,9 +15,9 @@ Applies hierarchical reconciliation to MMF forecasts, making them coherent acros
 | Precondition | How to verify | If missing |
 |---|---|---|
 | `{catalog}.{schema}.{use_case}_best_models` exists and is populated | `SELECT COUNT(*) FROM ...` | Go back to **Skill 5 (`/post-process-and-evaluate`)** |
+| `{catalog}.{schema}.{use_case}_evaluation_output` exists and is populated | `SELECT COUNT(*) FROM ...` | Go back to **Skill 4 (`/execute-mmf-forecast`)** — `evaluation_output` is required for all methods |
 | `{catalog}.{schema}.{use_case}_hierarchy_S` exists | `SELECT COUNT(*) FROM ...` | Skill 1 hierarchical prep step was not run — go back to **Skill 1** |
 | `{catalog}.{schema}.{use_case}_hierarchy_tags` exists | `SELECT COUNT(*) FROM ...` | Same as above |
-| `{catalog}.{schema}.{use_case}_fitted_output` exists (MinTrace/ERM only) | `SELECT COUNT(*) FROM ...` | Required for MinTrace and ERM — `fitted_output` must have been passed to `run_forecast()` in Skill 4 |
 
 ## Parameters
 
@@ -26,6 +26,7 @@ Applies hierarchical reconciliation to MMF forecasts, making them coherent acros
 | `catalog` | From prior skills | Unity Catalog name |
 | `schema` | From prior skills | Schema name |
 | `use_case` | From Skill 1 | Use case name (prefixes all table names) |
+| `freq` | From Skill 1 | Frequency code — H \| D \| W \| M |
 | `date_col` | `ds` | Date column name |
 | `target` | `y` | Target column name |
 | `reconciliation_method` | `MinTrace` | Reconciliation method — see Step 2 |
@@ -56,6 +57,9 @@ Run the following checks:
 SELECT COUNT(*) AS n_best_models FROM {catalog}.{schema}.{use_case}_best_models
 ```
 ```sql
+SELECT COUNT(*) AS n_evaluation FROM {catalog}.{schema}.{use_case}_evaluation_output
+```
+```sql
 SELECT COUNT(*) AS n_S FROM {catalog}.{schema}.{use_case}_hierarchy_S
 ```
 ```sql
@@ -79,16 +83,14 @@ Do NOT ask "which method do you want?" — propose one with reasoning:
 > "I recommend **MinTrace** (`mint_shrink`) as it minimizes forecast error variance by estimating the error covariance matrix across all hierarchy levels — this is the statistically optimal approach.
 >
 > Alternatives:
-> - **BottomUp** — aggregates leaf forecasts upward. Simple, no fitted values needed. Good baseline.
+> - **BottomUp** — aggregates leaf forecasts upward. Simple, reliable baseline.
 > - **TopDown** — distributes top-level forecast downward. Works well when top-level demand is more reliable.
 > - **MiddleOut** — anchors at a middle level. Useful when middle aggregations are most trustworthy.
-> - **ERM** — learns an optimal reconciliation matrix. Needs fitted values like MinTrace.
+> - **ERM** — learns an optimal reconciliation matrix. Similar requirements to MinTrace.
 >
 > Unless you have a reason to prefer otherwise, I'll use MinTrace."
 
 Wait for user confirmation or correction.
-
-**Note:** MinTrace and ERM require `{use_case}_fitted_output` from `run_forecast()`. If that table is missing, default to BottomUp and explain why.
 
 ---
 
@@ -101,6 +103,7 @@ Generate `{notebook_base_path}/run_reconciliation.ipynb` from the template `mmf_
 | `{catalog}` | confirmed catalog |
 | `{schema}` | confirmed schema |
 | `{use_case}` | confirmed use case |
+| `{freq}` | frequency from Skill 1 — H \| D \| W \| M |
 | `{date_col}` | `ds` (or user-specified) |
 | `{target}` | `y` (or user-specified) |
 | `{reconciliation_method}` | method confirmed in Step 2 |
@@ -175,4 +178,4 @@ Generate a reproducibility notebook at `{notebook_base_path}/run_reconciliation_
 
 **What `aggregate()` did in Skill 1:** When Skill 1 detected a hierarchy and called `aggregate()`, it created series at all levels (`USA`, `USA/California`, `USA/California/Store1`) and saved the summation matrix (`_hierarchy_S`) and level metadata (`_hierarchy_tags`). Skill 6 uses those to apply the reconciliation.
 
-**MinTrace needs fitted values:** MinTrace estimates how correlated the forecast errors are across the hierarchy to find the optimal adjustment weights. It needs the in-sample model predictions (`_fitted_output`) to compute these correlations. BottomUp and TopDown do not need this.
+**MinTrace uses backtest residuals:** MinTrace estimates how correlated the forecast errors are across the hierarchy to find the optimal adjustment weights. It uses out-of-sample backtest residuals from `_evaluation_output` — this is statistically better than in-sample fits because it avoids optimism bias, especially important when MMF selects different models per series. All methods supported by Skill 6 use `_evaluation_output`.
