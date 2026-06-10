@@ -14,7 +14,7 @@ _MMF_FREQ_TO_PANDAS = {"H": "h", "D": "D", "W": "W", "M": "MS"}
 
 
 def _spark_to_polars(spark: SparkSession, table_name: str) -> pl.DataFrame:
-    return pl.from_arrow(spark.table(table_name).toArrow())
+    return pl.from_pandas(spark.table(table_name).toPandas())
 
 
 def _build_reconciler(method: str):
