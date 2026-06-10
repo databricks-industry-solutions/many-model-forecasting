@@ -49,16 +49,25 @@ AskUserQuestion:
 
 ---
 
-### Step 1: Verify preconditions
+### Step 1: Verify forecast inputs
 
-Run the following checks:
+Check that the forecast tables exist and are populated:
 
 ```sql
-SELECT COUNT(*) AS n_best_models FROM {catalog}.{schema}.{use_case}_best_models
+SELECT COUNT(*) AS n_forecast FROM {catalog}.{schema}.{use_case}_forecast_table
 ```
 ```sql
 SELECT COUNT(*) AS n_evaluation FROM {catalog}.{schema}.{use_case}_evaluation_output
 ```
+
+If either is missing or empty, route back to the appropriate skill (Skill 4 or Skill 5).
+
+---
+
+### Step 1a: Ensure hierarchy metadata (preprocessing)
+
+Check if `_hierarchy_S` and `_hierarchy_tags` exist:
+
 ```sql
 SELECT COUNT(*) AS n_S FROM {catalog}.{schema}.{use_case}_hierarchy_S
 ```
@@ -66,15 +75,45 @@ SELECT COUNT(*) AS n_S FROM {catalog}.{schema}.{use_case}_hierarchy_S
 SELECT COUNT(*) AS n_tags FROM {catalog}.{schema}.{use_case}_hierarchy_tags
 ```
 
-If any table is missing or empty, stop and route back to the appropriate skill.
+**If both exist:** continue to Step 2.
 
-Show the user the hierarchy levels found:
+**If either is missing:** derive them now from `{use_case}_train_data` unique_ids — do NOT ask the user to go back to Skill 1.
+
+Generate and execute a notebook on serverless compute with:
+
+```python
+%pip install /Workspace/Repos/{full_email}/many-model-forecasting[hierarchical] --quiet
+```
+```python
+dbutils.library.restartPython()
+```
+```python
+import sys
+sys.path.insert(0, "/Workspace/Repos/{full_email}/many-model-forecasting")
+from mmf_sa import derive_hierarchy_from_unique_ids
+
+derive_hierarchy_from_unique_ids(
+    spark=spark,
+    train_table="{catalog}.{schema}.{use_case}_train_data",
+    hierarchy_s_table="{catalog}.{schema}.{use_case}_hierarchy_S",
+    hierarchy_tags_table="{catalog}.{schema}.{use_case}_hierarchy_tags",
+)
+print("✓ Hierarchy metadata derived")
+```
+
+> ⛔ **Use `/Workspace/Repos/{full_email}/many-model-forecasting` as install path — NOT a GitHub URL.**
+
+After execution, verify:
 
 ```sql
 SELECT DISTINCT level_name FROM {catalog}.{schema}.{use_case}_hierarchy_tags ORDER BY level_name
 ```
 
+Show the user the detected hierarchy levels.
+
 ---
+
+### Step 2: Propose reconciliation method
 
 ### Step 2: Propose reconciliation method
 

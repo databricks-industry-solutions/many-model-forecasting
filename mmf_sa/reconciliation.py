@@ -212,21 +212,18 @@ def run_aggregation(
         spec.append(hierarchy_cols[:i])
 
     already_aggregated = train_df["unique_id"].str.contains("/").any()
+    if already_aggregated:
+        raise ValueError(
+            "run_aggregation() requires leaf-level data without '/' in unique_id. "
+            "The train table already contains aggregated series. "
+            "For data that already has all hierarchy levels, use derive_hierarchy_from_unique_ids() instead."
+        )
 
-    if not already_aggregated:
-        Y_hier_df, S_df, tags = aggregate(
-            df=train_df.drop(columns=["unique_id"], errors="ignore"), spec=spec
-        )
-        spark.createDataFrame(Y_hier_df).write.format("delta").mode("overwrite") \
-            .option("overwriteSchema", "true").saveAsTable(train_table)
-    else:
-        parts = train_df["unique_id"].str.split("/", expand=True)
-        for i, col in enumerate(hierarchy_cols[: parts.shape[1]]):
-            train_df[col] = parts[i]
-        _, S_df, tags = aggregate(
-            df=train_df.drop(columns=["unique_id", "ds", "y"], errors="ignore").drop_duplicates(),
-            spec=spec,
-        )
+    Y_hier_df, S_df, tags = aggregate(
+        df=train_df.drop(columns=["unique_id"], errors="ignore"), spec=spec
+    )
+    spark.createDataFrame(Y_hier_df).write.format("delta").mode("overwrite") \
+        .option("overwriteSchema", "true").saveAsTable(train_table)
 
     if "unique_id" not in S_df.columns:
         S_df = S_df.reset_index(names="unique_id")
@@ -238,6 +235,64 @@ def run_aggregation(
         .option("overwriteSchema", "true").saveAsTable(hierarchy_tags_table)
 
     logger.info(f"Aggregation complete: {hierarchy_s_table}, {hierarchy_tags_table}")
+
+
+def derive_hierarchy_from_unique_ids(
+    spark: SparkSession,
+    train_table: str,
+    hierarchy_s_table: str,
+    hierarchy_tags_table: str,
+    hierarchy_cols: Optional[List[str]] = None,
+) -> None:
+    """Build S_df and tags from unique_ids that already use slash notation.
+
+    Reads only distinct unique_ids — does not load time series values.
+    Use this for data that already has all hierarchy levels aggregated
+    (unique_ids like USA/California/Store1).
+
+    Args:
+        spark: active SparkSession
+        train_table: Delta table with unique_id column (slash-separated)
+        hierarchy_s_table: Delta table to write summation matrix
+        hierarchy_tags_table: Delta table to write level→unique_id mapping
+        hierarchy_cols: optional level names top→bottom (e.g. ["country","region","store"]).
+            If None, uses generic names ("level_1", "level_2", ...).
+    """
+    uid_list = sorted([
+        row["unique_id"]
+        for row in spark.sql(f"SELECT DISTINCT unique_id FROM {train_table}").collect()
+    ])
+
+    tags: Dict[str, List[str]] = {}
+    for uid in uid_list:
+        depth = len(uid.split("/"))
+        if hierarchy_cols and depth <= len(hierarchy_cols):
+            level_name = "/".join(hierarchy_cols[:depth])
+        else:
+            level_name = f"level_{depth}"
+        tags.setdefault(level_name, []).append(uid)
+
+    bottom_series = max(tags.values(), key=len)
+    levels_ordered = sorted(tags.values(), key=len)
+    all_series = [uid for level in levels_ordered for uid in level]
+
+    rows = [
+        [1.0 if (uid == leaf or leaf.startswith(uid + "/")) else 0.0 for leaf in bottom_series]
+        for uid in all_series
+    ]
+    s_df = pd.DataFrame(
+        {leaf: [row[i] for row in rows] for i, leaf in enumerate(bottom_series)},
+    )
+    s_df.insert(0, "unique_id", all_series)
+
+    spark.createDataFrame(s_df).write.format("delta").mode("overwrite") \
+        .option("overwriteSchema", "true").saveAsTable(hierarchy_s_table)
+
+    tags_rows = [{"level_name": level, "unique_id": uid} for level, ids in tags.items() for uid in ids]
+    spark.createDataFrame(pd.DataFrame(tags_rows)).write.format("delta").mode("overwrite") \
+        .option("overwriteSchema", "true").saveAsTable(hierarchy_tags_table)
+
+    logger.info(f"Hierarchy derived from unique_ids: {hierarchy_s_table}, {hierarchy_tags_table}")
 
 
 def run_reconciliation(

@@ -336,28 +336,36 @@ Store the answer as `{future_regressor_source}` (`same_table` or the name of the
 
 ### Step 5c: Hierarchical structure detection
 
-**Run this step if either signal was detected in Step 3: `{potential_hierarchy_cols}` non-empty (Case A) OR `{hierarchy_case}` = `B` (slashes in unique_id). If neither, skip to Step 6.**
+**Run this step if either signal was detected in Step 3: `{potential_hierarchy_cols}` non-empty OR `{hierarchy_case}` = `B` (slashes in unique_id). If neither, skip to Step 6.**
 
-Set `{run_hierarchical_prep}` = `true` automatically — do NOT ask the user for confirmation.
+**If `{hierarchy_case}` = `B` (data already has all levels with `/` in unique_id):**
 
-Inform the user (do not ask):
+Inform the user — no question needed:
 
-> "I detected hierarchical structure in your data:
-> {if potential_hierarchy_cols: `• Hierarchy columns: {potential_hierarchy_cols}`}
-> {if hierarchy_case == 'B': `• unique_id values already encode all hierarchy levels (e.g., USA/California/Store1)`}
->
-> I'll save `_hierarchy_S` and `_hierarchy_tags` after cleaning (Step 10) so Skill 6 can reconcile forecasts."
+> "I detected that your data already contains all hierarchy levels (unique_ids like `USA/California/Store1`). No aggregation needed. Skill 6 will derive the hierarchy structure when you run reconciliation."
 
-**Case A** — set `{hierarchy_cols}` = `{potential_hierarchy_cols}` in the order detected. If order is ambiguous, infer top-to-bottom from column name semantics (country → region → city → store → sku) or ask one focused question:
+Set `{run_hierarchical_prep}` = `false`. Skill 6 handles this automatically.
+
+---
+
+**If `{potential_hierarchy_cols}` non-empty (leaf-level data with separate hierarchy columns):**
+
+Ask the user:
 
 ```
 AskUserQuestion:
-  "What is the top-to-bottom order of these hierarchy columns?
-   Detected: {potential_hierarchy_cols}
-   e.g., country → region → store"
+  "I detected hierarchy columns in your data: {potential_hierarchy_cols}
+
+   Do you want to forecast at ALL hierarchy levels (e.g., store + region + country)?
+   This enables hierarchical reconciliation in Skill 6.
+
+   (a) Yes — forecast all levels. I'll aggregate the data to build series at every level.
+       Note: this multiplies the number of series and increases compute time in Skill 4.
+   (b) No — forecast only at the leaf level ({leaf_col}). Simpler and faster."
 ```
 
-**Case B** — infer `{hierarchy_cols}` from the unique_id structure (split on `/`, count levels, infer names from `{forecast_problem_brief}` or context). Use generic names (`level_1`, `level_2`, `level_3`) only if names cannot be determined.
+- If **(a)**: set `{run_hierarchical_prep}` = `true`. Confirm top-to-bottom column order if ambiguous, store as `{hierarchy_cols}`.
+- If **(b)**: set `{run_hierarchical_prep}` = `false`, skip Step 10.
 
 ### Step 6: Create {use_case}_train_data
 
@@ -1110,11 +1118,11 @@ FROM ...
 
 Present cleaning summary to the user.
 
-### Step 10: Hierarchical prep (if hierarchy detected)
+### Step 10: Hierarchical prep (Case A only)
 
-**Skip this step if `{run_hierarchical_prep}` = false.**
+**Skip this step if `{run_hierarchical_prep}` = false** (user chose leaf-only, or data is already aggregated).
 
-Now that training data is clean and finalized, create `_hierarchy_S` and `_hierarchy_tags`. This must happen before Skill 4 so models train on all hierarchy levels.
+Runs only when: data has leaf-level series with separate hierarchy columns AND user confirmed they want all levels. Calls `run_aggregation()` which overwrites `train_data` with all hierarchy levels and saves `_hierarchy_S` and `_hierarchy_tags` as a byproduct.
 
 #### Step 10-i: Generate hierarchical prep notebook
 
