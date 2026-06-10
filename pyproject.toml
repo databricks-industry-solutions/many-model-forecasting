@@ -1,6 +1,7 @@
 [project]
 name = "mmf_sa"
 version = "0.0.1"
+requires-python = ">=3.10"
 dependencies = [
     "omegaconf==2.3.0",
     "sktime==0.40.1",
