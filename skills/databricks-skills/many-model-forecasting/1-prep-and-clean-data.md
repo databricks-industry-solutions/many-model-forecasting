@@ -31,7 +31,6 @@ Before any data exploration, ask the user for a short use case identifier:
 AskUserQuestion:
   "Provide a short use case name (e.g., m4, rossmann, retail_sales).
    This will prefix all tables and assets created by the pipeline."
-  Options: [free text]
 ```
 
 Validation rules:
@@ -335,41 +334,30 @@ AskUserQuestion:
 
 Store the answer as `{future_regressor_source}` (`same_table` or the name of the separate table). If the user selects (b), ask for the table name in a follow-up question before proceeding.
 
-### ⛔ STOP GATE — Step 5c: Ask about hierarchical reconciliation
+### Step 5c: Hierarchical structure detection
 
-**Run this step if either hierarchy signal was detected in Step 3: `{potential_hierarchy_cols}` is non-empty (Case A) OR `{hierarchy_case}` = `B` (slashes in unique_id). If neither, skip to Step 6.**
+**Run this step if either signal was detected in Step 3: `{potential_hierarchy_cols}` non-empty (Case A) OR `{hierarchy_case}` = `B` (slashes in unique_id). If neither, skip to Step 6.**
 
-Do NOT wait for the user to mention hierarchy — ask proactively:
+Set `{run_hierarchical_prep}` = `true` automatically — do NOT ask the user for confirmation.
 
-```
-AskUserQuestion:
-  "I detected hierarchical structure in your data:
-   {if potential_hierarchy_cols: "• Hierarchy columns: {potential_hierarchy_cols} (Case A — leaf-level data)"}
-   {if hierarchy_case == 'B': "• unique_id values contain '/' (e.g., USA/California/Store1) — data is already aggregated at all levels (Case B)"}
+Inform the user (do not ask):
 
-   Do you plan to reconcile forecasts across hierarchy levels
-   (e.g., store forecasts should sum to region, which sums to country)?
+> "I detected hierarchical structure in your data:
+> {if potential_hierarchy_cols: `• Hierarchy columns: {potential_hierarchy_cols}`}
+> {if hierarchy_case == 'B': `• unique_id values already encode all hierarchy levels (e.g., USA/California/Store1)`}
+>
+> I'll save `_hierarchy_S` and `_hierarchy_tags` after cleaning (Step 10) so Skill 6 can reconcile forecasts."
 
-   (a) Yes — run hierarchical prep after cleaning (Step 10a).
-       Saves `_hierarchy_S` and `_hierarchy_tags` needed by Skill 6.
-   (b) No — treat data as flat, skip hierarchical prep."
-```
-
-**WAIT for the user to respond.** Set `{run_hierarchical_prep}` = `true` (a) or `false` (b).
-
-If the user selects (a), confirm the hierarchy column order (top → bottom):
+**Case A** — set `{hierarchy_cols}` = `{potential_hierarchy_cols}` in the order detected. If order is ambiguous, infer top-to-bottom from column name semantics (country → region → city → store → sku) or ask one focused question:
 
 ```
 AskUserQuestion:
-  "Confirm the hierarchy column order from TOP to BOTTOM level.
-   e.g., `country → region → store`
-
-   Detected columns: {potential_hierarchy_cols}
-
-   What is the correct top-to-bottom order?"
+  "What is the top-to-bottom order of these hierarchy columns?
+   Detected: {potential_hierarchy_cols}
+   e.g., country → region → store"
 ```
 
-Store as `{hierarchy_cols}` = ordered list (e.g., `["country", "region", "store"]`).
+**Case B** — infer `{hierarchy_cols}` from the unique_id structure (split on `/`, count levels, infer names from `{forecast_problem_brief}` or context). Use generic names (`level_1`, `level_2`, `level_3`) only if names cannot be determined.
 
 ### Step 6: Create {use_case}_train_data
 
@@ -1122,9 +1110,75 @@ FROM ...
 
 Present cleaning summary to the user.
 
-### Step 10: Generate reproducibility notebook
+### Step 10: Hierarchical prep (if hierarchy detected)
 
-After all interactive decisions have been made, generate a self-contained notebook that replays the entire data preparation pipeline. This notebook allows the user (or a teammate) to re-run the exact same prep with the same parameters without going through the interactive session again.
+**Skip this step if `{run_hierarchical_prep}` = false.**
+
+Now that training data is clean and finalized, create `_hierarchy_S` and `_hierarchy_tags`. This must happen before Skill 4 so models train on all hierarchy levels.
+
+#### Step 10-i: Generate hierarchical prep notebook
+
+Create a notebook at `notebooks/{use_case}/hierarchical_prep.ipynb` with exactly these cells:
+
+**Cell 1 — Install:**
+```python
+%pip install /Workspace/Repos/{full_email}/many-model-forecasting[hierarchical] --quiet
+```
+
+**Cell 2 — Restart:**
+```python
+dbutils.library.restartPython()
+```
+
+**Cell 3 — Run aggregation:**
+```python
+import sys
+sys.path.insert(0, "/Workspace/Repos/{full_email}/many-model-forecasting")
+from mmf_sa import run_aggregation
+
+run_aggregation(
+    spark=spark,
+    train_table="{catalog}.{schema}.{use_case}_train_data",
+    hierarchy_s_table="{catalog}.{schema}.{use_case}_hierarchy_S",
+    hierarchy_tags_table="{catalog}.{schema}.{use_case}_hierarchy_tags",
+    hierarchy_cols={hierarchy_cols},
+)
+print("✓ Hierarchical prep complete")
+```
+
+**Cell 4 — Verify:**
+```python
+display(spark.sql("""
+  SELECT level_name, COUNT(*) AS n_series
+  FROM {catalog}.{schema}.{use_case}_hierarchy_tags
+  GROUP BY level_name ORDER BY n_series
+"""))
+```
+
+> ⛔ **CRITICAL: Use `/Workspace/Repos/{full_email}/many-model-forecasting` as the install path — NOT a GitHub URL, NOT the local filesystem. This is the Databricks workspace repo path where the package is already checked out.**
+
+#### Step 10-ii: Upload and execute on serverless
+
+1. Save the notebook locally at `notebooks/{use_case}/hierarchical_prep.ipynb`
+2. Upload to the Databricks workspace at `{notebook_base_path}/hierarchical_prep`
+3. Execute on **serverless** compute using `execute_notebook()` — do NOT submit as a Databricks job
+
+Wait for execution to complete, then verify `_hierarchy_tags` exists:
+
+```sql
+SELECT level_name, COUNT(*) AS n_series
+FROM {catalog}.{schema}.{use_case}_hierarchy_tags
+GROUP BY level_name ORDER BY n_series
+```
+
+Tell the user:
+> "Hierarchical prep complete. `_hierarchy_S` and `_hierarchy_tags` saved. Skill 6 can use these to reconcile forecasts after Skill 5."
+
+---
+
+### Step 11: Generate reproducibility notebook
+
+After all data transformations are complete (including hierarchical prep if applicable), generate a self-contained notebook that replays the entire data preparation pipeline.
 
 **CRITICAL: Copy the template VERBATIM from `mmf_prep_notebook_template.ipynb`, only replacing the `{placeholder}` tokens with actual values. Do NOT add, remove, or modify any other code.**
 
@@ -1146,58 +1200,15 @@ Save the generated notebook to the **local project directory** at:
 
 - `notebooks/{use_case}/prep_data.ipynb`
 
-Then upload it to the Databricks workspace at `notebooks/{use_case}/prep_data`.
+Then upload it to the Databricks workspace at `{notebook_base_path}/prep_data`.
 
 Use the template from:
 
 - [mmf_prep_notebook_template.ipynb](mmf_prep_notebook_template.ipynb)
 
-### Step 10a: Hierarchical prep (optional)
-
-**Skip this step if `{run_hierarchical_prep}` = false (set in Step 5c).**
-
-Now that training data is clean and finalized, run aggregation. This must happen before Skill 4 (run_forecast) so that models are trained on all hierarchy levels.
-
-#### Step 10a-i: Detect Case A vs Case B
-
-```sql
-SELECT
-  COUNT(CASE WHEN unique_id LIKE '%/%' THEN 1 END) AS n_aggregated,
-  COUNT(CASE WHEN unique_id NOT LIKE '%/%' THEN 1 END) AS n_leaves
-FROM {catalog}.{schema}.{use_case}_train_data
-```
-
-- **Case A (`n_aggregated = 0`):** Leaf-level only. `run_aggregation()` calls `aggregate()` to build upper levels and overwrites `_train_data` with all levels.
-- **Case B (`n_aggregated > 0`):** All levels already present. Skips `aggregate()` but still derives and persists `_hierarchy_S` and `_hierarchy_tags`.
-
-#### Step 10a-ii: Run aggregation
-
-```python
-from mmf_sa import run_aggregation
-
-run_aggregation(
-    spark=spark,
-    train_table=f"{catalog}.{schema}.{use_case}_train_data",
-    hierarchy_s_table=f"{catalog}.{schema}.{use_case}_hierarchy_S",
-    hierarchy_tags_table=f"{catalog}.{schema}.{use_case}_hierarchy_tags",
-    hierarchy_cols={hierarchy_cols},
-)
-```
-
-#### Step 10a-iii: Verify
-
-```sql
-SELECT level_name, COUNT(*) AS n_series
-FROM {catalog}.{schema}.{use_case}_hierarchy_tags
-GROUP BY level_name ORDER BY n_series
-```
-
-Tell the user:
-> "Hierarchical prep complete. `_hierarchy_S` and `_hierarchy_tags` saved. You can run Skill 6 (`/reconcile-hierarchical`) after Skill 5 to reconcile the forecasts."
-
 ---
 
-### ⛔ STOP GATE — Step 11: Confirm before proceeding to next skill
+### ⛔ STOP GATE — Step 12: Confirm before proceeding to next skill
 
 Present a summary of what was done and ask whether to proceed:
 
