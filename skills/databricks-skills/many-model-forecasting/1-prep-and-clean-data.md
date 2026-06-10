@@ -149,7 +149,13 @@ Identify time series candidates by checking column types:
 
 A valid time series table MUST have all three: a date column, a numeric column, and a group column.
 
-**Hierarchy column detection:** After identifying the three mandatory columns (`unique_id`, `ds`, `y`), scan for additional STRING or low-cardinality categorical columns that are NOT mapped to `unique_id`, `ds`, or `y`. Columns with names like `country`, `region`, `state`, `store`, `category`, `subcategory`, `department`, `sku`, `brand` commonly encode hierarchy levels. Store any found as `{potential_hierarchy_cols}`. You will ask about hierarchy intent in Step 5c.
+**Hierarchy detection — two signals:**
+
+1. **Extra categorical columns (Case A):** Scan for additional STRING or low-cardinality categorical columns beyond `unique_id`, `ds`, `y` (e.g., `country`, `region`, `state`, `store`, `category`, `subcategory`, `department`, `sku`, `brand`). Store any found as `{potential_hierarchy_cols}`.
+
+2. **Slash in unique_id (Case B):** Check if any `unique_id` values contain `/` (e.g., `USA/California/Store1`). If yes, the data is already hierarchically structured — set `{hierarchy_case}` = `B`.
+
+If **either** signal is present, flag for Step 5c.
 
 ### Step 4: Profile candidates
 
@@ -331,21 +337,22 @@ Store the answer as `{future_regressor_source}` (`same_table` or the name of the
 
 ### ⛔ STOP GATE — Step 5c: Ask about hierarchical reconciliation
 
-**Run this step only if `{potential_hierarchy_cols}` is non-empty (detected in Step 3). If no hierarchy columns were found, skip to Step 6.**
+**Run this step if either hierarchy signal was detected in Step 3: `{potential_hierarchy_cols}` is non-empty (Case A) OR `{hierarchy_case}` = `B` (slashes in unique_id). If neither, skip to Step 6.**
 
 Do NOT wait for the user to mention hierarchy — ask proactively:
 
 ```
 AskUserQuestion:
-  "I noticed columns in your data that suggest a hierarchy: {potential_hierarchy_cols}.
+  "I detected hierarchical structure in your data:
+   {if potential_hierarchy_cols: "• Hierarchy columns: {potential_hierarchy_cols} (Case A — leaf-level data)"}
+   {if hierarchy_case == 'B': "• unique_id values contain '/' (e.g., USA/California/Store1) — data is already aggregated at all levels (Case B)"}
 
-   Do you plan to forecast at multiple aggregation levels and reconcile forecasts
+   Do you plan to reconcile forecasts across hierarchy levels
    (e.g., store forecasts should sum to region, which sums to country)?
 
    (a) Yes — run hierarchical prep after cleaning (Step 10a).
-       I'll build aggregated series at all levels and save the hierarchy structure
-       (`_hierarchy_S`, `_hierarchy_tags`) needed by Skill 6.
-   (b) No — treat data as flat (one level only), skip hierarchical prep."
+       Saves `_hierarchy_S` and `_hierarchy_tags` needed by Skill 6.
+   (b) No — treat data as flat, skip hierarchical prep."
 ```
 
 **WAIT for the user to respond.** Set `{run_hierarchical_prep}` = `true` (a) or `false` (b).
