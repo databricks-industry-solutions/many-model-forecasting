@@ -149,6 +149,8 @@ Identify time series candidates by checking column types:
 
 A valid time series table MUST have all three: a date column, a numeric column, and a group column.
 
+**Hierarchy column detection:** After identifying the three mandatory columns (`unique_id`, `ds`, `y`), scan for additional STRING or low-cardinality categorical columns that are NOT mapped to `unique_id`, `ds`, or `y`. Columns with names like `country`, `region`, `state`, `store`, `category`, `subcategory`, `department`, `sku`, `brand` commonly encode hierarchy levels. Store any found as `{potential_hierarchy_cols}`. You will ask about hierarchy intent in Step 5c.
+
 ### Step 4: Profile candidates
 
 For each candidate table, run these queries:
@@ -326,6 +328,41 @@ AskUserQuestion:
 **WAIT for the user to respond.**
 
 Store the answer as `{future_regressor_source}` (`same_table` or the name of the separate table). If the user selects (b), ask for the table name in a follow-up question before proceeding.
+
+### ⛔ STOP GATE — Step 5c: Ask about hierarchical reconciliation
+
+**Run this step only if `{potential_hierarchy_cols}` is non-empty (detected in Step 3). If no hierarchy columns were found, skip to Step 6.**
+
+Do NOT wait for the user to mention hierarchy — ask proactively:
+
+```
+AskUserQuestion:
+  "I noticed columns in your data that suggest a hierarchy: {potential_hierarchy_cols}.
+
+   Do you plan to forecast at multiple aggregation levels and reconcile forecasts
+   (e.g., store forecasts should sum to region, which sums to country)?
+
+   (a) Yes — run hierarchical prep after cleaning (Step 10a).
+       I'll build aggregated series at all levels and save the hierarchy structure
+       (`_hierarchy_S`, `_hierarchy_tags`) needed by Skill 6.
+   (b) No — treat data as flat (one level only), skip hierarchical prep."
+```
+
+**WAIT for the user to respond.** Set `{run_hierarchical_prep}` = `true` (a) or `false` (b).
+
+If the user selects (a), confirm the hierarchy column order (top → bottom):
+
+```
+AskUserQuestion:
+  "Confirm the hierarchy column order from TOP to BOTTOM level.
+   e.g., `country → region → store`
+
+   Detected columns: {potential_hierarchy_cols}
+
+   What is the correct top-to-bottom order?"
+```
+
+Store as `{hierarchy_cols}` = ordered list (e.g., `["country", "region", "store"]`).
 
 ### Step 6: Create {use_case}_train_data
 
@@ -1108,6 +1145,51 @@ Use the template from:
 
 - [mmf_prep_notebook_template.ipynb](mmf_prep_notebook_template.ipynb)
 
+### Step 10a: Hierarchical prep (optional)
+
+**Skip this step if `{run_hierarchical_prep}` = false (set in Step 5c).**
+
+Now that training data is clean and finalized, run aggregation. This must happen before Skill 4 (run_forecast) so that models are trained on all hierarchy levels.
+
+#### Step 10a-i: Detect Case A vs Case B
+
+```sql
+SELECT
+  COUNT(CASE WHEN unique_id LIKE '%/%' THEN 1 END) AS n_aggregated,
+  COUNT(CASE WHEN unique_id NOT LIKE '%/%' THEN 1 END) AS n_leaves
+FROM {catalog}.{schema}.{use_case}_train_data
+```
+
+- **Case A (`n_aggregated = 0`):** Leaf-level only. `run_aggregation()` calls `aggregate()` to build upper levels and overwrites `_train_data` with all levels.
+- **Case B (`n_aggregated > 0`):** All levels already present. Skips `aggregate()` but still derives and persists `_hierarchy_S` and `_hierarchy_tags`.
+
+#### Step 10a-ii: Run aggregation
+
+```python
+from mmf_sa import run_aggregation
+
+run_aggregation(
+    spark=spark,
+    train_table=f"{catalog}.{schema}.{use_case}_train_data",
+    hierarchy_s_table=f"{catalog}.{schema}.{use_case}_hierarchy_S",
+    hierarchy_tags_table=f"{catalog}.{schema}.{use_case}_hierarchy_tags",
+    hierarchy_cols={hierarchy_cols},
+)
+```
+
+#### Step 10a-iii: Verify
+
+```sql
+SELECT level_name, COUNT(*) AS n_series
+FROM {catalog}.{schema}.{use_case}_hierarchy_tags
+GROUP BY level_name ORDER BY n_series
+```
+
+Tell the user:
+> "Hierarchical prep complete. `_hierarchy_S` and `_hierarchy_tags` saved. You can run Skill 6 (`/reconcile-hierarchical`) after Skill 5 to reconcile the forecasts."
+
+---
+
 ### ⛔ STOP GATE — Step 11: Confirm before proceeding to next skill
 
 Present a summary of what was done and ask whether to proceed:
@@ -1141,90 +1223,6 @@ AskUserQuestion:
 ```
 
 **Do NOT proceed until the user responds.**
-
-## Step 7 (Optional): Hierarchical prep — detect and aggregate hierarchy
-
-> Run this step only if the user's use case involves forecasting at multiple levels of a hierarchy (e.g., SKU → Category → Total, Store → Region → Country). If the use case is flat (one level of series), skip this step entirely.
-
-### Step 7a: Detect hierarchy — two cases
-
-Inspect `unique_id` values in `{use_case}_train_data`:
-
-**Case A — Leaves only (no `/` in unique_id):**
-Data has leaf-level series only (e.g., `Store1`, `Store2`). Check if hierarchy columns exist (`country`, `region`, `store`, etc.). If yes, `aggregate()` must be called to build all levels.
-
-**Case B — Already aggregated (`/` in unique_id):**
-Data already has all hierarchy levels (e.g., `USA`, `USA/California`, `USA/California/Store1`). Skip `aggregate()` but **still build and save `_hierarchy_S` and `_hierarchy_tags`** from the existing `unique_id` values — Skill 6 needs them regardless.
-
-```sql
--- Detect case
-SELECT
-  COUNT(CASE WHEN unique_id LIKE '%/%' THEN 1 END) AS n_aggregated,
-  COUNT(CASE WHEN unique_id NOT LIKE '%/%' THEN 1 END) AS n_leaves
-FROM {catalog}.{schema}.{use_case}_train_data
-```
-
-Propose the hierarchy to the user — do NOT ask open-ended questions:
-
-> "I identified potential hierarchy columns in your data: `{col_1}` → `{col_2}` → `{col_3}` (top → bottom). This looks like a **{description}** hierarchy with {n_levels} levels and {n_leaf} leaf series.
->
-> If you plan to reconcile forecasts across these levels (making sure store forecasts sum to region, which sums to country), I can prepare the data now. This will:
-> - Build aggregated series at all levels (adds ~{n_agg} series to `_train_data`)
-> - Save the hierarchy structure as `_hierarchy_S` and `_hierarchy_tags` tables (needed by Skill 6)
->
-> Should I proceed with hierarchical prep?"
-
-**Wait for user confirmation before proceeding.**
-
-If the user says no, or no hierarchy columns are found, skip to the Outputs section.
-
-### Step 7b: Validate hierarchy prerequisite
-
-**⛔ Critical check:** The input data MUST have columns that identify each hierarchy level (e.g., `country`, `region`, `store`). A generic `unique_id` alone is not sufficient — `aggregate()` needs the individual level columns to build the hierarchy.
-
-Verify the columns exist:
-
-```sql
-SELECT {col_1}, {col_2}, {col_3}, COUNT(*) AS n
-FROM {catalog}.{schema}.{source_table}
-GROUP BY {col_1}, {col_2}, {col_3}
-ORDER BY 1, 2, 3
-LIMIT 20
-```
-
-If the hierarchy columns are missing, tell the user:
-> "Hierarchical reconciliation requires columns identifying each hierarchy level (`{col_1}`, `{col_2}`, `{col_3}`). These columns are not present in your data. To use Skill 6 later, add these columns to your source data before running Skill 1."
-
-### Step 7c: Run aggregate() and persist hierarchy metadata
-
-**Case A (leaves only):** Run `aggregate()` to build all levels, then persist everything.
-
-**Case B (already aggregated):** Skip `aggregate()` but still build and persist `_hierarchy_S` and `_hierarchy_tags` from existing `unique_id` values — Skill 6 requires them.
-
-```python
-from mmf_sa import run_aggregation
-
-run_aggregation(
-    spark=spark,
-    train_table=f"{catalog}.{schema}.{use_case}_train_data",
-    hierarchy_s_table=f"{catalog}.{schema}.{use_case}_hierarchy_S",
-    hierarchy_tags_table=f"{catalog}.{schema}.{use_case}_hierarchy_tags",
-    hierarchy_cols=["{col_1}", "{col_2}", "{col_3}"],
-)
-```
-
-Verify the results:
-
-```sql
-SELECT level_name, COUNT(*) AS n_series
-FROM {catalog}.{schema}.{use_case}_hierarchy_tags
-GROUP BY level_name ORDER BY n_series
-```
-
-Tell the user:
-> "Hierarchical prep complete. Hierarchy structure saved to `_hierarchy_S` and `_hierarchy_tags`. You can run Skill 6 (`/reconcile-hierarchical`) after Skill 5 to reconcile the forecasts."
-
----
 
 ## Outputs
 
