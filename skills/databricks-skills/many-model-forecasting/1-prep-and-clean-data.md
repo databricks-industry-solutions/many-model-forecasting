@@ -152,7 +152,7 @@ A valid time series table MUST have all three: a date column, a numeric column, 
    FROM {catalog}.{schema}.{table_name}
    WHERE {unique_id_col} LIKE '%/%'
    ```
-   If `n_slash > 0`, the data already has all hierarchy levels encoded in unique_id. Set `{hierarchy_case}` = `B`.
+   If `n_slash > 0`, the data already has all hierarchy levels encoded in unique_id. Set `{already_aggregated}` = `true`.
 
 If either signal is present, flag for Step 4b.
 
@@ -205,18 +205,17 @@ Report the detected frequency to the user.
 
 **Skip if neither hierarchy signal was detected in Step 3.**
 
-Include this as part of the profiling summary — do NOT ask a separate question, just present the finding and one clear choice:
+Include this as part of the profiling summary. Output VERBATIM — do NOT add any heading, label, or preamble (no "Hallazgo:", no "Detectado:", no internal variable names).
 
-**If `{hierarchy_case}` = `B` (slashes in unique_id):**
+**If `{already_aggregated}` = `true` (slashes detected in unique_id):**
 
-> "📊 Este dataset tiene estructura jerárquica: los `unique_id` codifican múltiples niveles (e.g., `USA/California/Store1`). Esto lo hace candidato para **reconciliación jerárquica** después del forecasting — garantiza que los forecasts de cada nivel sumen correctamente hacia arriba.
->
-> ¿Quieres que extraiga ahora la estructura jerárquica? No es obligatorio en este momento — puedes hacerlo más adelante, después de obtener los primeros resultados de forecast.
->
-> (a) Sí, extraer ahora
-> (b) No, lo haré más adelante"
+Output exactly — no question, no options, just informational:
 
-**If `{potential_hierarchy_cols}` non-empty (Case A — separate hierarchy columns):**
+> "📊 Este dataset tiene estructura jerárquica: los `unique_id` codifican múltiples niveles (e.g., `USA/California/Store1`). Es candidato para **reconciliación jerárquica** después del forecasting — puedes hacerlo más adelante, una vez que tengas los primeros resultados de forecast."
+
+Set `{run_hierarchical_prep}` = `false`. Do NOT ask the user anything. Continue the pipeline.
+
+**If `{potential_hierarchy_cols}` non-empty (separate hierarchy columns detected):**
 
 > "📊 Detecté columnas que sugieren una jerarquía: `{potential_hierarchy_cols}`. Forecasting en todos los niveles (ej. tienda + región + país) permite reconciliar forecasts más adelante.
 >
@@ -227,9 +226,8 @@ Include this as part of the profiling summary — do NOT ask a separate question
 
 **WAIT for the user to respond.**
 
-- If **(a)** for Case B: set `{run_hierarchical_prep}` = `false` (hierarchy already present, Step 10 not needed; Skill 6 derivará si hace falta)
-- If **(a)** for Case A: set `{run_hierarchical_prep}` = `true`, confirm `{hierarchy_cols}` order if ambiguous
-- If **(b)** either case: set `{run_hierarchical_prep}` = `false`
+- If **(a)**: set `{run_hierarchical_prep}` = `true`. Set `{hierarchy_cols}` = ordered list from `{potential_hierarchy_cols}` top-to-bottom (e.g. `["country", "region", "store"]`). If order is ambiguous, ask in plain text: "Confirm the hierarchy order from broadest to narrowest (e.g. country, region, store):". Tell the user: `"Perfecto, agregaré todos los niveles jerárquicos antes de terminar la preparación de datos."` Do NOT mention step numbers or internal variable names.
+- If **(b)**: set `{run_hierarchical_prep}` = `false`. Tell the user: `"De acuerdo, puedes hacerlo más adelante."` Do NOT mention step numbers or internal variable names.
 
 **Persist the result as `{freq}` ∈ `{H, D, W, M}` for the rest of the skill.** Every subsequent SQL block (Steps 6, 6a, 6b, and the imputation/anomaly steps) MUST be selected by `{freq}` — the agent does NOT pick a template freely. **For `{freq} == "M"` and `{freq} == "W"` the date-alignment rule in Step 6 is mandatory and is verified by Step 6b — it is not optional and cannot be skipped.**
 
@@ -366,9 +364,9 @@ Store the answer as `{future_regressor_source}` (`same_table` or the name of the
 
 ### Step 5c: Confirm hierarchy decision
 
-**Skip if no hierarchy was detected in Step 3.**
+**Skip if no hierarchy was detected in Step 3, or if `{already_aggregated}` = `true` (data already has all levels — no aggregation in Skill 1).**
 
-`{run_hierarchical_prep}` was already set in Step 4b. No further action here — carry the value forward to Step 10.
+If `{run_hierarchical_prep}` was set in Step 4b, carry it forward and **do not reset it** — it must still hold its value when Step 10 is reached after all the cleaning steps.
 
 ### Step 6: Create {use_case}_train_data
 
@@ -679,11 +677,11 @@ If NULLs still remain (e.g., forward fill had no non-NULL training value), warn 
 
 Present the final scoring table summary to the user before continuing.
 
-### Step 6b: Encode and type-safe categorical covariates
+### Step 6c: Encode and type-safe categorical covariates
 
 **Run this step whenever categorical covariate columns are present** — i.e., any of `{static_features}`, `{dynamic_future_categorical}`, or `{dynamic_historical_categorical}` are listed, regardless of whether they are string-typed or already numeric.
 
-#### Step 6b-i: Detect covariate columns that need encoding or type-casting
+#### Step 6c-i: Detect covariate columns that need encoding or type-casting
 
 ```sql
 DESCRIBE TABLE {catalog}.{schema}.{use_case}_train_data
@@ -691,15 +689,15 @@ DESCRIBE TABLE {catalog}.{schema}.{use_case}_train_data
 
 Inspect every column listed in `{static_features}`, `{dynamic_future_categorical}`, and `{dynamic_historical_categorical}`. Classify each into one of two buckets:
 
-1. **Needs encoding** — data type is non-numerical (`STRING`, `BOOLEAN`, `BINARY`, etc.). These must be label-encoded and cast to DOUBLE (Steps 6b-ii through 6b-v).
+1. **Needs encoding** — data type is non-numerical (`STRING`, `BOOLEAN`, `BINARY`, etc.). These must be label-encoded and cast to DOUBLE (Steps 6c-ii through 6c-v).
 2. **Needs type-cast only** — data type is an integer type (`INT`, `BIGINT`, `SMALLINT`, `TINYINT`) but not yet `DOUBLE` or `FLOAT`. These are already numeric (possibly pre-encoded from the source) and do not need label encoding, but **must be cast to DOUBLE** for compatibility with the forecasting pipeline.
 3. **No action needed** — data type is already `DOUBLE`, `FLOAT`, or `DECIMAL`. Skip.
 
-If **no columns need encoding** (bucket 1 is empty), skip the encoding steps (6b-ii through 6b-v) but still execute Step 6b-i-a below for type-casting, then skip to Step 6b-vi.
+If **no columns need encoding** (bucket 1 is empty), skip the encoding steps (6c-ii through 6c-v) but still execute Step 6c-i-a below for type-casting, then skip to Step 6c-vi.
 
-If **no columns need encoding or type-casting** (both bucket 1 and bucket 2 are empty), skip Step 6b entirely.
+If **no columns need encoding or type-casting** (both bucket 1 and bucket 2 are empty), skip Step 6c entirely.
 
-#### Step 6b-i-a: Cast pre-encoded integer covariate columns to DOUBLE
+#### Step 6c-i-a: Cast pre-encoded integer covariate columns to DOUBLE
 
 For each column in **bucket 2** (integer-typed, no encoding needed), cast to DOUBLE in `train_data`:
 
@@ -719,7 +717,7 @@ ALTER TABLE {catalog}.{schema}.{use_case}_scoring_data
 
 This step runs **before** any label encoding and ensures that all categorical covariate columns — whether they arrived as strings or pre-encoded integers — end up as DOUBLE in both tables.
 
-#### ⛔ STOP GATE — Step 6b-ii: Warn user and confirm encoding strategy
+#### ⛔ STOP GATE — Step 6c-ii: Warn user and confirm encoding strategy
 
 **Do NOT apply any encoding until the user confirms.**
 
@@ -748,11 +746,11 @@ AskUserQuestion:
 
 **WAIT for the user to respond.**
 
-- If **(a)**: proceed with Step 6b-iii below.
+- If **(a)**: proceed with Step 6c-iii below.
 - If **(b)**: stop the pipeline here. Inform the user they can re-run Skill 1 from this step after applying their own encoding to the `{use_case}_train_data` and `{use_case}_scoring_data` tables.
 - If **(c)**: remove the listed columns from `{use_case}_train_data` and `{use_case}_scoring_data`, clear them from the covariate lists (`{static_features}`, `{dynamic_future_categorical}`, `{dynamic_historical_categorical}`), and skip to Step 7.
 
-#### Step 6b-iii: Create encoding lookup table
+#### Step 6c-iii: Create encoding lookup table
 
 For each string-typed categorical column, build a deterministic mapping from string values to integer codes:
 
@@ -771,7 +769,7 @@ FROM (
 
 If multiple categorical columns need encoding, union the results for all columns into the same lookup table. Using `UNION` across both train and scoring tables ensures every category value gets a consistent code.
 
-#### Step 6b-iv: Apply encoding to train_data
+#### Step 6c-iv: Apply encoding to train_data
 
 For each categorical column, replace string values with DOUBLE-typed encoded values:
 
@@ -795,15 +793,15 @@ ALTER TABLE {catalog}.{schema}.{use_case}_train_data
 
 > **Note:** If `ALTER COLUMN ... TYPE` is not supported by the runtime, recreate the table with the correct types using `CREATE OR REPLACE TABLE ... AS SELECT ..., CAST({col} AS DOUBLE) AS {col}, ...`.
 
-#### Step 6b-v: Apply the same encoding to scoring_data
+#### Step 6c-v: Apply the same encoding to scoring_data
 
 **Only if `{use_case}_scoring_data` exists and contains the same categorical columns.**
 
-Apply the identical `MERGE` and `ALTER COLUMN ... TYPE DOUBLE` steps from Step 6b-iv to `{use_case}_scoring_data`, using the same `{use_case}_label_encoding` lookup table. This ensures consistent encoding and type across training and scoring.
+Apply the identical `MERGE` and `ALTER COLUMN ... TYPE DOUBLE` steps from Step 6c-iv to `{use_case}_scoring_data`, using the same `{use_case}_label_encoding` lookup table. This ensures consistent encoding and type across training and scoring.
 
 Because Step 6a now includes `static_features` in the scoring table, any string-typed static feature columns that were encoded in `train_data` must also be encoded in `scoring_data`. Apply encoding to **all** categorical columns present in the scoring table — both dynamic future categoricals and static feature columns. All encoded columns must be DOUBLE in both tables.
 
-#### Step 6b-vi: Report encoding summary
+#### Step 6c-vi: Report encoding summary
 
 Present the encoding summary to the user:
 
@@ -1121,11 +1119,15 @@ FROM ...
 
 Present cleaning summary to the user.
 
-### Step 10: Hierarchical prep (Case A only)
+### Step 10: Hierarchical prep
 
-**Skip this step if `{run_hierarchical_prep}` = false** (user chose leaf-only, or data is already aggregated).
+> ⛔ **CHECK BEFORE PROCEEDING.** Recall the value of `{run_hierarchical_prep}` set in Step 4b:
+> - `{run_hierarchical_prep}` = **`true`** → execute this step now before moving to Step 11
+> - `{run_hierarchical_prep}` = **`false`** → skip and go directly to Step 11
+>
+> Do NOT proceed to Step 11 until this check is explicitly done.
 
-Runs only when: data has leaf-level series with separate hierarchy columns AND user confirmed they want all levels. Calls `run_aggregation()` which overwrites `train_data` with all hierarchy levels and saves `_hierarchy_S` and `_hierarchy_tags` as a byproduct.
+Only applies when the user confirmed forecasting at all hierarchy levels (separate hierarchy columns detected in Step 3). Calls `run_aggregation()`: aggregates leaf-level `train_data` into all hierarchy levels, overwrites `train_data`, and saves `_hierarchy_S` and `_hierarchy_tags`.
 
 #### Step 10-i: Generate hierarchical prep notebook
 
@@ -1142,6 +1144,7 @@ dbutils.library.restartPython()
 ```
 
 **Cell 3 — Run aggregation:**
+
 ```python
 import sys
 sys.path.insert(0, "/Workspace/Repos/{full_email}/many-model-forecasting")
@@ -1183,7 +1186,7 @@ GROUP BY level_name ORDER BY n_series
 ```
 
 Tell the user:
-> "Hierarchical prep complete. `_hierarchy_S` and `_hierarchy_tags` saved. Skill 6 can use these to reconcile forecasts after Skill 5."
+> "Estructura jerárquica guardada: `_hierarchy_S` y `_hierarchy_tags` listos. Skill 6 los usará para reconciliar los forecasts después de Skill 5."
 
 ---
 
@@ -1248,10 +1251,12 @@ AskUserQuestion:
    Would you like to proceed to the next step?
    (a) Run profiling & classification (optional — estimates series forecastability and recommends models)
    (b) Skip profiling and go directly to cluster provisioning & model selection
-   (c) Stop here — I'll come back later"
+   (c) Stop here — I'll come back later
+
+   Options: [a, b, c]"
 ```
 
-**Do NOT proceed until the user responds.**
+**Do NOT proceed until the user responds. Do NOT auto-advance to Skill 2 or Skill 3.**
 
 ## Outputs
 
@@ -1260,39 +1265,13 @@ AskUserQuestion:
 - A Delta table `<catalog>.<schema>.{use_case}_cleaning_report` with columns: `unique_id`, `original_count`, `final_count`, `missing_filled`, `imputation_method`, `anomalies_capped`, `iqr_multiplier`, `excluded`, `exclusion_reason`
 - **(If dynamic future regressors)** A Delta table `<catalog>.<schema>.{use_case}_scoring_data` with columns `unique_id` (STRING), `ds` (DATE/TIMESTAMP — future dates only), all `static_features` columns (joined from `train_data`), plus all dynamic future regressor columns. Does NOT include `y` or `dynamic_historical_`* columns — `run_forecast` unions this with `train_data` via `allowMissingColumns=True`. This table is passed as `scoring_data` to `run_forecast` in Skill 4.
 - Exogenous regressor column lists carried forward: `{static_features}`, `{dynamic_future_numerical}`, `{dynamic_future_categorical}`, `{dynamic_historical_numerical}`, `{dynamic_historical_categorical}`
-- **(If hierarchical prep — Step 7)** A Delta table `{use_case}_hierarchy_S` (summation matrix) and `{use_case}_hierarchy_tags` (level membership), required by Skill 6
+- **(If hierarchical prep — Step 10)** A Delta table `{use_case}_hierarchy_S` (summation matrix) and `{use_case}_hierarchy_tags` (level membership), required by Skill 6
 - A reproducibility notebook uploaded to `notebooks/{use_case}/prep_data` that can re-create the training table with the same parameters
 - A summary: number of series, date range, detected frequency, cleaning actions taken
 - **Frequency alignment guarantees** (verified by Step 6b):
   - For `freq=M`, every `ds` value in `{use_case}_train_data` (and `{use_case}_scoring_data` if produced) is the last day of its month.
   - For `freq=W`, every `ds` value is an ISO-week-end (Sunday).
   - For `freq=D` and `freq=H`, no alignment transformation is applied.
-
-## ⛔ Step-transition gate — Ask the user before moving on
-
-After the outputs above are produced, the agent MUST stop and ask. **Do NOT auto-advance to Skill 2 or Skill 3.**
-
-```
-AskUserQuestion:
-  "Skill 1 (Prep and Clean Data) is complete.
-
-  Created:
-    • {catalog}.{schema}.{use_case}_train_data ({n_series} series, {n_rows} rows, freq={freq})
-    • {catalog}.{schema}.{use_case}_cleaning_report
-    {if scoring_data: '• {catalog}.{schema}.{use_case}_scoring_data'}
-
-  The next step is OPTIONAL: Skill 2 — Profile and Classify Series.
-  It computes statistical properties (stationarity, seasonality, intermittency, SNR),
-  partitions series into high-confidence vs low-signal groups, and recommends
-  model families for you. Estimated runtime depends on series count
-  ({n_series} series ≈ {estimated_runtime}).
-
-  How would you like to proceed?
-    (a) Run Skill 2 (profiling) now — recommended if you're unsure which models to pick
-    (b) Skip Skill 2 and go directly to Skill 3 (Provision Forecasting Resources) — I'll select models manually
-    (c) Stop here for now"
-  Options: [a, b, c]
-```
 
 **Do NOT pick (a) or (b) on the user's behalf — always ask.** Only after the user answers should the agent read and start the chosen next skill.
 

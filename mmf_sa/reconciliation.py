@@ -1,9 +1,16 @@
+from __future__ import annotations
+
 import logging
 from typing import Dict, List, Optional
 
 import pandas as pd
-import polars as pl
 from pyspark.sql import SparkSession
+
+try:
+    import polars as pl
+    _POLARS_AVAILABLE = True
+except ImportError:
+    _POLARS_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -325,6 +332,11 @@ def run_reconciliation(
         target: target column name in best_models_table (default: y)
         method: reconciliation method — BottomUp | TopDown | MiddleOut | MinTrace | ERM
     """
+    if not _POLARS_AVAILABLE:
+        raise ImportError(
+            "polars is required for reconciliation. "
+            "Install with: pip install mmf_sa[hierarchical]"
+        )
     logger.info(f"Starting hierarchical reconciliation with method={method}")
 
     # Load Delta tables via Spark → Arrow → Polars

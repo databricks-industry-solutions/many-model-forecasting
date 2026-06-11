@@ -4,7 +4,7 @@
 
 **Slash command:** `/reconcile-hierarchical`
 
-Applies hierarchical reconciliation to MMF forecasts, making them coherent across all levels of a hierarchy (e.g., SKU → Category → Total). Reads the best-model forecasts from Skill 5 and produces a reconciled output table.
+Applies hierarchical reconciliation to MMF forecasts, making them coherent across all levels of a hierarchy (e.g., SKU → Category → Total). Works with any forecast table — by default uses the best-model output from Skill 5, but can reconcile any table with `(unique_id, ds, forecast_value)` columns.
 
 **This skill is optional — only run it if the use case has a meaningful hierarchy.**
 
@@ -14,10 +14,10 @@ Applies hierarchical reconciliation to MMF forecasts, making them coherent acros
 
 | Precondition | How to verify | If missing |
 |---|---|---|
-| `{catalog}.{schema}.{use_case}_best_models` exists and is populated | `SELECT COUNT(*) FROM ...` | Go back to **Skill 5 (`/post-process-and-evaluate`)** |
-| `{catalog}.{schema}.{use_case}_evaluation_output` exists and is populated | `SELECT COUNT(*) FROM ...` | Go back to **Skill 4 (`/execute-mmf-forecast`)** — `evaluation_output` is required for all methods |
-| `{catalog}.{schema}.{use_case}_hierarchy_S` exists | `SELECT COUNT(*) FROM ...` | Skill 1 hierarchical prep step was not run — go back to **Skill 1** |
-| `{catalog}.{schema}.{use_case}_hierarchy_tags` exists | `SELECT COUNT(*) FROM ...` | Same as above |
+| `{catalog}.{schema}.{use_case}_evaluation_output` exists and is populated | `SELECT COUNT(*) FROM ...` | Go back to **Skill 4 (`/execute-mmf-forecast`)** — `evaluation_output` is required for all reconciliation methods |
+| A forecast table with `(unique_id, ds, y)` columns exists | Confirmed in Step 0a | Route back to **Skill 5** or ask the user which table to use |
+
+> ℹ️ `_hierarchy_S` and `_hierarchy_tags` are **not** required upfront — Step 1a auto-derives them from `train_data` if missing.
 
 ## Parameters
 
@@ -47,14 +47,52 @@ AskUserQuestion:
 
 **Do NOT proceed until confirmed.**
 
+Call `get_current_user()` to obtain `{full_email}`. Then set:
+- `{notebook_base_path}` = `/Users/{full_email}/{use_case}/notebooks` (or carry forward from Skill 1 if available in context)
+
+---
+
+### ⛔ STOP GATE — Step 0a: Confirm forecast table and frequency
+
+```
+AskUserQuestion:
+  "Which table contains the forecasts you want to reconcile?
+
+   (a) {catalog}.{schema}.{use_case}_best_models — default output from Skill 5
+   (b) A different table — I will provide the full name (catalog.schema.table)
+
+   Options: [a, b]"
+```
+
+- If **(a)**: set `{forecast_table}` = `{catalog}.{schema}.{use_case}_best_models`
+- If **(b)**: ask in plain text "Provide the full table name (catalog.schema.table):" and store as `{forecast_table}`
+
+If `{freq}` is not already known from prior skills, ask:
+
+```
+AskUserQuestion:
+  "What is the forecast frequency?
+
+   (a) Daily (D)
+   (b) Weekly (W)
+   (c) Monthly (M)
+   (d) Hourly (H)
+
+   Options: [a, b, c, d]"
+```
+
+Map: (a) → `D`, (b) → `W`, (c) → `M`, (d) → `H`. Store as `{freq}`.
+
+**Do NOT proceed until `{forecast_table}` and `{freq}` are confirmed.**
+
 ---
 
 ### Step 1: Verify forecast inputs
 
-Check that the forecast tables exist and are populated:
+Check that the required tables exist and are populated:
 
 ```sql
-SELECT COUNT(*) AS n_forecast FROM {catalog}.{schema}.{use_case}_forecast_table
+SELECT COUNT(*) AS n_forecast FROM {forecast_table}
 ```
 ```sql
 SELECT COUNT(*) AS n_evaluation FROM {catalog}.{schema}.{use_case}_evaluation_output
@@ -115,8 +153,6 @@ Show the user the detected hierarchy levels.
 
 ### Step 2: Propose reconciliation method
 
-### Step 2: Propose reconciliation method
-
 Do NOT ask "which method do you want?" — propose one with reasoning:
 
 > "I recommend **MinTrace** (`mint_shrink`) as it minimizes forecast error variance by estimating the error covariance matrix across all hierarchy levels — this is the statistically optimal approach.
@@ -139,10 +175,12 @@ Generate `{notebook_base_path}/run_reconciliation.ipynb` from the template `mmf_
 
 | Placeholder | Value |
 |-------------|-------|
+| `{full_email}` | from `get_current_user()` — used in install path |
 | `{catalog}` | confirmed catalog |
 | `{schema}` | confirmed schema |
 | `{use_case}` | confirmed use case |
-| `{freq}` | frequency from Skill 1 — H \| D \| W \| M |
+| `{forecast_table}` | confirmed in Step 0a — full 3-part table name |
+| `{freq}` | frequency — H \| D \| W \| M |
 | `{date_col}` | `ds` (or user-specified) |
 | `{target}` | `y` (or user-specified) |
 | `{reconciliation_method}` | method confirmed in Step 2 |
@@ -215,6 +253,8 @@ Generate a reproducibility notebook at `{notebook_base_path}/run_reconciliation_
 
 **Why reconcile?** Without reconciliation, the sum of store-level forecasts will not equal the region forecast, which will not equal the country forecast. This creates inconsistencies when different teams use forecasts at different levels for planning.
 
-**What `aggregate()` did in Skill 1:** When Skill 1 detected a hierarchy and called `aggregate()`, it created series at all levels (`USA`, `USA/California`, `USA/California/Store1`) and saved the summation matrix (`_hierarchy_S`) and level metadata (`_hierarchy_tags`). Skill 6 uses those to apply the reconciliation.
+**How hierarchy metadata is built:** There are two paths depending on the data:
+- **Leaf-level data** (no `/` in unique_id): Skill 1 called `run_aggregation()`, which created series at all levels (`USA`, `USA/California`, `USA/California/Store1`) and saved `_hierarchy_S` and `_hierarchy_tags`.
+- **Pre-aggregated data** (unique_ids already use `/`): Skill 1 called `derive_hierarchy_from_unique_ids()`, or Skill 6 Step 1a derives them on the fly from `train_data`. In either case `_hierarchy_S` and `_hierarchy_tags` are available before reconciliation runs.
 
 **MinTrace uses backtest residuals:** MinTrace estimates how correlated the forecast errors are across the hierarchy to find the optimal adjustment weights. It uses out-of-sample backtest residuals from `_evaluation_output` — this is statistically better than in-sample fits because it avoids optimism bias, especially important when MMF selects different models per series. All methods supported by Skill 6 use `_evaluation_output`.
