@@ -35,22 +35,19 @@ Applies hierarchical reconciliation to MMF forecasts, making them coherent acros
 
 ### ⛔ STOP GATE — Step 0: Confirm catalog, schema, use case
 
-If not already known from prior skills, ask:
+If not already known from prior skills, ask in plain text (do NOT use AskUserQuestion — this is free text):
 
-```
-AskUserQuestion:
-  "Which catalog, schema and use case name contain the forecast outputs?
-   • Catalog:
-   • Schema:
-   • Use case name:"
-```
+> "Para empezar necesito tres datos:
+>  • Catalog:
+>  • Schema:
+>  • Use case name (el prefijo de tus tablas, e.g. `rossmann`, `retail_sales`):"
 
-**Do NOT proceed until confirmed.**
+**Do NOT proceed until the user provides all three.**
 
 Call `get_current_user()` to obtain `{full_email}`. Then set:
 - `{notebook_base_path}` = `/Users/{full_email}/{use_case}/notebooks` (or carry forward from Skill 1 if available in context)
 
-### ⛔ STOP GATE — Step 0a: Confirm forecast table and frequency
+### ⛔ STOP GATE — Step 0a: Confirm forecast table
 
 ```
 AskUserQuestion:
@@ -65,11 +62,29 @@ AskUserQuestion:
 - If **(a)**: set `{forecast_table}` = `{catalog}.{schema}.{use_case}_best_models`
 - If **(b)**: ask in plain text "Provide the full table name (catalog.schema.table):" and store as `{forecast_table}`
 
-If `{freq}` is not already known from prior skills, ask:
+**Do NOT proceed until `{forecast_table}` is confirmed.**
+
+### Step 0b: Auto-detect frequency
+
+Once `{forecast_table}` is known, detect `{freq}` automatically — do NOT ask the user:
+
+```sql
+SELECT ds FROM {forecast_table} WHERE ds IS NOT NULL LIMIT 1000
+```
+
+Compute the median gap between consecutive distinct `ds` values:
+- Gap ≈ 1 day → `D`
+- Gap ≈ 7 days → `W`
+- Gap ≈ 28–31 days → `M`
+- Gap < 1 day → `H`
+
+If `{freq}` was already known from prior skills, skip this step and carry it forward.
+
+Only ask the user if the gap is ambiguous (e.g. mixed gaps or fewer than 2 distinct dates):
 
 ```
 AskUserQuestion:
-  "What is the forecast frequency?
+  "Could not determine frequency automatically. What is the forecast frequency?
 
    (a) Daily (D)
    (b) Weekly (W)
@@ -78,10 +93,6 @@ AskUserQuestion:
 
    Options: [a, b, c, d]"
 ```
-
-Map: (a) → `D`, (b) → `W`, (c) → `M`, (d) → `H`. Store as `{freq}`.
-
-**Do NOT proceed until `{forecast_table}` and `{freq}` are confirmed.**
 
 ### Step 1: Verify forecast inputs
 
