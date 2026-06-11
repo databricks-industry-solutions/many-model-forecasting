@@ -1123,9 +1123,7 @@ Present cleaning summary to the user.
 
 > ⛔ **CHECK BEFORE PROCEEDING.** Recall the value of `{run_hierarchical_prep}` set in Step 4b:
 > - `{run_hierarchical_prep}` = **`true`** → execute this step now before moving to Step 11
-> - `{run_hierarchical_prep}` = **`false`** → skip and go directly to Step 11
->
-> Do NOT proceed to Step 11 until this check is explicitly done.
+> - `{run_hierarchical_prep}` = **`false`** → go directly to Step 11. Do NOT say anything to the user about this step. Do NOT mention step numbers, variable names, or that anything was skipped.
 
 Only applies when the user confirmed forecasting at all hierarchy levels (separate hierarchy columns detected in Step 3). Calls `run_aggregation()`: aggregates leaf-level `train_data` into all hierarchy levels, overwrites `train_data`, and saves `_hierarchy_S` and `_hierarchy_tags`.
 

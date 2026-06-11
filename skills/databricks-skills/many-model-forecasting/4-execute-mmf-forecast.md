@@ -401,6 +401,7 @@ Generate a single notebook from `mmf_local_notebook_template.ipynb` with all loc
 | `{dynamic_historical_categorical}` | Python list, or `[]`. Safe to use. |
 | `{scoring_table}` | `""` unless Skill 1 created `{use_case}_scoring_data`. If scoring table exists, set to `{use_case}_scoring_data`. Empty string means `scoring_data` = `train_table`. |
 | `{fitted_output}` | `"{use_case}_fitted_output"` if Skill 1 ran hierarchical prep (i.e., `{use_case}_hierarchy_S` and `{use_case}_hierarchy_tags` exist). Otherwise `""`. Required for MinTrace/ERM reconciliation in Skill 6. |
+| `{full_email}` | from `get_current_user()` — used in the workspace install path |
 
 Use the template from:
 - [mmf_local_notebook_template.ipynb](mmf_local_notebook_template.ipynb) → save locally as `notebooks/{use_case}/run_local.ipynb`

@@ -234,7 +234,7 @@ Present the series count and the sizing guideline to the user, then **ask them t
 
 | Series count | Recommended workers | Rationale |
 |-------------|-------------------|-----------|
-| < 100 | 0 (single-node) | No parallelism needed |
+| < 100 | 2 | Minimum for reliable Spark executor startup |
 | 100 – 1,000 | 4 | Moderate parallelism |
 | 1,000 – 10,000 | 6 | Each worker handles ~1,500 series |
 | 10,000 – 100,000 | 8 | High parallelism for large-scale |
@@ -257,7 +257,7 @@ Present the series count and the sizing guideline to the user, then **ask them t
 
 | Non-forecastable series count | Recommended workers | Rationale |
 |------|-------------------|-----------|
-| < 100 | 0 (single-node) | No parallelism needed |
+| < 100 | 2 | Minimum for reliable Spark executor startup |
 | 100 – 1,000 | 2 | Light parallelism |
 | 1,000 – 10,000 | 4 | Moderate parallelism |
 | > 10,000 | 6 | Higher parallelism |

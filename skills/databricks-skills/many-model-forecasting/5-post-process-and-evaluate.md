@@ -372,6 +372,7 @@ AskUserQuestion:
    (b) Explore results further (drill into specific series or models)
    {if strategy == 'include': '(c) Re-run with non-forecastable series handled separately'}
    {if strategy == 'fallback': '(c) Upgrade non-forecastable series to a separate pipeline (for backtested metrics)'}
+   {if hierarchy detected in Skill 1: '(e) Apply hierarchical reconciliation — makes forecasts coherent across levels so the sum of store forecasts equals the region forecast, which equals the country forecast. Without this, each level is independently optimal but they contradict each other. Recommended when different teams plan from different levels of the hierarchy.'}
    (d) Done — all outputs are ready for business use"
 ```
 

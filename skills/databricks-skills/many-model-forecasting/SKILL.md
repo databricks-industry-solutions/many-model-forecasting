@@ -218,7 +218,7 @@ Applies hierarchical reconciliation to make forecasts coherent across all levels
 
 **Only run this skill if the use case has a hierarchy.** Requires Skill 1 hierarchical prep step to have been run (produces `_hierarchy_S` and `_hierarchy_tags` tables).
 
-See: [6-reconcile-hierarchical.md](6-reconcile-hierarchical.md)
+See: [6-hierarchical-reconciliation.md](6-hierarchical-reconciliation.md)
 
 ## Available Models
 
