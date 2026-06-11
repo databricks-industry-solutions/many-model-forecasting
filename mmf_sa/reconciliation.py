@@ -75,17 +75,18 @@ def _add_ds_from_window_start(df: pl.DataFrame, freq: str) -> pl.DataFrame:
 
 def build_residual_Y_df_from_evaluation(
     eval_frame: pl.DataFrame,
-    best_models_frame: pl.DataFrame,
+    best_models_frame: Optional[pl.DataFrame],
     freq: str,
     model_col: str = "BestModel",
 ) -> pl.DataFrame:
-    """Build a residual frame from evaluation_output ⋈ best_models.
+    """Build a residual frame from evaluation_output, optionally filtered by best model per series.
 
     Args:
         eval_frame: Polars frame of evaluation_output — must have columns:
             unique_id, backtest_window_start_date, forecast (List[Float64]),
             actual (List[Float64]), model
-        best_models_frame: Polars frame with at least (unique_id, model) columns
+        best_models_frame: Polars frame with at least (unique_id, model) columns,
+            or None to use all residuals without filtering by model.
         freq: MMF frequency code — H | D | W | M
         model_col: column name to assign to the forecast values in the output
 
@@ -97,15 +98,22 @@ def build_residual_Y_df_from_evaluation(
     if freq not in _MMF_FREQ_TO_PANDAS:
         raise ValueError(f"Unsupported freq '{freq}'. Supported: {sorted(_MMF_FREQ_TO_PANDAS.keys())}")
 
-    # Keep only the best model per series from evaluation_output
-    bm = best_models_frame.select(["unique_id", "model"]).unique()
-    joined = eval_frame.join(bm, on=["unique_id", "model"], how="inner")
-
-    if joined.is_empty():
-        raise ValueError(
-            "No matching rows after joining evaluation_output with best_models on (unique_id, model). "
-            "Verify that the model names in both tables match."
-        )
+    # Filter by best model only when the forecast table carries a model column
+    has_model = (
+        best_models_frame is not None
+        and "model" in best_models_frame.columns
+        and "model" in eval_frame.columns
+    )
+    if has_model:
+        bm = best_models_frame.select(["unique_id", "model"]).unique()
+        joined = eval_frame.join(bm, on=["unique_id", "model"], how="inner")
+        if joined.is_empty():
+            raise ValueError(
+                "No matching rows after joining evaluation_output with best_models on (unique_id, model). "
+                "Verify that the model names in both tables match."
+            )
+    else:
+        joined = eval_frame
 
     # Add step index [0, 1, ..., prediction_length-1] per row, then explode arrays
     exploded = (
@@ -361,8 +369,9 @@ def run_reconciliation(
             .select(["unique_id", "ds", "BestModel"])
         )
 
-    # Build Y_df (unbiased out-of-sample residuals from evaluation_output ⋈ best_models)
-    y_df = build_residual_Y_df_from_evaluation(eval_pl, best_models_pl, freq)
+    # Build Y_df — filter by model only when the forecast table is from the MMF pipeline
+    bm_for_residuals = best_models_pl if "model" in best_models_pl.columns else None
+    y_df = build_residual_Y_df_from_evaluation(eval_pl, bm_for_residuals, freq)
 
     # Reconstruct tags dict
     tags: Dict[str, List[str]] = {}
