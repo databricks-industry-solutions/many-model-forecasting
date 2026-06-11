@@ -25,13 +25,9 @@ ready for forecasting.
 
 ### Step 0: Collect use case name
 
-Before any data exploration, ask the user for a short use case identifier:
+Before any data exploration, ask the user in plain text (do NOT use AskUserQuestion — this is free text):
 
-```
-AskUserQuestion:
-  "Provide a short use case name (e.g., m4, rossmann, retail_sales).
-   This will prefix all tables and assets created by the pipeline."
-```
+> "What would you like to call this use case? This short name will prefix all tables and assets created by the pipeline (e.g., `m4`, `rossmann`, `retail_sales`)."
 
 Validation rules:
 
@@ -53,7 +49,6 @@ AskUserQuestion:
    • Schema:  (e.g., default, forecasting, my_schema)
 
    I'll search for time series tables in this location."
-  Options: [free text — user provides catalog and schema]
 ```
 
 **Do NOT proceed until the user provides both catalog and schema.**
@@ -83,7 +78,6 @@ AskUserQuestion:
    • Univariate series vs. exogenous / covariate
 
    Reply in free text; I'll condense to a short brief for downstream steps."
-  Options: [free text]
 ```
 
 Store a normalized **3–6 line** summary as `{forecast_problem_brief}`. Carry it in the conversation through all downstream skills (reconfirm in Skill 2 if context is missing).
@@ -100,7 +94,7 @@ AskUserQuestion:
    (b) Create a new folder — provide a name and I will create /Users/{full_email}/{name}/notebooks/
    (c) Use default — I will create /Users/{full_email}/{use_case}/notebooks/
 
-  Options: [free text — user picks (a), (b), or (c) and provides a name if needed]"
+  Options: [a, b, c]"
 ```
 
 **WAIT for the user to respond. Do NOT create any folders or notebooks until the user answers.**
