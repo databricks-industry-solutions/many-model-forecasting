@@ -49,11 +49,20 @@ Call `get_current_user()` to obtain `{full_email}`. Then set:
 
 ### ⛔ STOP GATE — Step 0a: Confirm forecast table
 
+First, silently check if the default table exists:
+
+```sql
+SELECT COUNT(*) AS n FROM {catalog}.{schema}.{use_case}_best_models
+```
+
+- If it exists (`n > 0`): present it as option (a) recommended.
+- If it does not exist: present only option (b) — do NOT show option (a).
+
 ```
 AskUserQuestion:
   "Which table contains the forecasts you want to reconcile?
 
-   (a) {catalog}.{schema}.{use_case}_best_models — default output from Skill 5
+   (a) {catalog}.{schema}.{use_case}_best_models — default output from Skill 5  [only show if exists]
    (b) A different table — I will provide the full name (catalog.schema.table)
 
    Options: [a, b]"
@@ -79,6 +88,8 @@ Compute the median gap between consecutive distinct `ds` values:
 - Gap < 1 day → `H`
 
 If `{freq}` was already known from prior skills, skip this step and carry it forward.
+
+Do NOT narrate this detection to the user. Proceed silently with `{freq}` set.
 
 Only ask the user if the gap is ambiguous (e.g. mixed gaps or fewer than 2 distinct dates):
 
@@ -154,21 +165,40 @@ SELECT DISTINCT level_name FROM {catalog}.{schema}.{use_case}_hierarchy_tags ORD
 
 Show the user the detected hierarchy levels.
 
-### Step 2: Propose reconciliation method
+### ⛔ STOP GATE — Step 2: Propose and confirm reconciliation method
 
-Do NOT ask "which method do you want?" — propose one with reasoning:
+Present MinTrace as the recommendation with reasoning, then ask:
 
-> "I recommend **MinTrace** (`mint_shrink`) as it minimizes forecast error variance by estimating the error covariance matrix across all hierarchy levels — this is the statistically optimal approach.
+> "Recomiendo **MinTrace** (`mint_shrink`) — minimiza la varianza del error estimando la covarianza entre todos los niveles de la jerarquía. Es el método estadísticamente óptimo cuando tienes backtests disponibles.
 >
-> Alternatives:
-> - **BottomUp** — aggregates leaf forecasts upward. Simple, reliable baseline.
-> - **TopDown** — distributes top-level forecast downward. Works well when top-level demand is more reliable.
-> - **MiddleOut** — anchors at a middle level. Useful when middle aggregations are most trustworthy.
-> - **ERM** — learns an optimal reconciliation matrix. Similar requirements to MinTrace.
->
-> Unless you have a reason to prefer otherwise, I'll use MinTrace."
+> Alternativas: BottomUp (agrega hojas hacia arriba), TopDown (distribuye desde el total), MiddleOut (ancla en un nivel intermedio), ERM (aprende una matriz óptima).
 
-Wait for user confirmation or correction.
+```
+AskUserQuestion:
+  "¿Usamos MinTrace o prefieres otro método?
+
+   (a) MinTrace — recomendado
+   (b) Quiero elegir otro método
+
+   Options: [a, b]"
+```
+
+- If **(a)**: set `{reconciliation_method}` = `MinTrace`. Proceed to Step 3.
+- If **(b)**:
+
+```
+AskUserQuestion:
+  "¿Qué método prefieres?
+
+   (a) BottomUp — agrega forecasts de hojas hacia arriba
+   (b) TopDown — distribuye el forecast del nivel más alto hacia abajo
+   (c) MiddleOut — ancla en un nivel intermedio
+   (d) ERM — aprende una matriz de reconciliación óptima
+
+   Options: [a, b, c, d]"
+```
+
+Map: (a) → `BottomUp`, (b) → `TopDown`, (c) → `MiddleOut`, (d) → `ERM`. Store as `{reconciliation_method}`.
 
 ### Step 3: Generate reconciliation notebook
 
@@ -241,8 +271,6 @@ AskUserQuestion:
    Options: [a, b]"
 ```
 
----
-
 ## Output Tables
 
 | Table | Description |
@@ -259,8 +287,6 @@ AskUserQuestion:
 | `y_reconciled` | double | Coherent forecast after reconciliation |
 | `hierarchy_level` | string | Which hierarchy level this series belongs to |
 | `reconciliation_method` | string | Method used (e.g. `MinTrace`) |
-
----
 
 ## Key Concepts
 
