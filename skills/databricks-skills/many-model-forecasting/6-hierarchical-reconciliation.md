@@ -2,7 +2,7 @@
 
 > ⛔ **MANDATORY:** If you have not read [SKILL.md](SKILL.md) yet, read it now before proceeding. Do NOT take any action until you have read both SKILL.md and this file in full.
 
-**Slash command:** `/reconcile-hierarchical`
+**Slash command:** `/hierarchical-reconciliation`
 
 Applies hierarchical reconciliation to MMF forecasts, making them coherent across all levels of a hierarchy (e.g., SKU → Category → Total). Works with any forecast table — by default uses the best-model output from Skill 5, but can reconcile any table with `(unique_id, ds, forecast_value)` columns.
 
@@ -50,8 +50,6 @@ AskUserQuestion:
 Call `get_current_user()` to obtain `{full_email}`. Then set:
 - `{notebook_base_path}` = `/Users/{full_email}/{use_case}/notebooks` (or carry forward from Skill 1 if available in context)
 
----
-
 ### ⛔ STOP GATE — Step 0a: Confirm forecast table and frequency
 
 ```
@@ -85,8 +83,6 @@ Map: (a) → `D`, (b) → `W`, (c) → `M`, (d) → `H`. Store as `{freq}`.
 
 **Do NOT proceed until `{forecast_table}` and `{freq}` are confirmed.**
 
----
-
 ### Step 1: Verify forecast inputs
 
 Check that the required tables exist and are populated:
@@ -99,8 +95,6 @@ SELECT COUNT(*) AS n_evaluation FROM {catalog}.{schema}.{use_case}_evaluation_ou
 ```
 
 If either is missing or empty, route back to the appropriate skill (Skill 4 or Skill 5).
-
----
 
 ### Step 1a: Ensure hierarchy metadata (preprocessing)
 
@@ -149,8 +143,6 @@ SELECT DISTINCT level_name FROM {catalog}.{schema}.{use_case}_hierarchy_tags ORD
 
 Show the user the detected hierarchy levels.
 
----
-
 ### Step 2: Propose reconciliation method
 
 Do NOT ask "which method do you want?" — propose one with reasoning:
@@ -166,8 +158,6 @@ Do NOT ask "which method do you want?" — propose one with reasoning:
 > Unless you have a reason to prefer otherwise, I'll use MinTrace."
 
 Wait for user confirmation or correction.
-
----
 
 ### Step 3: Generate reconciliation notebook
 
@@ -185,8 +175,6 @@ Generate `{notebook_base_path}/run_reconciliation.ipynb` from the template `mmf_
 | `{target}` | `y` (or user-specified) |
 | `{reconciliation_method}` | method confirmed in Step 2 |
 
----
-
 ### Step 4: Run on serverless compute
 
 Reconciliation is a matrix operation — no GPU needed. Run on **serverless** compute.
@@ -195,8 +183,6 @@ Tell the user:
 > "This notebook runs on serverless compute — no cluster setup needed."
 
 Run the notebook. The output table will be `{catalog}.{schema}.{use_case}_reconciliation_output`.
-
----
 
 ### Step 5: Validate coherence and summarize
 
@@ -222,11 +208,27 @@ Present a summary to the user:
 Example narrative:
 > "Reconciliation complete. The forecasts at the `store` level were adjusted by an average of X units to ensure they sum correctly to the `region` and `country` levels. All {n} hierarchy relationships are now coherent."
 
----
-
 ### Step 6: Generate reproducibility notebook
 
 Generate a reproducibility notebook at `{notebook_base_path}/run_reconciliation_repro.ipynb` — identical to the run notebook, allowing the user to re-run reconciliation independently.
+
+### ⛔ STOP GATE — Step 7: Final confirmation
+
+```
+AskUserQuestion:
+  "✅ Hierarchical reconciliation complete for use case '{use_case}'.
+
+   Summary:
+   • Method: {reconciliation_method}
+   • Output table: {catalog}.{schema}.{use_case}_reconciliation_output
+   • Reproducibility notebook: {notebook_base_path}/run_reconciliation_repro
+
+   What would you like to do next?
+   (a) Done — reconciled forecasts are ready for business use
+   (b) Re-run with a different reconciliation method
+
+   Options: [a, b]"
+```
 
 ---
 

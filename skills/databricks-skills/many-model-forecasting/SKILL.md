@@ -56,7 +56,7 @@ The agent MUST verify these before starting any skill. If preconditions are miss
 | **3. provision-resources** | `{use_case}_train_data` from Skill 1 (and optionally `{use_case}_series_profile`, `{use_case}_pipeline_config` from Skill 2) | none beyond Skill 1 |
 | **4. execute-forecast** | `{use_case}_train_data` (or `_train_data_forecastable`), and an `active_models` selection from Skill 3 | `prediction_length`, `freq`, backtest setup |
 | **5. post-process** | `{use_case}_evaluation_output` and `{use_case}_scoring_output` from Skill 4 | none |
-| **6. reconcile-hierarchical** *(optional)* | `{use_case}_best_models` from Skill 5, `{use_case}_hierarchy_S` and `{use_case}_hierarchy_tags` from Skill 1 hierarchical prep | Only run if the use case has a hierarchy |
+| **6. hierarchical-reconciliation** *(optional)* | `{use_case}_best_models` from Skill 5, `{use_case}_hierarchy_S` and `{use_case}_hierarchy_tags` from Skill 1 hierarchical prep | Only run if the use case has a hierarchy |
 
 If `{use_case}_train_data` does not exist, the agent **cannot** start Skill 2, 3, 4, or 5 — it must go back to Skill 1.
 
@@ -212,7 +212,7 @@ Calculates multi-metric evaluation (MAPE, sMAPE, WAPE), selects best model per s
 
 See: [5-post-process-and-evaluate.md](5-post-process-and-evaluate.md)
 
-### Skill 6: Hierarchical Reconciliation (`/reconcile-hierarchical`) *(optional)*
+### Skill 6: Hierarchical Reconciliation (`/hierarchical-reconciliation`) *(optional)*
 
 Applies hierarchical reconciliation to make forecasts coherent across all levels of a hierarchy (SKU → Category → Total). Reads `{use_case}_best_models` from Skill 5 and produces `{use_case}_reconciliation_output`. Supports BottomUp, TopDown, MiddleOut, MinTrace, and ERM methods. Runs on serverless compute.
 
