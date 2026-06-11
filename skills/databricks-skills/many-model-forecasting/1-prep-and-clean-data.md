@@ -148,13 +148,19 @@ Identify time series candidates by checking column types:
 
 A valid time series table MUST have all three: a date column, a numeric column, and a group column.
 
-**Hierarchy detection — two signals:**
+**Hierarchy detection — two signals (run during Step 3):**
 
-1. **Extra categorical columns (Case A):** Scan for additional STRING or low-cardinality categorical columns beyond `unique_id`, `ds`, `y` (e.g., `country`, `region`, `state`, `store`, `category`, `subcategory`, `department`, `sku`, `brand`). Store any found as `{potential_hierarchy_cols}`.
+1. **Extra categorical columns:** Scan for additional STRING or low-cardinality categorical columns beyond `unique_id`, `ds`, `y` (e.g., `country`, `region`, `state`, `store`, `category`, `subcategory`, `department`, `sku`, `brand`). Store any found as `{potential_hierarchy_cols}`.
 
-2. **Slash in unique_id (Case B):** Check if any `unique_id` values contain `/` (e.g., `USA/California/Store1`). If yes, the data is already hierarchically structured — set `{hierarchy_case}` = `B`.
+2. **Slash in unique_id:** Run this query:
+   ```sql
+   SELECT COUNT(*) AS n_slash
+   FROM {catalog}.{schema}.{table_name}
+   WHERE {unique_id_col} LIKE '%/%'
+   ```
+   If `n_slash > 0`, the data already has all hierarchy levels encoded in unique_id. Set `{hierarchy_case}` = `B`.
 
-If **either** signal is present, flag for Step 5c.
+If either signal is present, flag for Step 4b.
 
 ### Step 4: Profile candidates
 
@@ -200,6 +206,36 @@ FROM (
 - `avg_gap` ~28-31 = **Monthly** (`freq=M`)
 
 Report the detected frequency to the user.
+
+### Step 4b: Report hierarchy detection (if flagged in Step 3)
+
+**Skip if neither hierarchy signal was detected in Step 3.**
+
+Include this as part of the profiling summary — do NOT ask a separate question, just present the finding and one clear choice:
+
+**If `{hierarchy_case}` = `B` (slashes in unique_id):**
+
+> "📊 Este dataset tiene estructura jerárquica: los `unique_id` codifican múltiples niveles (e.g., `USA/California/Store1`). Esto lo hace candidato para **reconciliación jerárquica** después del forecasting — garantiza que los forecasts de cada nivel sumen correctamente hacia arriba.
+>
+> ¿Quieres que extraiga ahora la estructura jerárquica? No es obligatorio en este momento — puedes hacerlo más adelante, después de obtener los primeros resultados de forecast.
+>
+> (a) Sí, extraer ahora
+> (b) No, lo haré más adelante"
+
+**If `{potential_hierarchy_cols}` non-empty (Case A — separate hierarchy columns):**
+
+> "📊 Detecté columnas que sugieren una jerarquía: `{potential_hierarchy_cols}`. Forecasting en todos los niveles (ej. tienda + región + país) permite reconciliar forecasts más adelante.
+>
+> ¿Quieres forecastear en todos los niveles jerárquicos?
+>
+> (a) Sí — agregaré series para todos los niveles (más series = más compute en Skill 4)
+> (b) No — solo nivel hoja. Puedes hacer la reconciliación más adelante si cambias de opinión."
+
+**WAIT for the user to respond.**
+
+- If **(a)** for Case B: set `{run_hierarchical_prep}` = `false` (hierarchy already present, Step 10 not needed; Skill 6 derivará si hace falta)
+- If **(a)** for Case A: set `{run_hierarchical_prep}` = `true`, confirm `{hierarchy_cols}` order if ambiguous
+- If **(b)** either case: set `{run_hierarchical_prep}` = `false`
 
 **Persist the result as `{freq}` ∈ `{H, D, W, M}` for the rest of the skill.** Every subsequent SQL block (Steps 6, 6a, 6b, and the imputation/anomaly steps) MUST be selected by `{freq}` — the agent does NOT pick a template freely. **For `{freq} == "M"` and `{freq} == "W"` the date-alignment rule in Step 6 is mandatory and is verified by Step 6b — it is not optional and cannot be skipped.**
 
@@ -334,38 +370,11 @@ AskUserQuestion:
 
 Store the answer as `{future_regressor_source}` (`same_table` or the name of the separate table). If the user selects (b), ask for the table name in a follow-up question before proceeding.
 
-### Step 5c: Hierarchical structure detection
+### Step 5c: Confirm hierarchy decision
 
-**Run this step if either signal was detected in Step 3: `{potential_hierarchy_cols}` non-empty OR `{hierarchy_case}` = `B` (slashes in unique_id). If neither, skip to Step 6.**
+**Skip if no hierarchy was detected in Step 3.**
 
-**If `{hierarchy_case}` = `B` (data already has all levels with `/` in unique_id):**
-
-Inform the user — no question needed:
-
-> "I detected that your data already contains all hierarchy levels (unique_ids like `USA/California/Store1`). No aggregation needed. Skill 6 will derive the hierarchy structure when you run reconciliation."
-
-Set `{run_hierarchical_prep}` = `false`. Skill 6 handles this automatically.
-
----
-
-**If `{potential_hierarchy_cols}` non-empty (leaf-level data with separate hierarchy columns):**
-
-Ask the user:
-
-```
-AskUserQuestion:
-  "I detected hierarchy columns in your data: {potential_hierarchy_cols}
-
-   Do you want to forecast at ALL hierarchy levels (e.g., store + region + country)?
-   This enables hierarchical reconciliation in Skill 6.
-
-   (a) Yes — forecast all levels. I'll aggregate the data to build series at every level.
-       Note: this multiplies the number of series and increases compute time in Skill 4.
-   (b) No — forecast only at the leaf level ({leaf_col}). Simpler and faster."
-```
-
-- If **(a)**: set `{run_hierarchical_prep}` = `true`. Confirm top-to-bottom column order if ambiguous, store as `{hierarchy_cols}`.
-- If **(b)**: set `{run_hierarchical_prep}` = `false`, skip Step 10.
+`{run_hierarchical_prep}` was already set in Step 4b. No further action here — carry the value forward to Step 10.
 
 ### Step 6: Create {use_case}_train_data
 
