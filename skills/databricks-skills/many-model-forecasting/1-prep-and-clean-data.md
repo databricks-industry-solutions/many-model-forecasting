@@ -1185,9 +1185,11 @@ display(spark.sql("""
 > {
 >   "spark_version": "17.3.x-cpu-ml-scala2.13",
 >   "num_workers": 0,
+>   "data_security_mode": "SINGLE_USER",
 >   "spark_conf": {
 >     "spark.master": "local[*]",
->     "spark.databricks.cluster.profile": "singleNode"
+>     "spark.databricks.cluster.profile": "singleNode",
+>     "spark.databricks.unityCatalog.enabled": "true"
 >   },
 >   "custom_tags": { "ResourceClass": "SingleNode" }
 > }
