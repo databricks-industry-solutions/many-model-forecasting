@@ -313,14 +313,34 @@ def derive_hierarchy_from_unique_ids(
     levels_ordered = sorted(tags.values(), key=len)
     all_series = [uid for level in levels_ordered for uid in level]
 
-    rows = [
-        [1.0 if (uid == leaf or leaf.startswith(uid + "/")) else 0.0 for leaf in bottom_series]
-        for uid in all_series
-    ]
-    s_df = pd.DataFrame(
-        {leaf: [row[i] for row in rows] for i, leaf in enumerate(bottom_series)},
-    )
-    s_df.insert(0, "unique_id", all_series)
+    if _SCIPY_AVAILABLE:
+        uid_index = {uid: i for i, uid in enumerate(all_series)}
+        rows_idx, cols_idx = [], []
+        for j, leaf in enumerate(bottom_series):
+            if leaf in uid_index:
+                rows_idx.append(uid_index[leaf])
+                cols_idx.append(j)
+            parts = leaf.split("/")
+            for k in range(1, len(parts)):
+                ancestor = "/".join(parts[:k])
+                if ancestor in uid_index:
+                    rows_idx.append(uid_index[ancestor])
+                    cols_idx.append(j)
+        S_csr = csr_matrix(
+            (np.ones(len(rows_idx), dtype=np.float64), (rows_idx, cols_idx)),
+            shape=(len(all_series), len(bottom_series)),
+        )
+        s_df = pd.DataFrame.sparse.from_spmatrix(S_csr, columns=list(bottom_series))
+        s_df.insert(0, "unique_id", all_series)
+    else:
+        rows = [
+            [1.0 if (uid == leaf or leaf.startswith(uid + "/")) else 0.0 for leaf in bottom_series]
+            for uid in all_series
+        ]
+        s_df = pd.DataFrame(
+            {leaf: [row[i] for row in rows] for i, leaf in enumerate(bottom_series)},
+        )
+        s_df.insert(0, "unique_id", all_series)
 
     spark.createDataFrame(s_df).write.format("delta").mode("overwrite") \
         .option("overwriteSchema", "true").saveAsTable(hierarchy_s_table)
