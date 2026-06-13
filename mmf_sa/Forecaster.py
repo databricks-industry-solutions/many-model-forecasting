@@ -563,7 +563,6 @@ class Forecaster:
             src_df = src_df.unionByName(score_df, allowMissingColumns=True)
 
         # Specify output schema for Pandas UDF
-        # fitted_ds, fitted_y, fitted_y_hat: in-sample predictions, written to fitted_output if configured
         output_schema = StructType(
             [
                 StructField(
@@ -572,9 +571,6 @@ class Forecaster:
                 StructField(self.conf["date_col"], ArrayType(TimestampType())),
                 StructField(self.conf["target"], ArrayType(DoubleType())),
                 StructField("model_pickle", BinaryType()),
-                StructField("fitted_ds", ArrayType(TimestampType())),
-                StructField("fitted_y", ArrayType(DoubleType())),
-                StructField("fitted_y_hat", ArrayType(DoubleType())),
             ]
         )
         model = self.model_registry.get_model(model_conf["name"])
@@ -588,8 +584,7 @@ class Forecaster:
 
         # Write the results to a delta table
         (
-            res_sdf.drop("fitted_ds", "fitted_y", "fitted_y_hat")
-            .withColumn(self.conf["group_id"], col(self.conf["group_id"]).cast(StringType()))
+            res_sdf.withColumn(self.conf["group_id"], col(self.conf["group_id"]).cast(StringType()))
             .withColumn("run_id", lit(self.run_id))
             .withColumn("run_date", lit(self.run_date))
             .withColumn("use_case", lit(self.conf["use_case_name"]))
@@ -598,20 +593,6 @@ class Forecaster:
             .write.mode("append")
             .saveAsTable(self.conf["scoring_output"])
         )
-
-        # Write fitted values to fitted_output if configured
-        if self.conf.get("fitted_output", None) is not None:
-            (
-                res_sdf.filter(col("fitted_ds").isNotNull())
-                .withColumn(self.conf["group_id"], col(self.conf["group_id"]).cast(StringType()))
-                .withColumn("run_id", lit(self.run_id))
-                .withColumn("run_date", lit(self.run_date))
-                .withColumn("use_case", lit(self.conf["use_case_name"]))
-                .withColumn("model", lit(model_conf["name"]))
-                .drop("model_pickle")
-                .write.mode("append")
-                .saveAsTable(self.conf["fitted_output"])
-            )
 
     @staticmethod
     def score_one_local_model(
@@ -631,49 +612,31 @@ class Forecaster:
         group_id = pdf[model.params["group_id"]].iloc[0]
         res_df, model_fitted = model.forecast(pdf)
         try:
-            # Extract in-sample fitted values from model.fitted_values if available
-            fitted_values = getattr(model_fitted, "fitted_values", None) or getattr(model, "fitted_values", None)
-            if fitted_values is not None:
-                fitted_ds = fitted_values[model.params["date_col"]].to_numpy()
-                fitted_y = fitted_values["y"].to_numpy() if "y" in fitted_values.columns else None
-                non_id_cols = [c for c in fitted_values.columns if c not in [model.params["group_id"], model.params["date_col"], "y"]]
-                fitted_y_hat = fitted_values[non_id_cols[0]].to_numpy() if non_id_cols else None
-            else:
-                fitted_ds, fitted_y, fitted_y_hat = None, None, None
-
             data = [
                 group_id,
                 res_df[model.params["date_col"]].to_numpy(),
                 res_df[model.params["target"]].to_numpy(),
-                cloudpickle.dumps(model_fitted),
-                fitted_ds,
-                fitted_y,
-                fitted_y_hat,
-            ]
+                cloudpickle.dumps(model_fitted)]
         except (ModelError, ScoringError, DataError) as err:
             _logger.error(
                 f"Error scoring group {group_id} using model {repr(model)}: {err}",
                 exc_info=err,
                 stack_info=True,
             )
-            data = [group_id, None, None, None, None, None, None]
+            data = [group_id, None, None, None]
         except Exception as err:
             _logger.error(
                 f"Unexpected error scoring group {group_id} using model {repr(model)}: {err}",
                 exc_info=err,
                 stack_info=True,
             )
-            data = [group_id, None, None, None, None, None, None]
+            data = [group_id, None, None, None]
         res_df = pd.DataFrame(
             columns=[
                 model.params["group_id"],
                 model.params["date_col"],
                 model.params["target"],
-                "model_pickle",
-                "fitted_ds",
-                "fitted_y",
-                "fitted_y_hat",
-            ], data=[data]
+                "model_pickle"], data=[data]
         )
         return res_df
 

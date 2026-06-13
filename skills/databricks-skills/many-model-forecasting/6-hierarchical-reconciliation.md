@@ -37,10 +37,10 @@ Applies hierarchical reconciliation to MMF forecasts, making them coherent acros
 
 If not already known from prior skills, ask in plain text (do NOT use AskUserQuestion — this is free text):
 
-> "Para empezar necesito tres datos:
+> "To get started I need three things:
 >  • Catalog:
 >  • Schema:
->  • Use case name (el prefijo de tus tablas, e.g. `rossmann`, `retail_sales`):"
+>  • Use case name (the prefix for your tables, e.g. `rossmann`, `retail_sales`):"
 
 **Do NOT proceed until the user provides all three.**
 
@@ -169,16 +169,16 @@ Show the user the detected hierarchy levels.
 
 Present MinTrace as the recommendation with reasoning, then ask:
 
-> "Recomiendo **MinTrace** (`mint_shrink`) — minimiza la varianza del error estimando la covarianza entre todos los niveles de la jerarquía. Es el método estadísticamente óptimo cuando tienes backtests disponibles.
+> "I recommend **MinTrace** (`mint_shrink`) — it minimizes forecast error variance by estimating the covariance across all hierarchy levels. It is the statistically optimal method when backtest residuals are available.
 >
-> Alternativas: BottomUp (agrega hojas hacia arriba), TopDown (distribuye desde el total), MiddleOut (ancla en un nivel intermedio), ERM (aprende una matriz óptima).
+> Alternatives: BottomUp (aggregates leaf forecasts upward), TopDown (distributes from the total downward), MiddleOut (anchors at an intermediate level), ERM (learns an optimal reconciliation matrix).
 
 ```
 AskUserQuestion:
-  "¿Usamos MinTrace o prefieres otro método?
+  "Should we use MinTrace or do you prefer a different method?
 
-   (a) MinTrace — recomendado
-   (b) Quiero elegir otro método
+   (a) MinTrace — recommended
+   (b) I want to choose a different method
 
    Options: [a, b]"
 ```
@@ -188,12 +188,12 @@ AskUserQuestion:
 
 ```
 AskUserQuestion:
-  "¿Qué método prefieres?
+  "Which method would you like to use?
 
-   (a) BottomUp — agrega forecasts de hojas hacia arriba
-   (b) TopDown — distribuye el forecast del nivel más alto hacia abajo
-   (c) MiddleOut — ancla en un nivel intermedio
-   (d) ERM — aprende una matriz de reconciliación óptima
+   (a) BottomUp — aggregates leaf-level forecasts upward
+   (b) TopDown — distributes the top-level forecast downward
+   (c) MiddleOut — anchors at an intermediate level
+   (d) ERM — learns an optimal reconciliation matrix
 
    Options: [a, b, c, d]"
 ```

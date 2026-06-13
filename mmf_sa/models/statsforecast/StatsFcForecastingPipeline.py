@@ -109,18 +109,6 @@ class StatsFcForecaster(ForecastingRegressor):
         _df = df[df[self.params.target].notnull()]
         _df = self.prepare_data(_df)
         self.fit(_df)
-
-        # Extract in-sample fitted values — requires forecast(fitted=True) before forecast_fitted_values()
-        try:
-            self.model.forecast(df=_df, h=self.params["prediction_length"], fitted=True)
-            self.fitted_values = self.model.forecast_fitted_values().rename(
-                columns={"unique_id": self.params.group_id, "ds": self.params.date_col}
-            )
-        except Exception as e:
-            import logging
-            logging.getLogger(__name__).warning(f"Could not extract fitted values: {e}")
-            self.fitted_values = None
-
         if 'dynamic_future_numerical' in self.params.keys() or 'dynamic_future_categorical' in self.params.keys():
             _last_date = _df["ds"].max()
             _future_df = df[

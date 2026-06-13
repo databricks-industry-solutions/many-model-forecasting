@@ -25,9 +25,14 @@ ready for forecasting.
 
 ### Step 0: Collect use case name
 
-Before any data exploration, ask the user in plain text (do NOT use AskUserQuestion — this is free text):
+Before any data exploration, ask the user for a short use case identifier:
 
-> "What would you like to call this use case? This short name will prefix all tables and assets created by the pipeline (e.g., `m4`, `rossmann`, `retail_sales`)."
+```
+AskUserQuestion:
+  "Provide a short use case name (e.g., m4, rossmann, retail_sales).
+   This will prefix all tables and assets created by the pipeline."
+  Options: [free text]
+```
 
 Validation rules:
 
@@ -49,6 +54,7 @@ AskUserQuestion:
    • Schema:  (e.g., default, forecasting, my_schema)
 
    I'll search for time series tables in this location."
+  Options: [free text — user provides catalog and schema]
 ```
 
 **Do NOT proceed until the user provides both catalog and schema.**
@@ -78,6 +84,7 @@ AskUserQuestion:
    • Univariate series vs. exogenous / covariate
 
    Reply in free text; I'll condense to a short brief for downstream steps."
+  Options: [free text]
 ```
 
 Store a normalized **3–6 line** summary as `{forecast_problem_brief}`. Carry it in the conversation through all downstream skills (reconfirm in Skill 2 if context is missing).
@@ -94,7 +101,7 @@ AskUserQuestion:
    (b) Create a new folder — provide a name and I will create /Users/{full_email}/{name}/notebooks/
    (c) Use default — I will create /Users/{full_email}/{use_case}/notebooks/
 
-  Options: [a, b, c]"
+  Options: [free text — user picks (a), (b), or (c) and provides a name if needed]"
 ```
 
 **WAIT for the user to respond. Do NOT create any folders or notebooks until the user answers.**
@@ -677,11 +684,11 @@ If NULLs still remain (e.g., forward fill had no non-NULL training value), warn 
 
 Present the final scoring table summary to the user before continuing.
 
-### Step 6c: Encode and type-safe categorical covariates
+### Step 6b: Encode and type-safe categorical covariates
 
 **Run this step whenever categorical covariate columns are present** — i.e., any of `{static_features}`, `{dynamic_future_categorical}`, or `{dynamic_historical_categorical}` are listed, regardless of whether they are string-typed or already numeric.
 
-#### Step 6c-i: Detect covariate columns that need encoding or type-casting
+#### Step 6b-i: Detect covariate columns that need encoding or type-casting
 
 ```sql
 DESCRIBE TABLE {catalog}.{schema}.{use_case}_train_data
@@ -689,15 +696,15 @@ DESCRIBE TABLE {catalog}.{schema}.{use_case}_train_data
 
 Inspect every column listed in `{static_features}`, `{dynamic_future_categorical}`, and `{dynamic_historical_categorical}`. Classify each into one of two buckets:
 
-1. **Needs encoding** — data type is non-numerical (`STRING`, `BOOLEAN`, `BINARY`, etc.). These must be label-encoded and cast to DOUBLE (Steps 6c-ii through 6c-v).
+1. **Needs encoding** — data type is non-numerical (`STRING`, `BOOLEAN`, `BINARY`, etc.). These must be label-encoded and cast to DOUBLE (Steps 6b-ii through 6b-v).
 2. **Needs type-cast only** — data type is an integer type (`INT`, `BIGINT`, `SMALLINT`, `TINYINT`) but not yet `DOUBLE` or `FLOAT`. These are already numeric (possibly pre-encoded from the source) and do not need label encoding, but **must be cast to DOUBLE** for compatibility with the forecasting pipeline.
 3. **No action needed** — data type is already `DOUBLE`, `FLOAT`, or `DECIMAL`. Skip.
 
-If **no columns need encoding** (bucket 1 is empty), skip the encoding steps (6c-ii through 6c-v) but still execute Step 6c-i-a below for type-casting, then skip to Step 6c-vi.
+If **no columns need encoding** (bucket 1 is empty), skip the encoding steps (6b-ii through 6b-v) but still execute Step 6b-i-a below for type-casting, then skip to Step 6b-vi.
 
-If **no columns need encoding or type-casting** (both bucket 1 and bucket 2 are empty), skip Step 6c entirely.
+If **no columns need encoding or type-casting** (both bucket 1 and bucket 2 are empty), skip Step 6b entirely.
 
-#### Step 6c-i-a: Cast pre-encoded integer covariate columns to DOUBLE
+#### Step 6b-i-a: Cast pre-encoded integer covariate columns to DOUBLE
 
 For each column in **bucket 2** (integer-typed, no encoding needed), cast to DOUBLE in `train_data`:
 
@@ -717,7 +724,7 @@ ALTER TABLE {catalog}.{schema}.{use_case}_scoring_data
 
 This step runs **before** any label encoding and ensures that all categorical covariate columns — whether they arrived as strings or pre-encoded integers — end up as DOUBLE in both tables.
 
-#### ⛔ STOP GATE — Step 6c-ii: Warn user and confirm encoding strategy
+#### ⛔ STOP GATE — Step 6b-ii: Warn user and confirm encoding strategy
 
 **Do NOT apply any encoding until the user confirms.**
 
@@ -746,11 +753,11 @@ AskUserQuestion:
 
 **WAIT for the user to respond.**
 
-- If **(a)**: proceed with Step 6c-iii below.
+- If **(a)**: proceed with Step 6b-iii below.
 - If **(b)**: stop the pipeline here. Inform the user they can re-run Skill 1 from this step after applying their own encoding to the `{use_case}_train_data` and `{use_case}_scoring_data` tables.
 - If **(c)**: remove the listed columns from `{use_case}_train_data` and `{use_case}_scoring_data`, clear them from the covariate lists (`{static_features}`, `{dynamic_future_categorical}`, `{dynamic_historical_categorical}`), and skip to Step 7.
 
-#### Step 6c-iii: Create encoding lookup table
+#### Step 6b-iii: Create encoding lookup table
 
 For each string-typed categorical column, build a deterministic mapping from string values to integer codes:
 
@@ -769,7 +776,7 @@ FROM (
 
 If multiple categorical columns need encoding, union the results for all columns into the same lookup table. Using `UNION` across both train and scoring tables ensures every category value gets a consistent code.
 
-#### Step 6c-iv: Apply encoding to train_data
+#### Step 6b-iv: Apply encoding to train_data
 
 For each categorical column, replace string values with DOUBLE-typed encoded values:
 
@@ -793,15 +800,15 @@ ALTER TABLE {catalog}.{schema}.{use_case}_train_data
 
 > **Note:** If `ALTER COLUMN ... TYPE` is not supported by the runtime, recreate the table with the correct types using `CREATE OR REPLACE TABLE ... AS SELECT ..., CAST({col} AS DOUBLE) AS {col}, ...`.
 
-#### Step 6c-v: Apply the same encoding to scoring_data
+#### Step 6b-v: Apply the same encoding to scoring_data
 
 **Only if `{use_case}_scoring_data` exists and contains the same categorical columns.**
 
-Apply the identical `MERGE` and `ALTER COLUMN ... TYPE DOUBLE` steps from Step 6c-iv to `{use_case}_scoring_data`, using the same `{use_case}_label_encoding` lookup table. This ensures consistent encoding and type across training and scoring.
+Apply the identical `MERGE` and `ALTER COLUMN ... TYPE DOUBLE` steps from Step 6b-iv to `{use_case}_scoring_data`, using the same `{use_case}_label_encoding` lookup table. This ensures consistent encoding and type across training and scoring.
 
 Because Step 6a now includes `static_features` in the scoring table, any string-typed static feature columns that were encoded in `train_data` must also be encoded in `scoring_data`. Apply encoding to **all** categorical columns present in the scoring table — both dynamic future categoricals and static feature columns. All encoded columns must be DOUBLE in both tables.
 
-#### Step 6c-vi: Report encoding summary
+#### Step 6b-vi: Report encoding summary
 
 Present the encoding summary to the user:
 
@@ -1129,7 +1136,7 @@ Only applies when the user confirmed forecasting at all hierarchy levels (separa
 
 #### Step 10-i: Generate hierarchical prep notebook
 
-Create a notebook at `notebooks/{use_case}/hierarchical_prep.ipynb` with exactly these cells:
+Create a notebook at `{notebook_base_path}/hierarchical_prep.ipynb` with exactly these cells:
 
 **Cell 1 — Install:**
 ```python
@@ -1171,7 +1178,7 @@ display(spark.sql("""
 
 #### Step 10-ii: Upload and execute on serverless
 
-1. Save the notebook locally at `notebooks/{use_case}/hierarchical_prep.ipynb`
+1. Save the notebook locally at `{notebook_base_path}/hierarchical_prep.ipynb`
 2. Upload to the Databricks workspace at `{notebook_base_path}/hierarchical_prep`
 3. Execute on **serverless** compute using `execute_notebook()` — do NOT submit as a Databricks job
 
@@ -1190,7 +1197,7 @@ Tell the user:
 
 ### Step 11: Generate reproducibility notebook
 
-After all data transformations are complete (including hierarchical prep if applicable), generate a self-contained notebook that replays the entire data preparation pipeline.
+After all interactive decisions have been made, generate a self-contained notebook that replays the entire data preparation pipeline. This notebook allows the user (or a teammate) to re-run the exact same prep with the same parameters without going through the interactive session again.
 
 **CRITICAL: Copy the template VERBATIM from `mmf_prep_notebook_template.ipynb`, only replacing the `{placeholder}` tokens with actual values. Do NOT add, remove, or modify any other code.**
 
@@ -1212,13 +1219,11 @@ Save the generated notebook to the **local project directory** at:
 
 - `notebooks/{use_case}/prep_data.ipynb`
 
-Then upload it to the Databricks workspace at `{notebook_base_path}/prep_data`.
+Then upload it to the Databricks workspace at `notebooks/{use_case}/prep_data`.
 
 Use the template from:
 
 - [mmf_prep_notebook_template.ipynb](mmf_prep_notebook_template.ipynb)
-
----
 
 ### ⛔ STOP GATE — Step 12: Confirm before proceeding to next skill
 
@@ -1249,12 +1254,10 @@ AskUserQuestion:
    Would you like to proceed to the next step?
    (a) Run profiling & classification (optional — estimates series forecastability and recommends models)
    (b) Skip profiling and go directly to cluster provisioning & model selection
-   (c) Stop here — I'll come back later
-
-   Options: [a, b, c]"
+   (c) Stop here — I'll come back later"
 ```
 
-**Do NOT proceed until the user responds. Do NOT auto-advance to Skill 2 or Skill 3.**
+**Do NOT proceed until the user responds.**
 
 ## Outputs
 
@@ -1270,6 +1273,32 @@ AskUserQuestion:
   - For `freq=M`, every `ds` value in `{use_case}_train_data` (and `{use_case}_scoring_data` if produced) is the last day of its month.
   - For `freq=W`, every `ds` value is an ISO-week-end (Sunday).
   - For `freq=D` and `freq=H`, no alignment transformation is applied.
+
+## ⛔ Step-transition gate — Ask the user before moving on
+
+After the outputs above are produced, the agent MUST stop and ask. **Do NOT auto-advance to Skill 2 or Skill 3.**
+
+```
+AskUserQuestion:
+  "Skill 1 (Prep and Clean Data) is complete.
+
+  Created:
+    • {catalog}.{schema}.{use_case}_train_data ({n_series} series, {n_rows} rows, freq={freq})
+    • {catalog}.{schema}.{use_case}_cleaning_report
+    {if scoring_data: '• {catalog}.{schema}.{use_case}_scoring_data'}
+
+  The next step is OPTIONAL: Skill 2 — Profile and Classify Series.
+  It computes statistical properties (stationarity, seasonality, intermittency, SNR),
+  partitions series into high-confidence vs low-signal groups, and recommends
+  model families for you. Estimated runtime depends on series count
+  ({n_series} series ≈ {estimated_runtime}).
+
+  How would you like to proceed?
+    (a) Run Skill 2 (profiling) now — recommended if you're unsure which models to pick
+    (b) Skip Skill 2 and go directly to Skill 3 (Provision Forecasting Resources) — I'll select models manually
+    (c) Stop here for now"
+  Options: [a, b, c]
+```
 
 **Do NOT pick (a) or (b) on the user's behalf — always ask.** Only after the user answers should the agent read and start the chosen next skill.
 
