@@ -443,6 +443,8 @@ GROUP BY {unique_id_col}, LAST_DAY({ds_col})
 
 If exogenous regressors were selected, include them as additional columns (use `SUM` for numeric regressors when aggregating, and `FIRST` or `MAX` for categorical regressors when aggregating).
 
+> ⛔ **Hierarchy columns rule.** If `{run_hierarchical_prep}` = `true`, the `{hierarchy_cols}` columns (e.g. `country`, `region`, `store`) MUST be included in the SELECT alongside `unique_id`, `ds`, `y`. These columns are consumed by `run_aggregation()` in Step 10 — if they are absent from `train_data`, `aggregate()` will fail with `ValueError: Column X not present in df`. For H/D add them as-is; for W/M add them with `FIRST({col})` in the GROUP BY projection (they are constant per leaf series × period). The GROUP BY clause does NOT include them — only `unique_id` and the date expression are grouped.
+
 Verify creation:
 
 ```sql
