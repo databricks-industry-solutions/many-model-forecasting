@@ -218,23 +218,23 @@ Include this as part of the profiling summary. Output VERBATIM — do NOT add an
 
 Output exactly — no question, no options, just informational:
 
-> "📊 Este dataset tiene estructura jerárquica: los `unique_id` codifican múltiples niveles (e.g., `USA/California/Store1`). Es candidato para **reconciliación jerárquica** después del forecasting — puedes hacerlo más adelante, una vez que tengas los primeros resultados de forecast."
+> "📊 This dataset has a hierarchical structure: `unique_id` values encode multiple levels (e.g., `USA/California/Store1`). It is a candidate for **hierarchical reconciliation** after forecasting — you can do this later, once you have your first forecast results."
 
 Set `{run_hierarchical_prep}` = `false`. Do NOT ask the user anything. Continue the pipeline.
 
 **If `{potential_hierarchy_cols}` non-empty (separate hierarchy columns detected):**
 
-> "📊 Detecté columnas que sugieren una jerarquía: `{potential_hierarchy_cols}`. Forecasting en todos los niveles (ej. tienda + región + país) permite reconciliar forecasts más adelante.
+> "📊 I detected columns that suggest a hierarchy: `{potential_hierarchy_cols}`. Forecasting at all levels (e.g. store + region + country) allows you to reconcile forecasts later.
 >
-> ¿Quieres forecastear en todos los niveles jerárquicos?
+> Would you like to forecast at all hierarchy levels?
 >
-> (a) Sí — agregaré series para todos los niveles (más series = más compute en Skill 4)
-> (b) No — solo nivel hoja. Puedes hacer la reconciliación más adelante si cambias de opinión."
+> (a) Yes — I will aggregate series for all levels (more series = more compute in Skill 4)
+> (b) No — leaf level only. You can run reconciliation later if you change your mind."
 
 **WAIT for the user to respond.**
 
-- If **(a)**: set `{run_hierarchical_prep}` = `true`. Set `{hierarchy_cols}` = ordered list from `{potential_hierarchy_cols}` top-to-bottom (e.g. `["country", "region", "store"]`). If order is ambiguous, ask in plain text: "Confirm the hierarchy order from broadest to narrowest (e.g. country, region, store):". Tell the user exactly: `"Perfecto, agregaré todos los niveles jerárquicos antes de terminar la preparación de datos."` Do NOT output any other text. Do NOT mention step numbers, variable names, or internal state.
-- If **(b)**: set `{run_hierarchical_prep}` = `false`. Tell the user exactly: `"De acuerdo, puedes hacerlo más adelante."` Do NOT output any other text. Do NOT mention step numbers, variable names, or internal state.
+- If **(a)**: set `{run_hierarchical_prep}` = `true`. Set `{hierarchy_cols}` = ordered list from `{potential_hierarchy_cols}` top-to-bottom (e.g. `["country", "region", "store"]`). If order is ambiguous, ask in plain text: "Confirm the hierarchy order from broadest to narrowest (e.g. country, region, store):". Tell the user exactly: `"Done — I will aggregate all hierarchy levels before finishing data preparation."` Do NOT output any other text. Do NOT mention step numbers, variable names, or internal state.
+- If **(b)**: set `{run_hierarchical_prep}` = `false`. Tell the user exactly: `"Understood — you can do this later."` Do NOT output any other text. Do NOT mention step numbers, variable names, or internal state.
 
 **Persist the result as `{freq}` ∈ `{H, D, W, M}` for the rest of the skill.** Every subsequent SQL block (Steps 6, 6a, 6b, and the imputation/anomaly steps) MUST be selected by `{freq}` — the agent does NOT pick a template freely. **For `{freq} == "M"` and `{freq} == "W"` the date-alignment rule in Step 6 is mandatory and is verified by Step 6b — it is not optional and cannot be skipped.**
 
@@ -1218,7 +1218,7 @@ GROUP BY level_name ORDER BY n_series
 ```
 
 Tell the user:
-> "Estructura jerárquica guardada: `_hierarchy_S` y `_hierarchy_tags` listos. Skill 6 los usará para reconciliar los forecasts después de Skill 5."
+> "Hierarchy metadata saved: `_hierarchy_S` and `_hierarchy_tags` are ready. Skill 6 will use them to reconcile forecasts after Skill 5."
 
 ---
 
