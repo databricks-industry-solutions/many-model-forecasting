@@ -1177,11 +1177,35 @@ display(spark.sql("""
 
 > ⛔ **CRITICAL: Use `/Workspace/Repos/{full_email}/many-model-forecasting` as the install path — NOT a GitHub URL, NOT the local filesystem. This is the Databricks workspace repo path where the package is already checked out.**
 
-#### Step 10-ii: Upload and execute on serverless
+#### Step 10-ii: Upload and run as a classic compute job
+
+> ⛔ **Do NOT use serverless.** `toArrow()` is not available on Spark Connect. Use classic compute.
+>
+> ```json
+> {
+>   "spark_version": "17.3.x-cpu-ml-scala2.13",
+>   "num_workers": 0,
+>   "spark_conf": {
+>     "spark.master": "local[*]",
+>     "spark.databricks.cluster.profile": "singleNode"
+>   },
+>   "custom_tags": { "ResourceClass": "SingleNode" }
+> }
+> ```
+> Node type: any standard memory instance (e.g. `r6id.xlarge` AWS / `Standard_E8ads_v5` Azure / `n2-highmem-8` GCP) — aggregation is lightweight, no need for large memory.
+
+Job name pattern: `{use_case}_hierarchical_prep_{username}` (upsert — no accumulation of stale jobs).
 
 1. Save the notebook locally at `{notebook_base_path}/hierarchical_prep.ipynb`
 2. Upload to the Databricks workspace at `{notebook_base_path}/hierarchical_prep`
-3. Execute on **serverless** compute using `execute_notebook()` — do NOT submit as a Databricks job
+3. Upsert the job and trigger a run. Poll and report:
+
+```
+[HH:MM:SS] {use_case}_hierarchical_prep: RUNNING
+[HH:MM:SS] {use_case}_hierarchical_prep: SUCCEEDED (duration: Xm Ys)
+```
+
+If the job **fails**: stop immediately, report the error, ask how to proceed.
 
 Wait for execution to complete, then verify `_hierarchy_tags` exists:
 
