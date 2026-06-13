@@ -171,14 +171,37 @@ Generate `{notebook_base_path}/run_reconciliation.ipynb` from the template `mmf_
 | `{target}` | `y` (or user-specified) |
 | `{reconciliation_method}` | method confirmed in Step 2 |
 
-### Step 4: Run on serverless compute
+### Step 4: Run on classic compute (Single Node, memory-optimized)
 
-Reconciliation is a matrix operation — no GPU needed. Run on **serverless** compute.
+Reconciliation is a matrix operation that requires classic compute — `toArrow()` and scipy sparse are not available on Spark Connect (serverless). Run on a **Single Node** job cluster with DBR ML.
 
-Tell the user:
-> "Running reconciliation on serverless compute — no cluster setup needed. This takes a few minutes."
+> ⛔ **MANDATORY cluster config — DO NOT use serverless.**
+> ```json
+> {
+>   "spark_version": "17.3.x-cpu-ml-scala2.13",
+>   "num_workers": 0,
+>   "spark_conf": {
+>     "spark.master": "local[*]",
+>     "spark.databricks.cluster.profile": "singleNode"
+>   },
+>   "custom_tags": { "ResourceClass": "SingleNode" }
+> }
+> ```
+> Node type: memory-optimized. Default recommendation by cloud:
+> - **AWS**: `r6id.2xlarge` (64 GB) — suitable for up to ~10k leaf series with MinTrace
+> - **Azure**: `Standard_E16ads_v5` (128 GB)
+> - **GCP**: `n2-highmem-16` (128 GB)
+>
+> For larger hierarchies (>10k leaves), upgrade to the next tier or switch `reconciliation_method` to `wls_var`. See the design doc for sizing guidance.
 
-Run the notebook as a job. Poll status and report progress:
+Job name pattern: `{use_case}_reconciliation_{username}` (upsert — no accumulation of stale jobs).
+
+Upsert the job (same pattern as Skill 4 Step 5):
+1. Search for an existing job named `{use_case}_reconciliation_{username}` owned by `{full_email}`
+2. If found → update it with the new notebook path and cluster config
+3. If not found → create it
+
+Then trigger a run. Poll status and report progress:
 
 ```
 [HH:MM:SS] {use_case}_reconciliation: RUNNING
