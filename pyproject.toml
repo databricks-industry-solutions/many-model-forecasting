@@ -27,6 +27,7 @@ foundation = [
 hierarchical = [
     "hierarchicalforecast==1.5.1",
     "polars>=0.20.0",
+    "scipy>=1.10.0",
 ]
 tests = [
     "setuptools",

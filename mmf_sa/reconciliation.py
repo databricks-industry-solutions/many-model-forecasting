@@ -12,6 +12,13 @@ try:
 except ImportError:
     _POLARS_AVAILABLE = False
 
+try:
+    import numpy as np
+    from scipy.sparse import csr_matrix
+    _SCIPY_AVAILABLE = True
+except ImportError:
+    _SCIPY_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 SUPPORTED_METHODS = {"BottomUp", "TopDown", "MiddleOut", "MinTrace", "ERM"}
@@ -27,7 +34,10 @@ def _spark_to_polars(spark: SparkSession, table_name: str) -> pl.DataFrame:
 
 def _build_reconciler(method: str, mintrace_method: str = "mint_shrink"):
     try:
-        from hierarchicalforecast.methods import BottomUp, ERM, MiddleOut, MinTrace, TopDown
+        from hierarchicalforecast.methods import (
+            BottomUp, BottomUpSparse, ERM, MiddleOut,
+            MinTrace, MinTraceSparse, TopDown, TopDownSparse,
+        )
     except ImportError:
         raise ImportError(
             "hierarchicalforecast is required for reconciliation. "
@@ -40,11 +50,12 @@ def _build_reconciler(method: str, mintrace_method: str = "mint_shrink"):
             f"Unsupported mintrace_method '{mintrace_method}'. "
             f"Supported: {sorted(SUPPORTED_MINTRACE_METHODS)}"
         )
+    # Use sparse variants for methods that support it (hierarchicalforecast >= 1.4.0)
     reconcilers = {
-        "BottomUp": BottomUp(),
-        "TopDown": TopDown(method="forecast_proportions"),
+        "BottomUp": BottomUpSparse(),
+        "TopDown": TopDownSparse(method="forecast_proportions"),
         "MiddleOut": MiddleOut(middle_level=None, top_down_method="forecast_proportions"),
-        "MinTrace": MinTrace(method=mintrace_method),
+        "MinTrace": MinTraceSparse(method=mintrace_method),
         "ERM": ERM(method="closed"),
     }
     return reconcilers[method]
@@ -177,10 +188,10 @@ def reconcile_core(
     reconciler = _build_reconciler(method, mintrace_method)
     hrec = HierarchicalReconciliation(reconcilers=[reconciler])
 
-    # hierarchicalforecast works on pandas
+    # hierarchicalforecast works on pandas; S_df may already be pandas (sparse-backed)
     Y_hat_pd = Y_hat_df.to_pandas()
     Y_pd = Y_df.to_pandas()
-    S_pd = S_df.to_pandas()
+    S_pd = S_df if isinstance(S_df, pd.DataFrame) else S_df.to_pandas()
 
     Y_rec_pd = hrec.reconcile(
         Y_hat_df=Y_hat_pd,
@@ -389,20 +400,38 @@ def run_reconciliation(
     for row in tags_pl.to_dicts():
         tags.setdefault(row["level_name"], []).append(row["unique_id"])
 
-    # Build S_df from tags (dense matrix — sparse deferred to v3)
+    # Build S_df as sparse matrix — O(L × depth) instead of O(N × L)
     bottom_series = max(tags.values(), key=len)
     levels_ordered = sorted(tags.values(), key=len)
     all_series = [uid for level in levels_ordered for uid in level]
-    rows = [
-        [1.0 if (uid == leaf or leaf.startswith(uid + "/")) else 0.0 for leaf in bottom_series]
-        for uid in all_series
-    ]
-    s_df = pl.DataFrame(
-        {leaf: [row[i] for row in rows] for i, leaf in enumerate(bottom_series)},
-        schema={leaf: pl.Float64 for leaf in bottom_series},
-    ).with_columns(pl.Series("unique_id", all_series)).select(
-        ["unique_id"] + list(bottom_series)
-    )
+
+    if _SCIPY_AVAILABLE:
+        uid_index = {uid: i for i, uid in enumerate(all_series)}
+        rows_idx, cols_idx = [], []
+        for j, leaf in enumerate(bottom_series):
+            if leaf in uid_index:
+                rows_idx.append(uid_index[leaf])
+                cols_idx.append(j)
+            parts = leaf.split("/")
+            for k in range(1, len(parts)):
+                ancestor = "/".join(parts[:k])
+                if ancestor in uid_index:
+                    rows_idx.append(uid_index[ancestor])
+                    cols_idx.append(j)
+        S_csr = csr_matrix(
+            (np.ones(len(rows_idx), dtype=np.float64), (rows_idx, cols_idx)),
+            shape=(len(all_series), len(bottom_series)),
+        )
+        s_df = pd.DataFrame.sparse.from_spmatrix(S_csr, columns=list(bottom_series))
+        s_df.insert(0, "unique_id", all_series)
+    else:
+        # Fallback to dense if scipy not available
+        dense_rows = [
+            [1.0 if (uid == leaf or leaf.startswith(uid + "/")) else 0.0 for leaf in bottom_series]
+            for uid in all_series
+        ]
+        s_df = pd.DataFrame(dense_rows, columns=list(bottom_series))
+        s_df.insert(0, "unique_id", all_series)
 
     result = reconcile_core(y_hat_df, y_df, s_df, tags, method, mintrace_method)
 
