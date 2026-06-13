@@ -136,12 +136,6 @@ SELECT COUNT(*) AS n_tags FROM {catalog}.{schema}.{use_case}_hierarchy_tags
 Generate and execute a notebook on serverless compute with:
 
 ```python
-%pip install /Workspace/Repos/{full_email}/many-model-forecasting[hierarchical] --quiet
-```
-```python
-dbutils.library.restartPython()
-```
-```python
 import sys
 sys.path.insert(0, "/Workspace/Repos/{full_email}/many-model-forecasting")
 from mmf_sa import derive_hierarchy_from_unique_ids
@@ -155,7 +149,7 @@ derive_hierarchy_from_unique_ids(
 print("✓ Hierarchy metadata derived")
 ```
 
-> ⛔ **Use `/Workspace/Repos/{full_email}/many-model-forecasting` as install path — NOT a GitHub URL.**
+> ℹ️ No `%pip install` needed here — `derive_hierarchy_from_unique_ids` only requires pandas and PySpark, which are already available. Using `sys.path.insert` directly loads from the workspace repo on the feature branch.
 
 After execution, verify:
 
