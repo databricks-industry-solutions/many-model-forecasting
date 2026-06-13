@@ -50,12 +50,16 @@ def _build_reconciler(method: str, mintrace_method: str = "mint_shrink"):
             f"Unsupported mintrace_method '{mintrace_method}'. "
             f"Supported: {sorted(SUPPORTED_MINTRACE_METHODS)}"
         )
-    # Use sparse variants for methods that support it (hierarchicalforecast >= 1.4.0)
+    # mint_shrink and mint_cov require full dense covariance estimation — only MinTrace (dense) supports them.
+    # wls_var and wls_struct are diagonal/structural and work with MinTraceSparse.
+    _MINTRACE_SPARSE_METHODS = {"wls_var", "wls_struct", "ols"}
+    if method == "MinTrace":
+        mintrace_cls = MinTraceSparse if mintrace_method in _MINTRACE_SPARSE_METHODS else MinTrace
     reconcilers = {
         "BottomUp": BottomUpSparse(),
         "TopDown": TopDownSparse(method="forecast_proportions"),
         "MiddleOut": MiddleOut(middle_level=None, top_down_method="forecast_proportions"),
-        "MinTrace": MinTraceSparse(method=mintrace_method),
+        "MinTrace": mintrace_cls(method=mintrace_method),
         "ERM": ERM(method="closed"),
     }
     return reconcilers[method]
