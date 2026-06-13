@@ -133,8 +133,22 @@ SELECT COUNT(*) AS n_tags FROM {catalog}.{schema}.{use_case}_hierarchy_tags
 
 **If either is missing:** derive them now from `{use_case}_train_data` unique_ids — do NOT ask the user to go back to Skill 1.
 
-Generate and execute a notebook on serverless compute with:
+Tell the user (plain language, no step numbers or internal names):
+> "I need to build the hierarchy structure from your data first — this takes about a minute."
 
+Create a notebook with exactly these cells:
+
+**Cell 1 — Install:**
+```python
+%pip install /Workspace/Repos/{full_email}/many-model-forecasting[hierarchical] --quiet
+```
+
+**Cell 2 — Restart:**
+```python
+dbutils.library.restartPython()
+```
+
+**Cell 3 — Derive hierarchy:**
 ```python
 import sys
 sys.path.insert(0, "/Workspace/Repos/{full_email}/many-model-forecasting")
@@ -149,7 +163,16 @@ derive_hierarchy_from_unique_ids(
 print("✓ Hierarchy metadata derived")
 ```
 
-> ℹ️ No `%pip install` needed here — `derive_hierarchy_from_unique_ids` only requires pandas and PySpark, which are already available. Using `sys.path.insert` directly loads from the workspace repo on the feature branch.
+> ⛔ **CRITICAL: Use `/Workspace/Repos/{full_email}/many-model-forecasting` as the install path — NOT a GitHub URL, NOT `@main`, NOT the local filesystem. This is the Databricks workspace repo path where the package is already checked out.**
+
+Upload and run the notebook on serverless compute. Poll the job and report progress:
+
+```
+[HH:MM:SS] Building hierarchy structure... RUNNING
+[HH:MM:SS] Building hierarchy structure... SUCCEEDED (duration: Xm Ys)
+```
+
+If the job **fails**: stop immediately, report the error to the user in plain language, and ask how to proceed. Do NOT continue to Step 2.
 
 After execution, verify:
 
@@ -157,7 +180,7 @@ After execution, verify:
 SELECT DISTINCT level_name FROM {catalog}.{schema}.{use_case}_hierarchy_tags ORDER BY level_name
 ```
 
-Show the user the detected hierarchy levels.
+Tell the user the detected hierarchy levels in plain language (e.g. "Found 3 levels: country, region, store"). Do NOT mention step numbers or internal table names.
 
 ### ⛔ STOP GATE — Step 2: Propose and confirm reconciliation method
 
@@ -215,9 +238,18 @@ Generate `{notebook_base_path}/run_reconciliation.ipynb` from the template `mmf_
 Reconciliation is a matrix operation — no GPU needed. Run on **serverless** compute.
 
 Tell the user:
-> "This notebook runs on serverless compute — no cluster setup needed."
+> "Running reconciliation on serverless compute — no cluster setup needed. This takes a few minutes."
 
-Run the notebook. The output table will be `{catalog}.{schema}.{use_case}_reconciliation_output`.
+Run the notebook as a job. Poll status and report progress:
+
+```
+[HH:MM:SS] {use_case}_reconciliation: RUNNING
+[HH:MM:SS] {use_case}_reconciliation: SUCCEEDED (duration: Xm Ys)
+```
+
+If the job **fails**: stop immediately, report the error to the user in plain language, and ask how to proceed. Do NOT continue to Step 5.
+
+The output table will be `{catalog}.{schema}.{use_case}_reconciliation_output`.
 
 ### Step 5: Validate coherence and summarize
 

@@ -233,8 +233,8 @@ Set `{run_hierarchical_prep}` = `false`. Do NOT ask the user anything. Continue 
 
 **WAIT for the user to respond.**
 
-- If **(a)**: set `{run_hierarchical_prep}` = `true`. Set `{hierarchy_cols}` = ordered list from `{potential_hierarchy_cols}` top-to-bottom (e.g. `["country", "region", "store"]`). If order is ambiguous, ask in plain text: "Confirm the hierarchy order from broadest to narrowest (e.g. country, region, store):". Tell the user: `"Perfecto, agregaré todos los niveles jerárquicos antes de terminar la preparación de datos."` Do NOT mention step numbers or internal variable names.
-- If **(b)**: set `{run_hierarchical_prep}` = `false`. Tell the user: `"De acuerdo, puedes hacerlo más adelante."` Do NOT mention step numbers or internal variable names.
+- If **(a)**: set `{run_hierarchical_prep}` = `true`. Set `{hierarchy_cols}` = ordered list from `{potential_hierarchy_cols}` top-to-bottom (e.g. `["country", "region", "store"]`). If order is ambiguous, ask in plain text: "Confirm the hierarchy order from broadest to narrowest (e.g. country, region, store):". Tell the user exactly: `"Perfecto, agregaré todos los niveles jerárquicos antes de terminar la preparación de datos."` Do NOT output any other text. Do NOT mention step numbers, variable names, or internal state.
+- If **(b)**: set `{run_hierarchical_prep}` = `false`. Tell the user exactly: `"De acuerdo, puedes hacerlo más adelante."` Do NOT output any other text. Do NOT mention step numbers, variable names, or internal state.
 
 **Persist the result as `{freq}` ∈ `{H, D, W, M}` for the rest of the skill.** Every subsequent SQL block (Steps 6, 6a, 6b, and the imputation/anomaly steps) MUST be selected by `{freq}` — the agent does NOT pick a template freely. **For `{freq} == "M"` and `{freq} == "W"` the date-alignment rule in Step 6 is mandatory and is verified by Step 6b — it is not optional and cannot be skipped.**
 

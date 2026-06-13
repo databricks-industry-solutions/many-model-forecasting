@@ -14,6 +14,7 @@ Get started now!
 
 Use a cluster with [Databricks Runtime 17.3LTS for ML](https://docs.databricks.com/en/release-notes/runtime/17.3lts-ml.html) for local models, and [Databricks Runtime 18.0 for ML](https://docs.databricks.com/en/release-notes/runtime/18.0-ml.html) or later for global and foundation models.
 
+- Jun 2026: Added **Hierarchical Reconciliation** support via `run_reconciliation()`. Make forecasts coherent across hierarchy levels (SKU → Category → Total) using MinTrace, BottomUp, TopDown, MiddleOut, or ERM. Available as [Skill 6](https://github.com/databricks-industry-solutions/many-model-forecasting/tree/main/skills/) for MMF Agent and as a standalone Python API. ([lourdesmartinezma](https://github.com/lourdesmartinezma))
 - May 2026: Added MLForecast for LightGBM support. Try it out [here](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/global_daily_ml.ipynb) or with [MMF Agent](https://github.com/databricks-industry-solutions/many-model-forecasting/tree/main/skills/).
 - May 2026: All model classes (local, global and foundation) run on serverless. Try it out [here](https://github.com/databricks-industry-solutions/many-model-forecasting/tree/main/examples/serverless).
 - Mar 2026: Introduced **MMF Agent**: a set of skills that guide users through an end-to-end forecasting project (preprocess, profile, provision resources, forecast, evaluate). MMF Agent runs on Genie Code, Claude Code, Cursor and GitHub Copilot. Try it out [here](https://github.com/databricks-industry-solutions/many-model-forecasting/tree/main/skills/). ([lbruand-db](https://github.com/lbruand-db), [lourdesmartinezma](https://github.com/lourdesmartinezma), [puneet-jain159](https://github.com/puneet-jain159))
@@ -303,6 +304,33 @@ To modify the model hyperparameters, change the values in [mmf_sa/models/models_
 MMF is fully integrated with MLflow and so once the training kicks off, the experiments will be visible in the MLflow Tracking UI with the corresponding metrics and parameters. During the evaluation, the models are logged and registered to Unity Catalog.
 
 We encourage you to read through [examples/daily/foundation_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/foundation_daily.ipynb) notebook to better understand how foundation models can be applied to your time series using MMF. An example notebook for forecasting with exogenous regressors can be found in [examples/external_regressors/foundation_external_regressors_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/external_regressors/foundation_external_regressors_daily.ipynb). Refer to the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/post-evaluation-analysis.ipynb) for guidance on performing fine-grained model selection after running `run_forecast`. See how to define the backtesting parameters [here](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/README.md#how-backtesting-works).
+
+## Hierarchical Reconciliation
+
+When your time series data has a natural hierarchy — e.g., sales by SKU roll up to category, which roll up to total — MMF can ensure that forecasts at all levels are **coherent**: the sum of SKU forecasts equals the category forecast, which equals the total forecast.
+
+```python
+from mmf_sa import run_reconciliation
+
+run_reconciliation(
+    spark=spark,
+    best_models_table=f"{catalog}.{schema}.{use_case}_best_models",
+    evaluation_output_table=f"{catalog}.{schema}.{use_case}_evaluation_output",
+    hierarchy_s_table=f"{catalog}.{schema}.{use_case}_hierarchy_S",
+    hierarchy_tags_table=f"{catalog}.{schema}.{use_case}_hierarchy_tags",
+    reconciliation_output=f"{catalog}.{schema}.{use_case}_reconciliation_output",
+    freq="M",
+    method="MinTrace",  # BottomUp | TopDown | MiddleOut | MinTrace | ERM
+)
+```
+
+Install the optional dependency:
+
+```bash
+pip install "mmf_sa[hierarchical] @ git+https://github.com/databricks-industry-solutions/many-model-forecasting.git"
+```
+
+Hierarchical reconciliation runs on **serverless compute** — no GPU or multi-node cluster needed. For full details, see the [`mmf_sa` README](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/README.md#hierarchical-reconciliation) and the [MMF Agent Skill 6](https://github.com/databricks-industry-solutions/many-model-forecasting/tree/main/skills/).
 
 ## [Vector Lab](https://www.youtube.com/@VectorLab) - Many Model Forecasting
 
