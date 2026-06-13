@@ -118,69 +118,7 @@ SELECT COUNT(*) AS n_evaluation FROM {catalog}.{schema}.{use_case}_evaluation_ou
 
 If either is missing or empty, route back to the appropriate skill (Skill 4 or Skill 5).
 
-### Step 1a: Ensure hierarchy metadata (preprocessing)
-
-Check if `_hierarchy_S` and `_hierarchy_tags` exist:
-
-```sql
-SELECT COUNT(*) AS n_S FROM {catalog}.{schema}.{use_case}_hierarchy_S
-```
-```sql
-SELECT COUNT(*) AS n_tags FROM {catalog}.{schema}.{use_case}_hierarchy_tags
-```
-
-**If both exist:** continue to Step 2.
-
-**If either is missing:** derive them now from `{use_case}_train_data` unique_ids — do NOT ask the user to go back to Skill 1.
-
-Tell the user (plain language, no step numbers or internal names):
-> "I need to build the hierarchy structure from your data first — this takes about a minute."
-
-Create a notebook with exactly these cells:
-
-**Cell 1 — Install:**
-```python
-%pip install /Workspace/Repos/{full_email}/many-model-forecasting[hierarchical] --quiet
-```
-
-**Cell 2 — Restart:**
-```python
-dbutils.library.restartPython()
-```
-
-**Cell 3 — Derive hierarchy:**
-```python
-import sys
-sys.path.insert(0, "/Workspace/Repos/{full_email}/many-model-forecasting")
-from mmf_sa import derive_hierarchy_from_unique_ids
-
-derive_hierarchy_from_unique_ids(
-    spark=spark,
-    train_table="{catalog}.{schema}.{use_case}_train_data",
-    hierarchy_s_table="{catalog}.{schema}.{use_case}_hierarchy_S",
-    hierarchy_tags_table="{catalog}.{schema}.{use_case}_hierarchy_tags",
-)
-print("✓ Hierarchy metadata derived")
-```
-
-> ⛔ **CRITICAL: Use `/Workspace/Repos/{full_email}/many-model-forecasting` as the install path — NOT a GitHub URL, NOT `@main`, NOT the local filesystem. This is the Databricks workspace repo path where the package is already checked out.**
-
-Upload and run the notebook on serverless compute. Poll the job and report progress:
-
-```
-[HH:MM:SS] Building hierarchy structure... RUNNING
-[HH:MM:SS] Building hierarchy structure... SUCCEEDED (duration: Xm Ys)
-```
-
-If the job **fails**: stop immediately, report the error to the user in plain language, and ask how to proceed. Do NOT continue to Step 2.
-
-After execution, verify:
-
-```sql
-SELECT DISTINCT level_name FROM {catalog}.{schema}.{use_case}_hierarchy_tags ORDER BY level_name
-```
-
-Tell the user the detected hierarchy levels in plain language (e.g. "Found 3 levels: country, region, store"). Do NOT mention step numbers or internal table names.
+> ℹ️ **Hierarchy metadata is handled automatically** — the reconciliation notebook includes a conditional cell that derives `_hierarchy_S` and `_hierarchy_tags` from `train_data` if they are missing. No separate job needed. Proceed directly to Step 2.
 
 ### ⛔ STOP GATE — Step 2: Propose and confirm reconciliation method
 
