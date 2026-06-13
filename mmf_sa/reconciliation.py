@@ -215,9 +215,10 @@ def run_aggregation(
     hierarchy_s_table: str,
     hierarchy_tags_table: str,
     hierarchy_cols: List[str],
+    source_table: Optional[str] = None,
 ) -> None:
-    # Case A (leaves only): calls aggregate() to build upper levels, overwrites train_table.
-    # Case B (already aggregated): skips aggregate() but still builds and persists S_df and tags.
+    # Reads hierarchy columns from source_table if provided (original raw table),
+    # otherwise reads from train_table. Aggregated result is always written to train_table.
     try:
         from hierarchicalforecast.utils import aggregate
     except ImportError:
@@ -226,7 +227,8 @@ def run_aggregation(
             "Install with: pip install mmf_sa[hierarchical]"
         )
 
-    train_df = spark.table(train_table).toPandas()
+    read_table = source_table if source_table else train_table
+    train_df = spark.table(read_table).toPandas()
     train_df["ds"] = pd.to_datetime(train_df["ds"])
 
     spec = [[hierarchy_cols[0]]]
