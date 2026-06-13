@@ -15,16 +15,17 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 SUPPORTED_METHODS = {"BottomUp", "TopDown", "MiddleOut", "MinTrace", "ERM"}
+SUPPORTED_MINTRACE_METHODS = {"mint_shrink", "mint_cov", "wls_var", "wls_struct"}
 
 # Maps MMF freq codes to pandas offset aliases (used in monthly ds reconstruction)
 _MMF_FREQ_TO_PANDAS = {"H": "h", "D": "D", "W": "W", "M": "MS"}
 
 
 def _spark_to_polars(spark: SparkSession, table_name: str) -> pl.DataFrame:
-    return pl.from_pandas(spark.table(table_name).toPandas())
+    return pl.from_arrow(spark.table(table_name).toArrow())
 
 
-def _build_reconciler(method: str):
+def _build_reconciler(method: str, mintrace_method: str = "mint_shrink"):
     try:
         from hierarchicalforecast.methods import BottomUp, ERM, MiddleOut, MinTrace, TopDown
     except ImportError:
@@ -32,15 +33,20 @@ def _build_reconciler(method: str):
             "hierarchicalforecast is required for reconciliation. "
             "Install with: pip install mmf_sa[hierarchical]"
         )
+    if method not in SUPPORTED_METHODS:
+        raise ValueError(f"Unsupported method '{method}'. Supported: {sorted(SUPPORTED_METHODS)}")
+    if method == "MinTrace" and mintrace_method not in SUPPORTED_MINTRACE_METHODS:
+        raise ValueError(
+            f"Unsupported mintrace_method '{mintrace_method}'. "
+            f"Supported: {sorted(SUPPORTED_MINTRACE_METHODS)}"
+        )
     reconcilers = {
         "BottomUp": BottomUp(),
         "TopDown": TopDown(method="forecast_proportions"),
         "MiddleOut": MiddleOut(middle_level=None, top_down_method="forecast_proportions"),
-        "MinTrace": MinTrace(method="mint_shrink"),
+        "MinTrace": MinTrace(method=mintrace_method),
         "ERM": ERM(method="closed"),
     }
-    if method not in reconcilers:
-        raise ValueError(f"Unsupported method '{method}'. Supported: {sorted(SUPPORTED_METHODS)}")
     return reconcilers[method]
 
 
@@ -63,12 +69,11 @@ def _add_ds_from_window_start(df: pl.DataFrame, freq: str) -> pl.DataFrame:
             (pl.col("backtest_window_start_date") + pl.duration(weeks=pl.col("_step"))).alias("ds")
         )
     elif freq == "M":
-        # Monthly offsets require pandas round-trip due to variable month lengths
-        pdf = df.to_pandas()
-        pdf["ds"] = pd.to_datetime(pdf["backtest_window_start_date"]) + pdf["_step"].apply(
-            lambda n: pd.DateOffset(months=int(n))
+        return df.with_columns(
+            pl.col("backtest_window_start_date").dt.offset_by(
+                pl.concat_str(pl.col("_step").cast(pl.String), pl.lit("mo"))
+            ).alias("ds")
         )
-        return pl.from_pandas(pdf)
     else:
         raise ValueError(f"Unsupported freq '{freq}'. Supported: {sorted(_MMF_FREQ_TO_PANDAS.keys())}")
 
@@ -146,6 +151,7 @@ def reconcile_core(
     S_df: pl.DataFrame,
     tags: Dict[str, List[str]],
     method: str = "MinTrace",
+    mintrace_method: str = "mint_shrink",
 ) -> pl.DataFrame:
     """Apply hierarchical reconciliation — pure function, no Spark, no Delta.
 
@@ -156,6 +162,7 @@ def reconcile_core(
         S_df: Polars DataFrame (unique_id, leaf1, leaf2, ...) — summation matrix
         tags: dict mapping level_name → list of unique_ids at that level
         method: reconciliation method — BottomUp | TopDown | MiddleOut | MinTrace | ERM
+        mintrace_method: MinTrace sub-method — mint_shrink (default) | wls_var | wls_struct | mint_cov
 
     Returns:
         Polars DataFrame (unique_id, ds, y_base, y_reconciled, hierarchy_level, reconciliation_method)
@@ -167,7 +174,7 @@ def reconcile_core(
             "hierarchicalforecast is required. Install with: pip install mmf_sa[hierarchical]"
         )
 
-    reconciler = _build_reconciler(method)
+    reconciler = _build_reconciler(method, mintrace_method)
     hrec = HierarchicalReconciliation(reconcilers=[reconciler])
 
     # hierarchicalforecast works on pandas
@@ -321,6 +328,7 @@ def run_reconciliation(
     date_col: str = "ds",
     target: str = "y",
     method: str = "MinTrace",
+    mintrace_method: str = "mint_shrink",
 ) -> None:
     """Reconcile hierarchical forecasts using out-of-sample backtest residuals.
 
@@ -339,6 +347,7 @@ def run_reconciliation(
         date_col: date column name in best_models_table (default: ds)
         target: target column name in best_models_table (default: y)
         method: reconciliation method — BottomUp | TopDown | MiddleOut | MinTrace | ERM
+        mintrace_method: MinTrace sub-method — mint_shrink (default) | wls_var | wls_struct | mint_cov
     """
     if not _POLARS_AVAILABLE:
         raise ImportError(
@@ -393,7 +402,7 @@ def run_reconciliation(
         ["unique_id"] + list(bottom_series)
     )
 
-    result = reconcile_core(y_hat_df, y_df, s_df, tags, method)
+    result = reconcile_core(y_hat_df, y_df, s_df, tags, method, mintrace_method)
 
     spark.createDataFrame(result.to_pandas()).write.format("delta").mode("overwrite") \
         .option("overwriteSchema", "true").saveAsTable(reconciliation_output)
