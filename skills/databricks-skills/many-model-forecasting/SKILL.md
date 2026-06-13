@@ -214,7 +214,7 @@ See: [5-post-process-and-evaluate.md](5-post-process-and-evaluate.md)
 
 ### Skill 6: Hierarchical Reconciliation (`/hierarchical-reconciliation`) *(optional)*
 
-Applies hierarchical reconciliation to make forecasts coherent across all levels of a hierarchy (SKU → Category → Total). Reads `{use_case}_best_models` from Skill 5 and produces `{use_case}_reconciliation_output`. Supports BottomUp, TopDown, MiddleOut, MinTrace, and ERM methods. Runs on serverless compute.
+Applies hierarchical reconciliation to make forecasts coherent across all levels of a hierarchy (SKU → Category → Total). Reads `{use_case}_best_models` from Skill 5 and produces `{use_case}_reconciliation_output`. Supports BottomUp, TopDown, MiddleOut, MinTrace, and ERM methods. Runs on classic compute (Single Node, memory-optimized).
 
 **Only run this skill if the use case has a hierarchy.** Requires Skill 1 hierarchical prep step to have been run (produces `_hierarchy_S` and `_hierarchy_tags` tables).
 
