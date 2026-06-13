@@ -239,8 +239,9 @@ def run_aggregation(
         )
 
     read_table = source_table if source_table else train_table
-    train_df = spark.table(read_table).toPandas()
-    train_df["ds"] = pd.to_datetime(train_df["ds"])
+    # Load via Arrow → Polars so aggregate() uses Polars backend via Narwhals (no pandas materialization)
+    train_df = _spark_to_polars(spark, read_table)
+    train_df = train_df.with_columns(pl.col("ds").cast(pl.Datetime))
 
     spec = [[hierarchy_cols[0]]]
     for i in range(2, len(hierarchy_cols) + 1):
@@ -255,14 +256,15 @@ def run_aggregation(
         )
 
     Y_hier_df, S_df, tags = aggregate(
-        df=train_df.drop(columns=["unique_id"], errors="ignore"), spec=spec
+        df=train_df.drop("unique_id"), spec=spec
     )
-    spark.createDataFrame(Y_hier_df).write.format("delta").mode("overwrite") \
+    # Y_hier_df and S_df are Polars DataFrames (Narwhals preserves backend)
+    spark.createDataFrame(Y_hier_df.to_pandas()).write.format("delta").mode("overwrite") \
         .option("overwriteSchema", "true").saveAsTable(train_table)
 
     if "unique_id" not in S_df.columns:
-        S_df = S_df.reset_index(names="unique_id")
-    spark.createDataFrame(S_df).write.format("delta").mode("overwrite") \
+        S_df = S_df.with_row_index("unique_id")
+    spark.createDataFrame(S_df.to_pandas()).write.format("delta").mode("overwrite") \
         .option("overwriteSchema", "true").saveAsTable(hierarchy_s_table)
 
     tags_rows = [{"level_name": level, "unique_id": uid} for level, ids in tags.items() for uid in ids]
