@@ -22,6 +22,7 @@ def base_config():
     )
 
 
+@pytest.mark.external_data
 def test_exogenous_regressors(base_config, m4_df_exogenous):
     model_registry = ModelRegistry(base_config)
     model = model_registry.get_model("StatsForecastAutoArima")
