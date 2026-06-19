@@ -135,16 +135,15 @@ Present MinTrace as the recommendation with reasoning, then ask:
 AskUserQuestion:
   "Which reconciliation method would you like to use?
 
-   (a) MinTrace — recommended
-   (b) BottomUp
-   (c) TopDown
-   (d) MiddleOut
-   (e) ERM
+   (a) MinTrace — recommended, statistically optimal
+   (b) BottomUp — aggregates leaf forecasts upward; simple and robust
+   (c) TopDown — distributes the top-level forecast downward by historical proportions
+   (d) MiddleOut or ERM — anchor at an intermediate level (MiddleOut) or learn an optimal reconciliation matrix (ERM)
 
-   Options: [a, b, c, d, e]"
+   Options: [a, b, c, d]"
 ```
 
-Map: (a) → `MinTrace`, (b) → `BottomUp`, (c) → `TopDown`, (d) → `MiddleOut`, (e) → `ERM`. Store as `{reconciliation_method}`.
+Map: (a) → `MinTrace`, (b) → `BottomUp`, (c) → `TopDown`. If **(d)** is selected, ask in plain text: *"MiddleOut or ERM?"* and map accordingly. Store as `{reconciliation_method}`.
 
 If **(a) MinTrace** is selected, also ask about the sub-method:
 
