@@ -442,11 +442,16 @@ def _validate_alignment(
         Y_hat.group_by("unique_id")
         .agg(pl.col("ds").sort().alias("ds_list"))
     )
-    reference = ds_sets["ds_list"][0]
+    # Convert to tuples for comparison — avoids ambiguous truth-value on Polars Series
+    def _to_tuple(x):
+        return tuple(x.to_list() if hasattr(x, "to_list") else x)
+
+    ds_tuples = [_to_tuple(v) for v in ds_sets["ds_list"].to_list()]
+    reference = ds_tuples[0]
     misaligned = [
         ds_sets["unique_id"][i]
-        for i, ds_set in enumerate(ds_sets["ds_list"].to_list())
-        if ds_set != reference
+        for i, t in enumerate(ds_tuples)
+        if t != reference
     ]
     if misaligned:
         raise ValueError(
