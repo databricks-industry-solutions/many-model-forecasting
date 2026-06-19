@@ -173,7 +173,7 @@ Generate `{notebook_base_path}/run_reconciliation.ipynb` from the template `mmf_
 | `{catalog}` | confirmed catalog |
 | `{schema}` | confirmed schema |
 | `{use_case}` | confirmed use case |
-| `{levels}` | confirmed levels list (ordered leaf→root) |
+| `{levels}` | confirmed levels list (ordered leaf→root) — each entry must use **exactly** these keys: `name`, `best_models_table`, `evaluation_table`. Example: `[{"name": "store", "best_models_table": "cat.schema.store_best_models", "evaluation_table": "cat.schema.store_evaluation_output"}, ...]` |
 | `{hierarchy_table}` | confirmed membership table name |
 | `{freq}` | detected or confirmed frequency |
 | `{date_col}` | `ds` (or user-specified) |
