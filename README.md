@@ -304,6 +304,75 @@ MMF is fully integrated with MLflow and so once the training kicks off, the expe
 
 We encourage you to read through [examples/daily/foundation_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/foundation_daily.ipynb) notebook to better understand how foundation models can be applied to your time series using MMF. An example notebook for forecasting with exogenous regressors can be found in [examples/external_regressors/foundation_external_regressors_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/external_regressors/foundation_external_regressors_daily.ipynb). Refer to the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/post-evaluation-analysis.ipynb) for guidance on performing fine-grained model selection after running `run_forecast`. See how to define the backtesting parameters [here](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/README.md#how-backtesting-works).
 
+## Hierarchical Reconciliation
+
+MMF supports hierarchical reconciliation as an optional post-forecasting step. After generating base forecasts, reconciliation adjusts them so that they are mathematically coherent across all hierarchy levels — meaning forecasts at each level are consistent with those above and below them in the hierarchy (e.g., store-level forecasts sum to the region forecast, which sums to the country forecast).
+
+The multi-level approach in MMF is to run the full pipeline (`run_forecast`) once per hierarchy level. This gives you complete flexibility: each level can use its own training data, exogenous variables, and model selection — a store-level forecast might use promotion flags and local pricing, while a region-level forecast uses regional campaign data. Crucially, all levels can run in parallel, so the total compute time is bounded by the slowest level rather than the sum of all levels. Skill 6 then reconciles all outputs into a single coherent set of forecasts across the full hierarchy.
+
+### How to use it
+
+1. Provide training data for each hierarchy level — including the appropriate exogenous variables for each level — and a membership table as a Delta table describing the parent–child relationships across all series (see Skill 6 for the required schema).
+2. Run Skills 1–5 once per level to produce `best_models` and `evaluation_output` tables. These runs are independent and can be parallelized.
+3. Run Skill 6 to reconcile all levels.
+
+### Workflow
+
+```
+Skills 1–5  (Level: Store)   →  store_best_models   + store_evaluation_output   ─┐
+Skills 1–5  (Level: Region)  →  region_best_models  + region_evaluation_output  ─┤ (run in parallel)
+Skills 1–5  (Level: Country) →  country_best_models + country_evaluation_output ─┘
+                                          +
+                               membership_table (user-provided Delta table)
+                                          ↓
+                                       Skill 6
+                              (run_reconciliation_multilevel)
+                                          ↓
+                               reconciliation_output
+```
+
+### Membership table
+
+The membership table is an adjacency list provided by the user as a Delta table:
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `unique_id` | string | Series identifier — must match exactly the IDs in the level tables |
+| `level_name` | string | Level this series belongs to (e.g. `store`, `region`, `country`) |
+| `parent_unique_id` | string (nullable) | Parent series ID; `NULL` only for the single root |
+
+### Installation
+
+Hierarchical reconciliation requires the `[hierarchical]` extra:
+
+```bash
+pip install mmf_sa[hierarchical]
+```
+
+### API
+
+```python
+from mmf_sa import run_reconciliation_multilevel
+
+run_reconciliation_multilevel(
+    spark=spark,
+    levels=[
+        {"name": "store",   "best_models_table": "catalog.schema.store_best_models",   "evaluation_table": "catalog.schema.store_evaluation_output"},
+        {"name": "region",  "best_models_table": "catalog.schema.region_best_models",  "evaluation_table": "catalog.schema.region_evaluation_output"},
+        {"name": "country", "best_models_table": "catalog.schema.country_best_models", "evaluation_table": "catalog.schema.country_evaluation_output"},
+    ],
+    hierarchy_table="catalog.schema.membership_table",
+    reconciliation_output="catalog.schema.reconciliation_output",
+    freq="D",                    # H | D | W | M
+    method="MinTrace",           # MinTrace | BottomUp | TopDown | MiddleOut | ERM
+    mintrace_method="mint_shrink",
+)
+```
+
+The output table has columns: `unique_id`, `ds`, `y_base` (original forecast), `y_reconciled` (coherent forecast), `hierarchy_level`, `reconciliation_method`.
+
+> **Note:** Reconciliation requires classic compute (Single Node, DBR ML). `toArrow()` and scipy sparse are not supported on Spark Connect / serverless. See Skill 6 for the cluster configuration.
+
 ## [Vector Lab](https://www.youtube.com/@VectorLab) - Many Model Forecasting
 
 [IMAGE ALT TEXT HERE](https://www.youtube.com/watch?v=wYeuPxtap-8)

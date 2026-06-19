@@ -4,9 +4,11 @@
 
 **Slash command:** `/hierarchical-reconciliation`
 
-Applies hierarchical reconciliation to MMF forecasts, making them coherent across all levels of a hierarchy (e.g., SKU → Category → Total). Works with any forecast table — by default uses the best-model output from Skill 5, but can reconcile any table with `(unique_id, ds, forecast_value)` columns.
+Applies hierarchical reconciliation to MMF forecasts produced independently per hierarchy level, making them coherent across all levels (e.g., store → region → country). Consumes one `best_models` table and one `evaluation_output` table per level, plus a user-provided membership table describing parent–child relationships. Produces a single `reconciliation_output` table with coherent forecasts across the full hierarchy.
 
 **This skill is optional — only run it if the use case has a meaningful hierarchy.**
+
+> ℹ️ Before starting this skill, read the **Hierarchical Reconciliation** section in the README. It explains the multi-level workflow: Skills 1–5 must have been run once per hierarchy level before Skill 6 can reconcile.
 
 ## Preconditions
 
@@ -14,10 +16,9 @@ Applies hierarchical reconciliation to MMF forecasts, making them coherent acros
 
 | Precondition | How to verify | If missing |
 |---|---|---|
-| `{catalog}.{schema}.{use_case}_evaluation_output` exists and is populated | `SELECT COUNT(*) FROM ...` | Go back to **Skill 4 (`/execute-mmf-forecast`)** — `evaluation_output` is required for all reconciliation methods |
-| A forecast table with `(unique_id, ds, y)` columns exists | Confirmed in Step 0a | Route back to **Skill 5** or ask the user which table to use |
-
-> ℹ️ `_hierarchy_S` and `_hierarchy_tags` are **not** required upfront — Step 1a auto-derives them from `train_data` if missing.
+| N × `{level}_best_models` tables exist (one per hierarchy level) | `SHOW TABLES IN {catalog}.{schema}` — look for `*_best_models` pattern | Route back to **Skill 5** for each missing level |
+| N × `{level}_evaluation_output` tables exist (one per hierarchy level) | Same as above — look for `*_evaluation_output` pattern | Route back to **Skill 4** for each missing level |
+| A membership table (adjacency list) exists as a Delta table | User provides the fully-qualified name — Step 2 verifies | Ask the user to create it (see README for schema) |
 
 ## Parameters
 
@@ -25,11 +26,11 @@ Applies hierarchical reconciliation to MMF forecasts, making them coherent acros
 |-----------|---------|-------------|
 | `catalog` | From prior skills | Unity Catalog name |
 | `schema` | From prior skills | Schema name |
-| `use_case` | From Skill 1 | Use case name (prefixes all table names) |
-| `freq` | From Skill 1 | Frequency code — H \| D \| W \| M |
-| `date_col` | `ds` | Date column name |
-| `target` | `y` | Target column name |
-| `reconciliation_method` | `MinTrace` | Reconciliation method — see Step 2 |
+| `use_case` | From Skill 1 | Use case name (prefixes output table) |
+| `freq` | Auto-detected | Frequency code — H \| D \| W \| M |
+| `date_col` | `ds` | Date column name in best_models tables |
+| `target` | `y` | Target column name in best_models tables |
+| `reconciliation_method` | `MinTrace` | Reconciliation method — see Step 3 |
 
 ## Steps
 
@@ -40,58 +41,50 @@ If not already known from prior skills, ask in plain text (do NOT use AskUserQue
 > "To get started I need three things:
 >  • Catalog:
 >  • Schema:
->  • Use case name (the prefix for your tables, e.g. `rossmann`, `retail_sales`):"
+>  • Use case name (the prefix for your output table, e.g. `rossmann`, `retail_sales`):"
 
 **Do NOT proceed until the user provides all three.**
 
 Call `get_current_user()` to obtain `{full_email}`. Then set:
-- `{notebook_base_path}` = `/Users/{full_email}/{use_case}/notebooks` (or carry forward from Skill 1 if available in context)
+- `{notebook_base_path}` = `/Users/{full_email}/{use_case}/notebooks`
 
-### ⛔ STOP GATE — Step 0a: Confirm forecast table
+### ⛔ STOP GATE — Step 1: Discover and confirm level tables
 
-First, silently check if the default table exists:
-
-```sql
-SELECT COUNT(*) AS n FROM {catalog}.{schema}.{use_case}_best_models
-```
-
-- If it exists (`n > 0`): present it as option (a) recommended.
-- If it does not exist: present only option (b) — do NOT show option (a).
-
-```
-AskUserQuestion:
-  "Which table contains the forecasts you want to reconcile?
-
-   (a) {catalog}.{schema}.{use_case}_best_models — default output from Skill 5  [only show if exists]
-   (b) A different table — I will provide the full name (catalog.schema.table)
-
-   Options: [a, b]"
-```
-
-- If **(a)**: set `{forecast_table}` = `{catalog}.{schema}.{use_case}_best_models`
-- If **(b)**: ask in plain text "Provide the full table name (catalog.schema.table):" and store as `{forecast_table}`
-
-**Do NOT proceed until `{forecast_table}` is confirmed.**
-
-### Step 0b: Auto-detect frequency
-
-Once `{forecast_table}` is known, detect `{freq}` automatically — do NOT ask the user:
+Scan the schema for tables matching the MMF output patterns:
 
 ```sql
-SELECT ds FROM {forecast_table} WHERE ds IS NOT NULL LIMIT 1000
+SHOW TABLES IN {catalog}.{schema}
+```
+
+Filter for tables ending in `_best_models` and `_evaluation_output`. Group them into pairs by matching prefix (e.g. `stores_best_models` + `stores_evaluation_output` → level `stores`).
+
+Present the discovered pairs to the user and ask them to confirm the level names and their order from **most granular (leaves) to most aggregate (root)**:
+
+> "I found the following level table pairs in `{catalog}.{schema}`:
+>
+> | # | Level name | best_models table | evaluation_output table |
+> |---|---|---|---|
+> | 1 | stores | {catalog}.{schema}.stores_best_models | {catalog}.{schema}.stores_evaluation_output |
+> | 2 | regions | {catalog}.{schema}.regions_best_models | {catalog}.{schema}.regions_evaluation_output |
+> | 3 | country | {catalog}.{schema}.country_best_models | {catalog}.{schema}.country_evaluation_output |
+>
+> Is this correct? Please confirm the order (most granular → most aggregate) and correct any table names if needed."
+
+**WAIT for the user to confirm.** Store the confirmed list as `{levels}` (ordered leaf→root). If the user provides corrections, apply them before proceeding.
+
+If no matching pairs are found, tell the user in plain text that no `*_best_models` / `*_evaluation_output` pairs were found in the schema, and route them back to Skills 4–5.
+
+**Auto-detect `{freq}` silently** once `{levels}` is confirmed — sample `ds` values from the first level's `best_models` table:
+
+```sql
+SELECT ds FROM {first_level_best_models_table} WHERE ds IS NOT NULL LIMIT 1000
 ```
 
 Compute the median gap between consecutive distinct `ds` values:
-- Gap ≈ 1 day → `D`
-- Gap ≈ 7 days → `W`
-- Gap ≈ 28–31 days → `M`
-- Gap < 1 day → `H`
+- Gap ≈ 1 day → `D`; gap ≈ 7 days → `W`; gap ≈ 28–31 days → `M`; gap < 1 day → `H`
 
-If `{freq}` was already known from prior skills, skip this step and carry it forward.
-
-Do NOT narrate this detection to the user. Proceed silently with `{freq}` set.
-
-Only ask the user if the gap is ambiguous (e.g. mixed gaps or fewer than 2 distinct dates):
+Do NOT narrate this detection. If freq was already known from prior skills, carry it forward.
+Only ask if the gap is ambiguous:
 
 ```
 AskUserQuestion:
@@ -105,75 +98,92 @@ AskUserQuestion:
    Options: [a, b, c, d]"
 ```
 
-### Step 1: Verify forecast inputs
+### ⛔ STOP GATE — Step 2: Confirm membership table
 
-Check that the required tables exist and are populated:
+Ask the user in plain text:
+
+> "Provide the fully-qualified name of your membership table (format: `catalog.schema.table_name`).
+>
+> The table must be an adjacency list with these columns:
+> - `unique_id` (string) — series identifier, must match exactly the IDs in your level tables
+> - `level_name` (string) — level this series belongs to (e.g. `store`, `region`, `country`)
+> - `parent_unique_id` (string, nullable) — parent series ID; NULL only for the single root"
+
+**WAIT for the user to provide the table name.** Store as `{hierarchy_table}`.
+
+Then verify it exists and has the required columns:
 
 ```sql
-SELECT COUNT(*) AS n_forecast FROM {forecast_table}
-```
-```sql
-SELECT COUNT(*) AS n_evaluation FROM {catalog}.{schema}.{use_case}_evaluation_output
+SELECT unique_id, level_name, parent_unique_id FROM {hierarchy_table} LIMIT 5
 ```
 
-If either is missing or empty, route back to the appropriate skill (Skill 4 or Skill 5).
+If the query fails or required columns are missing, report the issue and ask the user to check the table.
 
-> ℹ️ **Hierarchy metadata is handled automatically** — the reconciliation notebook includes a conditional cell that derives `_hierarchy_S` and `_hierarchy_tags` from `train_data` if they are missing. No separate job needed. Proceed directly to Step 2.
-
-### ⛔ STOP GATE — Step 2: Propose and confirm reconciliation method
+### ⛔ STOP GATE — Step 3: Propose and confirm reconciliation method
 
 Present MinTrace as the recommendation with reasoning, then ask:
 
-> "I recommend **MinTrace** (`mint_shrink`) — it minimizes forecast error variance by estimating the covariance across all hierarchy levels. It is the statistically optimal method when backtest residuals are available.
+> "I recommend **MinTrace** (`mint_shrink`) — it minimizes forecast error variance by estimating the covariance structure across all hierarchy levels using the backtest residuals. It is the statistically optimal method when sufficient residual samples are available.
 >
-> Alternatives: BottomUp (aggregates leaf forecasts upward), TopDown (distributes from the total downward), MiddleOut (anchors at an intermediate level), ERM (learns an optimal reconciliation matrix).
+> Alternatives:
+> - **BottomUp** — aggregates leaf-level forecasts upward; simple and robust
+> - **TopDown** — distributes the top-level forecast downward by historical proportions
+> - **MiddleOut** — anchors at an intermediate level and reconciles up and down
+> - **ERM** — learns an optimal reconciliation matrix from residuals"
 
 ```
 AskUserQuestion:
-  "Should we use MinTrace or do you prefer a different method?
+  "Which reconciliation method would you like to use?
 
    (a) MinTrace — recommended
-   (b) I want to choose a different method
+   (b) BottomUp
+   (c) TopDown
+   (d) MiddleOut
+   (e) ERM
 
-   Options: [a, b]"
+   Options: [a, b, c, d, e]"
 ```
 
-- If **(a)**: set `{reconciliation_method}` = `MinTrace`. Proceed to Step 3.
-- If **(b)**:
+Map: (a) → `MinTrace`, (b) → `BottomUp`, (c) → `TopDown`, (d) → `MiddleOut`, (e) → `ERM`. Store as `{reconciliation_method}`.
+
+If **(a) MinTrace** is selected, also ask about the sub-method:
 
 ```
 AskUserQuestion:
-  "Which method would you like to use?
+  "MinTrace sub-method — `mint_shrink` is the default and works well in most cases.
+   Use `wls_struct` or `wls_var` if you have few backtest samples at upper levels.
 
-   (a) BottomUp — aggregates leaf-level forecasts upward
-   (b) TopDown — distributes the top-level forecast downward
-   (c) MiddleOut — anchors at an intermediate level
-   (d) ERM — learns an optimal reconciliation matrix
+   (a) mint_shrink — default, shrinkage covariance estimator
+   (b) wls_struct — structural weights (number of bottom-level series)
+   (c) wls_var — variance scaling weights
+   (d) mint_cov — full sample covariance (requires many residual samples)
 
    Options: [a, b, c, d]"
 ```
 
-Map: (a) → `BottomUp`, (b) → `TopDown`, (c) → `MiddleOut`, (d) → `ERM`. Store as `{reconciliation_method}`.
+Map: (a) → `mint_shrink`, (b) → `wls_struct`, (c) → `wls_var`, (d) → `mint_cov`. Store as `{mintrace_method}`.
 
-### Step 3: Generate reconciliation notebook
+### Step 4: Generate reconciliation notebook
 
 Generate `{notebook_base_path}/run_reconciliation.ipynb` from the template `mmf_reconciliation_notebook_template.ipynb`, filling in:
 
 | Placeholder | Value |
 |-------------|-------|
-| `{full_email}` | from `get_current_user()` — used in install path |
+| `{full_email}` | from `get_current_user()` |
 | `{catalog}` | confirmed catalog |
 | `{schema}` | confirmed schema |
 | `{use_case}` | confirmed use case |
-| `{forecast_table}` | confirmed in Step 0a — full 3-part table name |
-| `{freq}` | frequency — H \| D \| W \| M |
+| `{levels}` | confirmed levels list (ordered leaf→root) |
+| `{hierarchy_table}` | confirmed membership table name |
+| `{freq}` | detected or confirmed frequency |
 | `{date_col}` | `ds` (or user-specified) |
 | `{target}` | `y` (or user-specified) |
-| `{reconciliation_method}` | method confirmed in Step 2 |
+| `{reconciliation_method}` | method confirmed in Step 3 |
+| `{mintrace_method}` | sub-method confirmed in Step 3 (only if MinTrace) |
 
-### Step 4: Run on classic compute (Single Node, memory-optimized)
+### Step 5: Run on classic compute (Single Node, memory-optimized)
 
-Reconciliation is a matrix operation that requires classic compute — `toArrow()` and scipy sparse are not available on Spark Connect (serverless). Run on a **Single Node** job cluster with DBR ML.
+Reconciliation requires classic compute — `toArrow()` and scipy sparse are not available on Spark Connect (serverless). Run on a **Single Node** job cluster with DBR ML.
 
 > ⛔ **MANDATORY cluster config — DO NOT use serverless.**
 > ```json
@@ -194,7 +204,7 @@ Reconciliation is a matrix operation that requires classic compute — `toArrow(
 > - **Azure**: `Standard_E16ads_v5` (128 GB)
 > - **GCP**: `n2-highmem-16` (128 GB)
 >
-> For larger hierarchies (>10k leaves), upgrade to the next tier or switch `reconciliation_method` to `wls_var`. See the design doc for sizing guidance.
+> For larger hierarchies (>10k leaves), upgrade to the next tier or switch to `wls_struct`.
 
 Job name pattern: `{use_case}_reconciliation_{username}` (upsert — no accumulation of stale jobs).
 
@@ -210,11 +220,11 @@ Then trigger a run. Poll status and report progress:
 [HH:MM:SS] {use_case}_reconciliation: SUCCEEDED (duration: Xm Ys)
 ```
 
-If the job **fails**: stop immediately, report the error to the user in plain language, and ask how to proceed. Do NOT continue to Step 5.
+If the job **fails**: stop immediately, report the error to the user in plain language, and ask how to proceed. Do NOT continue to Step 6.
 
 The output table will be `{catalog}.{schema}.{use_case}_reconciliation_output`.
 
-### Step 5: Validate coherence and summarize
+### Step 6: Validate coherence and summarize
 
 After the notebook completes, run a coherence spot-check:
 
@@ -233,14 +243,7 @@ ORDER BY hierarchy_level
 Present a summary to the user:
 - How many series were reconciled at each level
 - Average adjustment magnitude (how much forecasts changed)
-- Confirm coherence is achieved
-
-Example narrative:
-> "Reconciliation complete. The forecasts at the `store` level were adjusted by an average of X units to ensure they sum correctly to the `region` and `country` levels. All {n} hierarchy relationships are now coherent."
-
-### Step 6: Generate reproducibility notebook
-
-Generate a reproducibility notebook at `{notebook_base_path}/run_reconciliation_repro.ipynb` — identical to the run notebook, allowing the user to re-run reconciliation independently.
+- Confirm the output table is ready
 
 ### ⛔ STOP GATE — Step 7: Final confirmation
 
@@ -250,8 +253,8 @@ AskUserQuestion:
 
    Summary:
    • Method: {reconciliation_method}
+   • Levels reconciled: {n_levels}
    • Output table: {catalog}.{schema}.{use_case}_reconciliation_output
-   • Reproducibility notebook: {notebook_base_path}/run_reconciliation_repro
 
    What would you like to do next?
    (a) Done — reconciled forecasts are ready for business use
@@ -270,19 +273,17 @@ AskUserQuestion:
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `unique_id` | string | Series identifier (encodes hierarchy level, e.g. `USA/California/Store1`) |
+| `unique_id` | string | Series identifier |
 | `ds` | timestamp | Forecast date |
 | `y_base` | double | Original forecast before reconciliation |
 | `y_reconciled` | double | Coherent forecast after reconciliation |
-| `hierarchy_level` | string | Which hierarchy level this series belongs to |
+| `hierarchy_level` | string | Level this series belongs to |
 | `reconciliation_method` | string | Method used (e.g. `MinTrace`) |
 
 ## Key Concepts
 
-**Why reconcile?** Without reconciliation, the sum of store-level forecasts will not equal the region forecast, which will not equal the country forecast. This creates inconsistencies when different teams use forecasts at different levels for planning.
+**Why reconcile?** Without reconciliation, store-level forecasts will not sum to the region forecast, which will not sum to the country forecast. This creates inconsistencies when different teams plan from different levels of the hierarchy.
 
-**How hierarchy metadata is built:** There are two paths depending on the data:
-- **Leaf-level data** (no `/` in unique_id): Skill 1 called `run_aggregation()`, which created series at all levels (`USA`, `USA/California`, `USA/California/Store1`) and saved `_hierarchy_S` and `_hierarchy_tags`.
-- **Pre-aggregated data** (unique_ids already use `/`): Skill 1 called `derive_hierarchy_from_unique_ids()`, or Skill 6 Step 1a derives them on the fly from `train_data`. In either case `_hierarchy_S` and `_hierarchy_tags` are available before reconciliation runs.
+**MinTrace uses backtest residuals:** MinTrace estimates how correlated the forecast errors are across the hierarchy to find the optimal adjustment weights. It uses out-of-sample backtest residuals from `evaluation_output` — this avoids overfitting bias, especially important when MMF selects different models per series.
 
-**MinTrace uses backtest residuals:** MinTrace estimates how correlated the forecast errors are across the hierarchy to find the optimal adjustment weights. It uses out-of-sample backtest residuals from `_evaluation_output` — this is statistically better than in-sample fits because it avoids optimism bias, especially important when MMF selects different models per series. All methods supported by Skill 6 use `_evaluation_output`.
+**ID matching is strict:** `unique_id` values in the membership table must match exactly — same case, no extra whitespace — the `unique_id` values in all level tables. Mismatches will be reported as hard errors before reconciliation runs.

@@ -149,20 +149,6 @@ Identify time series candidates by checking column types:
 
 A valid time series table MUST have all three: a date column, a numeric column, and a group column.
 
-**Hierarchy detection — two signals (run during Step 3):**
-
-1. **Extra categorical columns:** Scan for additional STRING or low-cardinality categorical columns beyond `unique_id`, `ds`, `y` (e.g., `country`, `region`, `state`, `store`, `category`, `subcategory`, `department`, `sku`, `brand`). Store any found as `{potential_hierarchy_cols}`.
-
-2. **Slash in unique_id:** Run this query:
-   ```sql
-   SELECT COUNT(*) AS n_slash
-   FROM {catalog}.{schema}.{table_name}
-   WHERE {unique_id_col} LIKE '%/%'
-   ```
-   If `n_slash > 0`, the data already has all hierarchy levels encoded in unique_id. Set `{already_aggregated}` = `true`.
-
-If either signal is present, flag for Step 4b.
-
 ### Step 4: Profile candidates
 
 For each candidate table, run these queries:
@@ -207,34 +193,6 @@ FROM (
 - `avg_gap` ~28-31 = **Monthly** (`freq=M`)
 
 Report the detected frequency to the user.
-
-### Step 4b: Report hierarchy detection (if flagged in Step 3)
-
-**Skip if neither hierarchy signal was detected in Step 3.**
-
-Include this as part of the profiling summary. Output VERBATIM — do NOT add any heading, label, or preamble (no "Hallazgo:", no "Detectado:", no internal variable names).
-
-**If `{already_aggregated}` = `true` (slashes detected in unique_id):**
-
-Output exactly — no question, no options, just informational:
-
-> "📊 This dataset has a hierarchical structure: `unique_id` values encode multiple levels (e.g., `USA/California/Store1`). It is a candidate for **hierarchical reconciliation** after forecasting — you can do this later, once you have your first forecast results."
-
-Set `{run_hierarchical_prep}` = `false`. Do NOT ask the user anything. Continue the pipeline.
-
-**If `{potential_hierarchy_cols}` non-empty (separate hierarchy columns detected):**
-
-> "📊 I detected columns that suggest a hierarchy: `{potential_hierarchy_cols}`. Forecasting at all levels (e.g. store + region + country) allows you to reconcile forecasts later.
->
-> Would you like to forecast at all hierarchy levels?
->
-> (a) Yes — I will aggregate series for all levels (more series = more compute in Skill 4)
-> (b) No — leaf level only. You can run reconciliation later if you change your mind."
-
-**WAIT for the user to respond.**
-
-- If **(a)**: set `{run_hierarchical_prep}` = `true`. Set `{hierarchy_cols}` = ordered list from `{potential_hierarchy_cols}` top-to-bottom (e.g. `["country", "region", "store"]`). If order is ambiguous, ask in plain text: "Confirm the hierarchy order from broadest to narrowest (e.g. country, region, store):". Tell the user exactly: `"Done — I will aggregate all hierarchy levels before finishing data preparation."` Do NOT output any other text. Do NOT mention step numbers, variable names, or internal state.
-- If **(b)**: set `{run_hierarchical_prep}` = `false`. Tell the user exactly: `"Understood — you can do this later."` Do NOT output any other text. Do NOT mention step numbers, variable names, or internal state.
 
 **Persist the result as `{freq}` ∈ `{H, D, W, M}` for the rest of the skill.** Every subsequent SQL block (Steps 6, 6a, 6b, and the imputation/anomaly steps) MUST be selected by `{freq}` — the agent does NOT pick a template freely. **For `{freq} == "M"` and `{freq} == "W"` the date-alignment rule in Step 6 is mandatory and is verified by Step 6b — it is not optional and cannot be skipped.**
 
@@ -368,12 +326,6 @@ AskUserQuestion:
 **WAIT for the user to respond.**
 
 Store the answer as `{future_regressor_source}` (`same_table` or the name of the separate table). If the user selects (b), ask for the table name in a follow-up question before proceeding.
-
-### Step 5c: Confirm hierarchy decision
-
-**Skip if no hierarchy was detected in Step 3, or if `{already_aggregated}` = `true` (data already has all levels — no aggregation in Skill 1).**
-
-If `{run_hierarchical_prep}` was set in Step 4b, carry it forward and **do not reset it** — it must still hold its value when Step 10 is reached after all the cleaning steps.
 
 ### Step 6: Create {use_case}_train_data
 
@@ -1126,103 +1078,9 @@ FROM ...
 
 Present cleaning summary to the user.
 
-### Step 10: Hierarchical prep
+### Step 10: Generate reproducibility notebook
 
-> ⛔ **CHECK BEFORE PROCEEDING.** Recall the value of `{run_hierarchical_prep}` set in Step 4b:
-> - `{run_hierarchical_prep}` = **`true`** → execute this step now before moving to Step 11
-> - `{run_hierarchical_prep}` = **`false`** → go directly to Step 11. Do NOT say anything to the user about this step. Do NOT mention step numbers, variable names, or that anything was skipped.
-
-Only applies when the user confirmed forecasting at all hierarchy levels (separate hierarchy columns detected in Step 3). Calls `run_aggregation()`: aggregates leaf-level `train_data` into all hierarchy levels, overwrites `train_data`, and saves `_hierarchy_S` and `_hierarchy_tags`.
-
-#### Step 10-i: Generate hierarchical prep notebook
-
-Create a notebook at `{notebook_base_path}/hierarchical_prep.ipynb` with exactly these cells:
-
-**Cell 1 — Install:**
-```python
-%pip install /Workspace/Repos/{full_email}/many-model-forecasting[hierarchical] --quiet
-```
-
-**Cell 2 — Restart:**
-```python
-dbutils.library.restartPython()
-```
-
-**Cell 3 — Run aggregation:**
-
-```python
-import sys
-sys.path.insert(0, "/Workspace/Repos/{full_email}/many-model-forecasting")
-from mmf_sa import run_aggregation
-
-run_aggregation(
-    spark=spark,
-    train_table="{catalog}.{schema}.{use_case}_train_data",
-    hierarchy_s_table="{catalog}.{schema}.{use_case}_hierarchy_S",
-    hierarchy_tags_table="{catalog}.{schema}.{use_case}_hierarchy_tags",
-    hierarchy_cols={hierarchy_cols},
-    source_table="{catalog}.{schema}.{table_name}",
-)
-print("✓ Hierarchical prep complete")
-```
-
-**Cell 4 — Verify:**
-```python
-display(spark.sql("""
-  SELECT level_name, COUNT(*) AS n_series
-  FROM {catalog}.{schema}.{use_case}_hierarchy_tags
-  GROUP BY level_name ORDER BY n_series
-"""))
-```
-
-> ⛔ **CRITICAL: Use `/Workspace/Repos/{full_email}/many-model-forecasting` as the install path — NOT a GitHub URL, NOT the local filesystem. This is the Databricks workspace repo path where the package is already checked out.**
-
-#### Step 10-ii: Upload and run as a classic compute job
-
-> ⛔ **Do NOT use serverless.** `toArrow()` is not available on Spark Connect. Use classic compute.
->
-> ```json
-> {
->   "spark_version": "17.3.x-cpu-ml-scala2.13",
->   "num_workers": 0,
->   "data_security_mode": "SINGLE_USER",
->   "spark_conf": {
->     "spark.master": "local[*]",
->     "spark.databricks.cluster.profile": "singleNode",
->     "spark.databricks.unityCatalog.enabled": "true"
->   },
->   "custom_tags": { "ResourceClass": "SingleNode" }
-> }
-> ```
-> Node type: any standard memory instance (e.g. `r6id.xlarge` AWS / `Standard_E8ads_v5` Azure / `n2-highmem-8` GCP) — aggregation is lightweight, no need for large memory.
-
-Job name pattern: `{use_case}_hierarchical_prep_{username}` (upsert — no accumulation of stale jobs).
-
-1. Save the notebook locally at `{notebook_base_path}/hierarchical_prep.ipynb`
-2. Upload to the Databricks workspace at `{notebook_base_path}/hierarchical_prep`
-3. Upsert the job and trigger a run. Poll and report:
-
-```
-[HH:MM:SS] {use_case}_hierarchical_prep: RUNNING
-[HH:MM:SS] {use_case}_hierarchical_prep: SUCCEEDED (duration: Xm Ys)
-```
-
-If the job **fails**: stop immediately, report the error, ask how to proceed.
-
-Wait for execution to complete, then verify `_hierarchy_tags` exists:
-
-```sql
-SELECT level_name, COUNT(*) AS n_series
-FROM {catalog}.{schema}.{use_case}_hierarchy_tags
-GROUP BY level_name ORDER BY n_series
-```
-
-Tell the user:
-> "Hierarchy metadata saved: `_hierarchy_S` and `_hierarchy_tags` are ready. Skill 6 will use them to reconcile forecasts after Skill 5."
-
----
-
-### Step 11: Generate reproducibility notebook
+> **Hierarchical use cases:** If you need forecasts that are coherent across hierarchy levels (e.g. store → region → country), see the **Hierarchical Reconciliation** section in the README. The approach is to run Skills 1–5 once per hierarchy level, then run Skill 6.
 
 After all interactive decisions have been made, generate a self-contained notebook that replays the entire data preparation pipeline. This notebook allows the user (or a teammate) to re-run the exact same prep with the same parameters without going through the interactive session again.
 
@@ -1252,7 +1110,7 @@ Use the template from:
 
 - [mmf_prep_notebook_template.ipynb](mmf_prep_notebook_template.ipynb)
 
-### ⛔ STOP GATE — Step 12: Confirm before proceeding to next skill
+### ⛔ STOP GATE — Step 11: Confirm before proceeding to next skill
 
 Present a summary of what was done and ask whether to proceed:
 
@@ -1293,7 +1151,6 @@ AskUserQuestion:
 - A Delta table `<catalog>.<schema>.{use_case}_cleaning_report` with columns: `unique_id`, `original_count`, `final_count`, `missing_filled`, `imputation_method`, `anomalies_capped`, `iqr_multiplier`, `excluded`, `exclusion_reason`
 - **(If dynamic future regressors)** A Delta table `<catalog>.<schema>.{use_case}_scoring_data` with columns `unique_id` (STRING), `ds` (DATE/TIMESTAMP — future dates only), all `static_features` columns (joined from `train_data`), plus all dynamic future regressor columns. Does NOT include `y` or `dynamic_historical_`* columns — `run_forecast` unions this with `train_data` via `allowMissingColumns=True`. This table is passed as `scoring_data` to `run_forecast` in Skill 4.
 - Exogenous regressor column lists carried forward: `{static_features}`, `{dynamic_future_numerical}`, `{dynamic_future_categorical}`, `{dynamic_historical_numerical}`, `{dynamic_historical_categorical}`
-- **(If hierarchical prep — Step 10)** A Delta table `{use_case}_hierarchy_S` (summation matrix) and `{use_case}_hierarchy_tags` (level membership), required by Skill 6
 - A reproducibility notebook uploaded to `notebooks/{use_case}/prep_data` that can re-create the training table with the same parameters
 - A summary: number of series, date range, detected frequency, cleaning actions taken
 - **Frequency alignment guarantees** (verified by Step 6b):

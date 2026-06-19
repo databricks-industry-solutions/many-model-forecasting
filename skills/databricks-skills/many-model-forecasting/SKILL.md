@@ -56,7 +56,7 @@ The agent MUST verify these before starting any skill. If preconditions are miss
 | **3. provision-resources** | `{use_case}_train_data` from Skill 1 (and optionally `{use_case}_series_profile`, `{use_case}_pipeline_config` from Skill 2) | none beyond Skill 1 |
 | **4. execute-forecast** | `{use_case}_train_data` (or `_train_data_forecastable`), and an `active_models` selection from Skill 3 | `prediction_length`, `freq`, backtest setup |
 | **5. post-process** | `{use_case}_evaluation_output` and `{use_case}_scoring_output` from Skill 4 | none |
-| **6. hierarchical-reconciliation** *(optional)* | `{use_case}_best_models` from Skill 5, `{use_case}_hierarchy_S` and `{use_case}_hierarchy_tags` from Skill 1 hierarchical prep | Only run if the use case has a hierarchy |
+| **6. hierarchical-reconciliation** *(optional)* | N × (`{use_case}_best_models`, `{use_case}_evaluation_output`) pairs — one per hierarchy level (from Skills 4–5) — plus a user-provided membership table (adjacency list Delta table) | Only run if the use case has a hierarchy; see README for the multi-level workflow |
 
 If `{use_case}_train_data` does not exist, the agent **cannot** start Skill 2, 3, 4, or 5 — it must go back to Skill 1.
 
@@ -214,9 +214,9 @@ See: [5-post-process-and-evaluate.md](5-post-process-and-evaluate.md)
 
 ### Skill 6: Hierarchical Reconciliation (`/hierarchical-reconciliation`) *(optional)*
 
-Applies hierarchical reconciliation to make forecasts coherent across all levels of a hierarchy (SKU → Category → Total). Reads `{use_case}_best_models` from Skill 5 and produces `{use_case}_reconciliation_output`. Supports BottomUp, TopDown, MiddleOut, MinTrace, and ERM methods. Runs on classic compute (Single Node, memory-optimized).
+Applies hierarchical reconciliation to make forecasts coherent across all levels of a hierarchy (store → region → country). Consumes N × (`best_models`, `evaluation_output`) pairs — one per hierarchy level produced by independent Skills 1–5 runs — plus a user-provided membership table (adjacency list as a Delta table describing parent–child relationships). Produces `{use_case}_reconciliation_output`. Supports BottomUp, TopDown, MiddleOut, MinTrace, and ERM methods. Runs on classic compute (Single Node, memory-optimized).
 
-**Only run this skill if the use case has a hierarchy.** Requires Skill 1 hierarchical prep step to have been run (produces `_hierarchy_S` and `_hierarchy_tags` tables).
+**Only run this skill if the use case has a hierarchy.** See the Hierarchical Reconciliation section in the README for the full multi-level workflow before starting.
 
 See: [6-hierarchical-reconciliation.md](6-hierarchical-reconciliation.md)
 
@@ -249,7 +249,7 @@ See [3-provision-forecasting-resources.md](3-provision-forecasting-resources.md)
 - [mmf_profiling_notebook_template.ipynb](mmf_profiling_notebook_template.ipynb) — Series profiling (statsmodels, scipy)
 
 ### Reconciliation notebooks
-- [mmf_reconciliation_notebook_template.ipynb](mmf_reconciliation_notebook_template.ipynb) — Hierarchical reconciliation (Skill 6): installs `mmf_sa[hierarchical]`, calls `run_reconciliation()` with the configured method, and displays a coherence summary
+- [mmf_reconciliation_notebook_template.ipynb](mmf_reconciliation_notebook_template.ipynb) — Hierarchical reconciliation (Skill 6): installs `mmf_sa[hierarchical]`, calls `run_reconciliation_multilevel()` with the levels list and membership table, and displays a coherence summary
 
 ### Reproducibility notebooks (generated after interactive sessions)
 - [mmf_prep_notebook_template.ipynb](mmf_prep_notebook_template.ipynb) — Data preparation replay (Skill 1): records all interactive decisions (table selection, column mapping, imputation strategy, anomaly capping) and re-creates `{use_case}_train_data` and `{use_case}_cleaning_report`
