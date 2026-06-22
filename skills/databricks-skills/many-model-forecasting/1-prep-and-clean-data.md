@@ -1080,8 +1080,6 @@ Present cleaning summary to the user.
 
 ### Step 10: Generate reproducibility notebook
 
-> **Hierarchical use cases:** If you need forecasts that are coherent across hierarchy levels (e.g. store → region → country), see the **Hierarchical Reconciliation** section in the README. The approach is to run Skills 1–5 once per hierarchy level, then run Skill 6.
-
 After all interactive decisions have been made, generate a self-contained notebook that replays the entire data preparation pipeline. This notebook allows the user (or a teammate) to re-run the exact same prep with the same parameters without going through the interactive session again.
 
 **CRITICAL: Copy the template VERBATIM from `mmf_prep_notebook_template.ipynb`, only replacing the `{placeholder}` tokens with actual values. Do NOT add, remove, or modify any other code.**

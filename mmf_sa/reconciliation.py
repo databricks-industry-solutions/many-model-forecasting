@@ -32,7 +32,7 @@ def _spark_to_polars(spark: SparkSession, table_name: str) -> pl.DataFrame:
     return pl.from_arrow(spark.table(table_name).toArrow())
 
 
-def _build_reconciler(method: str, mintrace_method: str = "mint_shrink"):
+def _build_reconciler(method: str, mintrace_method: str = "mint_shrink", middle_level: Optional[str] = None):
     try:
         from hierarchicalforecast.methods import (
             BottomUp, BottomUpSparse, ERM, MiddleOut,
@@ -50,19 +50,22 @@ def _build_reconciler(method: str, mintrace_method: str = "mint_shrink"):
             f"Unsupported mintrace_method '{mintrace_method}'. "
             f"Supported: {sorted(SUPPORTED_MINTRACE_METHODS)}"
         )
+    if method == "MiddleOut" and not middle_level:
+        raise ValueError("middle_level is required when method='MiddleOut'.")
     # mint_shrink and mint_cov require full dense covariance estimation — only MinTrace (dense) supports them.
     # wls_var and wls_struct are diagonal/structural and work with MinTraceSparse.
     _MINTRACE_SPARSE_METHODS = {"wls_var", "wls_struct", "ols"}
     if method == "MinTrace":
         mintrace_cls = MinTraceSparse if mintrace_method in _MINTRACE_SPARSE_METHODS else MinTrace
-    reconcilers = {
-        "BottomUp": BottomUpSparse(),
-        "TopDown": TopDownSparse(method="forecast_proportions"),
-        "MiddleOut": MiddleOut(middle_level=None, top_down_method="forecast_proportions"),
-        "MinTrace": mintrace_cls(method=mintrace_method),
-        "ERM": ERM(method="closed"),
-    }
-    return reconcilers[method]
+        return mintrace_cls(method=mintrace_method)
+    if method == "BottomUp":
+        return BottomUpSparse()
+    if method == "TopDown":
+        return TopDownSparse(method="forecast_proportions")
+    if method == "MiddleOut":
+        return MiddleOut(middle_level=middle_level, top_down_method="forecast_proportions")
+    if method == "ERM":
+        return ERM(method="closed")
 
 
 def _add_ds_from_window_start(df: pl.DataFrame, freq: str) -> pl.DataFrame:
@@ -167,6 +170,7 @@ def reconcile_core(
     tags: Dict[str, List[str]],
     method: str = "MinTrace",
     mintrace_method: str = "mint_shrink",
+    middle_level: Optional[str] = None,
 ) -> pl.DataFrame:
     """Apply hierarchical reconciliation — pure function, no Spark, no Delta.
 
@@ -189,7 +193,7 @@ def reconcile_core(
             "hierarchicalforecast is required. Install with: pip install mmf_sa[hierarchical]"
         )
 
-    reconciler = _build_reconciler(method, mintrace_method)
+    reconciler = _build_reconciler(method, mintrace_method, middle_level)
     hrec = HierarchicalReconciliation(reconcilers=[reconciler])
 
     # hierarchicalforecast works on pandas; S_df may already be pandas (sparse-backed)
@@ -536,6 +540,7 @@ def run_reconciliation_multilevel(
     target: str = "y",
     method: str = "MinTrace",
     mintrace_method: str = "mint_shrink",
+    middle_level: Optional[str] = None,
 ) -> None:
     """Reconcile hierarchical forecasts from independent per-level MMF runs.
 
@@ -553,6 +558,7 @@ def run_reconciliation_multilevel(
         target: target column name in best_models tables (default: y)
         method: reconciliation method — BottomUp | TopDown | MiddleOut | MinTrace | ERM
         mintrace_method: MinTrace sub-method — mint_shrink | wls_var | wls_struct | mint_cov
+        middle_level: level name to anchor at when method='MiddleOut' (required for MiddleOut)
     """
     if not _POLARS_AVAILABLE:
         raise ImportError(
@@ -576,7 +582,7 @@ def run_reconciliation_multilevel(
     _coherence_precheck(Y_resid, membership_df)
     _warn_mintrace_stability(Y_resid, tags, method, mintrace_method)
 
-    result = reconcile_core(Y_hat, Y_resid, S, tags, method, mintrace_method)
+    result = reconcile_core(Y_hat, Y_resid, S, tags, method, mintrace_method, middle_level)
 
     spark.createDataFrame(result.to_pandas()).write.format("delta").mode("overwrite") \
         .option("overwriteSchema", "true").saveAsTable(reconciliation_output)

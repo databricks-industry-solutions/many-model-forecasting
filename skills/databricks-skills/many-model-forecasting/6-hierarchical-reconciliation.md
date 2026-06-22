@@ -45,8 +45,26 @@ If not already known from prior skills, ask in plain text (do NOT use AskUserQue
 
 **Do NOT proceed until the user provides all three.**
 
-Call `get_current_user()` to obtain `{full_email}`. Then set:
-- `{notebook_base_path}` = `/Users/{full_email}/{use_case}/notebooks`
+Call `get_current_user()` to obtain `{full_email}`.
+
+If `{project_folder}` and `{notebook_base_path}` are already known from prior skills (Skills 1–5), carry them forward — do NOT ask again.
+
+If not already known (user started directly from Skill 6), ask:
+
+```
+AskUserQuestion:
+  "Where would you like to store the notebooks for this project?
+
+   (a) Use an existing folder — provide the folder name (e.g. 'my-project')
+   (b) Create a new folder — provide a name and I will create /Users/{full_email}/{name}/notebooks/
+   (c) Use default — I will create /Users/{full_email}/{use_case}/notebooks/
+
+  Options: [free text — user picks (a), (b), or (c) and provides a name if needed]"
+```
+
+**WAIT for the user to respond.** Then set:
+- `{project_folder}` = user-provided name, or `{use_case}` if they pick (c)
+- `{notebook_base_path}` = `/Users/{full_email}/{project_folder}/notebooks`
 
 ### ⛔ STOP GATE — Step 1: Discover and confirm level tables
 
@@ -145,6 +163,12 @@ AskUserQuestion:
 
 Map: (a) → `MinTrace`, (b) → `BottomUp`, (c) → `TopDown`. If **(d)** is selected, ask in plain text: *"MiddleOut or ERM?"* and map accordingly. Store as `{reconciliation_method}`.
 
+If **MiddleOut** is selected, ask in plain text:
+
+> "Which level should be the middle anchor? Choose from the levels you confirmed in Step 1 (e.g. `region` in a store → region → country hierarchy):"
+
+**WAIT for the user to respond.** Verify the provided name matches one of the confirmed level names in `{levels}`. Store as `{middle_level}`.
+
 If **(a) MinTrace** is selected, also ask about the sub-method:
 
 ```
@@ -179,6 +203,7 @@ Generate `{notebook_base_path}/run_reconciliation.ipynb` from the template `mmf_
 | `{target}` | `y` (or user-specified) |
 | `{reconciliation_method}` | method confirmed in Step 3 |
 | `{mintrace_method}` | sub-method confirmed in Step 3 (only if MinTrace) |
+| `{middle_level}` | middle anchor level confirmed in Step 3 (only if MiddleOut) |
 
 ### Step 5: Run on classic compute (Single Node, memory-optimized)
 
