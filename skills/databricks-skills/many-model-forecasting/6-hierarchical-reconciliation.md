@@ -203,7 +203,11 @@ Map: (a) → `mint_shrink`, (b) → `wls_struct`, (c) → `wls_var`, (d) → `mi
 
 ### Step 4: Generate reconciliation notebook
 
-> **Re-run:** If returning here from Step 7 (b) with a new method, regenerate the notebook from scratch using the same process below — do NOT edit any local file. Always read the template, fill in the new parameters, and upload to Databricks via workspace import.
+> **Both first run and re-run:** Always follow this exact process — do NOT write to `/tmp` or any other intermediate path:
+> 1. Read `mmf_reconciliation_notebook_template.ipynb` from the repo
+> 2. Fill in all `{placeholder}` tokens with the confirmed values
+> 3. Write the result to `{notebook_base_path}/run_reconciliation.ipynb` (local filesystem — create the folder if needed)
+> 4. Upload that file to Databricks via workspace import
 
 Generate `{notebook_base_path}/run_reconciliation.ipynb` from the template `mmf_reconciliation_notebook_template.ipynb`, filling in:
 
