@@ -118,7 +118,25 @@ AskUserQuestion:
 
 ### ⛔ STOP GATE — Step 2: Confirm membership table
 
-Ask the user in plain text:
+First, scan the schema for a candidate membership table:
+
+```sql
+SHOW TABLES IN {catalog}.{schema}
+```
+
+Look for a table matching the pattern `*_membership`. If exactly one candidate is found, verify it silently:
+
+```sql
+SELECT unique_id, level_name, parent_unique_id FROM {candidate_table} LIMIT 5
+```
+
+If the columns are present and the structure looks valid (one NULL parent = root, others have parents), present it to the user for confirmation in plain text:
+
+> "I found `{candidate_table}` in the schema — it has the required columns and looks well-formed. Would you like to use it as your membership table, or do you have a different one?"
+
+**WAIT for the user to confirm or provide a different name.** Store as `{hierarchy_table}`.
+
+If no candidate is found, or the user provides a different name, ask in plain text:
 
 > "Provide the fully-qualified name of your membership table (format: `catalog.schema.table_name`).
 >
@@ -127,9 +145,7 @@ Ask the user in plain text:
 > - `level_name` (string) — level this series belongs to (e.g. `store`, `region`, `country`)
 > - `parent_unique_id` (string, nullable) — parent series ID; NULL only for the single root"
 
-**WAIT for the user to provide the table name.** Store as `{hierarchy_table}`.
-
-Then verify it exists and has the required columns:
+**WAIT for the user to provide the table name.** Then verify it exists and has the required columns:
 
 ```sql
 SELECT unique_id, level_name, parent_unique_id FROM {hierarchy_table} LIMIT 5
@@ -144,24 +160,23 @@ Present MinTrace as the recommendation with reasoning, then ask:
 > "I recommend **MinTrace** (`mint_shrink`) — it minimizes forecast error variance by estimating the covariance structure across all hierarchy levels using the backtest residuals. It is the statistically optimal method when sufficient residual samples are available.
 >
 > Alternatives:
-> - **BottomUp** — aggregates leaf-level forecasts upward; simple and robust
-> - **TopDown** — distributes the top-level forecast downward by historical proportions
-> - **MiddleOut** — anchors at an intermediate level and reconciles up and down
-> - **ERM** — learns an optimal reconciliation matrix from residuals"
+> - **BottomUp or TopDown** — simple and robust; BottomUp aggregates leaf forecasts upward, TopDown distributes the top-level forecast downward
+> - **MiddleOut** — anchors at an intermediate level, reconciles up (BottomUp) and down (TopDown proportions)
+> - **ERM** — learns an optimal reconciliation matrix directly from backtest residuals"
 
 ```
 AskUserQuestion:
   "Which reconciliation method would you like to use?
 
    (a) MinTrace — recommended, statistically optimal
-   (b) BottomUp — aggregates leaf forecasts upward; simple and robust
-   (c) TopDown — distributes the top-level forecast downward by historical proportions
-   (d) MiddleOut or ERM — anchor at an intermediate level (MiddleOut) or learn an optimal reconciliation matrix (ERM)
+   (b) BottomUp or TopDown — simple and robust (aggregates up or distributes down)
+   (c) MiddleOut — anchor at an intermediate level, reconcile up and down
+   (d) ERM — learns optimal reconciliation matrix from residuals
 
    Options: [a, b, c, d]"
 ```
 
-Map: (a) → `MinTrace`, (b) → `BottomUp`, (c) → `TopDown`. If **(d)** is selected, ask in plain text: *"MiddleOut or ERM?"* and map accordingly. Store as `{reconciliation_method}`.
+Map: (a) → `MinTrace`, (c) → `MiddleOut`, (d) → `ERM`. If **(b)** is selected, ask in plain text: *"BottomUp or TopDown?"* and map accordingly. Store as `{reconciliation_method}`.
 
 If **MiddleOut** is selected, ask in plain text:
 
@@ -187,6 +202,8 @@ AskUserQuestion:
 Map: (a) → `mint_shrink`, (b) → `wls_struct`, (c) → `wls_var`, (d) → `mint_cov`. Store as `{mintrace_method}`.
 
 ### Step 4: Generate reconciliation notebook
+
+> **Re-run:** If returning here from Step 7 (b) with a new method, regenerate the notebook from scratch using the same process below — do NOT edit any local file. Always read the template, fill in the new parameters, and upload to Databricks via workspace import.
 
 Generate `{notebook_base_path}/run_reconciliation.ipynb` from the template `mmf_reconciliation_notebook_template.ipynb`, filling in:
 
