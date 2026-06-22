@@ -365,7 +365,8 @@ run_reconciliation_multilevel(
     reconciliation_output="catalog.schema.reconciliation_output",
     freq="D",                    # H | D | W | M
     method="MinTrace",           # MinTrace | BottomUp | TopDown | MiddleOut | ERM
-    mintrace_method="mint_shrink",
+    mintrace_method="mint_shrink",  # only for MinTrace: mint_shrink (default) | wls_struct | wls_var | mint_cov
+    middle_level=None,           # required when method="MiddleOut" — e.g. "region"
 )
 ```
 

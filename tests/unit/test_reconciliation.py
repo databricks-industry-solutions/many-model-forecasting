@@ -249,7 +249,7 @@ def test_validate_alignment_level_name_mismatch(Y_hat, coherent_Y_resid, tags_an
 def test_coherence_precheck_passes_on_coherent_data(coherent_Y_resid, membership_df, caplog):
     with caplog.at_level(logging.WARNING, logger="mmf_sa.reconciliation"):
         _coherence_precheck(coherent_Y_resid, membership_df)
-    assert not any("Coherence pre-check" in m for m in caplog.messages)
+    assert not any(r.levelno >= logging.WARNING for r in caplog.records)
 
 
 def test_coherence_precheck_warns_on_incoherent_data(membership_df, caplog):
@@ -376,6 +376,40 @@ def test_unsupported_method_raises():
     from mmf_sa.reconciliation import _build_reconciler
     with pytest.raises(ValueError, match="Unsupported method"):
         _build_reconciler("InvalidMethod")
+
+
+def test_build_reconciler_invalid_mintrace_method_raises():
+    from mmf_sa.reconciliation import _build_reconciler
+    pytest.importorskip("hierarchicalforecast")
+    with pytest.raises(ValueError, match="Unsupported mintrace_method"):
+        _build_reconciler("MinTrace", mintrace_method="invalid_method")
+
+
+def test_build_reconciler_middleout_with_level():
+    from mmf_sa.reconciliation import _build_reconciler
+    pytest.importorskip("hierarchicalforecast")
+    r = _build_reconciler("MiddleOut", middle_level="region")
+    assert r is not None
+
+
+def test_build_reconciler_middleout_no_level_raises():
+    from mmf_sa.reconciliation import _build_reconciler
+    pytest.importorskip("hierarchicalforecast")
+    with pytest.raises(ValueError, match="middle_level is required"):
+        _build_reconciler("MiddleOut")
+
+
+@pytest.mark.parametrize("middle_level", ["region"])
+def test_reconcile_core_middleout(middle_level, coherent_Y_resid, Y_hat, tags_and_leaves, S_df):
+    pytest.importorskip("hierarchicalforecast")
+    from mmf_sa.reconciliation import reconcile_core
+
+    tags, _ = tags_and_leaves
+    result = reconcile_core(Y_hat, coherent_Y_resid, S_df, tags, method="MiddleOut", middle_level=middle_level)
+    expected_cols = {"unique_id", "ds", "y_base", "y_reconciled", "hierarchy_level", "reconciliation_method"}
+    assert expected_cols.issubset(set(result.columns))
+    assert result["reconciliation_method"].unique().to_list() == ["MiddleOut"]
+    assert result["hierarchy_level"].null_count() == 0
 
 
 # ---------------------------------------------------------------------------

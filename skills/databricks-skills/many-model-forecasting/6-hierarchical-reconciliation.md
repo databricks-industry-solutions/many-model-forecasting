@@ -31,6 +31,8 @@ Applies hierarchical reconciliation to MMF forecasts produced independently per 
 | `date_col` | `ds` | Date column name in best_models tables |
 | `target` | `y` | Target column name in best_models tables |
 | `reconciliation_method` | `MinTrace` | Reconciliation method — see Step 3 |
+| `mintrace_method` | `mint_shrink` | MinTrace sub-method — mint_shrink \| wls_struct \| wls_var \| mint_cov. Only applies when `reconciliation_method=MinTrace` |
+| `middle_level` | `None` | Middle anchor level (e.g. `region`). Required when `reconciliation_method=MiddleOut` |
 
 ## Steps
 
@@ -46,6 +48,8 @@ If not already known from prior skills, ask in plain text (do NOT use AskUserQue
 **Do NOT proceed until the user provides all three.**
 
 Call `get_current_user()` to obtain `{full_email}`.
+
+Derive `{username}` = the local part of `{full_email}` (everything before the `@`). For example, if `{full_email}` is `"john.doe@example.com"` then `{username}` = `"john.doe"`.
 
 If `{project_folder}` and `{notebook_base_path}` are already known from prior skills (Skills 1–5), carry them forward — do NOT ask again.
 
@@ -124,7 +128,7 @@ First, scan the schema for a candidate membership table:
 SHOW TABLES IN {catalog}.{schema}
 ```
 
-Look for a table matching the pattern `*_membership`. If exactly one candidate is found, verify it silently:
+Look for a table matching the pattern `*_membership`. If exactly one candidate is found, verify it (do NOT narrate this step to the user):
 
 ```sql
 SELECT unique_id, level_name, parent_unique_id FROM {candidate_table} LIMIT 5
@@ -223,8 +227,8 @@ Generate `{notebook_base_path}/run_reconciliation.ipynb` from the template `mmf_
 | `{date_col}` | `ds` (or user-specified) |
 | `{target}` | `y` (or user-specified) |
 | `{reconciliation_method}` | method confirmed in Step 3 |
-| `{mintrace_method}` | sub-method confirmed in Step 3 (only if MinTrace) |
-| `{middle_level}` | middle anchor level confirmed in Step 3 (only if MiddleOut) |
+| `{mintrace_method}` | sub-method confirmed in Step 3 if MinTrace; `"mint_shrink"` for all other methods |
+| `{middle_level}` | middle anchor level confirmed in Step 3 if MiddleOut; `None` for all other methods |
 
 ### Step 5: Run on classic compute (Single Node, memory-optimized)
 
@@ -307,6 +311,8 @@ AskUserQuestion:
 
    Options: [a, b]"
 ```
+
+If the user selects **(b)**, go back to Step 3 — ask them to choose a new reconciliation method. Then follow the full process from Step 3 through Step 6: regenerate the notebook via the Step 4 process (read template → fill placeholders → write locally → upload to Databricks), re-trigger the job in Step 5, and validate coherence in Step 6. Do NOT edit the existing notebook directly.
 
 ## Output Tables
 

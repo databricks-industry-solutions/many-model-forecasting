@@ -54,7 +54,7 @@ def _build_reconciler(method: str, mintrace_method: str = "mint_shrink", middle_
         raise ValueError("middle_level is required when method='MiddleOut'.")
     # mint_shrink and mint_cov require full dense covariance estimation — only MinTrace (dense) supports them.
     # wls_var and wls_struct are diagonal/structural and work with MinTraceSparse.
-    _MINTRACE_SPARSE_METHODS = {"wls_var", "wls_struct", "ols"}
+    _MINTRACE_SPARSE_METHODS = {"wls_var", "wls_struct"}
     if method == "MinTrace":
         mintrace_cls = MinTraceSparse if mintrace_method in _MINTRACE_SPARSE_METHODS else MinTrace
         return mintrace_cls(method=mintrace_method)
@@ -432,13 +432,12 @@ def _validate_alignment(
             f"  In membership but not in levels config: {sorted(membership_not_in_config)}"
         )
 
-    # 3. Leaf set in S must be present in Y_resid
-    s_leaves = set(c for c in S.columns if c != "unique_id")
+    # 3. All membership series must be present in Y_resid (reconciliation needs residuals for every series)
     resid_ids = set(Y_resid["unique_id"].unique().to_list())
-    missing_leaf_resid = s_leaves - resid_ids
-    if missing_leaf_resid:
+    missing_resid = membership_ids - resid_ids
+    if missing_resid:
         raise ValueError(
-            f"Alignment failed: leaf series missing from residuals: {sorted(missing_leaf_resid)[:10]}."
+            f"Alignment failed: series missing from residuals (evaluation_output): {sorted(missing_resid)[:10]}."
         )
 
     # 4. All series share the same future ds values
