@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 import pandas as pd
@@ -128,12 +129,19 @@ def build_residual_Y_df_from_evaluation(
         and "model" in eval_frame.columns
     )
     if has_model:
-        bm = best_models_frame.select(["unique_id", "model"]).unique()
-        joined = eval_frame.join(bm, on=["unique_id", "model"], how="inner")
+        join_keys = ["unique_id", "model"]
+        # If both tables carry run_id, also join on it so residuals are taken from the
+        # exact run that produced the best-model forecasts. This pins the covariance
+        # estimation to a single run and removes the cross-run ambiguity in the dedup
+        # below. Falls back to (unique_id, model) for tables without run_id.
+        if "run_id" in best_models_frame.columns and "run_id" in eval_frame.columns:
+            join_keys.append("run_id")
+        bm = best_models_frame.select(join_keys).unique()
+        joined = eval_frame.join(bm, on=join_keys, how="inner")
         if joined.is_empty():
             raise ValueError(
-                "No matching rows after joining evaluation_output with best_models on (unique_id, model). "
-                "Verify that the model names in both tables match."
+                f"No matching rows after joining evaluation_output with best_models on {join_keys}. "
+                "Verify that the model names (and run_id, if present) in both tables match."
             )
     else:
         joined = eval_frame
@@ -582,6 +590,13 @@ def run_reconciliation_multilevel(
     _warn_mintrace_stability(Y_resid, tags, method, mintrace_method)
 
     result = reconcile_core(Y_hat, Y_resid, S, tags, method, mintrace_method, middle_level)
+
+    # Stamp every row with the time this reconciliation was generated. The table is still
+    # written with mode("overwrite") so it always holds the current coherent forecast; the
+    # timestamp records when that current snapshot was produced.
+    result = result.with_columns(
+        pl.lit(datetime.now(timezone.utc)).alias("reconciliation_timestamp")
+    )
 
     spark.createDataFrame(result.to_pandas()).write.format("delta").mode("overwrite") \
         .option("overwriteSchema", "true").saveAsTable(reconciliation_output)

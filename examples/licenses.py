@@ -17,5 +17,8 @@
 # MAGIC | Chronos | Pretrained (Language) Models for Probabilistic Time Series Forecasting | Apache 2.0 | https://github.com/amazon-science/chronos-forecasting
 # MAGIC | Moirai | Unified Training of Universal Time Series Forecasting Transformers | Apache 2.0 | https://github.com/SalesforceAIResearch/uni2ts
 # MAGIC | TimesFM | A pretrained time-series foundation model developed by Google Research for time-series forecasting | Apache 2.0 | https://github.com/google-research/timesfm
+# MAGIC | hierarchicalforecast | Hierarchical forecast reconciliation methods | Apache 2.0 | https://pypi.org/project/hierarchicalforecast/
+# MAGIC | polars | Fast multi-threaded DataFrame library | MIT | https://pypi.org/project/polars/
+# MAGIC | scipy | Scientific computing library (sparse matrices) | BSD 3-Clause | https://pypi.org/project/scipy/
 
 # COMMAND ----------

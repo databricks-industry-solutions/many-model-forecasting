@@ -138,19 +138,31 @@ Select the best-performing model for each forecastable time series based on the 
 
 ```sql
 CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_best_models_forecastable AS
-SELECT eval.unique_id, eval.model, eval.avg_metric, score.ds, score.y, 'main_pipeline' AS forecast_source
+WITH latest_run AS (
+  -- evaluation_output and scoring_output are append-mode and may accumulate multiple
+  -- runs. Pin selection AND the attached forecasts to a single, most-recent run so the
+  -- chosen forecasts and their backtest residuals come from the same run (required by
+  -- hierarchical reconciliation, which joins residuals on run_id).
+  SELECT run_id
+  FROM {catalog}.{schema}.{use_case}_evaluation_output
+  ORDER BY run_date DESC
+  LIMIT 1
+)
+SELECT eval.unique_id, eval.model, eval.avg_metric, score.ds, score.y,
+       'main_pipeline' AS forecast_source, eval.run_id
 FROM (
-  SELECT unique_id, model, avg_metric,
+  SELECT unique_id, model, run_id, avg_metric,
          RANK() OVER (PARTITION BY unique_id ORDER BY avg_metric ASC) AS rank
   FROM (
-    SELECT unique_id, model, AVG(metric_value) AS avg_metric
-    FROM {catalog}.{schema}.{use_case}_evaluation_output
-    GROUP BY unique_id, model
-    HAVING AVG(metric_value) IS NOT NULL
+    SELECT e.unique_id, e.model, e.run_id, AVG(e.metric_value) AS avg_metric
+    FROM {catalog}.{schema}.{use_case}_evaluation_output AS e
+    INNER JOIN latest_run AS lr ON e.run_id = lr.run_id
+    GROUP BY e.unique_id, e.model, e.run_id
+    HAVING AVG(e.metric_value) IS NOT NULL
   )
 ) AS eval
 INNER JOIN {catalog}.{schema}.{use_case}_scoring_output AS score
-  ON eval.unique_id = score.unique_id AND eval.model = score.model
+  ON eval.unique_id = score.unique_id AND eval.model = score.model AND eval.run_id = score.run_id
 WHERE eval.rank = 1
 ```
 
@@ -164,7 +176,7 @@ All series are already in the main evaluation/scoring tables. No merging needed:
 
 ```sql
 CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_best_models AS
-SELECT unique_id, model, avg_metric, ds, y, 'main_pipeline' AS forecast_source
+SELECT unique_id, model, avg_metric, ds, y, 'main_pipeline' AS forecast_source, run_id
 FROM {catalog}.{schema}.{use_case}_best_models_forecastable
 ```
 
@@ -174,12 +186,13 @@ Combine forecastable best models with fallback forecasts. Fallback series have n
 
 ```sql
 CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_best_models AS
-SELECT unique_id, model, avg_metric, ds, y, forecast_source
+SELECT unique_id, model, avg_metric, ds, y, forecast_source, run_id
 FROM {catalog}.{schema}.{use_case}_best_models_forecastable
 
 UNION ALL
 
-SELECT unique_id, model, NULL AS avg_metric, NULL AS ds, y, 'fallback' AS forecast_source
+SELECT unique_id, model, NULL AS avg_metric, NULL AS ds, y, 'fallback' AS forecast_source,
+       NULL AS run_id
 FROM {catalog}.{schema}.{use_case}_scoring_output_non_forecastable
 ```
 
@@ -190,26 +203,32 @@ Run best-model selection on the non-forecastable evaluation outputs, then merge:
 ```sql
 CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_best_models AS
 -- Forecastable best models
-SELECT unique_id, model, avg_metric, ds, y, 'main_pipeline' AS forecast_source
+SELECT unique_id, model, avg_metric, ds, y, 'main_pipeline' AS forecast_source, run_id
 FROM {catalog}.{schema}.{use_case}_best_models_forecastable
 
 UNION ALL
 
 -- Non-forecastable best models (from separate pipeline)
 SELECT nf_eval.unique_id, nf_eval.model, nf_eval.avg_metric, nf_score.ds, nf_score.y,
-       'non_forecastable_pipeline' AS forecast_source
+       'non_forecastable_pipeline' AS forecast_source, nf_eval.run_id
 FROM (
-  SELECT unique_id, model, avg_metric,
+  SELECT unique_id, model, run_id, avg_metric,
          RANK() OVER (PARTITION BY unique_id ORDER BY avg_metric ASC) AS rank
   FROM (
-    SELECT unique_id, model, AVG(metric_value) AS avg_metric
-    FROM {catalog}.{schema}.{use_case}_nf_evaluation_output
-    GROUP BY unique_id, model
-    HAVING AVG(metric_value) IS NOT NULL
+    SELECT e.unique_id, e.model, e.run_id, AVG(e.metric_value) AS avg_metric
+    FROM {catalog}.{schema}.{use_case}_nf_evaluation_output AS e
+    INNER JOIN (
+      SELECT run_id
+      FROM {catalog}.{schema}.{use_case}_nf_evaluation_output
+      ORDER BY run_date DESC
+      LIMIT 1
+    ) AS nf_latest_run ON e.run_id = nf_latest_run.run_id
+    GROUP BY e.unique_id, e.model, e.run_id
+    HAVING AVG(e.metric_value) IS NOT NULL
   )
 ) AS nf_eval
 INNER JOIN {catalog}.{schema}.{use_case}_nf_scoring_output AS nf_score
-  ON nf_eval.unique_id = nf_score.unique_id AND nf_eval.model = nf_score.model
+  ON nf_eval.unique_id = nf_score.unique_id AND nf_eval.model = nf_score.model AND nf_eval.run_id = nf_score.run_id
 WHERE nf_eval.rank = 1
 ```
 
@@ -389,6 +408,7 @@ Combined table of best forecasts for all series (forecastable + non-forecastable
 | `ds` | ARRAY&lt;TIMESTAMP&gt; | Forecast dates (NULL for fallback series) |
 | `y` | ARRAY&lt;DOUBLE&gt; | Forecast values |
 | `forecast_source` | STRING | `main_pipeline`, `non_forecastable_pipeline`, or `fallback` |
+| `run_id` | STRING | Run that produced the selected forecast (NULL for fallback). Used by Skill 6 to join residuals from the same run |
 
 **Table**: `<catalog>.<schema>.{use_case}_evaluation_summary`
 

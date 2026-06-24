@@ -400,5 +400,8 @@ Any issues discovered through the use of this project should be filed as GitHub 
 | Chronos          | Pretrained (Language) Models for Probabilistic Time Series Forecasting                             | Apache 2.0   | [https://github.com/amazon-science/chronos-forecasting](https://github.com/amazon-science/chronos-forecasting) |
 | Moirai           | Unified Training of Universal Time Series Forecasting Transformers                                 | Apache 2.0   | [https://github.com/SalesforceAIResearch/uni2ts](https://github.com/SalesforceAIResearch/uni2ts)               |
 | TimesFM          | A pretrained time-series foundation model developed by Google Research for time-series forecasting | Apache 2.0   | [https://github.com/google-research/timesfm](https://github.com/google-research/timesfm)                       |
+| hierarchicalforecast | Hierarchical forecast reconciliation methods                                                   | Apache 2.0   | [https://pypi.org/project/hierarchicalforecast/](https://pypi.org/project/hierarchicalforecast/)               |
+| polars           | Fast multi-threaded DataFrame library                                                              | MIT          | [https://pypi.org/project/polars/](https://pypi.org/project/polars/)                                           |
+| scipy            | Scientific computing library (sparse matrices)                                                     | BSD 3-Clause | [https://pypi.org/project/scipy/](https://pypi.org/project/scipy/)                                             |
 
 
