@@ -24,6 +24,11 @@ foundation = [
     "chronos-forecasting==2.2.2",
     "utilsforecast==0.2.15",
 ]
+hierarchical = [
+    "hierarchicalforecast==1.5.1",
+    "polars>=0.20.0",
+    "scipy>=1.10.0",
+]
 tests = [
     "setuptools",
     "wheel",

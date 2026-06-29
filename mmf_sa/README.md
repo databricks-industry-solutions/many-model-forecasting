@@ -356,6 +356,50 @@ def resolve_source(self, key: str) -> DataFrame:
 3. **Format Standardization**: Converts to required format for models
 4. **Feature Engineering**: Processes external regressors and features
 
+## Hierarchical Reconciliation
+
+When time series form a hierarchy (e.g. store → region → country → total), independently produced forecasts at each level are usually **incoherent** — the store forecasts do not sum to the region forecast, which does not sum to the country forecast. Hierarchical reconciliation post-processes the base forecasts so they are **coherent** across all levels.
+
+MMF generates base forecasts per level via independent pipeline runs (each producing a `best_models` and an `evaluation_output` table), then `run_reconciliation_multilevel` combines them using a user-provided membership table (a parent–child adjacency list) and writes a coherent `reconciliation_output` table.
+
+Reconciliation is powered by Nixtla's [HierarchicalForecast](https://github.com/Nixtla/hierarchicalforecast) package ([documentation](https://nixtlaverse.nixtla.io/hierarchicalforecast/)). Install the optional dependency with `pip install mmf_sa[hierarchical]`.
+
+```python
+from mmf_sa import run_reconciliation_multilevel
+
+run_reconciliation_multilevel(
+    spark=spark,
+    levels=[
+        {"name": "store",   "best_models_table": "cat.sch.store_best_models",   "evaluation_table": "cat.sch.store_evaluation_output"},
+        {"name": "region",  "best_models_table": "cat.sch.region_best_models",  "evaluation_table": "cat.sch.region_evaluation_output"},
+        {"name": "country", "best_models_table": "cat.sch.country_best_models", "evaluation_table": "cat.sch.country_evaluation_output"},
+    ],
+    hierarchy_table="cat.sch.membership",   # columns: unique_id, level_name, parent_unique_id
+    reconciliation_output="cat.sch.reconciliation_output",
+    freq="D",                               # H | D | W | M
+    method="MinTrace",                      # see methods below
+    mintrace_method="mint_shrink",          # MinTrace sub-method
+    middle_level=None,                      # required only when method="MiddleOut"
+)
+```
+
+### Reconciliation methods
+
+| Method | How it works | Needs backtest residuals? | Pros | Cons |
+|--------|--------------|---------------------------|------|------|
+| **BottomUp** | Sums leaf forecasts upward | No | Simple, robust, unbiased if leaf forecasts are; always coherent | Ignores information in aggregate-level forecasts; noise in leaves propagates upward; requires forecastable leaves |
+| **TopDown** | Forecasts the top level and distributes it down by historical proportions | No | Stable when the top level is far more forecastable than sparse/noisy leaves | Discards leaf-level signal; assumes stable proportions; cannot capture differing per-leaf dynamics |
+| **MiddleOut** | Anchors at a chosen middle level; BottomUp above it, TopDown below | No | Useful when an intermediate level is the most reliable | Must pick the right middle level; inherits BottomUp/TopDown limitations above/below |
+| **MinTrace (`mint_shrink`)** | GLS reconciliation minimizing total forecast-error variance using a **shrinkage** estimate of the error covariance | Yes | Statistically optimal; uses information from all levels; covariance is well-conditioned even with limited residuals; recommended default | Needs backtest residuals; dense covariance build and inverse is `O(n³)` for large hierarchies; quality depends on enough residual samples |
+| **MinTrace (`mint_cov`)** | MinT with the **full sample** covariance | Yes | Theoretically optimal when the covariance is well estimated | Requires many residual samples (`T ≫ n`); unstable/singular otherwise |
+| **MinTrace (`wls_var`)** | MinT with **diagonal** weights = inverse per-series error variance | Yes | Cheap, stable, sparse-friendly; no full covariance | Ignores cross-series error correlations |
+| **MinTrace (`wls_struct`)** | MinT with **structural** weights (number of bottom series under each node) | No | Scalable/sparse; needs no residuals | Ignores actual forecast errors |
+| **ERM** | Learns a reconciliation matrix empirically from residuals | Yes | Data-driven; can outperform when ample history exists | Experimental; needs substantial backtest history; risk of overfitting |
+
+**Choosing a method:** `MinTrace` with `mint_shrink` is the recommended default when backtests are available. For very large hierarchies or sparse upper levels (few residual samples), prefer `wls_struct`/`wls_var` (diagonal/structural — sparse and stable). `BottomUp` is a robust no-residual baseline. `TopDown`/`MiddleOut` suit cases where higher levels are more forecastable than the leaves.
+
+> Reconciliation assumes **additive coherence** (a parent equals the sum of its children) and runs on classic compute (Single Node, DBR ML) — `toArrow()` and scipy sparse matrices are not available on serverless / Spark Connect.
+
 ## Integration Points
 
 ### MLflow Integration

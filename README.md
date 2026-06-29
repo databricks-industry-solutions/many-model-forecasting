@@ -14,6 +14,7 @@ Get started now!
 
 Use a cluster with [Databricks Runtime 17.3LTS for ML](https://docs.databricks.com/en/release-notes/runtime/17.3lts-ml.html) for local models, and [Databricks Runtime 18.0 for ML](https://docs.databricks.com/en/release-notes/runtime/18.0-ml.html) or later for global and foundation models.
 
+- Jun 2026: Added **Hierarchical Reconciliation** — make forecasts coherent across hierarchy levels. Available as a standalone API (`run_reconciliation_multilevel`) and as [MMF Agent Skill 6](https://github.com/databricks-industry-solutions/many-model-forecasting/tree/main/skills/). See the [Hierarchical Reconciliation](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/README.md#hierarchical-reconciliation) docs. ([lourdesmartinezma](https://github.com/lourdesmartinezma))
 - May 2026: Added MLForecast for LightGBM support. Try it out [here](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/global_daily_ml.ipynb) or with [MMF Agent](https://github.com/databricks-industry-solutions/many-model-forecasting/tree/main/skills/).
 - May 2026: All model classes (local, global and foundation) run on serverless. Try it out [here](https://github.com/databricks-industry-solutions/many-model-forecasting/tree/main/examples/serverless).
 - Mar 2026: Introduced **MMF Agent**: a set of skills that guide users through an end-to-end forecasting project (preprocess, profile, provision resources, forecast, evaluate). MMF Agent runs on Genie Code, Claude Code, Cursor and GitHub Copilot. Try it out [here](https://github.com/databricks-industry-solutions/many-model-forecasting/tree/main/skills/). ([lbruand-db](https://github.com/lbruand-db), [lourdesmartinezma](https://github.com/lourdesmartinezma), [puneet-jain159](https://github.com/puneet-jain159))
@@ -304,6 +305,76 @@ MMF is fully integrated with MLflow and so once the training kicks off, the expe
 
 We encourage you to read through [examples/daily/foundation_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/foundation_daily.ipynb) notebook to better understand how foundation models can be applied to your time series using MMF. An example notebook for forecasting with exogenous regressors can be found in [examples/external_regressors/foundation_external_regressors_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/external_regressors/foundation_external_regressors_daily.ipynb). Refer to the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/post-evaluation-analysis.ipynb) for guidance on performing fine-grained model selection after running `run_forecast`. See how to define the backtesting parameters [here](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/README.md#how-backtesting-works).
 
+## Hierarchical Reconciliation
+
+MMF supports hierarchical reconciliation as an optional post-forecasting step. After generating base forecasts, reconciliation adjusts them so that they are mathematically coherent across all hierarchy levels — meaning forecasts at each level are consistent with those above and below them in the hierarchy (e.g., store-level forecasts sum to the region forecast, which sums to the country forecast).
+
+The multi-level approach in MMF is to run the full pipeline (`run_forecast`) once per hierarchy level. This gives you complete flexibility: each level can use its own training data, exogenous variables, and model selection — a store-level forecast might use promotion flags and local pricing, while a region-level forecast uses regional campaign data. Crucially, all levels can run in parallel, so the total compute time is bounded by the slowest level rather than the sum of all levels. Skill 6 then reconciles all outputs into a single coherent set of forecasts across the full hierarchy.
+
+### How to use it
+
+1. Provide training data for each hierarchy level — including the appropriate exogenous variables for each level — and a membership table as a Delta table describing the parent–child relationships across all series (see Skill 6 for the required schema).
+2. Run Skills 1–5 once per level to produce `best_models` and `evaluation_output` tables. These runs are independent and can be parallelized.
+3. Run Skill 6 to reconcile all levels.
+
+### Workflow
+
+```
+Skills 1–5  (Level: Store)   →  store_best_models   + store_evaluation_output   ─┐
+Skills 1–5  (Level: Region)  →  region_best_models  + region_evaluation_output  ─┤ (run in parallel)
+Skills 1–5  (Level: Country) →  country_best_models + country_evaluation_output ─┘
+                                          +
+                               membership_table (user-provided Delta table)
+                                          ↓
+                                       Skill 6
+                              (run_reconciliation_multilevel)
+                                          ↓
+                               reconciliation_output
+```
+
+### Membership table
+
+The membership table is an adjacency list provided by the user as a Delta table:
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `unique_id` | string | Series identifier — must match exactly the IDs in the level tables |
+| `level_name` | string | Level this series belongs to (e.g. `store`, `region`, `country`) |
+| `parent_unique_id` | string (nullable) | Parent series ID; `NULL` only for the single root |
+
+### Installation
+
+Hierarchical reconciliation requires the `[hierarchical]` extra:
+
+```bash
+pip install mmf_sa[hierarchical]
+```
+
+### API
+
+```python
+from mmf_sa import run_reconciliation_multilevel
+
+run_reconciliation_multilevel(
+    spark=spark,
+    levels=[
+        {"name": "store",   "best_models_table": "catalog.schema.store_best_models",   "evaluation_table": "catalog.schema.store_evaluation_output"},
+        {"name": "region",  "best_models_table": "catalog.schema.region_best_models",  "evaluation_table": "catalog.schema.region_evaluation_output"},
+        {"name": "country", "best_models_table": "catalog.schema.country_best_models", "evaluation_table": "catalog.schema.country_evaluation_output"},
+    ],
+    hierarchy_table="catalog.schema.membership_table",
+    reconciliation_output="catalog.schema.reconciliation_output",
+    freq="D",                    # H | D | W | M
+    method="MinTrace",           # MinTrace | BottomUp | TopDown | MiddleOut | ERM
+    mintrace_method="mint_shrink",  # only for MinTrace: mint_shrink (default) | wls_struct | wls_var | mint_cov
+    middle_level=None,           # required when method="MiddleOut" — e.g. "region"
+)
+```
+
+The output table has columns: `unique_id`, `ds`, `y_base` (original forecast), `y_reconciled` (coherent forecast), `hierarchy_level`, `reconciliation_method`.
+
+> **Note:** Reconciliation requires classic compute (Single Node, DBR ML). `toArrow()` and scipy sparse are not supported on Spark Connect / serverless. See Skill 6 for the cluster configuration.
+
 ## [Vector Lab](https://www.youtube.com/@VectorLab) - Many Model Forecasting
 
 [IMAGE ALT TEXT HERE](https://www.youtube.com/watch?v=wYeuPxtap-8)
@@ -330,5 +401,7 @@ Any issues discovered through the use of this project should be filed as GitHub 
 | Chronos          | Pretrained (Language) Models for Probabilistic Time Series Forecasting                             | Apache 2.0   | [https://github.com/amazon-science/chronos-forecasting](https://github.com/amazon-science/chronos-forecasting) |
 | Moirai           | Unified Training of Universal Time Series Forecasting Transformers                                 | Apache 2.0   | [https://github.com/SalesforceAIResearch/uni2ts](https://github.com/SalesforceAIResearch/uni2ts)               |
 | TimesFM          | A pretrained time-series foundation model developed by Google Research for time-series forecasting | Apache 2.0   | [https://github.com/google-research/timesfm](https://github.com/google-research/timesfm)                       |
+| hierarchicalforecast | Hierarchical forecast reconciliation methods                                                   | Apache 2.0   | [https://pypi.org/project/hierarchicalforecast/](https://pypi.org/project/hierarchicalforecast/)               |
+| polars           | Fast multi-threaded DataFrame library                                                              | MIT          | [https://pypi.org/project/polars/](https://pypi.org/project/polars/)                                           |
 
 
