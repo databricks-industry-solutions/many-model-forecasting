@@ -377,7 +377,7 @@ The output table has columns: `unique_id`, `ds`, `y_base` (original forecast), `
 
 ## [Vector Lab](https://www.youtube.com/@VectorLab) - Many Model Forecasting
 
-[IMAGE ALT TEXT HERE](https://www.youtube.com/watch?v=wYeuPxtap-8)
+[![Vector Lab — Many Model Forecasting](https://img.youtube.com/vi/wYeuPxtap-8/0.jpg)](https://www.youtube.com/watch?v=wYeuPxtap-8)
 
 ## Authors
 
