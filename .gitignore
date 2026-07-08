@@ -143,5 +143,8 @@ examples/m5-examples/lightning_logs
 .claude
 .ai-dev-kit/
 docs/
+# Keep the Docusaurus documentation site under version control
+!website/docs/
+!website/docs/**
 .cursor/
 notebooks/
