@@ -324,11 +324,10 @@ Same config as the main ML cluster (single-node, CPU 18.x ML). A smaller instanc
 **Azure:**
 | Option | Instance | GPUs | GPU Memory | Notes |
 |--------|----------|------|------------|-------|
-| (a) | `Standard_NC4as_T4_v3` | 1× T4 | 16 GB | Budget option |
-| (b) | `Standard_NC8as_T4_v3` | 1× T4 | 16 GB | More CPU/RAM |
-| **(c) recommended** | `Standard_NV36ads_A10_v5` | 1× A10 | 24 GB | Good balance |
-| (d) | `Standard_NV72ads_A10_v5` | 2× A10 | 48 GB | Global + foundation |
-| (e) | `Standard_NC24ads_A100_v4` | 1× A100 | 80 GB | Large models |
+| **(a) recommended** | `Standard_NC4as_T4_v3` | 1× T4 | 16 GB | Sufficient for MMF's foundation/DL models |
+| (b) | `Standard_NC64as_T4_v3` | 4× T4 | 64 GB | Multi-GPU throughput on T4 |
+| (c) | `Standard_NC24ads_A100_v4` | 1× A100 | 80 GB | Large models / higher throughput |
+| (d) | `Standard_NC48ads_A100_v4` | 2× A100 | 160 GB | Global + foundation, large multi-GPU |
 
 **GCP:**
 | Option | Instance | GPUs | GPU Memory | Notes |
@@ -507,11 +506,10 @@ AskUserQuestion:
    (d) g5.48xlarge  — 8× A10G GPUs, 192 GB (large-scale training)
 
    Azure:
-   (a) Standard_NC4as_T4_v3    — 1× T4 GPU, 16 GB
-   (b) Standard_NC8as_T4_v3    — 1× T4 GPU, 16 GB, more CPU/RAM
-   (c) Standard_NV36ads_A10_v5 — 1× A10 GPU, 24 GB  (recommended)
-   (d) Standard_NV72ads_A10_v5 — 2× A10 GPUs, 48 GB (global + foundation)
-   (e) Standard_NC24ads_A100_v4 — 1× A100 GPU, 80 GB (large models)
+   (a) Standard_NC4as_T4_v3     — 1× T4 GPU, 16 GB    (recommended; sufficient for MMF models)
+   (b) Standard_NC64as_T4_v3    — 4× T4 GPUs, 64 GB   (multi-GPU throughput)
+   (c) Standard_NC24ads_A100_v4 — 1× A100 GPU, 80 GB  (large models / higher throughput)
+   (d) Standard_NC48ads_A100_v4 — 2× A100 GPUs, 160 GB (global + foundation, large multi-GPU)
 
    GCP:
    (a) g2-standard-4   — 1× L4 GPU, 24 GB

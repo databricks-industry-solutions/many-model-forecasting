@@ -89,7 +89,7 @@ job_json = {
                         "spark.databricks.delta.schema.autoMerge.enabled": "true",
                     },
                     "num_workers": 0,
-                    "node_type_id": {"AWS": "g5.12xlarge", "MSA": "Standard_NV36ads_A10_v5", "GCP": "g2-standard-48"},
+                    "node_type_id": {"AWS": "g5.12xlarge", "MSA": "Standard_NC4as_T4_v3", "GCP": "g2-standard-48"},
                     "custom_tags": {
                         "usage": "solacc_testing"
                     },
