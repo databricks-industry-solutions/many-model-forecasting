@@ -233,9 +233,9 @@ See: [6-hierarchical-reconciliation.md](6-hierarchical-reconciliation.md)
 
 | Cluster | Runtime | Node type (AWS) | Workers | Use case |
 |---------|---------|-----------------|---------|----------|
-| `{use_case}_cpu_cluster` | `17.3.x-cpu-ml-scala2.13` | `i3.xlarge` | Dynamic (0-10 based on series count) | Local models (multi-node Pandas UDF parallelism) |
-| `{use_case}_ml_cluster` | `17.3.x-cpu-ml-scala2.13` | `i3.4xlarge` (default) | **0 (single-node always)** | Global ML models (MLForecast/LightGBM — driver-only Python process) |
-| `{use_case}_gpu_cluster` | `18.0.x-gpu-ml-scala2.13` | User-selectable (e.g., `g5.12xlarge`) | **0 (single-node always)** | Global DL & foundation models |
+| `{use_case}_cpu_cluster` | `18.x-cpu-ml-scala2.13` | `i3.xlarge` | Dynamic (0-10 based on series count) | Local models (multi-node Pandas UDF parallelism) |
+| `{use_case}_ml_cluster` | `18.x-cpu-ml-scala2.13` | `i3.4xlarge` (default) | **0 (single-node always)** | Global ML models (MLForecast/LightGBM — driver-only Python process) |
+| `{use_case}_gpu_cluster` | `18.x-gpu-ml-scala2.13` | User-selectable (e.g., `g5.12xlarge`) | **0 (single-node always)** | Global DL & foundation models |
 
 See [3-provision-forecasting-resources.md](3-provision-forecasting-resources.md) for Azure and GCP node types.
 

@@ -237,7 +237,7 @@ Reconciliation requires classic compute — `toArrow()` and scipy sparse are not
 > ⛔ **MANDATORY cluster config — DO NOT use serverless.**
 > ```json
 > {
->   "spark_version": "17.3.x-cpu-ml-scala2.13",
+>   "spark_version": "18.x-cpu-ml-scala2.13",
 >   "num_workers": 0,
 >   "data_security_mode": "SINGLE_USER",
 >   "spark_conf": {

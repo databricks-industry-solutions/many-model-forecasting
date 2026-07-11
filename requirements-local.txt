@@ -1,3 +1,4 @@
 -r requirements.txt
 statsforecast==2.0.0
 prophet==1.1.6
+cmdstanpy==1.2.5

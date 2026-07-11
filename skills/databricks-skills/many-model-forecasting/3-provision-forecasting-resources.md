@@ -170,16 +170,16 @@ This determines the specific node types.
 >
 > | Cluster class | Required `spark_version` | Topology | Used by |
 > |---|---|---|---|
-> | CPU local (statistical / Prophet) | `17.3.x-cpu-ml-scala2.13` | **Multi-node** (Pandas UDF parallelism) | `{use_case}_cpu_cluster`, `{use_case}_nf_cpu_cluster` |
-> | CPU ML (MLForecast LightGBM) | `17.3.x-cpu-ml-scala2.13` | **Single-node always** (`num_workers: 0`, `spark.master=local[*]`) | `{use_case}_ml_cluster`, `{use_case}_nf_ml_cluster` |
-> | GPU (global DL & foundation models) | `18.0.x-gpu-ml-scala2.13` | Single-node always | `{use_case}_gpu_cluster`, `{use_case}_nf_gpu_cluster` |
+> | CPU local (statistical / Prophet) | `18.x-cpu-ml-scala2.13` | **Multi-node** (Pandas UDF parallelism) | `{use_case}_cpu_cluster`, `{use_case}_nf_cpu_cluster` |
+> | CPU ML (MLForecast LightGBM) | `18.x-cpu-ml-scala2.13` | **Single-node always** (`num_workers: 0`, `spark.master=local[*]`) | `{use_case}_ml_cluster`, `{use_case}_nf_ml_cluster` |
+> | GPU (global DL & foundation models) | `18.x-gpu-ml-scala2.13` | Single-node always | `{use_case}_gpu_cluster`, `{use_case}_nf_gpu_cluster` |
 >
-> **CPU local vs CPU ML — same runtime, different topology.** They share `17.3.x-cpu-ml-scala2.13` but the topology is fundamentally different: local models distribute one-series-per-task across Spark workers via Pandas UDFs, while MLForecast LightGBM runs in a single driver Python process (workers would sit idle). The CPU ML cluster requires the same single-node Spark config as the GPU cluster (`spark.master=local[*]`, `spark.databricks.cluster.profile=singleNode`, `custom_tags: {"ResourceClass": "SingleNode"}`). They MUST be separate clusters.
+> **CPU local vs CPU ML — same runtime, different topology.** They share `18.x-cpu-ml-scala2.13` but the topology is fundamentally different: local models distribute one-series-per-task across Spark workers via Pandas UDFs, while MLForecast LightGBM runs in a single driver Python process (workers would sit idle). The CPU ML cluster requires the same single-node Spark config as the GPU cluster (`spark.master=local[*]`, `spark.databricks.cluster.profile=singleNode`, `custom_tags: {"ResourceClass": "SingleNode"}`). They MUST be separate clusters.
 >
 > The agent is FORBIDDEN from:
-> - Using `17.3.x-cpu-ml-scala2.13` on a GPU cluster (it has no GPU drivers — global DL / foundation models will fail or silently run on CPU).
-> - Using `17.3.x-gpu-ml-scala2.13` on the GPU cluster because it "looks like LTS." The GPU pipeline is pinned to **18.0** and tested against it.
-> - Using `18.0.x-cpu-ml-scala2.13` on either CPU cluster.
+> - Using `18.x-cpu-ml-scala2.13` on a GPU cluster (it has no GPU drivers — global DL / foundation models will fail or silently run on CPU).
+> - Using a `17.3.x` (or any non-`18.x`) runtime on any cluster because it "looks like LTS." The whole pipeline is now standardized on **18 ML** (`18.x`) and `mmf_sa` is tested against it.
+> - Mixing runtime channels across clusters (e.g. `18.0.x-cpu-ml-scala2.13` on one CPU cluster and `18.x` on another). All clusters use the rolling `18.x` channel.
 > - Combining the local CPU cluster and the ML CPU cluster into one job_cluster — their Spark topologies are incompatible.
 > - Copying the CPU local job's `spark_version` or topology into the CPU ML / GPU job templates in Skill 4. Each job class has its own pinned runtime and topology.
 >
@@ -191,7 +191,7 @@ Based on the model types and cloud provider, select from these configurations:
 
 | Setting | Value |
 |---------|-------|
-| **Runtime** | `17.3.x-cpu-ml-scala2.13` |
+| **Runtime** | `18.x-cpu-ml-scala2.13` |
 | **Node type** | User-selectable — see CPU instance options below (default: 16 vCPU) |
 | **Workers** | **Always ask the user** — present sizing guideline as recommendation |
 | **Availability** | **On-demand only** — do NOT use spot/preemptible instances (see note below) |
@@ -272,7 +272,7 @@ Present the series count and the sizing guideline to the user, then **ask them t
 
 | Setting | Value |
 |---------|-------|
-| **Runtime** | `17.3.x-cpu-ml-scala2.13` |
+| **Runtime** | `18.x-cpu-ml-scala2.13` |
 | **Node type** | User-selectable — same options as the local CPU cluster (default: `i3.4xlarge` on AWS, `Standard_DS5_v2` on Azure, `n1-standard-16` on GCP) |
 | **Workers** | **0 (single-node) — ALWAYS** |
 | **Availability** | **On-demand only** — do NOT use spot/preemptible instances |
@@ -293,7 +293,7 @@ Use the same instance tables as the **local CPU cluster** (see above):
 
 Only created when `non_forecastable_strategy == 'separate_job'` and the non-forecastable models include `MLForecast*` models.
 
-Same config as the main ML cluster (single-node, CPU 17.3 LTS ML). A smaller instance (option (a)) is usually sufficient since non-forecastable series are typically fewer and simpler.
+Same config as the main ML cluster (single-node, CPU 18.x ML). A smaller instance (option (a)) is usually sufficient since non-forecastable series are typically fewer and simpler.
 
 ---
 
@@ -303,7 +303,7 @@ Same config as the main ML cluster (single-node, CPU 17.3 LTS ML). A smaller ins
 
 | Setting | Value |
 |---------|-------|
-| **Runtime** | `18.0.x-gpu-ml-scala2.13` |
+| **Runtime** | `18.x-gpu-ml-scala2.13` |
 | **Node type** | User-selectable — see GPU instance options below |
 | **Workers** | **0 (single-node) — ALWAYS** |
 | **Availability** | **On-demand only** — do NOT use spot/preemptible instances (see note below) |
@@ -324,11 +324,10 @@ Same config as the main ML cluster (single-node, CPU 17.3 LTS ML). A smaller ins
 **Azure:**
 | Option | Instance | GPUs | GPU Memory | Notes |
 |--------|----------|------|------------|-------|
-| (a) | `Standard_NC4as_T4_v3` | 1× T4 | 16 GB | Budget option |
-| (b) | `Standard_NC8as_T4_v3` | 1× T4 | 16 GB | More CPU/RAM |
-| **(c) recommended** | `Standard_NV36ads_A10_v5` | 1× A10 | 24 GB | Good balance |
-| (d) | `Standard_NV72ads_A10_v5` | 2× A10 | 48 GB | Global + foundation |
-| (e) | `Standard_NC24ads_A100_v4` | 1× A100 | 80 GB | Large models |
+| **(a) recommended** | `Standard_NC4as_T4_v3` | 1× T4 | 16 GB | Sufficient for MMF's foundation/DL models |
+| (b) | `Standard_NC64as_T4_v3` | 4× T4 | 64 GB | Multi-GPU throughput on T4 |
+| (c) | `Standard_NC24ads_A100_v4` | 1× A100 | 80 GB | Large models / higher throughput |
+| (d) | `Standard_NC48ads_A100_v4` | 2× A100 | 160 GB | Global + foundation, large multi-GPU |
 
 **GCP:**
 | Option | Instance | GPUs | GPU Memory | Notes |
@@ -390,7 +389,7 @@ Ask about each cluster one at a time. Only ask about cluster types the user's se
 ```
 AskUserQuestion:
   "CPU Cluster ({use_case}_cpu_cluster) — for local models:
-     • Runtime: 17.3.x-cpu-ml-scala2.13
+     • Runtime: 18.x-cpu-ml-scala2.13
 
    Which instance type?
 
@@ -454,7 +453,7 @@ Only ask this if the user selected at least one `MLForecast*` model. No worker-c
 ```
 AskUserQuestion:
   "ML Cluster ({use_case}_ml_cluster) — single-node, for global ML (MLForecast LightGBM) models:
-     • Runtime: 17.3.x-cpu-ml-scala2.13
+     • Runtime: 18.x-cpu-ml-scala2.13
      • Workers: 0 (always single-node)
 
    Which instance type?
@@ -493,7 +492,7 @@ AskUserQuestion:
 ```
 AskUserQuestion:
   "GPU Cluster ({use_case}_gpu_cluster) — single-node, for global & foundation models:
-     • Runtime: 18.0.x-gpu-ml-scala2.13
+     • Runtime: 18.x-gpu-ml-scala2.13
      • Workers: 0 (always single-node)
 
    Which instance type?
@@ -507,11 +506,10 @@ AskUserQuestion:
    (d) g5.48xlarge  — 8× A10G GPUs, 192 GB (large-scale training)
 
    Azure:
-   (a) Standard_NC4as_T4_v3    — 1× T4 GPU, 16 GB
-   (b) Standard_NC8as_T4_v3    — 1× T4 GPU, 16 GB, more CPU/RAM
-   (c) Standard_NV36ads_A10_v5 — 1× A10 GPU, 24 GB  (recommended)
-   (d) Standard_NV72ads_A10_v5 — 2× A10 GPUs, 48 GB (global + foundation)
-   (e) Standard_NC24ads_A100_v4 — 1× A100 GPU, 80 GB (large models)
+   (a) Standard_NC4as_T4_v3     — 1× T4 GPU, 16 GB    (recommended; sufficient for MMF models)
+   (b) Standard_NC64as_T4_v3    — 4× T4 GPUs, 64 GB   (multi-GPU throughput)
+   (c) Standard_NC24ads_A100_v4 — 1× A100 GPU, 80 GB  (large models / higher throughput)
+   (d) Standard_NC48ads_A100_v4 — 2× A100 GPUs, 160 GB (global + foundation, large multi-GPU)
 
    GCP:
    (a) g2-standard-4   — 1× L4 GPU, 24 GB
@@ -644,7 +642,7 @@ Each notebook installs MMF at the start:
   - **Foundation (Chronos)**: base `mmf_sa` + `chronos-forecasting==2.2.2` + `utilsforecast==0.2.15`
   - **Foundation (TimesFM)**: base `mmf_sa` + `timesfm[torch,xreg]` from tarball URL + `utilsforecast==0.2.15`
 
-> **Why subprocess for GPU?** `%pip` does not interpolate Python variables when the notebook is called via `dbutils.notebook.run()`. Additionally, `mmf_sa[foundation]` includes a transitive `timesfm @ git+https://...@commit` dependency whose `git checkout` fails on GPU clusters. The `run_gpu` template uses `subprocess.check_call` and installs `timesfm[torch,xreg]` from a GitHub tarball URL to bypass both issues.
+> **Why subprocess for GPU?** `%pip` does not interpolate Python variables when the notebook is called via `dbutils.notebook.run()`. The `run_gpu` template uses `subprocess.check_call` and installs `timesfm[torch,xreg]` from a GitHub tarball URL. The tarball form (rather than `git+https://...@commit`) is used everywhere for TimesFM because the git install triggers a Git LFS smudge/checkout failure on DBR ML images whenever the pinned commit drifts behind the upstream PNG/GIF assets.
 
 ## Outputs
 

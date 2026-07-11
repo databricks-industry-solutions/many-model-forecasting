@@ -19,7 +19,7 @@ jobs:
          new-cluster-json: >
            {
              "num_workers": 0,
-             "spark_version": "17.3.x-cpu-ml-scala2.12",
+             "spark_version": "18.x-cpu-ml-scala2.13",
              "node_type_id": "i3.xlarge",
              "aws_attributes": {
                  "availability": "ON_DEMAND"

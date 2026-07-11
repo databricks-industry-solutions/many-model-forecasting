@@ -29,7 +29,7 @@ MODEL_PIP_REQUIREMENTS = {
         MMF_PACKAGE,
     ],
     "timesfm": [
-        "timesfm[torch,xreg] @ git+https://github.com/google-research/timesfm.git@a83dbf3f163cf15993dac6a45bbb5dcb160e14e8",
+        "timesfm[torch,xreg] @ https://github.com/google-research/timesfm/archive/a83dbf3f163cf15993dac6a45bbb5dcb160e14e8.tar.gz",
         MMF_PACKAGE,
     ],
     "moirai": [
