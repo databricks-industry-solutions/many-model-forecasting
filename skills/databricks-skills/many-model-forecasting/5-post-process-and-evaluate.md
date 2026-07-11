@@ -136,27 +136,68 @@ GROUP BY unique_id, model
 
 Select the best-performing model for each forecastable time series based on the primary metric:
 
+> ⚠️ **Why `latest_run_per_model` and not a single global latest run.** MMF launches
+> **one job per model class** (local, global_ml, global, foundation — see Skill 4 Step 5b),
+> and each job's `run_forecast` call writes its **own** `run_id`. Pinning selection to a
+> single global latest `run_id` (e.g. `ORDER BY run_date DESC LIMIT 1`) keeps only the
+> **last job to finish** and silently drops every other model from the competition — the
+> classic "foundation models won 100%" artifact. Instead, take the most recent `run_id`
+> for **each model** so all models that were run compete head-to-head. This stays coherent
+> for hierarchical reconciliation (Skill 6): a model's forecast (`scoring_output`) and its
+> backtest residuals (`evaluation_output`) share the same `run_id`, and reconciliation joins
+> residuals **per `(unique_id, model, run_id)`** — so per-model pinning is exactly the grain it needs.
+>
+> **Tie-break policy.** Selection uses `ROW_NUMBER()` (not `RANK()`) so exactly **one** model
+> wins per series — no duplicate best-model rows that would inflate win counts and break
+> reconciliation's one-forecast-per-series contract. On an exact metric tie, the **cheaper /
+> simpler compute tier wins** (local → global ML → global DL → foundation), with model name as
+> a final deterministic fallback. This avoids letting an expensive GPU model win a break-even by
+> alphabetical accident and matches the Step 8 guidance to prefer local models when accuracy is comparable.
+
 ```sql
 CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_best_models_forecastable AS
-WITH latest_run AS (
-  -- evaluation_output and scoring_output are append-mode and may accumulate multiple
-  -- runs. Pin selection AND the attached forecasts to a single, most-recent run so the
-  -- chosen forecasts and their backtest residuals come from the same run (required by
-  -- hierarchical reconciliation, which joins residuals on run_id).
-  SELECT run_id
-  FROM {catalog}.{schema}.{use_case}_evaluation_output
-  ORDER BY run_date DESC
-  LIMIT 1
+WITH latest_run_per_model AS (
+  -- evaluation_output/scoring_output are append-mode and accumulate runs across the
+  -- separate per-model-class jobs (and any re-runs). For EACH model, pick the run_id
+  -- from its most recent run so every model competes on its latest results.
+  SELECT model, run_id
+  FROM (
+    SELECT model, run_id,
+           ROW_NUMBER() OVER (PARTITION BY model ORDER BY run_date DESC, run_id DESC) AS rn
+    FROM (
+      SELECT DISTINCT model, run_id, run_date
+      FROM {catalog}.{schema}.{use_case}_evaluation_output
+    )
+  )
+  WHERE rn = 1
 )
 SELECT eval.unique_id, eval.model, eval.avg_metric, score.ds, score.y,
        'main_pipeline' AS forecast_source, eval.run_id
 FROM (
   SELECT unique_id, model, run_id, avg_metric,
-         RANK() OVER (PARTITION BY unique_id ORDER BY avg_metric ASC) AS rank
+         ROW_NUMBER() OVER (
+           PARTITION BY unique_id
+           ORDER BY
+             avg_metric ASC,
+             -- Tie-break: prefer the cheaper/simpler model when metrics are equal, so a
+             -- break-even never gets decided by an expensive GPU model (or by alphabetical
+             -- accident). Lower rank = cheaper compute tier. ROW_NUMBER (not RANK) guarantees
+             -- exactly ONE winning row per series — no duplicate best-model rows downstream.
+             CASE
+               WHEN model LIKE 'StatsForecast%' OR model LIKE 'SKTime%' THEN 1  -- local (CPU)
+               WHEN model LIKE 'MLForecast%'                            THEN 2  -- global ML (CPU, LightGBM)
+               WHEN model LIKE 'NeuralForecast%'                        THEN 3  -- global DL (GPU)
+               WHEN model LIKE 'Chronos%' OR model LIKE 'Moirai%'
+                    OR model LIKE 'TimesFM%'                            THEN 4  -- foundation (GPU)
+               ELSE 5                                                          -- unknown/custom: least preferred on ties
+             END ASC,
+             model ASC  -- final deterministic fallback within the same cost tier
+         ) AS rank
   FROM (
     SELECT e.unique_id, e.model, e.run_id, AVG(e.metric_value) AS avg_metric
     FROM {catalog}.{schema}.{use_case}_evaluation_output AS e
-    INNER JOIN latest_run AS lr ON e.run_id = lr.run_id
+    INNER JOIN latest_run_per_model AS lr
+      ON e.model = lr.model AND e.run_id = lr.run_id
     GROUP BY e.unique_id, e.model, e.run_id
     HAVING AVG(e.metric_value) IS NOT NULL
   )
@@ -208,21 +249,47 @@ FROM {catalog}.{schema}.{use_case}_best_models_forecastable
 
 UNION ALL
 
--- Non-forecastable best models (from separate pipeline)
+-- Non-forecastable best models (from separate pipeline). Same per-model run_id logic as
+-- Step 3: the non-forecastable models are also launched as separate per-class jobs, so pick
+-- each model's latest run_id rather than a single global latest run.
 SELECT nf_eval.unique_id, nf_eval.model, nf_eval.avg_metric, nf_score.ds, nf_score.y,
        'non_forecastable_pipeline' AS forecast_source, nf_eval.run_id
 FROM (
   SELECT unique_id, model, run_id, avg_metric,
-         RANK() OVER (PARTITION BY unique_id ORDER BY avg_metric ASC) AS rank
+         ROW_NUMBER() OVER (
+           PARTITION BY unique_id
+           ORDER BY
+             avg_metric ASC,
+             -- Tie-break: prefer the cheaper/simpler model when metrics are equal, so a
+             -- break-even never gets decided by an expensive GPU model (or by alphabetical
+             -- accident). Lower rank = cheaper compute tier. ROW_NUMBER (not RANK) guarantees
+             -- exactly ONE winning row per series — no duplicate best-model rows downstream.
+             CASE
+               WHEN model LIKE 'StatsForecast%' OR model LIKE 'SKTime%' THEN 1  -- local (CPU)
+               WHEN model LIKE 'MLForecast%'                            THEN 2  -- global ML (CPU, LightGBM)
+               WHEN model LIKE 'NeuralForecast%'                        THEN 3  -- global DL (GPU)
+               WHEN model LIKE 'Chronos%' OR model LIKE 'Moirai%'
+                    OR model LIKE 'TimesFM%'                            THEN 4  -- foundation (GPU)
+               ELSE 5                                                          -- unknown/custom: least preferred on ties
+             END ASC,
+             model ASC  -- final deterministic fallback within the same cost tier
+         ) AS rank
   FROM (
     SELECT e.unique_id, e.model, e.run_id, AVG(e.metric_value) AS avg_metric
     FROM {catalog}.{schema}.{use_case}_nf_evaluation_output AS e
     INNER JOIN (
-      SELECT run_id
-      FROM {catalog}.{schema}.{use_case}_nf_evaluation_output
-      ORDER BY run_date DESC
-      LIMIT 1
-    ) AS nf_latest_run ON e.run_id = nf_latest_run.run_id
+      SELECT model, run_id
+      FROM (
+        SELECT model, run_id,
+               ROW_NUMBER() OVER (PARTITION BY model ORDER BY run_date DESC, run_id DESC) AS rn
+        FROM (
+          SELECT DISTINCT model, run_id, run_date
+          FROM {catalog}.{schema}.{use_case}_nf_evaluation_output
+        )
+      )
+      WHERE rn = 1
+    ) AS nf_latest_run_per_model
+      ON e.model = nf_latest_run_per_model.model AND e.run_id = nf_latest_run_per_model.run_id
     GROUP BY e.unique_id, e.model, e.run_id
     HAVING AVG(e.metric_value) IS NOT NULL
   )

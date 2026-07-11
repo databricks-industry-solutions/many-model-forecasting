@@ -371,7 +371,11 @@ Present all parameters to the user via `AskUserQuestion` for validation.
 
 **CRITICAL: Copy templates VERBATIM, only replacing `{placeholder}` tokens with actual values. Do NOT add, remove, or modify any other code. The templates are complete and production-ready.**
 
-Generate a shared `run_id` (UUID) that will be passed to all notebooks, grouping results across separate sessions.
+> ℹ️ **`run_id` is per-job, not shared.** Each model-class job calls `run_forecast`, which
+> generates its **own** `run_id` (UUID) internally. Do **not** try to force a single shared
+> `run_id` across jobs — Skill 5 handles this correctly by selecting the **latest `run_id` per
+> model** so all models compete together. (An earlier version pinned Skill 5 to a single global
+> latest run, which silently excluded every model except the last job to finish.)
 
 #### 3a: Local models notebook
 
@@ -1084,7 +1088,12 @@ Write run metadata to `{use_case}_run_metadata` table for audit and reproducibil
 CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_run_metadata AS
 SELECT
   '{use_case}' AS use_case,
-  '{run_id}' AS run_id,
+  -- Each model-class job writes its own run_id (local/global_ml generate one internally;
+  -- each GPU orchestrator generates one and shares it across the models in that job).
+  -- Capture every run_id present in the evaluation output so lineage reflects all jobs
+  -- that contributed — Skill 5 selects the latest run_id per model across these.
+  (SELECT ARRAY_AGG(DISTINCT run_id)
+   FROM {catalog}.{schema}.{use_case}_evaluation_output) AS run_ids,
   CURRENT_TIMESTAMP() AS run_date,
   '{freq}' AS freq,
   {prediction_length} AS prediction_length,
