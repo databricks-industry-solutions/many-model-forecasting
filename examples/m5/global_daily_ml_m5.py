@@ -11,7 +11,7 @@
 # MAGIC %md
 # MAGIC ### Cluster setup
 # MAGIC
-# MAGIC We recommend a **single-node CPU cluster** with [Databricks Runtime 17.3 LTS for ML](https://docs.databricks.com/en/release-notes/runtime/17.3lts-ml.html). The pinned versions in [`requirements-global.txt`](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/requirements-global.txt) (`mlforecast==1.0.31`, `lightgbm==4.6.0`, `optuna==3.6.1`) match the DBR ML preinstalled versions exactly.
+# MAGIC We recommend a **single-node CPU cluster** with [Databricks Runtime 18 for ML](https://docs.databricks.com/aws/en/release-notes/runtime/18ml). The pinned versions in [`requirements-global.txt`](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/requirements-global.txt) (`mlforecast==1.0.31`, `lightgbm==4.6.0`, `optuna==3.6.1`) match the DBR ML preinstalled versions exactly.
 
 # COMMAND ----------
 

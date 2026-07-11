@@ -650,18 +650,18 @@ This ensures there is always exactly one job per type per user — no accumulati
 >
 > | Job | `spark_version` (required) | `num_workers` (required) |
 > |---|---|---|
-> | Local models | `17.3.x-cpu-ml-scala2.13` | `{cpu_workers}` (multi-node, sized by series count) |
-> | Global ML models | `17.3.x-cpu-ml-scala2.13` | **`0` (single-node always)** + `spark.master=local[*]` + singleNode profile + ResourceClass tag |
-> | Global DL models | `18.0.x-gpu-ml-scala2.13` | `0` (single-node always) |
-> | Foundation models | `18.0.x-gpu-ml-scala2.13` | `0` (single-node always) |
-> | NF Local models *(if `separate_job`)* | `17.3.x-cpu-ml-scala2.13` | `{nf_cpu_workers}` |
-> | NF Global ML models *(if `separate_job`)* | `17.3.x-cpu-ml-scala2.13` | `0` (single-node) |
-> | NF Global / NF Foundation *(if `separate_job`)* | `18.0.x-gpu-ml-scala2.13` | `0` (single-node) |
+> | Local models | `18.x-cpu-ml-scala2.13` | `{cpu_workers}` (multi-node, sized by series count) |
+> | Global ML models | `18.x-cpu-ml-scala2.13` | **`0` (single-node always)** + `spark.master=local[*]` + singleNode profile + ResourceClass tag |
+> | Global DL models | `18.x-gpu-ml-scala2.13` | `0` (single-node always) |
+> | Foundation models | `18.x-gpu-ml-scala2.13` | `0` (single-node always) |
+> | NF Local models *(if `separate_job`)* | `18.x-cpu-ml-scala2.13` | `{nf_cpu_workers}` |
+> | NF Global ML models *(if `separate_job`)* | `18.x-cpu-ml-scala2.13` | `0` (single-node) |
+> | NF Global / NF Foundation *(if `separate_job`)* | `18.x-gpu-ml-scala2.13` | `0` (single-node) |
 >
 > The agent is FORBIDDEN from:
-> - Reusing the local job's `spark_version` (`17.3.x-cpu-ml-scala2.13`) inside the global DL or foundation JSON. A GPU node type with a CPU runtime fails to start or silently runs on CPU.
-> - **Reusing the local job's `job_clusters` block (multi-node) inside the global_ml JSON.** The two share `17.3.x-cpu-ml-scala2.13` but the topology is incompatible — global_ml needs `num_workers: 0`, `spark.master=local[*]`, `spark.databricks.cluster.profile=singleNode`, and `custom_tags: {"ResourceClass": "SingleNode"}`. Pandas-UDF parallelism (what the local job uses) is broken in single-node mode.
-> - Substituting `17.3.x-gpu-ml-scala2.13` for the GPU jobs because it "looks like LTS." The GPU pipeline is pinned to **18.0** and `mmf_sa[global]` / `mmf_sa[foundation]` are tested against it.
+> - Reusing the local job's `spark_version` (`18.x-cpu-ml-scala2.13`) inside the global DL or foundation JSON. A GPU node type with a CPU runtime fails to start or silently runs on CPU.
+> - **Reusing the local job's `job_clusters` block (multi-node) inside the global_ml JSON.** The two share `18.x-cpu-ml-scala2.13` but the topology is incompatible — global_ml needs `num_workers: 0`, `spark.master=local[*]`, `spark.databricks.cluster.profile=singleNode`, and `custom_tags: {"ResourceClass": "SingleNode"}`. Pandas-UDF parallelism (what the local job uses) is broken in single-node mode.
+> - Substituting a `17.3.x` (or any non-`18.x`) runtime for the GPU jobs because it "looks like LTS." The whole pipeline is now standardized on **18 ML** (`18.x`) and `mmf_sa[global]` / `mmf_sa[foundation]` are tested against it.
 > - Using a non-ML runtime (anything not ending in `-ml-scala2.13`).
 > - Copy-pasting one job's `job_clusters` block into another. Build each job's `job_clusters` block from its own template.
 >
@@ -696,7 +696,7 @@ All jobs must include:
   "job_clusters": [{
     "job_cluster_key": "{use_case}_cpu_cluster",
     "new_cluster": {
-      "spark_version": "17.3.x-cpu-ml-scala2.13",
+      "spark_version": "18.x-cpu-ml-scala2.13",
       "node_type_id": "{cpu_node_type}",
       "num_workers": {cpu_workers},
       "data_security_mode": "SINGLE_USER",
@@ -734,7 +734,7 @@ All jobs must include:
   "job_clusters": [{
     "job_cluster_key": "{use_case}_ml_cluster",
     "new_cluster": {
-      "spark_version": "17.3.x-cpu-ml-scala2.13",
+      "spark_version": "18.x-cpu-ml-scala2.13",
       "node_type_id": "{ml_node_type}",
       "num_workers": 0,
       "data_security_mode": "SINGLE_USER",
@@ -777,7 +777,7 @@ All jobs must include:
   "job_clusters": [{
     "job_cluster_key": "{use_case}_gpu_cluster",
     "new_cluster": {
-      "spark_version": "18.0.x-gpu-ml-scala2.13",
+      "spark_version": "18.x-gpu-ml-scala2.13",
       "node_type_id": "{gpu_node_type}",
       "num_workers": 0,
       "data_security_mode": "SINGLE_USER",
@@ -818,7 +818,7 @@ All jobs must include:
   "job_clusters": [{
     "job_cluster_key": "{use_case}_gpu_cluster",
     "new_cluster": {
-      "spark_version": "18.0.x-gpu-ml-scala2.13",
+      "spark_version": "18.x-gpu-ml-scala2.13",
       "node_type_id": "{gpu_node_type}",
       "num_workers": 0,
       "data_security_mode": "SINGLE_USER",
@@ -846,20 +846,20 @@ Use `create_job` (or `update_job` on upsert) to create each job. **After `create
 
 ### Step 5c: Verify each job's cluster runtime (MANDATORY)
 
-> ⛔ **This step is not optional and cannot be skipped.** It exists to catch the most common failure mode: the agent copying the local job's `spark_version` into the global or foundation JSON (e.g. using `17.3.x-cpu-ml-scala2.13` for a GPU cluster). The verification reads the runtime back from the API after job creation, so it does not depend on the agent's intent.
+> ⛔ **This step is not optional and cannot be skipped.** It exists to catch the most common failure mode: the agent copying the local job's `spark_version` into the global or foundation JSON (e.g. using `18.x-cpu-ml-scala2.13` for a GPU cluster). The verification reads the runtime back from the API after job creation, so it does not depend on the agent's intent.
 
 For every job created in Step 5b (and Step 5a if `separate_job`), call `get_job` and inspect each entry in `job_clusters[*].new_cluster.spark_version` AND `job_clusters[*].new_cluster.num_workers`. Required values:
 
 | Job name | Required `spark_version` | Required topology |
 |---|---|---|
-| `{use_case}_local_forecasting_{username}` | `17.3.x-cpu-ml-scala2.13` | multi-node (`num_workers ≥ 0`, `local[*]` NOT set) |
-| `{use_case}_global_ml_forecasting_{username}` | `17.3.x-cpu-ml-scala2.13` | **single-node** (`num_workers == 0`, `spark.master==local[*]`, `cluster.profile==singleNode`, `custom_tags.ResourceClass==SingleNode`) |
-| `{use_case}_global_forecasting_{username}` | `18.0.x-gpu-ml-scala2.13` | single-node (`num_workers == 0`) |
-| `{use_case}_foundation_forecasting_{username}` | `18.0.x-gpu-ml-scala2.13` | single-node (`num_workers == 0`) |
-| `{use_case}_nf_local_forecasting_{username}` | `17.3.x-cpu-ml-scala2.13` | multi-node |
-| `{use_case}_nf_global_ml_forecasting_{username}` | `17.3.x-cpu-ml-scala2.13` | single-node |
-| `{use_case}_nf_global_forecasting_{username}` | `18.0.x-gpu-ml-scala2.13` | single-node |
-| `{use_case}_nf_foundation_forecasting_{username}` | `18.0.x-gpu-ml-scala2.13` | single-node |
+| `{use_case}_local_forecasting_{username}` | `18.x-cpu-ml-scala2.13` | multi-node (`num_workers ≥ 0`, `local[*]` NOT set) |
+| `{use_case}_global_ml_forecasting_{username}` | `18.x-cpu-ml-scala2.13` | **single-node** (`num_workers == 0`, `spark.master==local[*]`, `cluster.profile==singleNode`, `custom_tags.ResourceClass==SingleNode`) |
+| `{use_case}_global_forecasting_{username}` | `18.x-gpu-ml-scala2.13` | single-node (`num_workers == 0`) |
+| `{use_case}_foundation_forecasting_{username}` | `18.x-gpu-ml-scala2.13` | single-node (`num_workers == 0`) |
+| `{use_case}_nf_local_forecasting_{username}` | `18.x-cpu-ml-scala2.13` | multi-node |
+| `{use_case}_nf_global_ml_forecasting_{username}` | `18.x-cpu-ml-scala2.13` | single-node |
+| `{use_case}_nf_global_forecasting_{username}` | `18.x-gpu-ml-scala2.13` | single-node |
+| `{use_case}_nf_foundation_forecasting_{username}` | `18.x-gpu-ml-scala2.13` | single-node |
 
 For each job:
 
@@ -876,10 +876,10 @@ Report a one-line summary to the user before triggering runs:
 
 ```
 Cluster runtime check:
-  • {use_case}_local_forecasting_{username}        → 17.3.x-cpu-ml-scala2.13  multi-node    ✓
-  • {use_case}_global_ml_forecasting_{username}    → 17.3.x-cpu-ml-scala2.13  single-node   ✓
-  • {use_case}_global_forecasting_{username}       → 18.0.x-gpu-ml-scala2.13  single-node   ✓
-  • {use_case}_foundation_forecasting_{username}   → 18.0.x-gpu-ml-scala2.13  single-node   ✓
+  • {use_case}_local_forecasting_{username}        → 18.x-cpu-ml-scala2.13  multi-node    ✓
+  • {use_case}_global_ml_forecasting_{username}    → 18.x-cpu-ml-scala2.13  single-node   ✓
+  • {use_case}_global_forecasting_{username}       → 18.x-gpu-ml-scala2.13  single-node   ✓
+  • {use_case}_foundation_forecasting_{username}   → 18.x-gpu-ml-scala2.13  single-node   ✓
 All runtimes and topologies match the pinned values. Proceeding to run_job.
 ```
 
@@ -961,7 +961,7 @@ These orchestrators call the same `run_gpu` notebook (shared with the main pipel
   "job_clusters": [{
     "job_cluster_key": "{use_case}_nf_cpu_cluster",
     "new_cluster": {
-      "spark_version": "17.3.x-cpu-ml-scala2.13",
+      "spark_version": "18.x-cpu-ml-scala2.13",
       "node_type_id": "{cpu_node_type}",
       "num_workers": {nf_cpu_workers},
       "data_security_mode": "SINGLE_USER",
@@ -994,7 +994,7 @@ These orchestrators call the same `run_gpu` notebook (shared with the main pipel
   "job_clusters": [{
     "job_cluster_key": "{use_case}_nf_ml_cluster",
     "new_cluster": {
-      "spark_version": "17.3.x-cpu-ml-scala2.13",
+      "spark_version": "18.x-cpu-ml-scala2.13",
       "node_type_id": "{nf_ml_node_type}",
       "num_workers": 0,
       "data_security_mode": "SINGLE_USER",
@@ -1030,7 +1030,7 @@ These orchestrators call the same `run_gpu` notebook (shared with the main pipel
   "job_clusters": [{
     "job_cluster_key": "{use_case}_nf_gpu_cluster",
     "new_cluster": {
-      "spark_version": "18.0.x-gpu-ml-scala2.13",
+      "spark_version": "18.x-gpu-ml-scala2.13",
       "node_type_id": "{nf_gpu_node_type}",
       "num_workers": 0,
       "data_security_mode": "SINGLE_USER",

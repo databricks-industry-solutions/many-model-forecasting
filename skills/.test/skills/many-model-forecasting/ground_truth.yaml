@@ -126,7 +126,7 @@ test_cases:
   expectations:
     expected_facts:
     - Uses CPU cluster for local models
-    - Runtime is 17.3.x-cpu-ml-scala2.13
+    - Runtime is 18.x-cpu-ml-scala2.13
     - Node type is i3.xlarge for AWS
     - Workers based on series count (dynamic sizing)
     - Includes spark.sql.execution.arrow.enabled=true
@@ -137,7 +137,7 @@ test_cases:
     - pattern: _cpu_cluster
       min_count: 1
       description: Must use the use-case-prefixed CPU cluster key name
-    - pattern: 17\.3\.x-cpu-ml-scala2\.13
+    - pattern: 18\.x-cpu-ml-scala2\.13
       min_count: 1
       description: Must specify the correct CPU runtime
     - pattern: i3\.xlarge
@@ -174,8 +174,8 @@ test_cases:
   expectations:
     expected_facts:
     - Recommends both CPU and GPU clusters
-    - CPU runtime is 17.3.x-cpu-ml-scala2.13
-    - GPU runtime is 18.0.x-gpu-ml-scala2.13
+    - CPU runtime is 18.x-cpu-ml-scala2.13
+    - GPU runtime is 18.x-gpu-ml-scala2.13
     - Azure CPU node is Standard_DS3_v2
     - GPU instance type is user-selectable
     - GPU cluster has 0 workers (single-node)
@@ -188,7 +188,7 @@ test_cases:
     - pattern: _gpu_cluster
       min_count: 1
       description: Must include GPU cluster
-    - pattern: 18\.0\.x-gpu-ml-scala2\.13
+    - pattern: 18\.x-gpu-ml-scala2\.13
       min_count: 1
       description: Must specify correct GPU runtime
     - pattern: Standard_DS3_v2
@@ -292,7 +292,7 @@ test_cases:
     - References {use_case}_train_data
     - Creates a Workflow job with the ML CPU cluster (not the local CPU cluster)
     - ML cluster is single-node (num_workers = 0)
-    - ML cluster uses 17.3.x-cpu-ml-scala2.13 (same runtime as local CPU but different topology)
+    - ML cluster uses 18.x-cpu-ml-scala2.13 (same runtime as local CPU but different topology)
     - ML cluster includes spark.master=local[*], spark.databricks.cluster.profile=singleNode, custom_tags ResourceClass=SingleNode
     - Generates a single run_global_ml notebook (no orchestrator pattern — no CUDA memory issue)
     - Notebook installs mmf_sa[global] (same extras as NeuralForecast)
@@ -313,9 +313,9 @@ test_cases:
     - pattern: run_global_ml
       min_count: 1
       description: Must reference the run_global_ml notebook
-    - pattern: 17\.3\.x-cpu-ml-scala2\.13
+    - pattern: 18\.x-cpu-ml-scala2\.13
       min_count: 1
-      description: Must use the CPU 17.3 LTS ML runtime for the ML cluster
+      description: Must use the CPU 18 ML runtime for the ML cluster
     - pattern: singleNode
       min_count: 1
       description: ML cluster must be single-node (Spark conf or topology)
@@ -328,7 +328,7 @@ test_cases:
     guidelines:
     - Must use exact MMF model names (MLForecastLGBM, MLForecastAutoLGBM)
     - Must route MLForecast models to a SEPARATE single-node CPU cluster ({use_case}_ml_cluster), NOT the multi-node local CPU cluster ({use_case}_cpu_cluster)
-    - The ML cluster and local CPU cluster share the same runtime (17.3.x-cpu-ml-scala2.13) but have different topologies — single-node vs multi-node — and MUST be separate clusters
+    - The ML cluster and local CPU cluster share the same runtime (18.x-cpu-ml-scala2.13) but have different topologies — single-node vs multi-node — and MUST be separate clusters
     - Must generate a single run_global_ml notebook (no orchestrator + run_gpu pattern — LightGBM has no CUDA memory issue)
     - Must install mmf_sa[global] (which includes mlforecast, lightgbm, optuna)
     - Job must be {use_case}_global_ml_forecasting_{username}, separate from any local job
@@ -377,7 +377,7 @@ test_cases:
     - pattern: _gpu_cluster
       min_count: 1
       description: Must use GPU cluster for foundation models
-    - pattern: 18\.0\.x-gpu-ml-scala2\.13
+    - pattern: 18\.x-gpu-ml-scala2\.13
       min_count: 1
       description: Must use GPU runtime
     - pattern: foundation

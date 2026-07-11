@@ -23,8 +23,8 @@ class TestProvisionResourcesCPU:
 
         assert "i3.xlarge" in response, f"Expected 'i3.xlarge' for AWS CPU. Got: {response[:500]}"
 
-        assert "17.3.x-cpu-ml-scala2.13" in response, (
-            f"Expected CPU runtime '17.3.x-cpu-ml-scala2.13'. Got: {response[:500]}"
+        assert "18.x-cpu-ml-scala2.13" in response, (
+            f"Expected CPU runtime '18.x-cpu-ml-scala2.13'. Got: {response[:500]}"
         )
 
         response_lower = response.lower()
@@ -45,8 +45,8 @@ class TestProvisionResourcesGPU:
 
         response = result["final_response"]
 
-        assert "18.0.x-gpu-ml-scala2.13" in response, (
-            f"Expected GPU runtime '18.0.x-gpu-ml-scala2.13'. Got: {response[:500]}"
+        assert "18.x-gpu-ml-scala2.13" in response, (
+            f"Expected GPU runtime '18.x-gpu-ml-scala2.13'. Got: {response[:500]}"
         )
 
         assert "0" in response or "single" in response.lower(), (

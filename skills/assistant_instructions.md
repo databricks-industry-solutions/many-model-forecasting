@@ -80,10 +80,10 @@ The checklist is the primary mechanism that prevents silent gate-skipping. Treat
   - The agent MUST validate before launching any job that `{experiment_path}` is not equal to, an ancestor of, or a descendant of `{notebook_base_path}`. If it is, abort and pick a disjoint path.
   - The agent MUST pre-create the experiment via `MlflowClient().create_experiment(name={experiment_path})` (Skill 4 Step 1c) — handling `RESOURCE_ALREADY_EXISTS` as a no-op — so any collision surfaces immediately, not deep inside `run_forecast`. Do NOT rely on `mlflow.set_experiment` to create the experiment from inside a job.
   - The legacy hard-coded path `/Users/{user}/mmf/{use_case}` in old templates is FORBIDDEN. The current templates read `experiment_path` from a notebook widget / job parameter — the agent must populate that parameter from `{experiment_path}`.
-- **Cluster runtime versions are pinned and NOT interchangeable.** The two runtimes serve different purposes and use different node families:
-  - CPU job clusters (local models): **`17.3.x-cpu-ml-scala2.13`** — and only this version.
-  - GPU job clusters (global & foundation models): **`18.0.x-gpu-ml-scala2.13`** — and only this version.
-  - Do NOT substitute `17.3.x-gpu-ml-scala2.13` for the GPU cluster because it "looks like LTS." A GPU runtime is required for GPU node types and global/foundation models — using a CPU runtime on a GPU node fails or silently runs on CPU.
+- **Cluster runtime versions are pinned and NOT interchangeable.** All clusters use Databricks Runtime 18 for ML (`18.x`), but the CPU and GPU variants serve different purposes and use different node families:
+  - CPU job clusters (local & global ML models): **`18.x-cpu-ml-scala2.13`** — and only this version.
+  - GPU job clusters (global DL & foundation models): **`18.x-gpu-ml-scala2.13`** — and only this version.
+  - Do NOT substitute the CPU runtime (`18.x-cpu-ml-scala2.13`) on a GPU cluster. A GPU runtime is required for GPU node types and global DL / foundation models — using a CPU runtime on a GPU node fails or silently runs on CPU. Do NOT use any non-`18.x` runtime (e.g. a `17.3.x` LTS image).
   - Do NOT copy the `spark_version` from the local-job JSON template into the global or foundation job — each job has its own template with its own `spark_version`. Skill 4 Step 5c (post-create verification) reads back the `spark_version` of every job cluster and aborts if it doesn't match the rule above.
 
 ### MMF Workflow Routing

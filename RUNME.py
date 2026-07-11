@@ -66,7 +66,7 @@ job_json = {
             {
                 "job_cluster_key": "mmf_cpu_cluster",
                 "new_cluster": {
-                    "spark_version": "17.3.x-cpu-ml-scala2.12",
+                    "spark_version": "18.x-cpu-ml-scala2.13",
                     "spark_conf": {
                         "spark.databricks.delta.formatCheck.enabled": "false",
                         "spark.databricks.delta.schema.autoMerge.enabled": "true",
@@ -83,7 +83,7 @@ job_json = {
             {
                 "job_cluster_key": "mmf_gpu_cluster",
                 "new_cluster": {
-                    "spark_version": "18.0.x-gpu-ml-scala2.12",
+                    "spark_version": "18.x-gpu-ml-scala2.13",
                     "spark_conf": {
                         "spark.databricks.delta.formatCheck.enabled": "false",
                         "spark.databricks.delta.schema.autoMerge.enabled": "true",
