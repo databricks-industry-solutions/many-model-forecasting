@@ -830,7 +830,22 @@ The `SEQUENCE` interval changes by frequency:
 - Hourly (`freq=H`): `INTERVAL 1 HOUR`
 - Daily (`freq=D`): `INTERVAL 1 DAY`
 - Weekly (`freq=W`): `INTERVAL 7 DAY`
-- Monthly (`freq=M`): `INTERVAL 1 MONTH`
+- Monthly (`freq=M`): see the drift-safe pattern below — do NOT sequence directly on month-end dates.
+
+> ⛔ **MANDATORY for `freq=M` — drift-safe month spine.** For monthly data, `{use_case}_train_data.ds` values are month-END dates (`LAST_DAY`). You MUST NOT build the spine as `SEQUENCE(min_ds, max_ds, INTERVAL 1 MONTH)` directly: `SEQUENCE` computes `start + i·months`, so a start on the 30th/28th (a short-month end) lands on the 30th/28th of every later month, which is **not** the true last day of 31-day months. The `LEFT JOIN ... ON sp.expected_ds = t.ds` then misses every 31-day month and reports ~58% phantom "missing" for any series whose first month is a 30- or 28-day month. Instead, sequence on month-**starts** and wrap each element in `LAST_DAY(...)` so every generated `ds` is the true month-end (which is exactly what MMF requires and what Step 6b verifies):
+>
+> ```sql
+> date_spine AS (
+>   SELECT unique_id, LAST_DAY(m) AS expected_ds
+>   FROM (
+>     SELECT s.unique_id,
+>            EXPLODE(SEQUENCE(TRUNC(s.min_ds, 'MM'), TRUNC(g.max_ds, 'MM'), INTERVAL 1 MONTH)) AS m
+>     FROM series_bounds s CROSS JOIN global_max g
+>   )
+> )
+> ```
+>
+> The resulting spine dates are still month-end (`LAST_DAY`), so the join to `{use_case}_train_data` matches correctly and the Step 6b alignment check (`ds <> LAST_DAY(ds)`) still passes. Hourly/Daily/Weekly spines are unaffected — sequencing directly on the actual dates is exact for those frequencies (weekly steps of 7 days preserve the ISO-week-end Sunday).
 
 Before presenting the summary, also identify series with **trailing gaps** — i.e., series whose last observed data point is earlier than the global maximum date:
 
@@ -905,7 +920,7 @@ LEFT JOIN {catalog}.{schema}.{use_case}_train_data t
   ON sp.unique_id = t.unique_id AND sp.expected_ds = t.ds
 ```
 
-The `SEQUENCE` interval must match the detected frequency (same as Step 7a).
+The `SEQUENCE` interval must match the detected frequency (same as Step 7a). **For `freq=M`, use the drift-safe month spine from Step 7a** (sequence on `TRUNC(min_ds,'MM')` month-starts, then wrap in `LAST_DAY(...)`) — NOT `SEQUENCE(min_ds, max_ds, INTERVAL 1 MONTH)` on month-end dates. Otherwise the backfilled rows land on wrong days (e.g. `2021-10-30` instead of `2021-10-31`), which both mis-joins the original data and fails the Step 6b `ds <> LAST_DAY(ds)` alignment check.
 
 > ⛔ **Carry ALL covariate columns through the backfill.** If any exogenous regressors were selected, the `SELECT` MUST include every covariate column (`t.{col}` for each of `{static_features}`, `{dynamic_future_numerical}`, `{dynamic_future_categorical}`, `{dynamic_historical_numerical}`, `{dynamic_historical_categorical}`) — NOT just `y`. Backfilled spine rows (interior gaps and trailing gaps) have no match in the join, so their covariate values come back NULL. These NULLs are then repaired in Step 7d. Dropping the covariate columns here (selecting only `unique_id, ds, y`) would silently discard the regressors and break exogenous models downstream. For univariate runs (no regressors) this reduces to the original `unique_id, ds, y` select.
 
