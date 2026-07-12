@@ -548,6 +548,8 @@ FROM {catalog}.{schema}.{use_case}_scoring_data
 
 > "⚠️ {series_missing_scoring} series in training data have no future regressor values in the scoring table. These series will be dropped from scoring. Would you like to (a) proceed anyway, (b) exclude those series from training too, or (c) provide a corrected scoring source?"
 
+> ℹ️ **Note on the reverse direction.** This validation only detects series that are in training but missing from scoring. The opposite case — series present in scoring but later removed from training (e.g. excluded during imputation in Step 7c) — is the one that causes the empty-group `ValueError` at scoring time. Because exclusion happens *after* this step, that reconciliation is deferred to Step 8d, which runs once all training-table mutations are complete.
+
 #### ⛔ STOP GATE — Scoring data NULL handling
 
 **If any dynamic future columns have NULLs, always ask the user how to handle them. Do NOT proceed until the user confirms.**
@@ -828,7 +830,22 @@ The `SEQUENCE` interval changes by frequency:
 - Hourly (`freq=H`): `INTERVAL 1 HOUR`
 - Daily (`freq=D`): `INTERVAL 1 DAY`
 - Weekly (`freq=W`): `INTERVAL 7 DAY`
-- Monthly (`freq=M`): `INTERVAL 1 MONTH`
+- Monthly (`freq=M`): see the drift-safe pattern below — do NOT sequence directly on month-end dates.
+
+> ⛔ **MANDATORY for `freq=M` — drift-safe month spine.** For monthly data, `{use_case}_train_data.ds` values are month-END dates (`LAST_DAY`). You MUST NOT build the spine as `SEQUENCE(min_ds, max_ds, INTERVAL 1 MONTH)` directly: `SEQUENCE` computes `start + i·months`, so a start on the 30th/28th (a short-month end) lands on the 30th/28th of every later month, which is **not** the true last day of 31-day months. The `LEFT JOIN ... ON sp.expected_ds = t.ds` then misses every 31-day month and reports ~58% phantom "missing" for any series whose first month is a 30- or 28-day month. Instead, sequence on month-**starts** and wrap each element in `LAST_DAY(...)` so every generated `ds` is the true month-end (which is exactly what MMF requires and what Step 6b verifies):
+>
+> ```sql
+> date_spine AS (
+>   SELECT unique_id, LAST_DAY(m) AS expected_ds
+>   FROM (
+>     SELECT s.unique_id,
+>            EXPLODE(SEQUENCE(TRUNC(s.min_ds, 'MM'), TRUNC(g.max_ds, 'MM'), INTERVAL 1 MONTH)) AS m
+>     FROM series_bounds s CROSS JOIN global_max g
+>   )
+> )
+> ```
+>
+> The resulting spine dates are still month-end (`LAST_DAY`), so the join to `{use_case}_train_data` matches correctly and the Step 6b alignment check (`ds <> LAST_DAY(ds)`) still passes. Hourly/Daily/Weekly spines are unaffected — sequencing directly on the actual dates is exact for those frequencies (weekly steps of 7 days preserve the ISO-week-end Sunday).
 
 Before presenting the summary, also identify series with **trailing gaps** — i.e., series whose last observed data point is earlier than the global maximum date:
 
@@ -897,19 +914,22 @@ date_spine AS (
   FROM series_bounds s CROSS JOIN global_max g
 )
 SELECT sp.unique_id, sp.expected_ds AS ds, t.y
+       {for each covariate col in static_features + dynamic_future_* + dynamic_historical_*: , t.{col}}
 FROM date_spine sp
 LEFT JOIN {catalog}.{schema}.{use_case}_train_data t
   ON sp.unique_id = t.unique_id AND sp.expected_ds = t.ds
 ```
 
-The `SEQUENCE` interval must match the detected frequency (same as Step 7a).
+The `SEQUENCE` interval must match the detected frequency (same as Step 7a). **For `freq=M`, use the drift-safe month spine from Step 7a** (sequence on `TRUNC(min_ds,'MM')` month-starts, then wrap in `LAST_DAY(...)`) — NOT `SEQUENCE(min_ds, max_ds, INTERVAL 1 MONTH)` on month-end dates. Otherwise the backfilled rows land on wrong days (e.g. `2021-10-30` instead of `2021-10-31`), which both mis-joins the original data and fails the Step 6b `ds <> LAST_DAY(ds)` alignment check.
+
+> ⛔ **Carry ALL covariate columns through the backfill.** If any exogenous regressors were selected, the `SELECT` MUST include every covariate column (`t.{col}` for each of `{static_features}`, `{dynamic_future_numerical}`, `{dynamic_future_categorical}`, `{dynamic_historical_numerical}`, `{dynamic_historical_categorical}`) — NOT just `y`. Backfilled spine rows (interior gaps and trailing gaps) have no match in the join, so their covariate values come back NULL. These NULLs are then repaired in Step 7d. Dropping the covariate columns here (selecting only `unique_id, ds, y`) would silently discard the regressors and break exogenous models downstream. For univariate runs (no regressors) this reduces to the original `unique_id, ds, y` select.
 
 Then apply the chosen imputation on the now-explicit NULLs:
 
 - **Linear interpolation**: `(LAG(y IGNORE NULLS) + LEAD(y IGNORE NULLS)) / 2`
 - **Forward fill**: `LAST_VALUE(y IGNORE NULLS) OVER (PARTITION BY unique_id ORDER BY ds)`
 - **Fill with 0**: `COALESCE(y, 0)` — appropriate for count/demand data where absence means zero activity
-- **Exclusion**: Remove series exceeding the threshold from `{use_case}_train_data`
+- **Exclusion**: Remove series exceeding the threshold from `{use_case}_train_data`. ⚠️ If `{use_case}_scoring_data` exists, these excluded series MUST also be removed from it — Step 8d does this reconciliation after all training-table mutations complete.
 
 > **Trailing-gap fallback (required after interpolation).** Linear interpolation needs a future neighbor via `LEAD(y IGNORE NULLS)`. For trailing gaps — rows beyond a series' last observed value — there is no future data point, so `LEAD` returns NULL and interpolation leaves those rows unfilled. After applying interpolation, always run a forward-fill pass on any remaining NULLs:
 >
@@ -939,6 +959,52 @@ WHERE y IS NULL
 If `remaining_nulls > 0`, warn the user and suggest excluding those series or switching to forward-fill.
 
 Log the count of imputed values per series and excluded series for the cleaning report.
+
+### Step 7d: Impute covariate columns on backfilled rows (MANDATORY if exogenous regressors)
+
+> ⛔ **This step is not optional whenever any exogenous regressors were selected.** The Step 7c spine backfill creates rows for interior gaps and trailing gaps. Those rows get `y` imputed (Step 7c), but their **covariate columns are NULL** because they had no match in the join. Since Step 7c already imputes `y`, those rows now pass the pipeline's `_df = df[df[target].notnull()]` filter at scoring time and carry their NULL covariates into model fitting. Regressor-using local models (notably `StatsForecastAutoArima`, which runs an OLS of `y` on the regressor matrix during model selection) then fail with `MissingDataError: exog contains inf or nans`. This mirrors the scoring-side NULL handling in Step 6a — the training table needs the same treatment. Because `data_quality_check=False` at runtime, nothing downstream repairs these NULLs, so it must be done here.
+
+**Skip this step entirely if no exogenous regressors were selected (univariate run).**
+
+By this point (after Step 6b encoding) every covariate column — numeric or label-encoded categorical — is a numeric (`DOUBLE`) column, so a single forward-fill → back-fill pass per series repairs them all:
+
+- **Static features** are constant per series, so forward/back-fill fully recovers the correct value.
+- **Dynamic future / historical** regressors carry the last known value forward into gaps (and the first known value backward for any leading gap).
+
+```sql
+CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_train_data AS
+SELECT
+    unique_id,
+    ds,
+    y
+    {for each covariate col in static_features + dynamic_future_* + dynamic_historical_*:
+    , COALESCE(
+        LAST_VALUE({col} IGNORE NULLS) OVER (
+            PARTITION BY unique_id ORDER BY ds
+            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+        ),
+        FIRST_VALUE({col} IGNORE NULLS) OVER (
+            PARTITION BY unique_id ORDER BY ds
+            ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING
+        )
+      ) AS {col}}
+FROM {catalog}.{schema}.{use_case}_train_data
+```
+
+Then verify no covariate NULLs remain on any row with a valid `y` (every count MUST be 0):
+
+```sql
+SELECT
+    {for each covariate col:
+    SUM(CASE WHEN {col} IS NULL THEN 1 ELSE 0 END) AS {col}_nulls,}
+    COUNT(*) AS total_rows
+FROM {catalog}.{schema}.{use_case}_train_data
+WHERE y IS NOT NULL
+```
+
+Report the result as a single line:
+- On success: `Training covariate NULL check: PASS (0 nulls across all covariate columns)`.
+- If any `{col}_nulls > 0` (e.g. a series had no non-NULL value for a covariate at all), warn the user and either drop the affected series or fill the column with a global default (mean for numeric, mode for encoded categorical) before proceeding.
 
 ### Step 8: Anomaly Detection & Analysis Report
 
@@ -1059,6 +1125,43 @@ WHERE t.unique_id = s.unique_id
 
 Log the count of capped values per series for the cleaning report.
 
+### Step 8d: Reconcile scoring_data with train_data (MANDATORY if scoring_data exists)
+
+> ⛔ **This step is not optional whenever `{use_case}_scoring_data` exists.** Steps 7c and 8c can remove series from `{use_case}_train_data` (exclusion of series over the missing-data threshold, or any series dropped for other reasons). But `{use_case}_scoring_data` was created earlier in Step 6a with the **full** set of series, so any series excluded from training remains in the scoring table as an orphan. During scoring, `run_forecast` unions the scoring rows into the training source via `unionByName(score_df, allowMissingColumns=True)`; an orphan series contributes only future rows with `y = NULL`, so after the pipeline's `notnull()` filter it becomes an **empty group**. On the local StatsForecast path this makes `StatsForecast.fit` see zero series and raise `ValueError: number sections must be larger than 0.`, failing the whole run. Keeping the two tables' series sets identical is what prevents this — and it is exactly why Skills 4/5 can safely keep `data_quality_check=False`.
+
+**Skip this step entirely if `{use_case}_scoring_data` was not created (i.e. no dynamic future regressors).**
+
+Remove from the scoring table any series that is no longer present in the training table:
+
+```sql
+DELETE FROM {catalog}.{schema}.{use_case}_scoring_data
+WHERE unique_id NOT IN (
+    SELECT DISTINCT unique_id FROM {catalog}.{schema}.{use_case}_train_data
+)
+```
+
+Then verify the scoring table has no series missing from training (`scoring_not_in_train` MUST be 0):
+
+```sql
+SELECT
+  (SELECT COUNT(*) FROM (
+     SELECT unique_id FROM {catalog}.{schema}.{use_case}_scoring_data
+     EXCEPT
+     SELECT unique_id FROM {catalog}.{schema}.{use_case}_train_data
+  )) AS scoring_not_in_train,
+  (SELECT COUNT(*) FROM (
+     SELECT unique_id FROM {catalog}.{schema}.{use_case}_train_data
+     EXCEPT
+     SELECT unique_id FROM {catalog}.{schema}.{use_case}_scoring_data
+  )) AS train_not_in_scoring
+```
+
+Report the result as a single line:
+- On success: `Scoring/train series reconciliation: PASS (scoring_not_in_train=0)`.
+- If `scoring_not_in_train > 0`, re-run the `DELETE` above and re-check before proceeding.
+
+`train_not_in_scoring > 0` is a **separate** condition (training series that have no future regressor rows) already surfaced by Step 6a's `series_missing_scoring` validation. Those series are dropped from scoring by design and do NOT cause the empty-group failure, so this reconciliation step intentionally does not add rows to the scoring table.
+
 ### Step 9: Create {use_case}_cleaning_report
 
 ```sql
@@ -1145,9 +1248,9 @@ AskUserQuestion:
 ## Outputs
 
 - A conversation-carried `**{forecast_problem_brief}`** (3–6 lines) for downstream skills and optional research scoping
-- A Delta table `<catalog>.<schema>.{use_case}_train_data` with columns `unique_id` (STRING), `ds` (DATE for D/W/M, TIMESTAMP for H), `y` (DOUBLE), plus any exogenous regressor columns
+- A Delta table `<catalog>.<schema>.{use_case}_train_data` with columns `unique_id` (STRING), `ds` (DATE for D/W/M, TIMESTAMP for H), `y` (DOUBLE), plus any exogenous regressor columns. **When exogenous regressors are present, every row with a non-NULL `y` is guaranteed to have non-NULL covariate values** (Step 7d fills covariates on backfilled gap/trailing rows), so regressor-using local models like `StatsForecastAutoArima` do not hit `exog contains inf or nans` — this is what lets Skills 4/5 run with `data_quality_check=False`.
 - A Delta table `<catalog>.<schema>.{use_case}_cleaning_report` with columns: `unique_id`, `original_count`, `final_count`, `missing_filled`, `imputation_method`, `anomalies_capped`, `iqr_multiplier`, `excluded`, `exclusion_reason`
-- **(If dynamic future regressors)** A Delta table `<catalog>.<schema>.{use_case}_scoring_data` with columns `unique_id` (STRING), `ds` (DATE/TIMESTAMP — future dates only), all `static_features` columns (joined from `train_data`), plus all dynamic future regressor columns. Does NOT include `y` or `dynamic_historical_`* columns — `run_forecast` unions this with `train_data` via `allowMissingColumns=True`. This table is passed as `scoring_data` to `run_forecast` in Skill 4.
+- **(If dynamic future regressors)** A Delta table `<catalog>.<schema>.{use_case}_scoring_data` with columns `unique_id` (STRING), `ds` (DATE/TIMESTAMP — future dates only), all `static_features` columns (joined from `train_data`), plus all dynamic future regressor columns. Does NOT include `y` or `dynamic_historical_`* columns — `run_forecast` unions this with `train_data` via `allowMissingColumns=True`. This table is passed as `scoring_data` to `run_forecast` in Skill 4. **Reconciled with `train_data` in Step 8d** so it contains no series that were excluded from training — this guarantees no orphan (all-NULL-`y`) group reaches the pipeline, which is what allows Skills 4/5 to run with `data_quality_check=False`.
 - Exogenous regressor column lists carried forward: `{static_features}`, `{dynamic_future_numerical}`, `{dynamic_future_categorical}`, `{dynamic_historical_numerical}`, `{dynamic_historical_categorical}`
 - A reproducibility notebook uploaded to `notebooks/{use_case}/prep_data` that can re-create the training table with the same parameters
 - A summary: number of series, date range, detected frequency, cleaning actions taken
