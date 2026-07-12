@@ -899,12 +899,15 @@ date_spine AS (
   FROM series_bounds s CROSS JOIN global_max g
 )
 SELECT sp.unique_id, sp.expected_ds AS ds, t.y
+       {for each covariate col in static_features + dynamic_future_* + dynamic_historical_*: , t.{col}}
 FROM date_spine sp
 LEFT JOIN {catalog}.{schema}.{use_case}_train_data t
   ON sp.unique_id = t.unique_id AND sp.expected_ds = t.ds
 ```
 
 The `SEQUENCE` interval must match the detected frequency (same as Step 7a).
+
+> ⛔ **Carry ALL covariate columns through the backfill.** If any exogenous regressors were selected, the `SELECT` MUST include every covariate column (`t.{col}` for each of `{static_features}`, `{dynamic_future_numerical}`, `{dynamic_future_categorical}`, `{dynamic_historical_numerical}`, `{dynamic_historical_categorical}`) — NOT just `y`. Backfilled spine rows (interior gaps and trailing gaps) have no match in the join, so their covariate values come back NULL. These NULLs are then repaired in Step 7d. Dropping the covariate columns here (selecting only `unique_id, ds, y`) would silently discard the regressors and break exogenous models downstream. For univariate runs (no regressors) this reduces to the original `unique_id, ds, y` select.
 
 Then apply the chosen imputation on the now-explicit NULLs:
 
@@ -941,6 +944,52 @@ WHERE y IS NULL
 If `remaining_nulls > 0`, warn the user and suggest excluding those series or switching to forward-fill.
 
 Log the count of imputed values per series and excluded series for the cleaning report.
+
+### Step 7d: Impute covariate columns on backfilled rows (MANDATORY if exogenous regressors)
+
+> ⛔ **This step is not optional whenever any exogenous regressors were selected.** The Step 7c spine backfill creates rows for interior gaps and trailing gaps. Those rows get `y` imputed (Step 7c), but their **covariate columns are NULL** because they had no match in the join. Since Step 7c already imputes `y`, those rows now pass the pipeline's `_df = df[df[target].notnull()]` filter at scoring time and carry their NULL covariates into model fitting. Regressor-using local models (notably `StatsForecastAutoArima`, which runs an OLS of `y` on the regressor matrix during model selection) then fail with `MissingDataError: exog contains inf or nans`. This mirrors the scoring-side NULL handling in Step 6a — the training table needs the same treatment. Because `data_quality_check=False` at runtime, nothing downstream repairs these NULLs, so it must be done here.
+
+**Skip this step entirely if no exogenous regressors were selected (univariate run).**
+
+By this point (after Step 6b encoding) every covariate column — numeric or label-encoded categorical — is a numeric (`DOUBLE`) column, so a single forward-fill → back-fill pass per series repairs them all:
+
+- **Static features** are constant per series, so forward/back-fill fully recovers the correct value.
+- **Dynamic future / historical** regressors carry the last known value forward into gaps (and the first known value backward for any leading gap).
+
+```sql
+CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_train_data AS
+SELECT
+    unique_id,
+    ds,
+    y
+    {for each covariate col in static_features + dynamic_future_* + dynamic_historical_*:
+    , COALESCE(
+        LAST_VALUE({col} IGNORE NULLS) OVER (
+            PARTITION BY unique_id ORDER BY ds
+            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+        ),
+        FIRST_VALUE({col} IGNORE NULLS) OVER (
+            PARTITION BY unique_id ORDER BY ds
+            ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING
+        )
+      ) AS {col}}
+FROM {catalog}.{schema}.{use_case}_train_data
+```
+
+Then verify no covariate NULLs remain on any row with a valid `y` (every count MUST be 0):
+
+```sql
+SELECT
+    {for each covariate col:
+    SUM(CASE WHEN {col} IS NULL THEN 1 ELSE 0 END) AS {col}_nulls,}
+    COUNT(*) AS total_rows
+FROM {catalog}.{schema}.{use_case}_train_data
+WHERE y IS NOT NULL
+```
+
+Report the result as a single line:
+- On success: `Training covariate NULL check: PASS (0 nulls across all covariate columns)`.
+- If any `{col}_nulls > 0` (e.g. a series had no non-NULL value for a covariate at all), warn the user and either drop the affected series or fill the column with a global default (mean for numeric, mode for encoded categorical) before proceeding.
 
 ### Step 8: Anomaly Detection & Analysis Report
 
@@ -1184,7 +1233,7 @@ AskUserQuestion:
 ## Outputs
 
 - A conversation-carried `**{forecast_problem_brief}`** (3–6 lines) for downstream skills and optional research scoping
-- A Delta table `<catalog>.<schema>.{use_case}_train_data` with columns `unique_id` (STRING), `ds` (DATE for D/W/M, TIMESTAMP for H), `y` (DOUBLE), plus any exogenous regressor columns
+- A Delta table `<catalog>.<schema>.{use_case}_train_data` with columns `unique_id` (STRING), `ds` (DATE for D/W/M, TIMESTAMP for H), `y` (DOUBLE), plus any exogenous regressor columns. **When exogenous regressors are present, every row with a non-NULL `y` is guaranteed to have non-NULL covariate values** (Step 7d fills covariates on backfilled gap/trailing rows), so regressor-using local models like `StatsForecastAutoArima` do not hit `exog contains inf or nans` — this is what lets Skills 4/5 run with `data_quality_check=False`.
 - A Delta table `<catalog>.<schema>.{use_case}_cleaning_report` with columns: `unique_id`, `original_count`, `final_count`, `missing_filled`, `imputation_method`, `anomalies_capped`, `iqr_multiplier`, `excluded`, `exclusion_reason`
 - **(If dynamic future regressors)** A Delta table `<catalog>.<schema>.{use_case}_scoring_data` with columns `unique_id` (STRING), `ds` (DATE/TIMESTAMP — future dates only), all `static_features` columns (joined from `train_data`), plus all dynamic future regressor columns. Does NOT include `y` or `dynamic_historical_`* columns — `run_forecast` unions this with `train_data` via `allowMissingColumns=True`. This table is passed as `scoring_data` to `run_forecast` in Skill 4. **Reconciled with `train_data` in Step 8d** so it contains no series that were excluded from training — this guarantees no orphan (all-NULL-`y`) group reaches the pipeline, which is what allows Skills 4/5 to run with `data_quality_check=False`.
 - Exogenous regressor column lists carried forward: `{static_features}`, `{dynamic_future_numerical}`, `{dynamic_future_categorical}`, `{dynamic_historical_numerical}`, `{dynamic_historical_categorical}`
