@@ -548,6 +548,8 @@ FROM {catalog}.{schema}.{use_case}_scoring_data
 
 > "⚠️ {series_missing_scoring} series in training data have no future regressor values in the scoring table. These series will be dropped from scoring. Would you like to (a) proceed anyway, (b) exclude those series from training too, or (c) provide a corrected scoring source?"
 
+> ℹ️ **Note on the reverse direction.** This validation only detects series that are in training but missing from scoring. The opposite case — series present in scoring but later removed from training (e.g. excluded during imputation in Step 7c) — is the one that causes the empty-group `ValueError` at scoring time. Because exclusion happens *after* this step, that reconciliation is deferred to Step 8d, which runs once all training-table mutations are complete.
+
 #### ⛔ STOP GATE — Scoring data NULL handling
 
 **If any dynamic future columns have NULLs, always ask the user how to handle them. Do NOT proceed until the user confirms.**
@@ -909,7 +911,7 @@ Then apply the chosen imputation on the now-explicit NULLs:
 - **Linear interpolation**: `(LAG(y IGNORE NULLS) + LEAD(y IGNORE NULLS)) / 2`
 - **Forward fill**: `LAST_VALUE(y IGNORE NULLS) OVER (PARTITION BY unique_id ORDER BY ds)`
 - **Fill with 0**: `COALESCE(y, 0)` — appropriate for count/demand data where absence means zero activity
-- **Exclusion**: Remove series exceeding the threshold from `{use_case}_train_data`
+- **Exclusion**: Remove series exceeding the threshold from `{use_case}_train_data`. ⚠️ If `{use_case}_scoring_data` exists, these excluded series MUST also be removed from it — Step 8d does this reconciliation after all training-table mutations complete.
 
 > **Trailing-gap fallback (required after interpolation).** Linear interpolation needs a future neighbor via `LEAD(y IGNORE NULLS)`. For trailing gaps — rows beyond a series' last observed value — there is no future data point, so `LEAD` returns NULL and interpolation leaves those rows unfilled. After applying interpolation, always run a forward-fill pass on any remaining NULLs:
 >
@@ -1059,6 +1061,43 @@ WHERE t.unique_id = s.unique_id
 
 Log the count of capped values per series for the cleaning report.
 
+### Step 8d: Reconcile scoring_data with train_data (MANDATORY if scoring_data exists)
+
+> ⛔ **This step is not optional whenever `{use_case}_scoring_data` exists.** Steps 7c and 8c can remove series from `{use_case}_train_data` (exclusion of series over the missing-data threshold, or any series dropped for other reasons). But `{use_case}_scoring_data` was created earlier in Step 6a with the **full** set of series, so any series excluded from training remains in the scoring table as an orphan. During scoring, `run_forecast` unions the scoring rows into the training source via `unionByName(score_df, allowMissingColumns=True)`; an orphan series contributes only future rows with `y = NULL`, so after the pipeline's `notnull()` filter it becomes an **empty group**. On the local StatsForecast path this makes `StatsForecast.fit` see zero series and raise `ValueError: number sections must be larger than 0.`, failing the whole run. Keeping the two tables' series sets identical is what prevents this — and it is exactly why Skills 4/5 can safely keep `data_quality_check=False`.
+
+**Skip this step entirely if `{use_case}_scoring_data` was not created (i.e. no dynamic future regressors).**
+
+Remove from the scoring table any series that is no longer present in the training table:
+
+```sql
+DELETE FROM {catalog}.{schema}.{use_case}_scoring_data
+WHERE unique_id NOT IN (
+    SELECT DISTINCT unique_id FROM {catalog}.{schema}.{use_case}_train_data
+)
+```
+
+Then verify the scoring table has no series missing from training (`scoring_not_in_train` MUST be 0):
+
+```sql
+SELECT
+  (SELECT COUNT(*) FROM (
+     SELECT unique_id FROM {catalog}.{schema}.{use_case}_scoring_data
+     EXCEPT
+     SELECT unique_id FROM {catalog}.{schema}.{use_case}_train_data
+  )) AS scoring_not_in_train,
+  (SELECT COUNT(*) FROM (
+     SELECT unique_id FROM {catalog}.{schema}.{use_case}_train_data
+     EXCEPT
+     SELECT unique_id FROM {catalog}.{schema}.{use_case}_scoring_data
+  )) AS train_not_in_scoring
+```
+
+Report the result as a single line:
+- On success: `Scoring/train series reconciliation: PASS (scoring_not_in_train=0)`.
+- If `scoring_not_in_train > 0`, re-run the `DELETE` above and re-check before proceeding.
+
+`train_not_in_scoring > 0` is a **separate** condition (training series that have no future regressor rows) already surfaced by Step 6a's `series_missing_scoring` validation. Those series are dropped from scoring by design and do NOT cause the empty-group failure, so this reconciliation step intentionally does not add rows to the scoring table.
+
 ### Step 9: Create {use_case}_cleaning_report
 
 ```sql
@@ -1147,7 +1186,7 @@ AskUserQuestion:
 - A conversation-carried `**{forecast_problem_brief}`** (3–6 lines) for downstream skills and optional research scoping
 - A Delta table `<catalog>.<schema>.{use_case}_train_data` with columns `unique_id` (STRING), `ds` (DATE for D/W/M, TIMESTAMP for H), `y` (DOUBLE), plus any exogenous regressor columns
 - A Delta table `<catalog>.<schema>.{use_case}_cleaning_report` with columns: `unique_id`, `original_count`, `final_count`, `missing_filled`, `imputation_method`, `anomalies_capped`, `iqr_multiplier`, `excluded`, `exclusion_reason`
-- **(If dynamic future regressors)** A Delta table `<catalog>.<schema>.{use_case}_scoring_data` with columns `unique_id` (STRING), `ds` (DATE/TIMESTAMP — future dates only), all `static_features` columns (joined from `train_data`), plus all dynamic future regressor columns. Does NOT include `y` or `dynamic_historical_`* columns — `run_forecast` unions this with `train_data` via `allowMissingColumns=True`. This table is passed as `scoring_data` to `run_forecast` in Skill 4.
+- **(If dynamic future regressors)** A Delta table `<catalog>.<schema>.{use_case}_scoring_data` with columns `unique_id` (STRING), `ds` (DATE/TIMESTAMP — future dates only), all `static_features` columns (joined from `train_data`), plus all dynamic future regressor columns. Does NOT include `y` or `dynamic_historical_`* columns — `run_forecast` unions this with `train_data` via `allowMissingColumns=True`. This table is passed as `scoring_data` to `run_forecast` in Skill 4. **Reconciled with `train_data` in Step 8d** so it contains no series that were excluded from training — this guarantees no orphan (all-NULL-`y`) group reaches the pipeline, which is what allows Skills 4/5 to run with `data_quality_check=False`.
 - Exogenous regressor column lists carried forward: `{static_features}`, `{dynamic_future_numerical}`, `{dynamic_future_categorical}`, `{dynamic_historical_numerical}`, `{dynamic_historical_categorical}`
 - A reproducibility notebook uploaded to `notebooks/{use_case}/prep_data` that can re-create the training table with the same parameters
 - A summary: number of series, date range, detected frequency, cleaning actions taken
