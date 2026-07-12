@@ -113,4 +113,4 @@ Skill 1 (prep-and-clean-data)  →  Skill 2 (profile-and-classify, OPTIONAL)  �
 
 ### Communication Preferences
 - **Never display "⛔ STOP GATE" text in responses.** Still follow all stop gates internally (pause and ask the user), but do not show the literal "⛔ STOP GATE" label in the conversation. Keep the questions natural and conversational.
-- User prefers Spanish occasionally — respond in the language the user uses.
+- Always respond in English, unless the user explicitly asks you to respond in another language — in that case, use the language the user requested.
