@@ -4,7 +4,7 @@ version = "0.0.1"
 dependencies = [
     "omegaconf==2.3.0",
     "sktime==0.40.1",
-    "mlflow>=3.1.4",
+    "mlflow>=3.15.0",
 ]
 
 [project.optional-dependencies]

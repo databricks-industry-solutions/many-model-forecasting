@@ -326,8 +326,9 @@ Same config as the main ML cluster (single-node, CPU 18.x ML). A smaller instanc
 |--------|----------|------|------------|-------|
 | **(a) recommended** | `Standard_NC4as_T4_v3` | 1× T4 | 16 GB | Sufficient for MMF's foundation/DL models |
 | (b) | `Standard_NC64as_T4_v3` | 4× T4 | 64 GB | Multi-GPU throughput on T4 |
-| (c) | `Standard_NC24ads_A100_v4` | 1× A100 | 80 GB | Large models / higher throughput |
-| (d) | `Standard_NC48ads_A100_v4` | 2× A100 | 160 GB | Global + foundation, large multi-GPU |
+| (c) | `Standard_NV36ads_A10_v5` | 1× A10 | 24 GB | A10 (comparable to AWS A10G); more GPU memory than T4 |
+| (d) | `Standard_NV72ads_A10_v5` | 2× A10 | 48 GB | Multi-GPU A10 (max in NVadsA10v5 series) |
+| (e) | `Standard_NC24ads_A100_v4` | 1× A100 | 80 GB | Large models / higher throughput |
 
 **GCP:**
 | Option | Instance | GPUs | GPU Memory | Notes |
@@ -508,8 +509,9 @@ AskUserQuestion:
    Azure:
    (a) Standard_NC4as_T4_v3     — 1× T4 GPU, 16 GB    (recommended; sufficient for MMF models)
    (b) Standard_NC64as_T4_v3    — 4× T4 GPUs, 64 GB   (multi-GPU throughput)
-   (c) Standard_NC24ads_A100_v4 — 1× A100 GPU, 80 GB  (large models / higher throughput)
-   (d) Standard_NC48ads_A100_v4 — 2× A100 GPUs, 160 GB (global + foundation, large multi-GPU)
+   (c) Standard_NV36ads_A10_v5  — 1× A10 GPU, 24 GB   (A10, comparable to AWS A10G)
+   (d) Standard_NV72ads_A10_v5  — 2× A10 GPUs, 48 GB  (multi-GPU A10, max in series)
+   (e) Standard_NC24ads_A100_v4 — 1× A100 GPU, 80 GB  (large models / higher throughput)
 
    GCP:
    (a) g2-standard-4   — 1× L4 GPU, 24 GB
