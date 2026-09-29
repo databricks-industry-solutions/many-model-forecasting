@@ -1,0 +1,26 @@
+name: Unit tests (no-spark)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  pytest-no-spark:
+    name: pytest -m "not spark and not external_data"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --extra tests
+
+      - name: Run no-spark tests
+        run: uv run python -m pytest -m "not spark and not external_data" -v

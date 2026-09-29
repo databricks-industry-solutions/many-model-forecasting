@@ -21,7 +21,7 @@ def temp_dir(tmp_path) -> Path:
     shutil.rmtree(path)
 
 
-@pytest.fixture(scope="module", autouse=True)
+@pytest.fixture(scope="module")
 def spark_session():
     spark_warehouse_path = os.path.abspath(tempfile.mkdtemp())
     session = (

@@ -321,6 +321,7 @@ class TestExternalRegressorValidator:
         assert "null values in static features" in result.reason
 
 
+@pytest.mark.spark
 class TestDataQualityChecks:
     """Test suite for DataQualityChecks class."""
     
@@ -694,6 +695,7 @@ class TestDataQualityChecks:
             mock_logger.info.assert_called_with("All groups passed data quality checks")
 
 
+@pytest.mark.spark
 class TestDataQualityChecksIntegration:
     """Integration tests for DataQualityChecks."""
     

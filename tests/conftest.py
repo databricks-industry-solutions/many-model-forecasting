@@ -14,6 +14,10 @@ import os
 # Import existing fixtures
 from .unit.fixtures import spark_session
 
+# integration_test.py is a Databricks notebook (uses `dbutils`, `spark` globals)
+# and is executed via RUNME.py on a Databricks cluster, not locally by pytest.
+collect_ignore = ["integration_test.py"]
+
 
 @pytest.fixture
 def sample_time_series_data():
