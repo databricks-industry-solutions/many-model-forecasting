@@ -14,6 +14,7 @@ Get started now!
 
 Use a cluster with [Databricks Runtime 18 for ML](https://docs.databricks.com/aws/en/release-notes/runtime/18ml) or later for all model classes (local, global, and foundation).
 
+- Oct 2026: Added 14 foundation models through [foundationforecast](https://pypi.org/project/foundationforecast/) (TimeCopilot): Chronos-2, TimesFM 2.5 and 3.0, TiRex-2, Toto 1.0 and Toto-2, FlowState, PatchTST-FM, Tafsut and T0. They run on classic GPU clusters and serverless GPU. Try the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/foundationforecast/foundationforecast_daily.ipynb).
 - Jun 2026: Added **Hierarchical Reconciliation** — make forecasts coherent across hierarchy levels. Available as a standalone API (`run_reconciliation_multilevel`) and as [MMF Agent Skill 6](https://github.com/databricks-industry-solutions/many-model-forecasting/tree/main/skills/). See the [Hierarchical Reconciliation](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/README.md#hierarchical-reconciliation) docs. ([lourdesmartinezma](https://github.com/lourdesmartinezma))
 - May 2026: Added MLForecast for LightGBM support. Try it out [here](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/global_daily_ml.ipynb) or with [MMF Agent](https://github.com/databricks-industry-solutions/many-model-forecasting/tree/main/skills/).
 - May 2026: All model classes (local, global and foundation) run on serverless. Try it out [here](https://github.com/databricks-industry-solutions/many-model-forecasting/tree/main/examples/serverless).
@@ -47,7 +48,12 @@ pip install "mmf_sa[global] @ git+https://github.com/databricks-industry-solutio
 
 # Foundation models (chronos, timesfm)
 pip install "mmf_sa[foundation] @ git+https://github.com/databricks-industry-solutions/many-model-forecasting.git"
+
+# Foundation models from foundationforecast (FF* models)
+pip install "mmf_sa[foundationforecast] @ git+https://github.com/databricks-industry-solutions/many-model-forecasting.git"
 ```
+
+Install `foundation` and `foundationforecast` in separate environments. They pin different forks of the Chronos and TimesFM libraries; installing both works, but it isn't a supported setup.
 
 To pin to a specific version, you can use a commit hash or a tag:
 
@@ -264,11 +270,11 @@ We encourage you to read through [examples/daily/global_daily_dl.ipynb](https://
 
 ### Foundation Models
 
-Foundation time series models are mostly transformer based models pretrained on millions or billions of time points. These models can perform analysis (i.e. forecasting, anomaly detection, classification) on a previously unseen time series without training or tuning. We support open source models from multiple sources: [chronos](https://github.com/amazon-science/chronos-forecasting) (Chronos-Bolt and Chronos-2) and [timesfm](https://github.com/google-research/timesfm). This is a rapidly changing field, and we are working on updating the supported models and new features as the field evolves.
+Foundation time series models are mostly transformer based models pretrained on millions or billions of time points. These models can perform analysis (i.e. forecasting, anomaly detection, classification) on a previously unseen time series without training or tuning. We support open source models from multiple sources: [chronos](https://github.com/amazon-science/chronos-forecasting) (Chronos-Bolt and Chronos-2), [timesfm](https://github.com/google-research/timesfm), and [foundationforecast](https://pypi.org/project/foundationforecast/) (see [FoundationForecast models](#foundationforecast-models) below). This is a rapidly changing field, and we are working on updating the supported models and new features as the field evolves.
 
 To get started, attach the [examples/daily/foundation_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/foundation_daily.ipynb) notebook to a cluster running [DBR 18 for ML](https://docs.databricks.com/aws/en/release-notes/runtime/18ml) or later. We recommend using a single-node cluster with multiple GPU instances such as [g5.12xlarge [A10G]](https://aws.amazon.com/ec2/instance-types/g5/) on AWS or [Standard_NC4as_T4_v3](https://learn.microsoft.com/en-us/azure/virtual-machines/nct4-v3-series) (T4) or [Standard_NV36ads_A10_v5](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nvadsa10v5-series) (A10) on Azure. Multi-node setup is currently not supported. 
 
-Alternatively, you can run foundation models on [serverless GPU](https://docs.databricks.com/aws/en/compute/serverless/gpu) compute by passing `serverless=True` to `run_forecast`. This routes Chronos and TimesFM inference through a driver-only predict path instead of Spark Pandas UDFs. Required on serverless GPU because Spark Connect Python workers are CPU-only; the trade-off vs the classic-cluster path is no multi-GPU data parallelism. See [examples/serverless/foundation_serverless.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/serverless/foundation_serverless.ipynb) for a runnable example.
+Alternatively, you can run foundation models on [serverless GPU](https://docs.databricks.com/aws/en/compute/serverless/gpu) compute by passing `serverless=True` to `run_forecast`. This routes Chronos and TimesFM inference through a driver-only predict path instead of Spark Pandas UDFs. Required on serverless GPU because Spark Connect Python workers are CPU-only; the trade-off vs the classic-cluster path is no multi-GPU data parallelism. See [examples/serverless/foundation_serverless.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/serverless/foundation_serverless.ipynb) for a runnable example. FoundationForecast models always use the driver-only path, on classic clusters and serverless alike.
 
 You can choose the models you want to evaluate and forecast by specifying them in a list:
 
@@ -304,6 +310,33 @@ To modify the model hyperparameters, change the values in [mmf_sa/models/models_
 MMF is fully integrated with MLflow and so once the training kicks off, the experiments will be visible in the MLflow Tracking UI with the corresponding metrics and parameters. During the evaluation, the models are logged and registered to Unity Catalog.
 
 We encourage you to read through [examples/daily/foundation_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/foundation_daily.ipynb) notebook to better understand how foundation models can be applied to your time series using MMF. An example notebook for forecasting with exogenous regressors can be found in [examples/external_regressors/foundation_external_regressors_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/external_regressors/foundation_external_regressors_daily.ipynb). Refer to the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/post-evaluation-analysis.ipynb) for guidance on performing fine-grained model selection after running `run_forecast`. See how to define the backtesting parameters [here](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/README.md#how-backtesting-works).
+
+#### FoundationForecast models
+
+MMF also runs 14 foundation models through [foundationforecast](https://pypi.org/project/foundationforecast/) 0.1.10 (TimeCopilot). Their names start with `FF`:
+
+```python
+active_models = [
+    "FFChronos2",
+    "FFChronos2Small",
+    "FFTimesFM_2_5_200m",
+    "FFTimesFM_3_0",
+    "FFTiRex2",
+    "FFToto",
+    "FFToto2_22m",
+    "FFToto2_313m",
+    "FFToto2_1B",
+    "FFFlowState",
+    "FFPatchTSTFM_R2",
+    "FFPatchTSTFM_R1",
+    "FFTafsutBase",
+    "FFT0Beta",
+]
+```
+
+Install [requirements-foundationforecast.txt](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/requirements-foundationforecast.txt) or the `foundationforecast` extra instead of `requirements-foundation.txt`, then call `run_forecast` exactly as for the other foundation models. Use a single-node A10G cluster on [DBR 18 for ML](https://docs.databricks.com/aws/en/release-notes/runtime/18ml), or serverless GPU (A10, Standard environment version 6) with `serverless=True`. Inference runs on one GPU on the driver, so extra GPUs or worker nodes are not used.
+
+These models are univariate: covariate columns are ignored with a warning. Monthly data must use month-end timestamps. `FFTimesFM_3_0` and `FFPatchTSTFM_R1` have non-commercial licenses. See [mmf_sa/models/README.md](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/README.md#foundationforecast) for the full model list, licenses and hyperparameters, and [examples/foundationforecast/foundationforecast_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/foundationforecast/foundationforecast_daily.ipynb) for a runnable example.
 
 ## Hierarchical Reconciliation
 
@@ -401,6 +434,9 @@ Any issues discovered through the use of this project should be filed as GitHub 
 | Chronos          | Pretrained (Language) Models for Probabilistic Time Series Forecasting                             | Apache 2.0   | [https://github.com/amazon-science/chronos-forecasting](https://github.com/amazon-science/chronos-forecasting) |
 | Moirai           | Unified Training of Universal Time Series Forecasting Transformers                                 | Apache 2.0   | [https://github.com/SalesforceAIResearch/uni2ts](https://github.com/SalesforceAIResearch/uni2ts)               |
 | TimesFM          | A pretrained time-series foundation model developed by Google Research for time-series forecasting | Apache 2.0   | [https://github.com/google-research/timesfm](https://github.com/google-research/timesfm)                       |
+| foundationforecast | Foundation time series forecasting models (TimeCopilot)                                         | Apache 2.0   | [https://pypi.org/project/foundationforecast/](https://pypi.org/project/foundationforecast/)                   |
+| granite-tsfm     | IBM time series foundation model utilities (FlowState, PatchTST-FM)                                | Apache 2.0   | [https://pypi.org/project/granite-tsfm/](https://pypi.org/project/granite-tsfm/)                               |
+| tfc-t0           | T0 time series foundation model from The Forecasting Company                                       | Apache 2.0   | [https://github.com/theforecastingcompany/tfc-t0](https://github.com/theforecastingcompany/tfc-t0)             |
 | hierarchicalforecast | Hierarchical forecast reconciliation methods                                                   | Apache 2.0   | [https://pypi.org/project/hierarchicalforecast/](https://pypi.org/project/hierarchicalforecast/)               |
 | polars           | Fast multi-threaded DataFrame library                                                              | MIT          | [https://pypi.org/project/polars/](https://pypi.org/project/polars/)                                           |
 
