@@ -487,7 +487,7 @@ class Forecaster:
         if self.serverless and model_conf.get("framework") == "Moirai":
             raise ModelError(
                 "Moirai does not support serverless=True because it has no driver-only "
-                "single-GPU predict path. Use Chronos or TimesFM models on serverless GPU, "
+                "single-GPU predict path. Use Chronos, TimesFM or FoundationForecast models on serverless GPU, "
                 "or run Moirai on a classic GPU cluster."
             )
         with mlflow.start_run(experiment_id=self.experiment_id) as run:
@@ -497,7 +497,7 @@ class Forecaster:
             train_df, val_df = self.split_df_train_val(hist_df)
             input_example = train_df[train_df[self.conf['group_id']] == train_df[self.conf['group_id']] \
                 .unique()[0]].sort_values(by=[self.conf['date_col']])
-            if model_conf["framework"] in ["Chronos", "Moirai", "TimesFM"]:
+            if model_conf["framework"] in ["Chronos", "Moirai", "TimesFM", "FoundationForecast"]:
                 model.register(
                     registered_model_name=f"{self.conf['model_output']}.{model_conf['name']}_{self.conf['use_case_name']}",
                 )
@@ -686,7 +686,7 @@ class Forecaster:
         if self.serverless and model_conf.get("framework") == "Moirai":
             raise ModelError(
                 "Moirai does not support serverless=True because it has no driver-only "
-                "single-GPU predict path. Use Chronos or TimesFM models on serverless GPU, "
+                "single-GPU predict path. Use Chronos, TimesFM or FoundationForecast models on serverless GPU, "
                 "or run Moirai on a classic GPU cluster."
             )
         print(f"Running scoring for {model_conf['name']}...")
