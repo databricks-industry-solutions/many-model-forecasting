@@ -25,6 +25,8 @@ foundation = [
     "chronos-forecasting==2.2.2",
     "utilsforecast==0.2.15",
 ]
+# PyPI's torch 2.11.0 wheel targets CUDA 13 (NVIDIA driver 580+). Package metadata can't name an
+# index, so add --extra-index-url https://download.pytorch.org/whl/cu128 to get the CUDA 12.8 build.
 foundationforecast = [
     "foundationforecast==0.1.10",
     "torch==2.11.0",

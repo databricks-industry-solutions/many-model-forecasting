@@ -51,8 +51,10 @@ pip install "mmf_sa[global] @ git+https://github.com/databricks-industry-solutio
 pip install "mmf_sa[foundation] @ git+https://github.com/databricks-industry-solutions/many-model-forecasting.git"
 
 # Foundation models from foundationforecast (FF* models)
-pip install "mmf_sa[foundationforecast] @ git+https://github.com/databricks-industry-solutions/many-model-forecasting.git"
+pip install "mmf_sa[foundationforecast] @ git+https://github.com/databricks-industry-solutions/many-model-forecasting.git" --extra-index-url https://download.pytorch.org/whl/cu128
 ```
+
+The `--extra-index-url` installs PyTorch's CUDA 12.8 build, which works with NVIDIA drivers that support CUDA 12.8 or newer. Without it, pip installs the PyPI build, which needs a CUDA 13 driver (580 or newer) and fails on older drivers with "The NVIDIA driver on your system is too old". [requirements-foundationforecast.txt](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/requirements-foundationforecast.txt) already includes the index.
 
 Install `foundation` and `foundationforecast` in separate environments. They pin different forks of the Chronos and TimesFM libraries; installing both works, but it isn't a supported setup.
 

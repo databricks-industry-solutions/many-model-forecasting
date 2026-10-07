@@ -37,9 +37,10 @@ MODEL_PIP_REQUIREMENTS = {
         MMF_PACKAGE,
     ],
     "foundationforecast": [
+        "--extra-index-url https://download.pytorch.org/whl/cu128",
         "foundationforecast==0.1.10",
-        "torch==2.11.0",
-        "torchvision==0.26.0",
+        "torch==2.11.0+cu128",
+        "torchvision==0.26.0+cu128",
         "transformers==5.12.1",
         "huggingface-hub==1.33.0",
         "granite-tsfm==0.3.10",

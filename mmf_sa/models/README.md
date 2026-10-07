@@ -88,6 +88,7 @@ These models run through [foundationforecast](https://pypi.org/project/foundatio
 
 Things to know before using them:
 
+- **NVIDIA driver.** requirements-foundationforecast.txt and registered models install PyTorch's CUDA 12.8 build from the PyTorch package index, which needs a driver that supports CUDA 12.8 or newer. If you install the `mmf_sa[foundationforecast]` extra, add `--extra-index-url https://download.pytorch.org/whl/cu128`; otherwise pip installs the CUDA 13 build, which fails with "The NVIDIA driver on your system is too old" on drivers older than 580.
 - **Licenses.** `FFTimesFM_3_0` and `FFPatchTSTFM_R1` are released under non-commercial licenses. MMF logs a warning the first time each one is used. Check the model card before using any checkpoint commercially.
 - **Univariate only.** Covariate columns passed to `run_forecast` are ignored, with a one-time warning per model.
 - **Driver GPU.** Inference always runs on the driver's GPU, on classic clusters and on serverless GPU alike, so a single GPU processes all series. `serverless=True` is still required on serverless GPU for the rest of the MMF pipeline.

@@ -1,4 +1,5 @@
 import logging
+import pathlib
 import pickle
 import sys
 import types
@@ -12,6 +13,8 @@ from mmf_sa.exceptions import DataPreparationError, ModelInitializationError, Mo
 from mmf_sa.models import ModelRegistry
 from mmf_sa.models.foundationforecast import _runtime
 from mmf_sa.models.foundationforecast import FoundationForecastPipeline as ffp
+
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 EXPECTED_REPOS = {
     "FFChronos2": "amazon/chronos-2",
@@ -343,6 +346,24 @@ def test_tirex2_patch_fails_loudly_when_target_is_missing(fake_tirex2):
     del fake_tirex2._flashrnn_backend
     with pytest.raises(ModelInitializationError, match="timecopilot-tirex2"):
         _runtime.patch_tirex2_slstm_backend()
+
+
+def test_install_pins_agree_across_requirements_registry_and_extra():
+    import tomllib
+    from mmf_sa.models.abstract_model import MMF_PACKAGE, MODEL_PIP_REQUIREMENTS
+
+    lines = [
+        line.strip()
+        for line in (REPO_ROOT / "requirements-foundationforecast.txt").read_text().splitlines()
+        if line.strip() and not line.startswith("-r ")
+    ]
+    registered = [r for r in MODEL_PIP_REQUIREMENTS["foundationforecast"] if r != MMF_PACKAGE]
+    assert registered == lines
+    assert "--extra-index-url https://download.pytorch.org/whl/cu128" in lines
+    assert {"torch==2.11.0+cu128", "torchvision==0.26.0+cu128"} <= set(lines)
+
+    extra = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())["project"]["optional-dependencies"]["foundationforecast"]
+    assert extra == [r.split("+")[0] for r in lines if not r.startswith("--")]
 
 
 def test_ensure_runtime_runs_once(monkeypatch):
