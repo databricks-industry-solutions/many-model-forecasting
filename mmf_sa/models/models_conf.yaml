@@ -490,3 +490,135 @@ models:
     model_class: TimesFM_2_5_200m
     framework: TimesFM
     model_type: foundation
+
+  FFChronos2:
+    module: mmf_sa.models.foundationforecast.FoundationForecastPipeline
+    model_class: FFChronos2
+    framework: FoundationForecast
+    model_type: foundation
+    license: apache-2.0
+    batch_size: 16
+    dtype: float32
+
+  FFChronos2Small:
+    module: mmf_sa.models.foundationforecast.FoundationForecastPipeline
+    model_class: FFChronos2Small
+    framework: FoundationForecast
+    model_type: foundation
+    license: apache-2.0
+    batch_size: 16
+    dtype: float32
+
+  FFTimesFM_2_5_200m:
+    module: mmf_sa.models.foundationforecast.FoundationForecastPipeline
+    model_class: FFTimesFM_2_5_200m
+    framework: FoundationForecast
+    model_type: foundation
+    license: apache-2.0
+    context_length: 512
+    batch_size: 64
+    per_core_batch_size: 64
+
+  FFTimesFM_3_0:
+    module: mmf_sa.models.foundationforecast.FoundationForecastPipeline
+    model_class: FFTimesFM_3_0
+    framework: FoundationForecast
+    model_type: foundation
+    license: timesfm-non-commercial-license-v1.0
+    context_length: 512
+    batch_size: 64
+
+  FFTiRex2:
+    module: mmf_sa.models.foundationforecast.FoundationForecastPipeline
+    model_class: FFTiRex2
+    framework: FoundationForecast
+    model_type: foundation
+    license: apache-2.0
+    batch_size: 16
+
+  FFToto:
+    module: mmf_sa.models.foundationforecast.FoundationForecastPipeline
+    model_class: FFToto
+    framework: FoundationForecast
+    model_type: foundation
+    license: apache-2.0
+    context_length: 4096
+    batch_size: 16
+    num_samples: 32
+    samples_per_batch: 8
+
+  FFToto2_22m:
+    module: mmf_sa.models.foundationforecast.FoundationForecastPipeline
+    model_class: FFToto2_22m
+    framework: FoundationForecast
+    model_type: foundation
+    license: apache-2.0
+    context_length: 4096
+    batch_size: 16
+    decode_block_size: null
+
+  FFToto2_313m:
+    module: mmf_sa.models.foundationforecast.FoundationForecastPipeline
+    model_class: FFToto2_313m
+    framework: FoundationForecast
+    model_type: foundation
+    license: apache-2.0
+    context_length: 4096
+    batch_size: 16
+    decode_block_size: null
+
+  FFToto2_1B:
+    module: mmf_sa.models.foundationforecast.FoundationForecastPipeline
+    model_class: FFToto2_1B
+    framework: FoundationForecast
+    model_type: foundation
+    license: apache-2.0
+    context_length: 4096
+    batch_size: 16
+    decode_block_size: null
+
+  FFFlowState:
+    module: mmf_sa.models.foundationforecast.FoundationForecastPipeline
+    model_class: FFFlowState
+    framework: FoundationForecast
+    model_type: foundation
+    license: apache-2.0
+    context_length: 2048
+    batch_size: 1024
+    scale_factor: null
+
+  FFPatchTSTFM_R2:
+    module: mmf_sa.models.foundationforecast.FoundationForecastPipeline
+    model_class: FFPatchTSTFM_R2
+    framework: FoundationForecast
+    model_type: foundation
+    license: openmdw-1.0
+    context_length: 8192
+    batch_size: 2048
+
+  FFPatchTSTFM_R1:
+    module: mmf_sa.models.foundationforecast.FoundationForecastPipeline
+    model_class: FFPatchTSTFM_R1
+    framework: FoundationForecast
+    model_type: foundation
+    license: cc-by-nc-sa-4.0
+    context_length: 8192
+    batch_size: 2048
+
+  FFTafsutBase:
+    module: mmf_sa.models.foundationforecast.FoundationForecastPipeline
+    model_class: FFTafsutBase
+    framework: FoundationForecast
+    model_type: foundation
+    license: mit
+    context_length: 32768
+    batch_size: 64
+
+  FFT0Beta:
+    module: mmf_sa.models.foundationforecast.FoundationForecastPipeline
+    model_class: FFT0Beta
+    framework: FoundationForecast
+    model_type: foundation
+    license: apache-2.0
+    context_length: 4096
+    batch_size: 16

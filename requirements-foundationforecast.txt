@@ -1,0 +1,15 @@
+-r requirements.txt
+--extra-index-url https://download.pytorch.org/whl/cu128
+foundationforecast==0.1.10
+torch==2.11.0+cu128
+torchvision==0.26.0+cu128
+transformers==5.12.1
+huggingface-hub==1.33.0
+granite-tsfm==0.3.10
+timecopilot-chronos-forecasting==0.2.2
+timecopilot-timesfm==0.4.0
+timecopilot-tirex2==0.1.0
+timecopilot-toto==0.1.7
+timecopilot-toto-2==0.1.1
+tafsut==0.1.0
+tfc-t0==0.5.0

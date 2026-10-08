@@ -65,6 +65,37 @@ Model hyperparameters can be modified under [mmf_sa/models/models_conf.yaml](htt
 | ~~MoiraiMoEBase~~  | ~~[Salesforce/moirai-moe-1.0-R-base](https://huggingface.co/Salesforce/moirai-moe-1.0-R-base)~~   |                   | Temporarily disabled                                |
 | ~~MoiraiMoELarge~~ | ~~[Salesforce/moirai-moe-1.0-R-large](https://huggingface.co/Salesforce/moirai-moe-1.0-R-large)~~ |                   | Temporarily disabled                                |
 
+### FoundationForecast
+
+These models run through [foundationforecast](https://pypi.org/project/foundationforecast/) 0.1.10 (TimeCopilot) and use `framework: FoundationForecast`. Install them with [requirements-foundationforecast.txt](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/requirements-foundationforecast.txt) or the `mmf_sa[foundationforecast]` extra, not with `requirements-foundation.txt`. Installing both sets in one environment works, but it isn't a supported setup.
+
+| model              | source                                                                                                                      | license                             | covariate support | recommended compute                                 |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- | ----------------- | --------------------------------------------------- |
+| FFChronos2         | [amazon/chronos-2](https://huggingface.co/amazon/chronos-2)                                                                 | apache-2.0                          |                   | DBR 18 ML; single-node A10G GPU or serverless GPU |
+| FFChronos2Small    | [autogluon/chronos-2-small](https://huggingface.co/autogluon/chronos-2-small)                                               | apache-2.0                          |                   | DBR 18 ML; single-node A10G GPU or serverless GPU |
+| FFTimesFM_2_5_200m | [google/timesfm-2.5-200m-pytorch](https://huggingface.co/google/timesfm-2.5-200m-pytorch)                                   | apache-2.0                          |                   | DBR 18 ML; single-node A10G GPU or serverless GPU |
+| FFTimesFM_3_0      | [google/timesfm-3.0-pytorch](https://huggingface.co/google/timesfm-3.0-pytorch)                                             | timesfm-non-commercial-license-v1.0 |                   | DBR 18 ML; single-node A10G GPU or serverless GPU |
+| FFTiRex2           | [NX-AI/TiRex-2](https://huggingface.co/NX-AI/TiRex-2)                                                                       | apache-2.0                          |                   | DBR 18 ML; single-node A10G GPU or serverless GPU |
+| FFToto             | [Datadog/Toto-Open-Base-1.0](https://huggingface.co/Datadog/Toto-Open-Base-1.0)                                             | apache-2.0                          |                   | DBR 18 ML; single-node A10G GPU or serverless GPU |
+| FFToto2_22m        | [Datadog/Toto-2.0-22m](https://huggingface.co/Datadog/Toto-2.0-22m)                                                         | apache-2.0                          |                   | DBR 18 ML; single-node A10G GPU or serverless GPU |
+| FFToto2_313m       | [Datadog/Toto-2.0-313m](https://huggingface.co/Datadog/Toto-2.0-313m)                                                       | apache-2.0                          |                   | DBR 18 ML; single-node A10G GPU or serverless GPU |
+| FFToto2_1B         | [Datadog/Toto-2.0-1B](https://huggingface.co/Datadog/Toto-2.0-1B)                                                           | apache-2.0                          |                   | DBR 18 ML; single-node A10G GPU or serverless GPU |
+| FFFlowState        | [ibm-research/flowstate](https://huggingface.co/ibm-research/flowstate)                                                     | apache-2.0                          |                   | DBR 18 ML; single-node A10G GPU or serverless GPU |
+| FFPatchTSTFM_R2    | [ibm-granite/granite-timeseries-patchtst-fm-r2](https://huggingface.co/ibm-granite/granite-timeseries-patchtst-fm-r2)       | openmdw-1.0                         |                   | DBR 18 ML; single-node A10G GPU or serverless GPU |
+| FFPatchTSTFM_R1    | [ibm-research/patchtst-fm-r1](https://huggingface.co/ibm-research/patchtst-fm-r1)                                           | cc-by-nc-sa-4.0                     |                   | DBR 18 ML; single-node A10G GPU or serverless GPU |
+| FFTafsutBase       | [Tafsut-FM/tafsut-univariate-base](https://huggingface.co/Tafsut-FM/tafsut-univariate-base)                                 | mit                                 |                   | DBR 18 ML; single-node A10G GPU or serverless GPU |
+| FFT0Beta           | [theforecastingcompany/t0-beta](https://huggingface.co/theforecastingcompany/t0-beta)                                       | apache-2.0                          |                   | DBR 18 ML; single-node A10G GPU or serverless GPU |
+
+Things to know before using them:
+
+- **NVIDIA driver.** requirements-foundationforecast.txt and registered models install PyTorch's CUDA 12.8 build from the PyTorch package index, which needs a driver that supports CUDA 12.8 or newer. If you install the `mmf_sa[foundationforecast]` extra, add `--extra-index-url https://download.pytorch.org/whl/cu128`; otherwise pip installs the CUDA 13 build, which fails with "The NVIDIA driver on your system is too old" on drivers older than 580.
+- **Licenses.** `FFTimesFM_3_0` and `FFPatchTSTFM_R1` are released under non-commercial licenses. MMF logs a warning the first time each one is used. Check the model card before using any checkpoint commercially.
+- **Univariate only.** Covariate columns passed to `run_forecast` are ignored, with a one-time warning per model.
+- **Driver GPU.** Inference always runs on the driver's GPU, on classic clusters and on serverless GPU alike, so a single GPU processes all series. `serverless=True` is still required on serverless GPU for the rest of the MMF pipeline.
+- **Monthly data.** With `freq="M"`, every timestamp must be a month end; otherwise data preparation fails with an error instead of shifting the forecast dates.
+- **Hugging Face access.** None of these checkpoints is gated. If you hit Hugging Face rate limits, set `HF_TOKEN` from a Databricks secret before calling `run_forecast` (see the [example notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/foundationforecast/foundationforecast_daily.ipynb)). Never put the token in a config file.
+- **Memory.** MMF frees the previous checkpoint's weights when it switches to another model, so normally only one model's weights occupy the GPU. On classic clusters, up to about 4.4 GB from `FFToto2_1B` can stay allocated for a few more models before it is released. `FFToto2_1B` is the largest model: about 4.4 GB of GPU memory and 11 GB of host memory at peak.
+
 
 ## Configurable Hyperparameters
 
@@ -194,3 +225,18 @@ Supported MLForecast transform identifiers are `rolling_mean_<window>`, `rolling
 - `patch_size`: Patch length used by Moirai models.
 
 `TimesFM_2_5_200m` defines no model-specific hyperparameters in `models_conf.yaml`.
+
+### FoundationForecast Settings
+
+Each `FF*` model forwards only the keys listed in its YAML entry to foundationforecast. A key set to `null` is not passed, so the library default applies.
+
+- `context_length`: Maximum number of recent observations passed to the model. TimesFM models default to `512`; on an A10G this is about three times faster than `2048`. Raise it for long series with long seasonal patterns.
+- `batch_size`: Number of series per inference batch.
+- `dtype`: Weight precision for Chronos-2 models: `float32`, `bfloat16`, or `float16`.
+- `per_core_batch_size`: Batch size per device for `FFTimesFM_2_5_200m`. Leaving it at the library default of `1` makes inference roughly 20 times slower. `FFTimesFM_3_0` does not accept this key.
+- `num_samples`: Number of sampled paths for `FFToto` (Toto 1.0). The default is `32`; in our tests, `128` took four times as long with almost no change in point accuracy.
+- `samples_per_batch`: Number of sample paths per batch for `FFToto`; it must divide `num_samples`.
+- `decode_block_size`: Decoding block size for Toto-2 models.
+- `scale_factor`: FlowState time-scale factor. When `null`, foundationforecast derives it from `freq`.
+
+The `license` key in each entry is metadata used for the non-commercial warning; it is not passed to the model.
