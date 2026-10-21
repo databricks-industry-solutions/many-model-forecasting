@@ -324,7 +324,7 @@ We encourage you to read through [examples/daily/foundation_daily.ipynb](https:/
 
 #### FoundationForecast models
 
-MMF also runs 14 foundation models through [foundationforecast](https://pypi.org/project/foundationforecast/) 0.1.10. Their names start with `FF`:
+MMF also runs 19 foundation models through [foundationforecast](https://pypi.org/project/foundationforecast/) 0.1.15. Their names start with `FF`:
 
 ```python
 active_models = [
@@ -342,12 +342,17 @@ active_models = [
     "FFPatchTSTFM_R1",
     "FFTafsutBase",
     "FFT0Beta",
+    "FFT0Gamma",
+    "FFTimestral_5M",
+    "FFTimestral_28M",
+    "FFTimestral_123M",
+    "FFTimestral_209M",
 ]
 ```
 
 Install [requirements-foundationforecast.txt](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/requirements-foundationforecast.txt) or the `foundationforecast` extra instead of `requirements-foundation.txt`, then call `run_forecast` exactly as for the other foundation models. Use a single-node A10G cluster on [DBR 18 for ML](https://docs.databricks.com/aws/en/release-notes/runtime/18ml), or serverless GPU (A10, Standard environment version 6) with `serverless=True`. Inference runs on one GPU on the driver, so extra GPUs or worker nodes are not used.
 
-These models are univariate: covariate columns are ignored with a warning. Monthly data must use month-end timestamps. `FFTimesFM_3_0` and `FFPatchTSTFM_R1` have non-commercial licenses. See [mmf_sa/models/README.md](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/README.md#foundationforecast) for the full model list, licenses and hyperparameters, and the runnable examples for [daily](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/foundationforecast/foundationforecast_daily.ipynb), [weekly](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/foundationforecast/foundationforecast_weekly.ipynb) and [monthly](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/foundationforecast/foundationforecast_monthly.ipynb) data.
+These models are univariate: covariate columns are ignored with a warning. Monthly data must use month-end timestamps. `FFTimesFM_3_0` and `FFPatchTSTFM_R1` have non-commercial licenses, and the `FFTimestral_*` checkpoints use Mistral's Modified MIT license, which requires a commercial license from Mistral for companies above USD 20M monthly revenue. See [mmf_sa/models/README.md](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/README.md#foundationforecast) for the full model list, licenses and hyperparameters, and the runnable examples for [daily](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/foundationforecast/foundationforecast_daily.ipynb), [weekly](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/foundationforecast/foundationforecast_weekly.ipynb) and [monthly](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/foundationforecast/foundationforecast_monthly.ipynb) data.
 
 ## Hierarchical Reconciliation
 
@@ -460,6 +465,7 @@ Any issues discovered through the use of this project should be filed as GitHub 
 | foundationforecast   | Foundation time series forecasting models (TimeCopilot)                                            | Apache 2.0   | [https://pypi.org/project/foundationforecast/](https://pypi.org/project/foundationforecast/)                   |
 | granite-tsfm         | IBM time series foundation model utilities (FlowState, PatchTST-FM)                                | Apache 2.0   | [https://pypi.org/project/granite-tsfm/](https://pypi.org/project/granite-tsfm/)                               |
 | tfc-t0               | T0 time series foundation model from The Forecasting Company                                       | Apache 2.0   | [https://github.com/theforecastingcompany/tfc-t0](https://github.com/theforecastingcompany/tfc-t0)             |
+| timecopilot-timestral | Inference code for Mistral's Timestral time series foundation models                              | Apache 2.0   | [https://github.com/TimeCopilot/timestral](https://github.com/TimeCopilot/timestral)                           |
 | hierarchicalforecast | Hierarchical forecast reconciliation methods                                                       | Apache 2.0   | [https://pypi.org/project/hierarchicalforecast/](https://pypi.org/project/hierarchicalforecast/)               |
 | polars               | Fast multi-threaded DataFrame library                                                              | MIT          | [https://pypi.org/project/polars/](https://pypi.org/project/polars/)                                           |
 

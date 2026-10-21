@@ -22,6 +22,7 @@
 # MAGIC | foundationforecast | Foundation time series forecasting models (TimeCopilot) | Apache 2.0 | https://pypi.org/project/foundationforecast/
 # MAGIC | granite-tsfm | IBM time series foundation model utilities (FlowState, PatchTST-FM) | Apache 2.0 | https://pypi.org/project/granite-tsfm/
 # MAGIC | tfc-t0 | T0 time series foundation model from The Forecasting Company | Apache 2.0 | https://github.com/theforecastingcompany/tfc-t0
+# MAGIC | timecopilot-timestral | Inference code for Mistral's Timestral time series foundation models | Apache 2.0 | https://github.com/TimeCopilot/timestral
 # MAGIC
 # MAGIC The FoundationForecast models (`FF*`) download the following checkpoints from Hugging Face. Each checkpoint is subject to the license on its model card.
 # MAGIC
@@ -41,5 +42,10 @@
 # MAGIC | FFPatchTSTFM_R1 | ibm-research/patchtst-fm-r1 | CC BY-NC-SA 4.0 | https://huggingface.co/ibm-research/patchtst-fm-r1
 # MAGIC | FFTafsutBase | Tafsut-FM/tafsut-univariate-base | MIT | https://huggingface.co/Tafsut-FM/tafsut-univariate-base
 # MAGIC | FFT0Beta | theforecastingcompany/t0-beta | Apache 2.0 | https://huggingface.co/theforecastingcompany/t0-beta
+# MAGIC | FFT0Gamma | theforecastingcompany/t0-gamma | Apache 2.0 | https://huggingface.co/theforecastingcompany/t0-gamma
+# MAGIC | FFTimestral_5M | mistralai/Timestral-5M | Mistral Modified MIT | https://huggingface.co/mistralai/Timestral-5M
+# MAGIC | FFTimestral_28M | mistralai/Timestral-28M | Mistral Modified MIT | https://huggingface.co/mistralai/Timestral-28M
+# MAGIC | FFTimestral_123M | mistralai/Timestral-123M | Mistral Modified MIT | https://huggingface.co/mistralai/Timestral-123M
+# MAGIC | FFTimestral_209M | mistralai/Timestral-209M | Mistral Modified MIT | https://huggingface.co/mistralai/Timestral-209M
 
 # COMMAND ----------

@@ -32,6 +32,11 @@ NON_COMMERCIAL_LICENSES = frozenset({
     "timesfm-non-commercial-license-v1.0",
 })
 
+# Licenses that require a commercial agreement above a company-size threshold.
+REVENUE_CAPPED_LICENSES = frozenset({
+    "mistral-modified-mit",
+})
+
 COVARIATE_PARAMS = (
     "static_features",
     "dynamic_future_numerical",
@@ -162,6 +167,13 @@ class FoundationForecastForecaster(ForecastingRegressor):
                 f"license:{name}",
                 f"{name} is released under the non-commercial license '{license_id}'. "
                 "Check the license terms before using it.",
+            )
+        elif license_id in REVENUE_CAPPED_LICENSES:
+            _warn_once(
+                f"license:{name}",
+                f"{name} is released under the license '{license_id}', which requires a "
+                "commercial license from the rights holder for companies above a revenue "
+                "threshold. Check the license terms before using it.",
             )
 
     def ff_kwargs(self) -> dict:
@@ -381,7 +393,20 @@ class FFTafsutForecaster(FoundationForecastForecaster):
 
 class FFT0Forecaster(FoundationForecastForecaster):
     ff_class = "T0"
-    hparams = ("context_length", "batch_size")
+    hparams = (
+        "context_length",
+        "batch_size",
+        "trim_leading_missing",
+        "symmetric_averaging",
+        "clip_nonnegative",
+        "snap_integers",
+        "cross_inference",
+    )
+
+
+class FFTimestralForecaster(FoundationForecastForecaster):
+    ff_class = "Timestral"
+    hparams = ("context_length", "batch_size", "symmetric_averaging", "clip_nonnegative")
 
 
 class FFChronos2(FFChronosForecaster):
@@ -486,3 +511,38 @@ class FFT0Beta(FFT0Forecaster):
         super().__init__(params)
         self.params = params
         self.repo = "theforecastingcompany/t0-beta"
+
+
+class FFT0Gamma(FFT0Forecaster):
+    def __init__(self, params):
+        super().__init__(params)
+        self.params = params
+        self.repo = "theforecastingcompany/t0-gamma"
+
+
+class FFTimestral_5M(FFTimestralForecaster):
+    def __init__(self, params):
+        super().__init__(params)
+        self.params = params
+        self.repo = "mistralai/Timestral-5M"
+
+
+class FFTimestral_28M(FFTimestralForecaster):
+    def __init__(self, params):
+        super().__init__(params)
+        self.params = params
+        self.repo = "mistralai/Timestral-28M"
+
+
+class FFTimestral_123M(FFTimestralForecaster):
+    def __init__(self, params):
+        super().__init__(params)
+        self.params = params
+        self.repo = "mistralai/Timestral-123M"
+
+
+class FFTimestral_209M(FFTimestralForecaster):
+    def __init__(self, params):
+        super().__init__(params)
+        self.params = params
+        self.repo = "mistralai/Timestral-209M"

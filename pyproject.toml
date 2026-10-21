@@ -28,7 +28,7 @@ foundation = [
 # PyPI's torch 2.11.0 wheel targets CUDA 13 (NVIDIA driver 580+). Package metadata can't name an
 # index, so add --extra-index-url https://download.pytorch.org/whl/cu128 to get the CUDA 12.8 build.
 foundationforecast = [
-    "foundationforecast==0.1.10",
+    "foundationforecast==0.1.15",
     "torch==2.11.0",
     "torchvision==0.26.0",
     "transformers==5.12.1",
@@ -36,11 +36,15 @@ foundationforecast = [
     "granite-tsfm==0.3.10",
     "timecopilot-chronos-forecasting==0.2.2",
     "timecopilot-timesfm==0.4.0",
+    "timecopilot-timestral==0.1.0",
     "timecopilot-tirex2==0.1.0",
     "timecopilot-toto==0.1.7",
     "timecopilot-toto-2==0.1.1",
     "tafsut==0.1.0",
-    "tfc-t0==0.5.0",
+    "tfc-t0[torch]==0.6.0",
+    # Upper bounds of fev and nixtla; without them pip backtracks for hours in a fresh environment.
+    "datasets>=4,<5",
+    "pyarrow<24",
 ]
 hierarchical = [
     "hierarchicalforecast==1.5.1",

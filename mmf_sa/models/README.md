@@ -67,7 +67,7 @@ Model hyperparameters can be modified under [mmf_sa/models/models_conf.yaml](htt
 
 ### FoundationForecast
 
-These models run through [foundationforecast](https://pypi.org/project/foundationforecast/) 0.1.10 (TimeCopilot) and use `framework: FoundationForecast`. Install them with [requirements-foundationforecast.txt](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/requirements-foundationforecast.txt) or the `mmf_sa[foundationforecast]` extra, not with `requirements-foundation.txt`. Installing both sets in one environment works, but it isn't a supported setup.
+These models run through [foundationforecast](https://pypi.org/project/foundationforecast/) 0.1.15 (TimeCopilot) and use `framework: FoundationForecast`. Install them with [requirements-foundationforecast.txt](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/requirements-foundationforecast.txt) or the `mmf_sa[foundationforecast]` extra, not with `requirements-foundation.txt`. Installing both sets in one environment works, but it isn't a supported setup.
 
 | model              | source                                                                                                                      | license                             | covariate support | recommended compute                                 |
 | ------------------ | --------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- | ----------------- | --------------------------------------------------- |
@@ -85,16 +85,21 @@ These models run through [foundationforecast](https://pypi.org/project/foundatio
 | FFPatchTSTFM_R1    | [ibm-research/patchtst-fm-r1](https://huggingface.co/ibm-research/patchtst-fm-r1)                                           | cc-by-nc-sa-4.0                     |                   | DBR 18 ML; single-node A10G GPU or serverless GPU |
 | FFTafsutBase       | [Tafsut-FM/tafsut-univariate-base](https://huggingface.co/Tafsut-FM/tafsut-univariate-base)                                 | mit                                 |                   | DBR 18 ML; single-node A10G GPU or serverless GPU |
 | FFT0Beta           | [theforecastingcompany/t0-beta](https://huggingface.co/theforecastingcompany/t0-beta)                                       | apache-2.0                          |                   | DBR 18 ML; single-node A10G GPU or serverless GPU |
+| FFT0Gamma          | [theforecastingcompany/t0-gamma](https://huggingface.co/theforecastingcompany/t0-gamma)                                     | apache-2.0                          |                   | DBR 18 ML; single-node A10G GPU or serverless GPU |
+| FFTimestral_5M     | [mistralai/Timestral-5M](https://huggingface.co/mistralai/Timestral-5M)                                                     | mistral-modified-mit                |                   | DBR 18 ML; single-node A10G GPU or serverless GPU |
+| FFTimestral_28M    | [mistralai/Timestral-28M](https://huggingface.co/mistralai/Timestral-28M)                                                   | mistral-modified-mit                |                   | DBR 18 ML; single-node A10G GPU or serverless GPU |
+| FFTimestral_123M   | [mistralai/Timestral-123M](https://huggingface.co/mistralai/Timestral-123M)                                                 | mistral-modified-mit                |                   | DBR 18 ML; single-node A10G GPU or serverless GPU |
+| FFTimestral_209M   | [mistralai/Timestral-209M](https://huggingface.co/mistralai/Timestral-209M)                                                 | mistral-modified-mit                |                   | DBR 18 ML; single-node A10G GPU or serverless GPU |
 
 Things to know before using them:
 
 - **NVIDIA driver.** requirements-foundationforecast.txt and registered models install PyTorch's CUDA 12.8 build from the PyTorch package index, which needs a driver that supports CUDA 12.8 or newer. If you install the `mmf_sa[foundationforecast]` extra, add `--extra-index-url https://download.pytorch.org/whl/cu128`; otherwise pip installs the CUDA 13 build, which fails with "The NVIDIA driver on your system is too old" on drivers older than 580.
-- **Licenses.** `FFTimesFM_3_0` and `FFPatchTSTFM_R1` are released under non-commercial licenses. MMF logs a warning the first time each one is used. Check the model card before using any checkpoint commercially.
+- **Licenses.** `FFTimesFM_3_0` and `FFPatchTSTFM_R1` are released under non-commercial licenses. The `FFTimestral_*` checkpoints use Mistral's Modified MIT license: companies above USD 20M monthly revenue need a commercial license from Mistral. MMF logs a warning the first time each of these models is used. Check the model card before using any checkpoint commercially.
 - **Univariate only.** Covariate columns passed to `run_forecast` are ignored, with a one-time warning per model.
 - **Driver GPU.** Inference always runs on the driver's GPU, on classic clusters and on serverless GPU alike, so a single GPU processes all series. `serverless=True` is still required on serverless GPU for the rest of the MMF pipeline.
 - **Monthly data.** With `freq="M"`, every timestamp must be a month end; otherwise data preparation fails with an error instead of shifting the forecast dates.
 - **Hugging Face access.** None of these checkpoints is gated. If you hit Hugging Face rate limits, set `HF_TOKEN` from a Databricks secret before calling `run_forecast` (see the [example notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/foundationforecast/foundationforecast_daily.ipynb)). Never put the token in a config file.
-- **Memory.** MMF frees the previous checkpoint's weights when it switches to another model, so normally only one model's weights occupy the GPU. On classic clusters, up to about 4.4 GB from `FFToto2_1B` can stay allocated for a few more models before it is released. `FFToto2_1B` is the largest model: about 4.4 GB of GPU memory and 11 GB of host memory at peak.
+- **Memory.** MMF frees the previous checkpoint's weights when it switches to another model, so normally only one model's weights occupy the GPU. On classic clusters, up to about 4.4 GB from `FFToto2_1B` can stay allocated for a few more models before it is released. `FFToto2_1B` is the largest model: about 4.4 GB of GPU memory and 11 GB of host memory at peak. `FFT0Gamma` and the Timestral models stay below 2 GB of GPU memory on histories of up to about 10,000 points. `FFT0Gamma` and the Timestral models stay below 2 GB of GPU memory on histories of up to about 10,000 points.
 
 
 ## Configurable Hyperparameters
@@ -238,5 +243,8 @@ Each `FF*` model forwards only the keys listed in its YAML entry to foundationfo
 - `samples_per_batch`: Number of sample paths per batch for `FFToto`; it must divide `num_samples`.
 - `decode_block_size`: Decoding block size for Toto-2 models.
 - `scale_factor`: FlowState time-scale factor. When `null`, foundationforecast derives it from `freq`.
+- `trim_leading_missing`, `symmetric_averaging`, `clip_nonnegative`, `snap_integers`: T0 inference options. They treat missing values before a series' first observation as padding, average each forecast with the mirrored forecast of the negated series (this runs the model twice), clip forecasts at zero for series with non-negative history, and round forecasts for series with integer history. `FFT0Gamma` enables all four, as in its published benchmark scores; `FFT0Beta` leaves them off.
+- `cross_inference`: Number of series T0 forecasts jointly as one group. MMF sets it to `0`, so each series is forecast on its own; with a positive value, a series' forecast depends on which other series share its batch.
+- `symmetric_averaging`, `clip_nonnegative` for `FFTimestral_*`: the same averaging and non-negative clipping as for T0. Both are on by default, matching Timestral's published settings.
 
 The `license` key in each entry is metadata used for the non-commercial warning; it is not passed to the model.

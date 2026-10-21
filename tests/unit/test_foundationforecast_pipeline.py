@@ -31,8 +31,14 @@ EXPECTED_REPOS = {
     "FFPatchTSTFM_R1": "ibm-research/patchtst-fm-r1",
     "FFTafsutBase": "Tafsut-FM/tafsut-univariate-base",
     "FFT0Beta": "theforecastingcompany/t0-beta",
+    "FFT0Gamma": "theforecastingcompany/t0-gamma",
+    "FFTimestral_5M": "mistralai/Timestral-5M",
+    "FFTimestral_28M": "mistralai/Timestral-28M",
+    "FFTimestral_123M": "mistralai/Timestral-123M",
+    "FFTimestral_209M": "mistralai/Timestral-209M",
 }
 NON_COMMERCIAL_MODELS = {"FFTimesFM_3_0", "FFPatchTSTFM_R1"}
+REVENUE_CAPPED_MODELS = {"FFTimestral_5M", "FFTimestral_28M", "FFTimestral_123M", "FFTimestral_209M"}
 MMF_ENTRY_KEYS = {"module", "model_class", "framework", "model_type", "license"}
 H = 4
 
@@ -199,6 +205,8 @@ def test_every_model_declares_a_license_and_nc_models_are_flagged():
     assert all(entry.get("license") for entry in entries.values())
     flagged = {n for n, e in entries.items() if e["license"] in ffp.NON_COMMERCIAL_LICENSES}
     assert flagged == NON_COMMERCIAL_MODELS
+    capped = {n for n, e in entries.items() if e["license"] in ffp.REVENUE_CAPPED_LICENSES}
+    assert capped == REVENUE_CAPPED_MODELS
 
 
 def test_predict_returns_one_row_per_series_with_original_ids():
@@ -296,6 +304,23 @@ def test_non_commercial_license_warns_once(caplog):
         make_model("FFChronos2")
     messages = [r.message for r in caplog.records if "non-commercial" in r.message]
     assert len(messages) == 1 and "FFTimesFM_3_0" in messages[0]
+
+
+def test_revenue_capped_license_warns_once(caplog):
+    with caplog.at_level(logging.WARNING, logger=ffp.__name__):
+        make_model("FFTimestral_5M")
+        make_model("FFTimestral_5M")
+        make_model("FFT0Gamma")
+    messages = [r.message for r in caplog.records if "revenue threshold" in r.message]
+    assert len(messages) == 1 and "FFTimestral_5M" in messages[0]
+    assert "mistral-modified-mit" in messages[0]
+
+
+def test_t0_gamma_uses_published_inference_flags_without_cross_series_grouping():
+    make_model("FFT0Gamma").predict(make_df(pd.date_range("2024-01-01", periods=30, freq="D")))
+    kwargs = FakeFFModel.instances[-1].kwargs
+    assert kwargs["cross_inference"] == 0
+    assert all(kwargs[k] for k in ("trim_leading_missing", "symmetric_averaging", "clip_nonnegative", "snap_integers"))
 
 
 def test_backtest_reports_metrics_per_series_and_window():

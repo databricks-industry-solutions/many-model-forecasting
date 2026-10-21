@@ -622,3 +622,68 @@ models:
     license: apache-2.0
     context_length: 4096
     batch_size: 16
+    trim_leading_missing: false
+    symmetric_averaging: false
+    clip_nonnegative: false
+    snap_integers: false
+    cross_inference: 0
+
+  FFT0Gamma:
+    module: mmf_sa.models.foundationforecast.FoundationForecastPipeline
+    model_class: FFT0Gamma
+    framework: FoundationForecast
+    model_type: foundation
+    license: apache-2.0
+    context_length: 4096
+    batch_size: 16
+    trim_leading_missing: true
+    symmetric_averaging: true
+    clip_nonnegative: true
+    snap_integers: true
+    # Values above 0 forecast series of a batch jointly, so a series' forecast
+    # would depend on which other series share its batch.
+    cross_inference: 0
+
+  FFTimestral_5M:
+    module: mmf_sa.models.foundationforecast.FoundationForecastPipeline
+    model_class: FFTimestral_5M
+    framework: FoundationForecast
+    model_type: foundation
+    license: mistral-modified-mit
+    context_length: 32768
+    batch_size: 64
+    symmetric_averaging: true
+    clip_nonnegative: true
+
+  FFTimestral_28M:
+    module: mmf_sa.models.foundationforecast.FoundationForecastPipeline
+    model_class: FFTimestral_28M
+    framework: FoundationForecast
+    model_type: foundation
+    license: mistral-modified-mit
+    context_length: 32768
+    batch_size: 64
+    symmetric_averaging: true
+    clip_nonnegative: true
+
+  FFTimestral_123M:
+    module: mmf_sa.models.foundationforecast.FoundationForecastPipeline
+    model_class: FFTimestral_123M
+    framework: FoundationForecast
+    model_type: foundation
+    license: mistral-modified-mit
+    context_length: 32768
+    batch_size: 64
+    symmetric_averaging: true
+    clip_nonnegative: true
+
+  FFTimestral_209M:
+    module: mmf_sa.models.foundationforecast.FoundationForecastPipeline
+    model_class: FFTimestral_209M
+    framework: FoundationForecast
+    model_type: foundation
+    license: mistral-modified-mit
+    context_length: 32768
+    batch_size: 64
+    symmetric_averaging: true
+    clip_nonnegative: true
