@@ -181,7 +181,8 @@ class ChronosForecaster(ForecastingRegressor):
         return forecast_df, self.model
 
     def forecast(self, df: pd.DataFrame, spark=None):
-        return self.predict(df, spark=spark)
+        hist_df = df[df[self.params.target].notnull()]
+        return self.predict(hist_df, spark=spark)
 
     def calculate_metrics(
         self, hist_df: pd.DataFrame, val_df: pd.DataFrame, curr_date, spark=None
