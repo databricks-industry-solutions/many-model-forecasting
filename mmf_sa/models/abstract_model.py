@@ -2,7 +2,9 @@ from abc import abstractmethod
 import numpy as np
 import pandas as pd
 import cloudpickle
-from typing import Dict, Union
+from typing import Dict, List, Union
+from pyspark.sql import DataFrame
+from pyspark.sql.functions import array_sort, collect_list, struct
 from sklearn.base import BaseEstimator, RegressorMixin
 from sktime.performance_metrics.forecasting import (
     MeanAbsoluteError,
@@ -44,6 +46,25 @@ MODEL_PIP_REQUIREMENTS = {
         MMF_PACKAGE,
     ],
 }
+
+
+def collect_sorted(sdf: DataFrame, group_col: str, order_col: str, value_cols: List[str]) -> DataFrame:
+    """
+    Groups a Spark DataFrame into one row per group, with one array per column sorted by order_col.
+    collect_list alone does not guarantee the order of the collected values after a shuffle, so the
+    arrays are built from (order_col, *value_cols) structs sorted with array_sort (structs compare
+    field by field, order_col first), then split back into one array per column.
+    Parameters:
+        sdf (DataFrame): A Spark DataFrame.
+        group_col (str): The column to group by.
+        order_col (str): The column that orders the values inside each group (e.g. the date column).
+        value_cols (List[str]): The other columns to collect.
+    Returns: DataFrame: group_col, order_col and value_cols, each value column as a sorted array.
+    """
+    rows = sdf.groupBy(group_col).agg(
+        array_sort(collect_list(struct(order_col, *value_cols))).alias("_rows")
+    )
+    return rows.select(group_col, *[rows["_rows"].getField(c).alias(c) for c in [order_col, *value_cols]])
 
 
 class ForecastingRegressor(BaseEstimator, RegressorMixin):

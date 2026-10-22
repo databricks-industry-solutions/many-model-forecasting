@@ -17,9 +17,9 @@ from sktime.performance_metrics.forecasting import (
     MeanAbsolutePercentageError,
 )
 from typing import Iterator, Tuple
-from pyspark.sql.functions import collect_list, pandas_udf
+from pyspark.sql.functions import pandas_udf
 from pyspark.sql import DataFrame
-from mmf_sa.models.abstract_model import ForecastingRegressor, MODEL_PIP_REQUIREMENTS
+from mmf_sa.models.abstract_model import ForecastingRegressor, MODEL_PIP_REQUIREMENTS, collect_sorted
 from mmf_sa.exceptions import (
     MissingFeatureError,
     UnsupportedMetricError,
@@ -72,15 +72,14 @@ class ChronosForecaster(ForecastingRegressor):
         return horizon_timestamps_udf
 
     def prepare_data(self, df: pd.DataFrame, future: bool = False, spark=None) -> DataFrame:
-        df = spark.createDataFrame(df)
-        df = (
-            df.groupBy(self.params.group_id)
-            .agg(
-                collect_list(self.params.date_col).alias('ds'),
-                collect_list(self.params.target).alias('y'),
-            )).withColumnRenamed(self.params.group_id, "unique_id")
-
-        return df
+        df = collect_sorted(
+            spark.createDataFrame(df), self.params.group_id, self.params.date_col, [self.params.target]
+        )
+        return df.select(
+            df[self.params.group_id].alias("unique_id"),
+            df[self.params.date_col].alias("ds"),
+            df[self.params.target].alias("y"),
+        )
 
     def predict(self,
                 hist_df: pd.DataFrame,
@@ -417,11 +416,7 @@ class Chronos2Forecaster(ChronosForecaster):
         core_pdf = hist_pdf[["unique_id", "ds", "y"]].sort_values(
             by=["unique_id", "ds"]
         )
-        core_sdf = spark.createDataFrame(core_pdf)
-        core_sdf = core_sdf.groupBy("unique_id").agg(
-            collect_list("ds").alias("ds"),
-            collect_list("y").alias("y"),
-        )
+        core_sdf = collect_sorted(spark.createDataFrame(core_pdf), "unique_id", "ds", ["y"])
 
         if dynamic_vars:
             if val_df is not None:
@@ -432,10 +427,10 @@ class Chronos2Forecaster(ChronosForecaster):
             else:
                 union_pdf = hist_pdf.sort_values(by=["unique_id", "ds"])
 
-            cov_pdf = union_pdf[["unique_id"] + dynamic_vars]
-            cov_sdf = spark.createDataFrame(cov_pdf)
-            cov_agg = [collect_list(v).alias(v) for v in dynamic_vars]
-            cov_sdf = cov_sdf.groupBy("unique_id").agg(*cov_agg)
+            cov_pdf = union_pdf[["unique_id", "ds"] + dynamic_vars]
+            cov_sdf = collect_sorted(
+                spark.createDataFrame(cov_pdf), "unique_id", "ds", dynamic_vars
+            ).drop("ds")
             core_sdf = core_sdf.join(cov_sdf, on="unique_id", how="left")
 
         return core_sdf

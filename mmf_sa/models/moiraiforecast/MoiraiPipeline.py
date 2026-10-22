@@ -11,9 +11,9 @@ from sktime.performance_metrics.forecasting import (
     MeanAbsolutePercentageError,
 )
 from typing import Iterator
-from pyspark.sql.functions import collect_list, pandas_udf
+from pyspark.sql.functions import pandas_udf
 from pyspark.sql import DataFrame
-from mmf_sa.models.abstract_model import ForecastingRegressor, MODEL_PIP_REQUIREMENTS
+from mmf_sa.models.abstract_model import ForecastingRegressor, MODEL_PIP_REQUIREMENTS, collect_sorted
 from mmf_sa.exceptions import UnsupportedMetricError, ModelPredictionError, DataPreparationError
 
 _logger = logging.getLogger(__name__)
@@ -63,14 +63,14 @@ class MoiraiForecaster(ForecastingRegressor):
         return horizon_timestamps_udf
 
     def prepare_data(self, df: pd.DataFrame, future: bool = False, spark=None) -> DataFrame:
-        df = spark.createDataFrame(df)
-        df = (
-            df.groupBy(self.params.group_id)
-            .agg(
-                collect_list(self.params.date_col).alias('ds'),
-                collect_list(self.params.target).alias('y'),
-            )).withColumnRenamed(self.params.group_id, "unique_id")
-        return df
+        df = collect_sorted(
+            spark.createDataFrame(df), self.params.group_id, self.params.date_col, [self.params.target]
+        )
+        return df.select(
+            df[self.params.group_id].alias("unique_id"),
+            df[self.params.date_col].alias("ds"),
+            df[self.params.target].alias("y"),
+        )
 
     def predict(self,
                 hist_df: pd.DataFrame,
