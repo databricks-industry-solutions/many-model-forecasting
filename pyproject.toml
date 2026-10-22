@@ -31,6 +31,7 @@ foundationforecast = [
     "foundationforecast==0.1.15",
     "torch==2.11.0",
     "torchvision==0.26.0",
+    "torchaudio==2.11.0",
     "transformers==5.12.1",
     "huggingface-hub==1.33.0",
     "granite-tsfm==0.3.10",

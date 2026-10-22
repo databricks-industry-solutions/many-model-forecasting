@@ -385,7 +385,7 @@ def test_install_pins_agree_across_requirements_registry_and_extra():
     registered = [r for r in MODEL_PIP_REQUIREMENTS["foundationforecast"] if r != MMF_PACKAGE]
     assert registered == lines
     assert "--extra-index-url https://download.pytorch.org/whl/cu128" in lines
-    assert {"torch==2.11.0+cu128", "torchvision==0.26.0+cu128"} <= set(lines)
+    assert {"torch==2.11.0+cu128", "torchvision==0.26.0+cu128", "torchaudio==2.11.0+cu128"} <= set(lines)
 
     extra = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())["project"]["optional-dependencies"]["foundationforecast"]
     assert extra == [r.split("+")[0] for r in lines if not r.startswith("--")]
