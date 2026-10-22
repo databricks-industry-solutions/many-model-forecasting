@@ -25,8 +25,8 @@ from pyspark.sql.types import (
     ArrayType,
     IntegerType,
 )
-from pyspark.sql.functions import lit, avg, min, max, col, posexplode, collect_list, to_date, countDistinct
-from mmf_sa.models.abstract_model import ForecastingRegressor
+from pyspark.sql.functions import lit, avg, min, max, col, posexplode, to_date, countDistinct
+from mmf_sa.models.abstract_model import ForecastingRegressor, collect_sorted
 from mmf_sa.models import ModelRegistry
 from mmf_sa.data_quality_checks import DataQualityChecks
 from mmf_sa.exceptions import (
@@ -651,12 +651,8 @@ class Forecaster:
             ].dt.to_timestamp()
         sdf = self.spark.createDataFrame(prediction_df)\
             .drop('index')\
-            .withColumn(self.conf["target"], col(self.conf["target"]).cast(DoubleType()))\
-            .orderBy(self.conf["group_id"], self.conf["date_col"])\
-            .groupBy(self.conf["group_id"])\
-            .agg(
-                collect_list(self.conf["date_col"]).alias(self.conf["date_col"]),
-                collect_list(self.conf["target"]).alias(self.conf["target"]))
+            .withColumn(self.conf["target"], col(self.conf["target"]).cast(DoubleType()))
+        sdf = collect_sorted(sdf, self.conf["group_id"], self.conf["date_col"], [self.conf["target"]])
         # Defensive: align with score_local_model's explicit ArrayType(TimestampType())
         # so the scoring_output table schema stays consistent across all writers,
         # even if a future global model wrapper changes its predict() return shape.
