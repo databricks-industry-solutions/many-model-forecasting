@@ -89,7 +89,7 @@ def run_forecast(
         active_models (List[str]): A list of strings specifying the active models.
         accelerator (str): A string specifying the accelerator to use: cpu or gpu. Default is cpu.
         num_nodes (int): Number of nodes for distributed training. Use 1 (default) for single-node multi-GPU, or >1 for multi-node multi-GPU clusters.
-        serverless (bool): A boolean specifying whether the run is on serverless GPU compute. When True, foundation-model predict (Chronos, TimesFM) runs on the driver instead of being distributed via Spark Pandas UDFs. This is required on serverless GPU because Spark Connect Python workers are CPU-only. No-op for global and local models, which already run driver-side. Default is False.
+        serverless (bool): A boolean specifying whether the run is on serverless GPU compute. When True, foundation-model predict (Chronos, TimesFM) runs on the driver instead of being distributed via Spark Pandas UDFs. FoundationForecast models always run on the driver. This is required on serverless GPU because Spark Connect Python workers are CPU-only. No-op for global and local models, which already run driver-side. Default is False.
         backtest_retrain (bool): A boolean specifying whether to retrain the model during backtesting. Currently, not supported.
         train_predict_ratio (int): An integer specifying the train predict ratio.
         data_quality_check (bool): A boolean specifying whether to check the data quality. Default is False.
