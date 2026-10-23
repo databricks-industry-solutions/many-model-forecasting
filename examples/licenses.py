@@ -19,7 +19,7 @@
 # MAGIC | TimesFM | A pretrained time-series foundation model developed by Google Research for time-series forecasting | Apache 2.0 | https://github.com/google-research/timesfm
 # MAGIC | hierarchicalforecast | Hierarchical forecast reconciliation methods | Apache 2.0 | https://pypi.org/project/hierarchicalforecast/
 # MAGIC | polars | Fast multi-threaded DataFrame library | MIT | https://pypi.org/project/polars/
-# MAGIC | foundationforecast | Foundation time series forecasting models (TimeCopilot) | Apache 2.0 | https://pypi.org/project/foundationforecast/
+# MAGIC | foundationforecast | Foundation time series forecasting models (TimeCopilot) | Apache 2.0 | https://github.com/TimeCopilot/foundationforecast
 # MAGIC | granite-tsfm | IBM time series foundation model utilities (FlowState, PatchTST-FM) | Apache 2.0 | https://pypi.org/project/granite-tsfm/
 # MAGIC | tfc-t0 | T0 time series foundation model from The Forecasting Company | Apache 2.0 | https://github.com/theforecastingcompany/tfc-t0
 # MAGIC | timecopilot-timestral | Inference code for Mistral's Timestral time series foundation models | Apache 2.0 | https://github.com/TimeCopilot/timestral

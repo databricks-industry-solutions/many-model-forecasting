@@ -67,7 +67,7 @@ Model hyperparameters can be modified under [mmf_sa/models/models_conf.yaml](htt
 
 ### FoundationForecast
 
-These models run through [foundationforecast](https://pypi.org/project/foundationforecast/) 0.1.15 (TimeCopilot) and use `framework: FoundationForecast`. Install them with [requirements-foundationforecast.txt](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/requirements-foundationforecast.txt) or the `mmf_sa[foundationforecast]` extra, not with `requirements-foundation.txt`. Installing both sets in one environment works, but it isn't a supported setup.
+These models run through [foundationforecast](https://github.com/TimeCopilot/foundationforecast) 0.1.15 (TimeCopilot) and use `framework: FoundationForecast`. Install them with [requirements-foundationforecast.txt](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/requirements-foundationforecast.txt) or the `mmf_sa[foundationforecast]` extra, not with `requirements-foundation.txt`. Installing both sets in one environment works, but it isn't a supported setup.
 
 | model              | source                                                                                                                      | license                             | covariate support | recommended compute                                 |
 | ------------------ | --------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- | ----------------- | --------------------------------------------------- |
