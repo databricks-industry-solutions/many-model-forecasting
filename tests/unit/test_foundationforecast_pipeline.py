@@ -9,7 +9,12 @@ import pandas as pd
 import pytest
 from omegaconf import OmegaConf
 
-from mmf_sa.exceptions import DataPreparationError, ModelInitializationError, ModelPredictionError
+from mmf_sa.exceptions import (
+    DataPreparationError,
+    MissingFeatureError,
+    ModelInitializationError,
+    ModelPredictionError,
+)
 from mmf_sa.models import ModelRegistry
 from mmf_sa.models.foundationforecast import _runtime
 from mmf_sa.models.foundationforecast import FoundationForecastPipeline as ffp
@@ -57,8 +62,8 @@ class FakeFFModel:
         self.steps = None
         FakeFFModel.instances.append(self)
 
-    def forecast(self, df, h, freq):
-        self.calls.append({"columns": list(df.columns), "h": h, "freq": freq})
+    def forecast(self, df, h, freq, **kwargs):
+        self.calls.append({"columns": list(df.columns), "h": h, "freq": freq, "df": df, **kwargs})
         rows = []
         # Series come back in reverse order to check that results are joined by key.
         for uid, grp in reversed(list(df.groupby("unique_id", sort=True))):
@@ -150,6 +155,19 @@ def make_df(dates, n_series=3, ids=None):
     )
 
 
+def make_cov_df(dates, n_series=3, ids=None):
+    """make_df plus a numeric ``promo`` and an integer ``dow`` covariate."""
+    df = make_df(dates, n_series=n_series, ids=ids)
+    step = df.groupby("unique_id").cumcount()
+    df["promo"] = (step % 3 == 0).astype(float) + df.groupby("unique_id").ngroup() * 10
+    df["dow"] = df["ds"].dt.dayofweek
+    return df
+
+
+def split_at(df, cutoff):
+    return df[df.ds <= cutoff].copy(), df[df.ds > cutoff].copy()
+
+
 def test_ff_model_list_matches_plan():
     assert set(ff_entries()) == set(EXPECTED_REPOS)
 
@@ -221,12 +239,14 @@ def test_predict_returns_one_row_per_series_with_original_ids():
         np.testing.assert_allclose(row["y"], last_y + np.arange(1, H + 1))
 
 
-def test_ff_receives_only_univariate_columns():
+def test_ff_receives_only_univariate_columns_without_covariate_config():
     model = make_model("FFChronos2")
     df = make_df(pd.date_range("2024-01-01", periods=20, freq="D"))
     df["promo"] = 1.0
     model.predict(df)
-    assert FakeFFModel.instances[-1].calls[-1]["columns"] == ["unique_id", "ds", "y"]
+    call = FakeFFModel.instances[-1].calls[-1]
+    assert call["columns"] == ["unique_id", "ds", "y"]
+    assert "X_df" not in call and "futr_exog_list" not in call
 
 
 @pytest.mark.parametrize(
@@ -289,12 +309,213 @@ def test_predict_uses_driver_path_even_with_spark():
         model._predict_distributed(pd.DataFrame(), spark=object())
 
 
-def test_covariates_warn_once_and_are_ignored(caplog):
+COVARIATE_MODELS = {
+    "FFChronos2", "FFChronos2Small", "FFTimesFM_3_0", "FFTiRex2", "FFT0Beta", "FFT0Gamma",
+    "FFTimestral_5M", "FFTimestral_28M", "FFTimestral_123M", "FFTimestral_209M",
+}
+DAILY = pd.date_range("2024-01-01", periods=24, freq="D")
+CUTOFF = DAILY[19]
+
+
+def test_covariate_support_matches_foundationforecast_docs():
+    supported = {name for name in EXPECTED_REPOS if getattr(ffp, name).supports_future_covariates}
+    assert supported == COVARIATE_MODELS
+    string_ok = {name for name in EXPECTED_REPOS if getattr(ffp, name).accepts_categorical_strings}
+    assert string_ok == {"FFChronos2", "FFChronos2Small"}
+
+
+@pytest.mark.parametrize("name", sorted(COVARIATE_MODELS))
+def test_supported_model_passes_history_and_horizon_covariates(name):
+    model = make_model(name, dynamic_future_numerical=["promo"], dynamic_future_categorical=["dow"])
+    df = make_cov_df(DAILY)
+    hist, future = split_at(df, CUTOFF)
+    model.predict(hist, future)
+    call = FakeFFModel.instances[-1].calls[-1]
+    assert call["columns"] == ["unique_id", "ds", "y", "promo", "dow"]
+    assert call["futr_exog_list"] == ["promo", "dow"]
+    X_df = call["X_df"]
+    assert list(X_df.columns) == ["unique_id", "ds", "promo", "dow"]
+    assert X_df.groupby("unique_id").size().eq(H).all()
+    expected = future.astype({"unique_id": str}).sort_values(["unique_id", "ds"])
+    pd.testing.assert_frame_equal(
+        X_df.reset_index(drop=True),
+        expected[["unique_id", "ds", "promo", "dow"]].astype({"dow": float}).reset_index(drop=True),
+    )
+    assert X_df["dow"].dtype == np.float64 and call["df"]["dow"].dtype == np.float64
+
+
+def test_duplicate_covariate_names_are_passed_once():
+    model = make_model("FFChronos2", dynamic_future_numerical=["promo"], dynamic_future_categorical=["promo"])
+    df = make_cov_df(DAILY)
+    model.predict(*split_at(df, CUTOFF))
+    assert FakeFFModel.instances[-1].calls[-1]["futr_exog_list"] == ["promo"]
+
+
+def test_forecast_takes_each_series_next_steps_from_future_rows():
+    model = make_model("FFT0Beta", dynamic_future_numerical=["promo"])
+    df = make_cov_df(DAILY)
+    # s1 ends two days earlier; the rows after the horizon must be ignored.
+    df.loc[(df.unique_id == "s1") & (df.ds > DAILY[17]), "y"] = np.nan
+    df.loc[(df.unique_id != "s1") & (df.ds > CUTOFF), "y"] = np.nan
+    df = pd.concat([df, make_cov_df(pd.date_range(DAILY[-1] + pd.Timedelta(days=1), periods=5))
+                    .assign(y=np.nan)], ignore_index=True)
+    pred, _ = model.forecast(df)
+    X_df = FakeFFModel.instances[-1].calls[-1]["X_df"]
+    starts = X_df.groupby("unique_id")["ds"].min()
+    assert starts["s1"] == DAILY[18] and starts["s0"] == DAILY[20]
+    assert X_df.groupby("unique_id").size().eq(H).all()
+    s1 = df[(df.unique_id == "s1") & df.ds.between(DAILY[18], DAILY[21])]
+    np.testing.assert_allclose(X_df.loc[X_df.unique_id == "s1", "promo"], s1["promo"])
+    assert pd.Timestamp(pred.set_index("unique_id").loc["s1", "ds"][0]) == DAILY[18]
+
+
+def test_series_without_all_future_rows_is_rejected():
+    model = make_model("FFChronos2", dynamic_future_numerical=["promo"])
+    hist, future = split_at(make_cov_df(DAILY), CUTOFF)
+    future = future.drop(future[(future.unique_id == "s2") & (future.ds == DAILY[22])].index)
+    with pytest.raises(DataPreparationError, match="1 series are missing future rows.*'s2'"):
+        model.predict(hist, future)
+
+
+def test_duplicate_future_rows_are_rejected():
+    model = make_model("FFChronos2", dynamic_future_numerical=["promo"])
+    hist, future = split_at(make_cov_df(DAILY), CUTOFF)
+    with pytest.raises(DataPreparationError, match="duplicate dates"):
+        model.predict(hist, pd.concat([future, future.head(1)]))
+
+
+def test_missing_covariate_column_raises():
+    model = make_model("FFChronos2", dynamic_future_numerical=["price"])
+    with pytest.raises(MissingFeatureError, match="price"):
+        model.predict(*split_at(make_cov_df(DAILY), CUTOFF))
+
+
+@pytest.mark.parametrize("where", ["history", "horizon"])
+def test_null_covariates_are_rejected(where):
+    model = make_model("FFChronos2", dynamic_future_numerical=["promo"])
+    hist, future = split_at(make_cov_df(DAILY), CUTOFF)
+    target = hist if where == "history" else future
+    target.loc[target.index[1], "promo"] = np.nan
+    with pytest.raises(DataPreparationError, match="Covariate 'promo' contains missing values"):
+        model.predict(hist, future)
+
+
+def test_null_covariates_after_the_horizon_are_ignored():
+    model = make_model("FFChronos2", dynamic_future_numerical=["promo"])
+    df = make_cov_df(pd.date_range("2024-01-01", periods=26, freq="D"))
+    hist, future = split_at(df, CUTOFF)
+    future.loc[future.ds == future.ds.max(), "promo"] = np.nan
+    model.predict(hist, future)
+    assert FakeFFModel.instances[-1].calls[-1]["X_df"]["promo"].notna().all()
+
+
+def test_string_categoricals_reach_chronos_2_unchanged():
+    model = make_model("FFChronos2", dynamic_future_categorical=["event"])
+    df = make_cov_df(DAILY).assign(event=lambda d: np.where(d.promo % 10 == 1, "sale", "none"))
+    model.predict(*split_at(df, CUTOFF))
+    call = FakeFFModel.instances[-1].calls[-1]
+    assert set(call["X_df"]["event"]) <= {"sale", "none"}
+    assert set(call["df"]["event"]) == {"sale", "none"}
+
+
+@pytest.mark.parametrize("name", sorted(COVARIATE_MODELS - {"FFChronos2", "FFChronos2Small"}))
+def test_string_categoricals_must_be_encoded_for_other_models(name):
+    model = make_model(name, dynamic_future_categorical=["event"])
+    df = make_cov_df(DAILY).assign(event="none")
+    with pytest.raises(DataPreparationError, match="Label-encode"):
+        model.predict(*split_at(df, CUTOFF))
+
+
+def test_boolean_covariates_are_cast_to_float():
+    model = make_model("FFT0Beta", dynamic_future_categorical=["holiday"])
+    df = make_cov_df(DAILY).assign(holiday=lambda d: d.dow == 6)
+    model.predict(*split_at(df, CUTOFF))
+    call = FakeFFModel.instances[-1].calls[-1]
+    assert call["df"]["holiday"].dtype == np.float64 and call["X_df"]["holiday"].dtype == np.float64
+
+
+@pytest.mark.parametrize("covariates, expected", [([], "W"), (["promo"], "W-MON")])
+def test_weekly_covariates_use_the_data_weekday(covariates, expected):
+    model = make_model("FFChronos2", freq="W", dynamic_future_numerical=covariates)
+    dates = pd.date_range("2023-01-02", periods=30, freq="W-MON")
+    model.predict(*split_at(make_cov_df(dates), dates[25]))
+    assert FakeFFModel.instances[-1].calls[-1]["freq"] == expected
+
+
+def test_weekly_covariates_require_one_weekday():
+    model = make_model("FFChronos2", freq="W", dynamic_future_numerical=["promo"])
+    dates = pd.date_range("2023-01-02", periods=30, freq="W-MON")
+    df = make_cov_df(dates)
+    df.loc[df.unique_id == "s1", "ds"] += pd.Timedelta(days=1)
+    with pytest.raises(DataPreparationError, match="same weekday"):
+        model.predict(*split_at(df, dates[25] + pd.Timedelta(days=1)))
+
+
+def test_monthly_horizon_rows_are_matched_by_month_end():
+    model = make_model("FFTiRex2", freq="M", dynamic_future_numerical=["promo"])
+    dates = pd.date_range("2020-01-31", periods=30, freq="ME")
+    model.predict(*split_at(make_cov_df(dates), dates[25]))
+    X_df = FakeFFModel.instances[-1].calls[-1]["X_df"]
+    assert list(X_df.loc[X_df.unique_id == "s0", "ds"]) == list(dates[26:30])
+
+
+def test_integer_ids_are_strings_in_covariate_frames():
+    model = make_model("FFChronos2", dynamic_future_numerical=["promo"])
+    pred, _ = model.predict(*split_at(make_cov_df(DAILY, ids=[3, 1, 2]), CUTOFF))
+    call = FakeFFModel.instances[-1].calls[-1]
+    assert set(call["X_df"]["unique_id"]) == {"1", "2", "3"} == set(call["df"]["unique_id"])
+    assert pred["unique_id"].map(type).eq(int).all()
+
+
+def test_backtest_passes_each_window_covariates():
+    model = make_model("FFTimestral_5M", dynamic_future_numerical=["promo"])
+    df = make_cov_df(pd.date_range("2024-01-01", periods=40, freq="D"))
+    res = model.backtest(df, start=pd.Timestamp("2024-01-31"))
+    calls = FakeFFModel.instances[-1].calls
+    assert len(calls) == 2 and len(res) == 3 * 2
+    for call in calls:
+        X_df = call["X_df"]
+        window = df.astype({"unique_id": str}).merge(X_df[["unique_id", "ds"]])
+        np.testing.assert_allclose(X_df["promo"], window["promo"])
+        assert X_df["ds"].min() > call["df"]["ds"].max()
+
+
+def test_missing_future_rows_fall_back_to_univariate_with_warning(caplog):
+    model = make_model("FFChronos2", dynamic_future_numerical=["promo"])
+    df = make_cov_df(DAILY)
     with caplog.at_level(logging.WARNING, logger=ffp.__name__):
-        make_model("FFChronos2", dynamic_future_numerical=["promo"])
-        make_model("FFChronos2", dynamic_future_numerical=["promo"])
-    messages = [r.message for r in caplog.records if "univariate" in r.message]
+        model.forecast(df)
+        model.forecast(df)
+    call = FakeFFModel.instances[-1].calls[-1]
+    assert call["columns"] == ["unique_id", "ds", "y"] and "X_df" not in call
+    assert len([r for r in caplog.records if "forecasting without covariates" in r.message]) == 1
+
+
+def test_unsupported_model_warns_once_and_ignores_covariates(caplog):
+    dates = pd.date_range("2024-01-01", periods=24, freq="D")
+    df = make_cov_df(dates)
+    with caplog.at_level(logging.WARNING, logger=ffp.__name__):
+        make_model("FFToto2_22m", dynamic_future_numerical=["promo"])
+        model = make_model("FFToto2_22m", dynamic_future_numerical=["promo"])
+        model.predict(df[df.ds <= dates[19]], df[df.ds > dates[19]])
+    messages = [r.message for r in caplog.records if "does not support covariates" in r.message]
     assert len(messages) == 1 and "dynamic_future_numerical" in messages[0]
+    call = FakeFFModel.instances[-1].calls[-1]
+    assert call["columns"] == ["unique_id", "ds", "y"] and "X_df" not in call
+
+
+def test_supported_model_warns_only_about_static_and_historical_covariates(caplog):
+    with caplog.at_level(logging.WARNING, logger=ffp.__name__):
+        make_model(
+            "FFChronos2",
+            dynamic_future_numerical=["promo"],
+            static_features=["store_type"],
+            dynamic_historical_numerical=["traffic"],
+        )
+    messages = [r.message for r in caplog.records if "ignoring" in r.message]
+    assert len(messages) == 1
+    assert "static_features" in messages[0] and "dynamic_historical_numerical" in messages[0]
+    assert "dynamic_future_numerical" not in messages[0]
 
 
 def test_non_commercial_license_warns_once(caplog):
