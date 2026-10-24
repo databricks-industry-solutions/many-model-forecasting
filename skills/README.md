@@ -8,8 +8,6 @@ A focused skill set for the **Many-Model Forecasting**, enabling AI coding assis
 | Component                                                                                | Description                                                               |
 | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
 | `[databricks-skills/many-model-forecasting/](databricks-skills/many-model-forecasting/)` | The MMF skill — patterns and best practices for forecasting on Databricks |
-| `[.test/](.test/)`                                                                       | Test infrastructure for evaluating the skill                              |
-
 
 ## The MMF Skill
 

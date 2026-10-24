@@ -19,45 +19,36 @@ from urllib.request import urlopen
 from urllib.error import URLError
 
 SKILL_DIR = "databricks-skills/many-model-forecasting"
-SKILL_FILES = [
-    "SKILL.md",
-    "1-prep-and-clean-data.md",
-    "2-profile-and-classify-series.md",
-    "3-provision-forecasting-resources.md",
-    "4-execute-mmf-forecast.md",
-    "5-post-process-and-evaluate.md",
-    "mmf_local_notebook_template.ipynb",
-    "mmf_gpu_run_notebook_template.ipynb",
-    "mmf_gpu_orchestrator_notebook_template.ipynb",
-    "mmf_profiling_notebook_template.ipynb",
-    "mmf_prep_notebook_template.ipynb",
-    "mmf_post_process_notebook_template.ipynb",
-]
+SKILL_FILE_DESCRIPTIONS = {
+    "SKILL.md": "overview and workflow",
+    "1-prep-and-clean-data.md": "data discovery, quality checks, and cleaning",
+    "2-profile-and-classify-series.md": "series profiling and classification (optional)",
+    "3-provision-forecasting-resources.md": "cluster setup and provisioning",
+    "4-execute-mmf-forecast.md": "running the forecasting pipeline",
+    "5-post-process-and-evaluate.md": "post-processing and evaluation",
+    "mmf_local_notebook_template.ipynb": "local notebook template",
+    "mmf_gpu_run_notebook_template.ipynb": "GPU single-model runner (static, uses widgets)",
+    "mmf_gpu_orchestrator_notebook_template.ipynb": "GPU orchestrator (loops models via dbutils.notebook.run)",
+    "mmf_profiling_notebook_template.ipynb": "profiling notebook template",
+    "mmf_prep_notebook_template.ipynb": "data prep reproducibility notebook (generated after Skill 1)",
+    "mmf_post_process_notebook_template.ipynb": "post-processing reproducibility notebook (generated after Skill 5)",
+}
+SKILL_FILES = list(SKILL_FILE_DESCRIPTIONS)
 MARKER = "<!-- mmf-dev-kit:skills -->"
 ALL_TOOLS = ["claude", "cursor", "gemini"]
 REPO_RAW_URL = "https://raw.githubusercontent.com/databricks-industry-solutions/many-model-forecasting/main/skills"
 
-SKILL_REFERENCE_BLOCK = """\
+SKILL_FILE_LIST = "".join(f"- `{SKILL_DIR}/{name}` — {desc}\n" for name, desc in SKILL_FILE_DESCRIPTIONS.items())
+
+SKILL_REFERENCE_BLOCK = f"""\
 ## Many-Model Forecasting Skill
 
 This project includes the Many-Model Forecasting (MMF) skill for Databricks.
 Read these files to learn the patterns before starting any forecasting task:
 
-- `databricks-skills/many-model-forecasting/SKILL.md` — overview and workflow
-- `databricks-skills/many-model-forecasting/1-prep-and-clean-data.md` — data discovery, quality checks, and cleaning
-- `databricks-skills/many-model-forecasting/2-profile-and-classify-series.md` — series profiling and classification (optional)
-- `databricks-skills/many-model-forecasting/3-provision-forecasting-resources.md` — cluster setup and provisioning
-- `databricks-skills/many-model-forecasting/4-execute-mmf-forecast.md` — running the forecasting pipeline
-- `databricks-skills/many-model-forecasting/5-post-process-and-evaluate.md` — post-processing and evaluation
-- `databricks-skills/many-model-forecasting/mmf_local_notebook_template.ipynb` — local notebook template
-- `databricks-skills/many-model-forecasting/mmf_gpu_run_notebook_template.ipynb` — GPU single-model runner (static, uses widgets)
-- `databricks-skills/many-model-forecasting/mmf_gpu_orchestrator_notebook_template.ipynb` — GPU orchestrator (loops models via dbutils.notebook.run)
-- `databricks-skills/many-model-forecasting/mmf_profiling_notebook_template.ipynb` — profiling notebook template
-- `databricks-skills/many-model-forecasting/mmf_prep_notebook_template.ipynb` — data prep reproducibility notebook (generated after Skill 1)
-- `databricks-skills/many-model-forecasting/mmf_post_process_notebook_template.ipynb` — post-processing reproducibility notebook (generated after Skill 5)
-"""
+{SKILL_FILE_LIST}"""
 
-CURSOR_RULE_CONTENT = """\
+CURSOR_RULE_CONTENT = f"""\
 ---
 description: Many-Model Forecasting (MMF) on Databricks
 globs:
@@ -69,19 +60,7 @@ alwaysApply: false
 This project includes the Many-Model Forecasting (MMF) skill for Databricks.
 Read these files to learn the patterns before starting any forecasting task:
 
-- `databricks-skills/many-model-forecasting/SKILL.md` — overview and workflow
-- `databricks-skills/many-model-forecasting/1-prep-and-clean-data.md` — data discovery, quality checks, and cleaning
-- `databricks-skills/many-model-forecasting/2-profile-and-classify-series.md` — series profiling and classification (optional)
-- `databricks-skills/many-model-forecasting/3-provision-forecasting-resources.md` — cluster setup and provisioning
-- `databricks-skills/many-model-forecasting/4-execute-mmf-forecast.md` — running the forecasting pipeline
-- `databricks-skills/many-model-forecasting/5-post-process-and-evaluate.md` — post-processing and evaluation
-- `databricks-skills/many-model-forecasting/mmf_local_notebook_template.ipynb` — local notebook template
-- `databricks-skills/many-model-forecasting/mmf_gpu_run_notebook_template.ipynb` — GPU single-model runner (static, uses widgets)
-- `databricks-skills/many-model-forecasting/mmf_gpu_orchestrator_notebook_template.ipynb` — GPU orchestrator (loops models via dbutils.notebook.run)
-- `databricks-skills/many-model-forecasting/mmf_profiling_notebook_template.ipynb` — profiling notebook template
-- `databricks-skills/many-model-forecasting/mmf_prep_notebook_template.ipynb` — data prep reproducibility notebook (generated after Skill 1)
-- `databricks-skills/many-model-forecasting/mmf_post_process_notebook_template.ipynb` — post-processing reproducibility notebook (generated after Skill 5)
-"""
+{SKILL_FILE_LIST}"""
 
 
 def resolve_source_dir() -> Path:

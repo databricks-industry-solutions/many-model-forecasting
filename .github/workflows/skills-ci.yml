@@ -32,14 +32,14 @@ jobs:
             --ignore=E401,E402,F401,F403,B017,B904,ANN,TCH \
             --line-length=120 \
             --target-version=py311 \
-            skills/install.py skills/.test/src/
+            skills/install.py
 
       - name: Check formatting
         run: |
           uvx ruff format --check \
             --line-length=120 \
             --target-version=py311 \
-            skills/install.py skills/.test/src/
+            skills/install.py
 
   validate-skills:
     name: Validate Skills
