@@ -114,6 +114,8 @@ def fake_foundationforecast(monkeypatch):
     fake_torch.float32, fake_torch.bfloat16, fake_torch.float16 = "f32", "bf16", "f16"
     fake_torch.cuda = types.SimpleNamespace(is_available=lambda: False)
     monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    # The real setup imports tirex2, which would bind the fake torch for later test modules.
+    monkeypatch.setattr(_runtime, "_runtime_ready", True)
     monkeypatch.setattr(ffp, "_warned", set())
     monkeypatch.setattr(ffp, "_current_checkpoint", None)
     yield
@@ -569,6 +571,110 @@ def test_mlflow_model_returns_long_frame_and_pickles_without_weights():
     assert pd.Timestamp(out["ds"].iloc[0]) == dates[-1] + pd.DateOffset(weeks=1)
     assert mlflow_model._model is not None
     assert pickle.loads(pickle.dumps(mlflow_model))._model is None
+
+
+def covariate_mlflow_model(**overrides):
+    kwargs = dict(
+        ff_class="Chronos", repo="amazon/chronos-2", ff_kwargs={}, prediction_length=H, freq="D",
+        futr_exog_list=["promo"], name="FFChronos2",
+    )
+    kwargs.update(overrides)
+    return ffp.FoundationForecastMLflowModel(**kwargs)
+
+
+def history_and_future_rows(n_series=2):
+    df = make_cov_df(DAILY, n_series=n_series)
+    df.loc[df.ds > CUTOFF, "y"] = np.nan
+    return df
+
+
+def test_mlflow_model_takes_covariates_from_future_rows():
+    mlflow_model = covariate_mlflow_model()
+    model_input = history_and_future_rows()
+    out = mlflow_model.predict(None, model_input)
+    call = mlflow_model._model.calls[-1]
+    assert call["futr_exog_list"] == ["promo"]
+    assert call["df"]["ds"].max() == CUTOFF and call["df"]["y"].notna().all()
+    expected = model_input[model_input.y.isna()].sort_values(["unique_id", "ds"])
+    np.testing.assert_allclose(call["X_df"]["promo"], expected["promo"])
+    assert list(out.columns) == ["unique_id", "ds", "y"] and len(out) == 2 * H
+    assert pd.Timestamp(out["ds"].iloc[0]) == DAILY[20]
+    assert pickle.loads(pickle.dumps(mlflow_model)).futr_exog_list == ["promo"]
+
+
+def test_mlflow_model_without_future_rows_forecasts_without_covariates(caplog):
+    mlflow_model = covariate_mlflow_model()
+    with caplog.at_level(logging.WARNING, logger=ffp.__name__):
+        mlflow_model.predict(None, make_cov_df(DAILY, n_series=2))
+    call = mlflow_model._model.calls[-1]
+    assert call["columns"] == ["unique_id", "ds", "y"] and "X_df" not in call
+    assert any("forecasting without covariates" in r.message for r in caplog.records)
+
+
+def test_mlflow_model_validates_future_covariates():
+    model_input = history_and_future_rows()
+    model_input = model_input.drop(model_input[(model_input.unique_id == "s1") & (model_input.ds == DAILY[21])].index)
+    with pytest.raises(DataPreparationError, match="missing future rows"):
+        covariate_mlflow_model().predict(None, model_input)
+    with pytest.raises(DataPreparationError, match="Label-encode"):
+        covariate_mlflow_model(ff_class="T0", name="FFT0Beta").predict(
+            None, history_and_future_rows().assign(promo="x")
+        )
+
+
+def test_mlflow_model_registered_before_covariate_support_still_predicts():
+    mlflow_model = covariate_mlflow_model()
+    for attr in ("futr_exog_list", "accepts_categorical_strings", "name"):
+        delattr(mlflow_model, attr)
+    out = mlflow_model.predict(None, make_cov_df(DAILY, n_series=2))
+    assert mlflow_model._model.calls[-1]["columns"] == ["unique_id", "ds", "y"]
+    assert len(out) == 2 * H
+
+
+@pytest.fixture
+def logged(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(ffp.mlflow.pyfunc, "log_model", lambda *args, **kwargs: captured.update(kwargs))
+    return captured
+
+
+def schema_types(schema):
+    return {col.name: col.type.name for col in schema.inputs}
+
+
+def test_register_without_covariates_keeps_the_univariate_schema(logged):
+    make_model("FFChronos2").register("cat.schema.model")
+    signature = logged["signature"]
+    assert schema_types(signature.inputs) == {"unique_id": "string", "ds": "datetime", "y": "double"}
+    assert signature.inputs == signature.outputs
+    assert logged["python_model"].futr_exog_list == []
+
+
+def test_register_with_covariates_uses_training_data_types(logged):
+    from mlflow.models.utils import _enforce_schema
+
+    model = make_model("FFChronos2", dynamic_future_numerical=["promo"], dynamic_future_categorical=["dow"])
+    train = make_cov_df(DAILY)
+    model.register("cat.schema.model", input_example=train)
+    signature, example = logged["signature"], logged["input_example"]
+    assert schema_types(signature.inputs) == {
+        "unique_id": "string", "ds": "datetime", "y": "double", "promo": "double", "dow": "integer",
+    }
+    assert schema_types(signature.outputs) == {"unique_id": "string", "ds": "datetime", "y": "double"}
+    assert example["unique_id"].nunique() == 1 and example["y"].isna().sum() == H
+    assert example["y"].tail(H).isna().all()
+    pyfunc = logged["python_model"]
+    assert pyfunc.futr_exog_list == ["promo", "dow"] and pyfunc.accepts_categorical_strings
+    out = pyfunc.predict(None, _enforce_schema(example, signature.inputs))
+    assert len(out) == H and pd.Timestamp(out["ds"].iloc[0]) == example["ds"].iloc[-H]
+
+
+def test_register_with_covariates_and_no_training_data_uses_a_synthetic_example(logged):
+    make_model("FFT0Beta", dynamic_future_numerical=["promo"]).register("cat.schema.model")
+    example = logged["input_example"]
+    assert schema_types(logged["signature"].inputs)["promo"] == "double"
+    out = logged["python_model"].predict(None, example)
+    assert len(out) == H
 
 
 @pytest.fixture

@@ -497,10 +497,11 @@ class Forecaster:
             train_df, val_df = self.split_df_train_val(hist_df)
             input_example = train_df[train_df[self.conf['group_id']] == train_df[self.conf['group_id']] \
                 .unique()[0]].sort_values(by=[self.conf['date_col']])
-            if model_conf["framework"] in ["Chronos", "Moirai", "TimesFM", "FoundationForecast"]:
-                model.register(
-                    registered_model_name=f"{self.conf['model_output']}.{model_conf['name']}_{self.conf['use_case_name']}",
-                )
+            registered_model_name = f"{self.conf['model_output']}.{model_conf['name']}_{self.conf['use_case_name']}"
+            if model_conf["framework"] == "FoundationForecast":
+                model.register(registered_model_name=registered_model_name, input_example=input_example)
+            elif model_conf["framework"] in ["Chronos", "Moirai", "TimesFM"]:
+                model.register(registered_model_name=registered_model_name)
             model_uri = f"runs:/{run.info.run_id}/model"
             metrics = self.backtest_global_model(  # Reuse the same as global
                 model=model,
