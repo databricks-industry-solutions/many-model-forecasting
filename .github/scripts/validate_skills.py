@@ -21,11 +21,20 @@ SKIP_DIRS = {"TEMPLATE"}
 
 EXPECTED_FILES = [
     "SKILL.md",
-    "1-explore-data.md",
-    "2-setup-the-mmf-cluster.md",
-    "3-run-mmf.md",
+    "1-prep-and-clean-data.md",
+    "2-profile-and-classify-series.md",
+    "3-provision-forecasting-resources.md",
+    "4-execute-mmf-forecast.md",
+    "5-post-process-and-evaluate.md",
+    "6-hierarchical-reconciliation.md",
     "mmf_local_notebook_template.ipynb",
-    "mmf_gpu_notebook_template.ipynb",
+    "mmf_gpu_run_notebook_template.ipynb",
+    "mmf_gpu_orchestrator_notebook_template.ipynb",
+    "mmf_global_ml_notebook_template.ipynb",
+    "mmf_profiling_notebook_template.ipynb",
+    "mmf_prep_notebook_template.ipynb",
+    "mmf_post_process_notebook_template.ipynb",
+    "mmf_reconciliation_notebook_template.ipynb",
 ]
 
 RESERVED_WORDS = {"anthropic", "claude"}
