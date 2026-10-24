@@ -1,7 +1,7 @@
 -r requirements.txt
 --extra-index-url https://download.pytorch.org/whl/cu128
 foundationforecast==0.1.15
-torch==2.11.0+cu128
+torch==2.13.0
 torchvision==0.26.0+cu128
 torchaudio==2.11.0+cu128
 transformers==5.12.1

@@ -29,7 +29,7 @@ foundation = [
 # index, so add --extra-index-url https://download.pytorch.org/whl/cu128 to get the CUDA 12.8 build.
 foundationforecast = [
     "foundationforecast==0.1.15",
-    "torch==2.11.0",
+    "torch==2.13.0",
     "torchvision==0.26.0",
     "torchaudio==2.11.0",
     "transformers==5.12.1",
