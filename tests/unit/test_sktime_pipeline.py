@@ -20,6 +20,7 @@ def base_config():
     )
 
 
+@pytest.mark.external_data
 def test_sktime_lgbm_ds_dt(base_config, m4_df):
     model_registry = ModelRegistry(base_config)
     model = model_registry.get_model("SKTimeLgbmDsDt")
@@ -36,6 +37,7 @@ def test_sktime_lgbm_ds_dt(base_config, m4_df):
     )
 
 
+@pytest.mark.external_data
 def test_sktime_tbats(base_config, m4_df):
     model_registry = ModelRegistry(base_config)
     model = model_registry.get_model("SKTimeTBats")

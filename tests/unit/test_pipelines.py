@@ -1,10 +1,12 @@
 import mlflow
 import datetime
+import pytest
 from mmf_sa import run_forecast
 
 from .fixtures import temp_dir, spark_session, m4_df, m4_df_exogenous
 
 
+@pytest.mark.spark
 def test_api_func(temp_dir, spark_session, m4_df, m4_df_exogenous):
     mlflow.set_tracking_uri(f"sqlite:///mlruns.db")
     spark_session.createDataFrame(m4_df).createOrReplaceTempView("train")
