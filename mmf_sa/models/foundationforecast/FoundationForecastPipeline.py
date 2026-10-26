@@ -5,7 +5,7 @@ from typing import Dict, Tuple
 import numpy as np
 import pandas as pd
 import mlflow
-from mlflow.models.signature import ModelSignature
+from mlflow.models.signature import ModelSignature, infer_signature
 from mlflow.types import ColSpec, Schema
 from sktime.performance_metrics.forecasting import (
     MeanAbsoluteError,
@@ -17,6 +17,7 @@ from mmf_sa.models.abstract_model import ForecastingRegressor, MODEL_PIP_REQUIRE
 from mmf_sa.models.foundationforecast._runtime import ensure_runtime
 from mmf_sa.exceptions import (
     DataPreparationError,
+    MissingFeatureError,
     ModelPredictionError,
     UnsupportedMetricError,
 )
@@ -44,6 +45,8 @@ COVARIATE_PARAMS = (
     "dynamic_historical_numerical",
     "dynamic_historical_categorical",
 )
+# foundationforecast only accepts covariates whose values are known over the forecast horizon.
+FUTURE_COVARIATE_PARAMS = ("dynamic_future_numerical", "dynamic_future_categorical")
 
 _FF_ALIAS = "ff_forecast"
 _warned = set()
@@ -102,16 +105,99 @@ def build_ff_model(ff_class: str, repo: str, ff_kwargs: dict):
     return getattr(ff_models, ff_class)(repo_id=repo, alias=_FF_ALIAS, **kwargs)
 
 
-def forecast_series(
-    ff_model, df: pd.DataFrame, prediction_length: int, freq: str
-) -> Dict[str, Tuple[np.ndarray, np.ndarray]]:
-    """Forecast a long ``unique_id, ds, y`` frame.
+def _weekly_alias(df: pd.DataFrame) -> str:
+    """Anchored weekly alias (e.g. "W-MON") of a frame whose ``ds`` share one weekday."""
+    days = df["ds"].dt.day_name().str[:3].str.upper().unique()
+    if len(days) != 1:
+        raise DataPreparationError(
+            f"Weekly series must all fall on the same weekday to use covariates; found {sorted(days)}."
+        )
+    return f"W-{days[0]}"
 
+
+def horizon_dates(last: pd.Series, prediction_length: int, freq: str) -> pd.DataFrame:
+    """``unique_id, ds`` rows for the ``prediction_length`` steps after each series' last date."""
+    offset = _step_offset(freq)
+    return pd.DataFrame({
+        "unique_id": np.repeat(last.index.to_numpy(), prediction_length),
+        "ds": [ts + offset * step for ts in last for step in range(1, prediction_length + 1)],
+    })
+
+
+def _warn_no_future_covariates(name: str) -> None:
+    _warn_once(
+        f"no_future_covariates:{name}",
+        f"{name}: no future covariate values were provided (for example, no "
+        "scoring_data); forecasting without covariates.",
+    )
+
+
+def check_covariates(pdf: pd.DataFrame, covariates, accepts_strings: bool, name: str) -> None:
+    """Reject missing or unusable covariate values; cast numeric ones to float64 in place."""
+    for col in covariates:
+        if pdf[col].isna().any():
+            bad = pdf.loc[pdf[col].isna(), "unique_id"].iloc[0]
+            raise DataPreparationError(
+                f"Covariate '{col}' contains missing values (e.g. series {bad!r})."
+            )
+        if pd.api.types.is_numeric_dtype(pdf[col]):
+            pdf[col] = pdf[col].astype(np.float64)
+        elif not accepts_strings:
+            raise DataPreparationError(
+                f"{name}: covariate '{col}' has non-numeric dtype {pdf[col].dtype}. "
+                "Label-encode it to numbers first, or use FFChronos2 or FFChronos2Small, "
+                "which accept categorical values."
+            )
+
+
+def build_horizon(
+    hist: pd.DataFrame, future: pd.DataFrame, prediction_length: int, freq: str,
+    covariates, accepts_strings: bool, name: str,
+) -> pd.DataFrame:
+    """Covariate rows for the ``prediction_length`` steps after each series in ``hist``.
+
+    Both frames use string ``unique_id``s and datetime ``ds``; ``future`` may hold rows
+    outside the horizon, which are ignored.
+    """
+    last = hist.groupby("unique_id", sort=True)["ds"].max()
+    expected = horizon_dates(last, prediction_length, freq)
+    horizon = expected.merge(
+        future[["unique_id", "ds", *covariates]], on=["unique_id", "ds"], how="left", indicator=True
+    )
+    if len(horizon) != len(expected):
+        bad = horizon.loc[horizon.duplicated(["unique_id", "ds"]), "unique_id"].iloc[0]
+        raise DataPreparationError(
+            f"Future covariates contain duplicate dates (e.g. series {bad!r})."
+        )
+    missing = horizon.loc[horizon["_merge"] == "left_only", "unique_id"].unique()
+    if len(missing):
+        raise DataPreparationError(
+            f"Covariates must be known for all {prediction_length} forecast steps of every "
+            f"series; {len(missing)} series are missing future rows (e.g. {missing[0]!r})."
+        )
+    horizon = horizon.drop(columns="_merge")
+    check_covariates(horizon, covariates, accepts_strings, name)
+    return horizon
+
+
+def forecast_series(
+    ff_model, df: pd.DataFrame, prediction_length: int, freq: str, X_df: pd.DataFrame = None
+) -> Dict[str, Tuple[np.ndarray, np.ndarray]]:
+    """Forecast a long ``unique_id, ds, y`` frame, plus covariate columns when ``X_df`` is given.
+
+    ``X_df`` holds ``unique_id, ds`` and the covariate values for the forecast horizon.
     Returns ``{unique_id: (dates, values)}``. Dates are rebuilt from each series'
     last observation with MMF's step offset, because pandas' "W" alias anchors
     foundationforecast's future dates to Sundays.
     """
-    fcst = ff_model.forecast(df, h=prediction_length, freq=FF_FREQ[freq])
+    kwargs = {}
+    ff_freq = FF_FREQ[freq]
+    if X_df is not None:
+        kwargs = {"X_df": X_df, "futr_exog_list": [c for c in X_df.columns if c not in ("unique_id", "ds")]}
+        # Chronos-2 rejects horizon timestamps that differ from the ones it derives from freq.
+        if freq == "W":
+            ff_freq = _weekly_alias(df)
+    fcst = ff_model.forecast(df, h=prediction_length, freq=ff_freq, **kwargs)
     fcst = fcst.sort_values(["unique_id", "ds"], kind="stable")
     values = {
         uid: grp[_FF_ALIAS].to_numpy(dtype=np.float64)
@@ -144,6 +230,10 @@ class FoundationForecastForecaster(ForecastingRegressor):
 
     ff_class: str = None
     hparams: Tuple[str, ...] = ()
+    # Must match foundationforecast's supports_native_futr_exog() for the checkpoint.
+    supports_future_covariates: bool = False
+    # Chronos-2 encodes non-numeric covariates itself; the other models cast them to float32.
+    accepts_categorical_strings: bool = False
 
     def __init__(self, params):
         super().__init__(params)
@@ -155,11 +245,16 @@ class FoundationForecastForecaster(ForecastingRegressor):
     def _warn_unsupported_config(self):
         name = self.params.get("name", type(self).__name__)
         configured = [k for k in COVARIATE_PARAMS if self.params.get(k)]
-        if configured:
+        if self.supports_future_covariates:
+            ignored = [k for k in configured if k not in FUTURE_COVARIATE_PARAMS]
+            reason = "only known-future covariates are supported"
+        else:
+            ignored = configured
+            reason = "this model does not support covariates"
+        if ignored:
             _warn_once(
                 f"covariates:{name}",
-                f"{name}: foundationforecast models are univariate; ignoring "
-                f"{', '.join(configured)}.",
+                f"{name}: {reason}; ignoring {', '.join(ignored)}.",
             )
         license_id = self.params.get("license")
         if license_id in NON_COMMERCIAL_LICENSES:
@@ -189,15 +284,33 @@ class FoundationForecastForecaster(ForecastingRegressor):
             self.model = build_ff_model(self.ff_class, self.repo, self.ff_kwargs())
         return self.model
 
+    def future_covariates(self) -> list:
+        """Configured known-future covariates this model uses, numerical first."""
+        if not self.supports_future_covariates:
+            return []
+        columns = [c for key in FUTURE_COVARIATE_PARAMS for c in (self.params.get(key) or [])]
+        return list(dict.fromkeys(columns))
+
     def prepare_data(self, df: pd.DataFrame, future: bool = False, spark=None) -> pd.DataFrame:
-        """Rename MMF columns to foundationforecast's ``unique_id, ds, y`` and validate."""
+        """Rename MMF columns to foundationforecast's ``unique_id, ds, y`` and validate.
+
+        Keeps the model's future covariates. With ``future=True`` the target is dropped and
+        only the columns are checked; ``_horizon_frame`` validates the rows it selects.
+        """
         group_col = self.params.group_id
         date_col = self.params.date_col
         target_col = self.params.target
-        pdf = df[[group_col, date_col, target_col]].rename(
+        covariates = self.future_covariates()
+        missing = [c for c in covariates if c not in df.columns]
+        if missing:
+            raise MissingFeatureError(f"Covariate columns missing from the data: {missing}.")
+        columns = [group_col, date_col] + ([] if future else [target_col]) + covariates
+        pdf = df[columns].rename(
             columns={group_col: "unique_id", date_col: "ds", target_col: "y"}
         )
         pdf["ds"] = pd.to_datetime(pdf["ds"])
+        if future:
+            return pdf
         if pdf["y"].isna().any():
             bad = pdf.loc[pdf["y"].isna(), "unique_id"].iloc[0]
             raise DataPreparationError(
@@ -210,12 +323,28 @@ class FoundationForecastForecaster(ForecastingRegressor):
                 f"freq='M' requires month-end dates in '{date_col}', but found {bad.date()}. "
                 "Align the dates to the last day of each month."
             )
+        check_covariates(pdf, covariates, self.accepts_categorical_strings, self._name())
         pdf["y"] = pdf["y"].astype(np.float64)
         return pdf.sort_values(["unique_id", "ds"]).reset_index(drop=True)
 
+    def _name(self) -> str:
+        return self.params.get("name", type(self).__name__)
+
+    def _horizon_frame(self, pdf: pd.DataFrame, val_df: pd.DataFrame) -> pd.DataFrame:
+        """Covariate values for the ``prediction_length`` steps after each series in ``pdf``.
+
+        ``pdf`` is the prepared history with string ``unique_id``s.
+        """
+        future = self.prepare_data(val_df, future=True)
+        future["unique_id"] = future["unique_id"].astype(str)
+        return build_horizon(
+            pdf, future, self.params["prediction_length"], self.freq,
+            self.future_covariates(), self.accepts_categorical_strings, self._name(),
+        )
+
     def predict(self, hist_df: pd.DataFrame, val_df: pd.DataFrame = None, curr_date=None, spark=None):
         # Distributed prediction is not implemented; every call uses the driver GPU.
-        return self._predict_single(hist_df)
+        return self._predict_single(hist_df, val_df)
 
     def _predict_distributed(self, hist_df: pd.DataFrame, spark):
         """Multi-GPU prediction across Spark workers. Not implemented.
@@ -229,8 +358,12 @@ class FoundationForecastForecaster(ForecastingRegressor):
             "they run on the driver's GPU."
         )
 
-    def _predict_single(self, hist_df: pd.DataFrame):
-        """Driver-only single-GPU prediction path."""
+    def _predict_single(self, hist_df: pd.DataFrame, val_df: pd.DataFrame = None):
+        """Driver-only single-GPU prediction path.
+
+        ``val_df`` supplies the future covariates: the backtest window's actuals, or the
+        future rows of the scoring data.
+        """
         pdf = self.prepare_data(hist_df)
         original_ids = {}
         for uid in pdf["unique_id"].unique():
@@ -241,8 +374,16 @@ class FoundationForecastForecaster(ForecastingRegressor):
             )
         pdf["unique_id"] = pdf["unique_id"].astype(str)
 
+        X_df = None
+        if self.future_covariates():
+            if val_df is None or val_df.empty:
+                _warn_no_future_covariates(self._name())
+                pdf = pdf[["unique_id", "ds", "y"]]
+            else:
+                X_df = self._horizon_frame(pdf, val_df)
+
         series = forecast_series(
-            self._get_ff_model(), pdf, self.params["prediction_length"], self.freq
+            self._get_ff_model(), pdf, self.params["prediction_length"], self.freq, X_df=X_df
         )
         forecast_df = pd.DataFrame({
             self.params.group_id: [original_ids[uid] for uid in series],
@@ -252,8 +393,8 @@ class FoundationForecastForecaster(ForecastingRegressor):
         return forecast_df, self.model
 
     def forecast(self, df: pd.DataFrame, spark=None):
-        hist_df = df[df[self.params.target].notnull()]
-        return self.predict(hist_df, spark=spark)
+        observed = df[self.params.target].notnull()
+        return self.predict(df[observed], val_df=df[~observed], spark=spark)
 
     def calculate_metrics(
         self, hist_df: pd.DataFrame, val_df: pd.DataFrame, curr_date, spark=None
@@ -291,26 +432,40 @@ class FoundationForecastForecaster(ForecastingRegressor):
                 _logger.warning(f"Failed to calculate metric for key {key}: {err}")
         return metrics
 
-    def register(self, registered_model_name: str):
+    def register(self, registered_model_name: str, input_example: pd.DataFrame = None):
+        """Log and register the model.
+
+        ``input_example`` is training data in MMF's column names. With covariates, the
+        registered input schema takes the covariate types from it, so pass real data.
+        """
+        covariates = self.future_covariates()
         model = FoundationForecastMLflowModel(
             ff_class=self.ff_class,
             repo=self.repo,
             ff_kwargs=self.ff_kwargs(),
             prediction_length=int(self.params["prediction_length"]),
             freq=self.freq,
+            futr_exog_list=covariates,
+            accepts_categorical_strings=self.accepts_categorical_strings,
+            name=self._name(),
         )
-        input_schema = Schema([
+        output_schema = Schema([
             ColSpec("string", "unique_id"),
             ColSpec("datetime", "ds"),
             ColSpec("double", "y"),
         ])
-        signature = ModelSignature(inputs=input_schema, outputs=input_schema)
-        dates = pd.date_range(end="2024-12-31", periods=52, freq=FF_FREQ[self.freq])
-        input_example = pd.DataFrame({
-            "unique_id": "series_0",
-            "ds": dates,
-            "y": np.random.rand(len(dates)),
-        })
+        if covariates:
+            input_example = self._covariate_input_example(input_example)
+            input_schema = infer_signature(input_example).inputs
+        else:
+            input_schema = output_schema
+            dates = pd.date_range(end="2024-12-31", periods=52, freq=FF_FREQ[self.freq])
+            input_example = pd.DataFrame({
+                "unique_id": "series_0",
+                "ds": dates,
+                "y": np.random.rand(len(dates)),
+            })
+        signature = ModelSignature(inputs=input_schema, outputs=output_schema)
         mlflow.pyfunc.log_model(
             "model",
             python_model=model,
@@ -320,16 +475,51 @@ class FoundationForecastForecaster(ForecastingRegressor):
             pip_requirements=MODEL_PIP_REQUIREMENTS["foundationforecast"],
         )
 
+    def _covariate_input_example(self, data: pd.DataFrame = None) -> pd.DataFrame:
+        """One series in the registered model's input layout: history rows, then
+        ``prediction_length`` future rows whose ``y`` is null."""
+        h = int(self.params["prediction_length"])
+        covariates = self.future_covariates()
+        group_col, date_col, target_col = self.params.group_id, self.params.date_col, self.params.target
+        if data is not None and set(covariates) <= set(data.columns) and len(data) > h:
+            first = data[group_col].iloc[0]
+            example = (
+                data.loc[data[group_col] == first, [group_col, date_col, target_col, *covariates]]
+                .rename(columns={group_col: "unique_id", date_col: "ds", target_col: "y"})
+                .sort_values("ds")
+                .reset_index(drop=True)
+            )
+            example["unique_id"] = example["unique_id"].astype(str)
+            example["ds"] = pd.to_datetime(example["ds"])
+        else:
+            dates = pd.date_range(end="2024-12-31", periods=52 + h, freq=FF_FREQ[self.freq])
+            example = pd.DataFrame({"unique_id": "series_0", "ds": dates, "y": np.random.rand(len(dates))})
+            for col in covariates:
+                example[col] = 0.0
+        example["y"] = example["y"].astype(np.float64)
+        example.loc[example.index[-h:], "y"] = np.nan
+        return example
+
 
 class FoundationForecastMLflowModel(mlflow.pyfunc.PythonModel):
-    """Takes a long ``unique_id, ds, y`` frame and returns the forecast in the same layout."""
+    """Takes a long ``unique_id, ds, y`` frame and returns the forecast in the same layout.
 
-    def __init__(self, ff_class: str, repo: str, ff_kwargs: dict, prediction_length: int, freq: str):
+    With covariates, the frame also holds the covariate columns, and rows whose ``y`` is
+    null supply the covariate values for the forecast horizon.
+    """
+
+    def __init__(
+        self, ff_class: str, repo: str, ff_kwargs: dict, prediction_length: int, freq: str,
+        futr_exog_list=(), accepts_categorical_strings: bool = False, name: str = None,
+    ):
         self.ff_class = ff_class
         self.repo = repo
         self.ff_kwargs = dict(ff_kwargs)
         self.prediction_length = prediction_length
         self.freq = freq
+        self.futr_exog_list = list(futr_exog_list)
+        self.accepts_categorical_strings = accepts_categorical_strings
+        self.name = name or ff_class
         self._model = None
 
     def __getstate__(self):
@@ -340,11 +530,28 @@ class FoundationForecastMLflowModel(mlflow.pyfunc.PythonModel):
     def predict(self, context, model_input: pd.DataFrame, params=None) -> pd.DataFrame:
         if self._model is None:
             self._model = build_ff_model(self.ff_class, self.repo, self.ff_kwargs)
-        df = model_input[["unique_id", "ds", "y"]].copy()
+        # Models registered before covariate support have no futr_exog_list.
+        covariates = list(getattr(self, "futr_exog_list", ()))
+        df = model_input[["unique_id", "ds", "y", *covariates]].copy()
         df["unique_id"] = df["unique_id"].astype(str)
         df["ds"] = pd.to_datetime(df["ds"])
+        X_df = None
+        if covariates:
+            accepts_strings = getattr(self, "accepts_categorical_strings", False)
+            name = getattr(self, "name", self.ff_class)
+            observed = df["y"].notna()
+            future = df[~observed]
+            df = df[observed].sort_values(["unique_id", "ds"]).reset_index(drop=True)
+            if future.empty:
+                _warn_no_future_covariates(name)
+                df = df[["unique_id", "ds", "y"]]
+            else:
+                check_covariates(df, covariates, accepts_strings, name)
+                X_df = build_horizon(
+                    df, future, self.prediction_length, self.freq, covariates, accepts_strings, name
+                )
         df["y"] = df["y"].astype(np.float64)
-        series = forecast_series(self._model, df, self.prediction_length, self.freq)
+        series = forecast_series(self._model, df, self.prediction_length, self.freq, X_df=X_df)
         return pd.DataFrame({
             "unique_id": np.repeat(list(series), self.prediction_length),
             "ds": np.concatenate([dates for dates, _ in series.values()]),
@@ -355,6 +562,8 @@ class FoundationForecastMLflowModel(mlflow.pyfunc.PythonModel):
 class FFChronosForecaster(FoundationForecastForecaster):
     ff_class = "Chronos"
     hparams = ("batch_size", "dtype")
+    supports_future_covariates = True
+    accepts_categorical_strings = True
 
 
 class FFTimesFMForecaster(FoundationForecastForecaster):
@@ -365,6 +574,7 @@ class FFTimesFMForecaster(FoundationForecastForecaster):
 class FFTiRexForecaster(FoundationForecastForecaster):
     ff_class = "TiRex"
     hparams = ("batch_size",)
+    supports_future_covariates = True
 
 
 class FFTotoForecaster(FoundationForecastForecaster):
@@ -402,11 +612,13 @@ class FFT0Forecaster(FoundationForecastForecaster):
         "snap_integers",
         "cross_inference",
     )
+    supports_future_covariates = True
 
 
 class FFTimestralForecaster(FoundationForecastForecaster):
     ff_class = "Timestral"
     hparams = ("context_length", "batch_size", "symmetric_averaging", "clip_nonnegative")
+    supports_future_covariates = True
 
 
 class FFChronos2(FFChronosForecaster):
@@ -435,6 +647,8 @@ class FFTimesFM_2_5_200m(FFTimesFMForecaster):
 
 
 class FFTimesFM_3_0(FFTimesFMForecaster):
+    supports_future_covariates = True
+
     def __init__(self, params):
         super().__init__(params)
         self.params = params
