@@ -21,6 +21,7 @@ from statsforecast.models import (
 )
 from mmf_sa.models.abstract_model import ForecastingRegressor
 from mmf_sa.exceptions import MissingFeatureError, DataPreparationError
+from mmf_sa.calibration import QUANTILE_COLUMN_PREFIX, central_levels, quantile_key
 
 
 class StatsFcForecaster(ForecastingRegressor):
@@ -88,12 +89,16 @@ class StatsFcForecaster(ForecastingRegressor):
         _df = self.prepare_data(hist_df)
         _exogenous = self.prepare_data(val_df, future=True)
         self.fit(_df)
+        quantiles = self.params.get("native_quantiles")
+        level_kwargs = {"level": central_levels(quantiles)} if quantiles else {}
         if len(_exogenous.columns) == 2:
-            forecast_df = self.model.predict(self.params["prediction_length"])
+            forecast_df = self.model.predict(self.params["prediction_length"], **level_kwargs)
         else:
-            forecast_df = self.model.predict(self.params["prediction_length"], _exogenous)
+            forecast_df = self.model.predict(self.params["prediction_length"], _exogenous, **level_kwargs)
         target = [col for col in forecast_df.columns.to_list()
-                       if col not in ["unique_id", "ds"]][0]
+                  if col not in ["unique_id", "ds"] and "-lo-" not in col and "-hi-" not in col][0]
+        if quantiles:
+            forecast_df = self.native_quantile_columns(forecast_df, target, quantiles)
         forecast_df = forecast_df.reset_index(drop=True).rename(
             columns={
                 "unique_id": self.params.group_id,
@@ -104,6 +109,22 @@ class StatsFcForecaster(ForecastingRegressor):
         # Fix here
         forecast_df[self.params.target] = forecast_df[self.params.target].clip(0)
         return forecast_df, self.model
+
+    @staticmethod
+    def native_quantile_columns(forecast_df: pd.DataFrame, target: str, quantiles) -> pd.DataFrame:
+        """
+        Replaces statsforecast's <model>-lo-<level> / <model>-hi-<level> columns with one
+        QUANTILE_COLUMN_PREFIX column per requested quantile. The median is the point forecast.
+        """
+        out = forecast_df[[c for c in forecast_df.columns if "-lo-" not in c and "-hi-" not in c]].copy()
+        for q in quantiles:
+            if q == 0.5:
+                values = forecast_df[target]
+            else:
+                (level,) = central_levels([q])
+                values = forecast_df[f"{target}-{'lo' if q < 0.5 else 'hi'}-{level}"]
+            out[QUANTILE_COLUMN_PREFIX + quantile_key(q)] = values.to_numpy(dtype=float)
+        return out
 
     def forecast(self, df: pd.DataFrame, spark=None):
         _df = df[df[self.params.target].notnull()]

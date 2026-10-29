@@ -24,12 +24,13 @@ from pyspark.sql.types import (
     BinaryType,
     ArrayType,
     IntegerType,
+    MapType,
 )
 from pyspark.sql.functions import lit, avg, min, max, col, posexplode, to_date, countDistinct
 from mmf_sa.models.abstract_model import ForecastingRegressor, collect_sorted
 from mmf_sa.models import ModelRegistry
 from mmf_sa.data_quality_checks import DataQualityChecks
-from mmf_sa.calibration import resolve_prediction_intervals_conf
+from mmf_sa.calibration import requested_quantiles, resolve_prediction_intervals_conf
 from mmf_sa.exceptions import (
     ConfigurationError,
     ExperimentError,
@@ -204,6 +205,34 @@ class Forecaster:
         print("Finished evaluate_score")
         return self.run_id
 
+    @property
+    def intervals_enabled(self) -> bool:
+        return bool(self.conf.prediction_intervals.enabled)
+
+    def native_quantiles(self, model_conf) -> list:
+        """
+        Quantile levels a model must produce in its backtest, or None.
+        Only models flagged native_intervals produce them, and only when the intervals use native
+        bands (method auto, native or cqr).
+        """
+        pi = self.conf.prediction_intervals
+        if not pi.enabled or not model_conf.get("native_intervals", False) or pi.method == "conformal":
+            return None
+        return requested_quantiles(pi)
+
+    def get_model_for_evaluation(self, model_conf) -> ForecastingRegressor:
+        """Instantiates a model, passing it native_quantiles when it must produce native bands."""
+        quantiles = self.native_quantiles(model_conf)
+        override = OmegaConf.create({"native_quantiles": quantiles}) if quantiles else None
+        return self.model_registry.get_model(model_conf["name"], override_conf=override)
+
+    def evaluation_writer(self, sdf: DataFrame):
+        """Append writer for evaluation_output. With intervals enabled, existing tables gain forecast_quantiles."""
+        writer = sdf.write.mode("append")
+        if self.intervals_enabled:
+            writer = writer.option("mergeSchema", "true")
+        return writer
+
     def run_calibration(self):
         """
         Calibrates prediction intervals from the backtest results in evaluation_output, and
@@ -278,13 +307,16 @@ class Forecaster:
                     StructField("actual", ArrayType(DoubleType())),
                     StructField("model_pickle", BinaryType()),
                 ]
+                + ([StructField("forecast_quantiles", MapType(StringType(), ArrayType(DoubleType())))]
+                   if self.intervals_enabled else [])
             )
 
-            model = self.model_registry.get_model(model_conf["name"])
+            model = self.get_model_for_evaluation(model_conf)
 
             # Use Pandas UDF to forecast individual group
             evaluate_one_local_model_fn = functools.partial(
-                Forecaster.evaluate_one_local_model, model=model
+                Forecaster.evaluate_one_local_model, model=model,
+                with_quantiles=self.intervals_enabled,
             )
 
             res_sdf = (
@@ -294,16 +326,14 @@ class Forecaster:
         
             # Write evaluation result to a delta table
             if self.conf.get("evaluation_output", None) is not None:
-                (
+                self.evaluation_writer(
                     res_sdf.withColumn(self.conf["group_id"], col(self.conf["group_id"]).cast(StringType()))
                     .withColumn("run_id", lit(self.run_id))
                     .withColumn("run_date", lit(self.run_date))
                     .withColumn("model", lit(model_conf["name"]))
                     .withColumn("use_case", lit(self.conf["use_case_name"]))
                     .withColumn("model_uri", lit(""))
-                    .write.mode("append")
-                    .saveAsTable(self.conf.get("evaluation_output"))
-                )
+                ).saveAsTable(self.conf.get("evaluation_output"))
 
             # Compute aggregated metrics
             res_df = (
@@ -324,7 +354,7 @@ class Forecaster:
 
     @staticmethod
     def evaluate_one_local_model(
-        pdf: pd.DataFrame, model: ForecastingRegressor
+        pdf: pd.DataFrame, model: ForecastingRegressor, with_quantiles: bool = False
     ) -> pd.DataFrame:
         """
         A static method that evaluates a single local model using the provided pandas DataFrame and model.
@@ -332,6 +362,7 @@ class Forecaster:
         Parameters:
             pdf (pd.DataFrame): A pandas DataFrame.
             model (ForecastingRegressor): A ForecastingRegressor object.
+            with_quantiles (bool): Whether to return the forecast_quantiles column (prediction intervals enabled).
         Returns: metrics_df (pd.DataFrame): A pandas DataFrame.
         """
         pdf[model.params["date_col"]] = pd.to_datetime(pdf[model.params["date_col"]])
@@ -357,12 +388,14 @@ class Forecaster:
                 "forecast",
                 "actual",
                 "model_pickle",
-            ]
+            ] + (["forecast_quantiles"] if with_quantiles else [])
         )
         try:
             pdf = pdf.fillna(0)
             pdf[model.params["target"]] = pdf[model.params["target"]].clip(0)
             metrics_df = model.backtest(pdf, start=split_date, group_id=group_id)
+            if not with_quantiles:
+                metrics_df = metrics_df.drop(columns="forecast_quantiles")
             return metrics_df
         except (ModelError, EvaluationError, DataError) as err:
             _logger.error(
@@ -461,24 +494,29 @@ class Forecaster:
                 StructField("actual", ArrayType(DoubleType())),
                 StructField("model_pickle", BinaryType()),
             ]
+            + ([StructField("forecast_quantiles", MapType(StringType(), ArrayType(DoubleType())))]
+               if self.intervals_enabled else [])
         )
         # Covert to Python-native types before converting to pyspark dataframe
         res_pdf['forecast'] = res_pdf['forecast'].apply(lambda x: [float(i) for i in x])
         res_pdf['actual'] = res_pdf['actual'].apply(lambda x: [float(i) for i in x])
+        if self.intervals_enabled:
+            res_pdf['forecast_quantiles'] = res_pdf['forecast_quantiles'].apply(
+                lambda m: None if m is None else {k: [float(i) for i in v] for k, v in m.items()})
+        else:
+            res_pdf = res_pdf.drop(columns="forecast_quantiles")
         res_sdf = self.spark.createDataFrame(res_pdf, schema)
         # Write evaluation results to a delta table
         if write:
             if self.conf.get("evaluation_output", None):
-                (
+                self.evaluation_writer(
                     res_sdf.withColumn(self.conf["group_id"], col(self.conf["group_id"]).cast(StringType()))
                     .withColumn("run_id", lit(self.run_id))
                     .withColumn("run_date", lit(self.run_date))
                     .withColumn("model", lit(model.params.name))
                     .withColumn("use_case", lit(self.conf["use_case_name"]))
                     .withColumn("model_uri", lit(model_uri))
-                    .write.mode("append")
-                    .saveAsTable(self.conf.get("evaluation_output"))
-                )
+                ).saveAsTable(self.conf.get("evaluation_output"))
         # Compute aggregated metrics
         res_df = (
             res_sdf.groupby(["metric_name"])
@@ -512,7 +550,7 @@ class Forecaster:
             )
         with mlflow.start_run(experiment_id=self.experiment_id) as run:
             model_name = model_conf["name"]
-            model = self.model_registry.get_model(model_name)
+            model = self.get_model_for_evaluation(model_conf)
             hist_df, removed = self.prepare_data_for_global_model("evaluating")  # Reuse the same as global
             train_df, val_df = self.split_df_train_val(hist_df)
             input_example = train_df[train_df[self.conf['group_id']] == train_df[self.conf['group_id']] \

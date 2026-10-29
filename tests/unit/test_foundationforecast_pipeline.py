@@ -552,8 +552,9 @@ def test_backtest_reports_metrics_per_series_and_window():
     res = model.backtest(df, start=pd.Timestamp("2024-01-31"))
     assert list(res.columns) == [
         "unique_id", "backtest_window_start_date", "metric_name", "metric_value",
-        "forecast", "actual", "model_pickle",
+        "forecast", "actual", "model_pickle", "forecast_quantiles",
     ]
+    assert res["forecast_quantiles"].isna().all()  # no native quantiles for FoundationForecast models yet
     assert len(res) == 3 * 2
     assert res["metric_name"].eq("smape").all()
     assert res["forecast"].map(len).eq(H).all() and res["actual"].map(len).eq(H).all()
