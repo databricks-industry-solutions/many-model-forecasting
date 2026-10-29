@@ -26,8 +26,61 @@ from mmf_sa.exceptions import (
     ModelPredictionError,
     DataPreparationError,
 )
+from mmf_sa.calibration import QUANTILE_COLUMN_PREFIX, quantile_columns, quantile_key
 
 _logger = logging.getLogger(__name__)
+
+
+def quantile_forecasts(pipeline, inputs, prediction_length: int, quantiles):
+    """
+    Median and native quantiles of a batch, from ChronosPipeline.predict_quantiles.
+    Parameters:
+        pipeline: A Chronos-Bolt or Chronos-2 pipeline.
+        inputs: Contexts as accepted by pipeline.predict.
+        prediction_length (int): Forecast horizon.
+        quantiles: Requested quantile levels; the median is added if missing.
+    Returns: (np.ndarray, np.ndarray, list): medians (n, H), quantiles (n, Q, H) and the Q levels.
+    """
+    levels = sorted({float(q) for q in quantiles} | {0.5})
+    trained = getattr(pipeline, "quantiles", None)
+    if trained and (levels[0] < min(trained) or levels[-1] > max(trained)):
+        # Chronos clamps quantiles outside its trained range (0.1-0.9 for Chronos-Bolt), so e.g. a
+        # "95%" band is really the widest trained band. CQR corrects this (method: auto).
+        _logger.warning(
+            f"Requested quantiles {levels} exceed the trained range [{min(trained)}, {max(trained)}] "
+            "of this Chronos model; they are clamped to it, so the native band is too narrow. "
+            "Use prediction_intervals.method 'auto' or 'cqr' to calibrate it.")
+    q, _ = pipeline.predict_quantiles(inputs, prediction_length=prediction_length, quantile_levels=levels)
+    if isinstance(q, list):  # Chronos-2: one (n_variates, H, Q) tensor per series
+        q = torch.stack([x[0] for x in q])
+    q = q.to(torch.float32).cpu().numpy().transpose(0, 2, 1)  # (n, Q, H)
+    return q[:, levels.index(0.5), :].astype(np.float64), q.astype(np.float64), levels
+
+
+def encode_quantile_forecasts(medians: np.ndarray, quantiles: np.ndarray) -> list:
+    """Packs each series' median and quantiles into one array, so a UDF can keep returning array<double>."""
+    return [np.concatenate([m, q.ravel()]) for m, q in zip(medians, quantiles)]
+
+
+def decode_quantile_forecasts(forecast_df: pd.DataFrame, target: str, levels, prediction_length: int):
+    """Unpacks encode_quantile_forecasts arrays into the target column and one QUANTILE_COLUMN_PREFIX column per level."""
+    packed = [np.asarray(v, dtype=np.float64) for v in forecast_df[target]]
+    forecast_df[target] = [v[:prediction_length] for v in packed]
+    for i, level in enumerate(levels):
+        start = prediction_length * (i + 1)
+        forecast_df[QUANTILE_COLUMN_PREFIX + quantile_key(level)] = [v[start:start + prediction_length] for v in packed]
+    return forecast_df
+
+
+def quantile_maps(pred_df: pd.DataFrame, group_col: str) -> dict:
+    """Maps each series of a multi-series forecast frame to its {quantile key: array} dict (empty without quantiles)."""
+    cols = quantile_columns(pred_df)
+    if not cols:
+        return {}
+    return {
+        row[group_col]: {key: np.asarray(row[c], dtype=np.float64) for key, c in cols.items()}
+        for _, row in pred_df[[group_col] + list(cols.values())].iterrows()
+    }
 
 
 class ChronosForecaster(ForecastingRegressor):
@@ -104,6 +157,9 @@ class ChronosForecaster(ForecastingRegressor):
                 horizon_timestamps_udf(hist_sdf.ds).alias("ds"),
                 forecast_udf(hist_sdf.y).alias("y"))
         ).toPandas()
+        if self.params.get("native_quantiles"):
+            levels = sorted({float(q) for q in self.params["native_quantiles"]} | {0.5})
+            forecast_df = decode_quantile_forecasts(forecast_df, "y", levels, self.params["prediction_length"])
         forecast_df = forecast_df.reset_index(drop=False).rename(
             columns={
                 "unique_id": self.params.group_id,
@@ -147,9 +203,16 @@ class ChronosForecaster(ForecastingRegressor):
             contexts.append(torch.tensor(group[target_col].to_numpy(), dtype=torch.float32))
             last_dates.append(group[date_col].max())
 
+        quantiles = self.params.get("native_quantiles")
         forecasts_median = []
+        forecasts_quantiles = []
         for i in range(0, len(contexts), batch_size):
             batch = contexts[i:i + batch_size]
+            if quantiles:
+                medians, qs, levels = quantile_forecasts(pipeline, batch, prediction_length, quantiles)
+                forecasts_median.extend(list(medians))
+                forecasts_quantiles.extend(list(qs))
+                continue
             forecasts = pipeline.predict(
                 inputs=batch,
                 prediction_length=prediction_length,
@@ -178,6 +241,9 @@ class ChronosForecaster(ForecastingRegressor):
                 "y": self.params.target,
             }
         )
+        if quantiles:
+            for i, level in enumerate(levels):
+                forecast_df[QUANTILE_COLUMN_PREFIX + quantile_key(level)] = [q[i] for q in forecasts_quantiles]
         return forecast_df, self.model
 
     def forecast(self, df: pd.DataFrame, spark=None):
@@ -220,6 +286,7 @@ class ChronosForecaster(ForecastingRegressor):
                 pred_df[target_col].to_numpy(),
             )
         )
+        quantiles_map = quantile_maps(pred_df, group_col)
 
         for key in keys:
             try:
@@ -235,6 +302,7 @@ class ChronosForecaster(ForecastingRegressor):
                         forecast,
                         actual,
                         b"",
+                        quantiles_map.get(key),
                     )
                 )
             except (ModelPredictionError, DataPreparationError) as err:
@@ -246,6 +314,7 @@ class ChronosForecaster(ForecastingRegressor):
     def create_predict_udf(self, device_count):
         repo = self.repo
         num_devices = device_count
+        quantiles = [float(q) for q in self.params.get("native_quantiles") or []]
 
         @pandas_udf('array<double>')
         def predict_udf(bulk_iterator: Iterator[pd.Series]) -> Iterator[pd.Series]:
@@ -275,6 +344,11 @@ class ChronosForecaster(ForecastingRegressor):
                 for i in range(0, len(bulk), self.params["batch_size"]):
                     batch = bulk[i:i+self.params["batch_size"]]
                     contexts = [torch.tensor(list(series)) for series in batch]
+                    if quantiles:
+                        medians, qs, _ = quantile_forecasts(
+                            pipeline, contexts, self.params["prediction_length"], quantiles)
+                        median.extend(encode_quantile_forecasts(medians, qs))
+                        continue
                     forecasts = pipeline.predict(
                         inputs=contexts,
                         prediction_length=self.params["prediction_length"],
@@ -477,6 +551,9 @@ class Chronos2Forecaster(ChronosForecaster):
                 forecast_udf(*udf_columns).alias("y"),
             )
         ).toPandas()
+        if self.params.get("native_quantiles"):
+            levels = sorted({float(q) for q in self.params["native_quantiles"]} | {0.5})
+            forecast_df = decode_quantile_forecasts(forecast_df, "y", levels, self.params["prediction_length"])
 
         forecast_df = forecast_df.reset_index(drop=False).rename(
             columns={
@@ -540,10 +617,15 @@ class Chronos2Forecaster(ChronosForecaster):
                 entry["future_covariates"] = future_covariates
             inputs.append(entry)
 
-        forecasts = pipeline.predict(
-            inputs=inputs,
-            prediction_length=self.params["prediction_length"],
-        )
+        quantiles = self.params.get("native_quantiles")
+        if quantiles:
+            medians_q, qs, levels = quantile_forecasts(
+                pipeline, inputs, self.params["prediction_length"], quantiles)
+        else:
+            forecasts = pipeline.predict(
+                inputs=inputs,
+                prediction_length=self.params["prediction_length"],
+            )
 
         from utilsforecast.processing import make_future_dataframe
         timestamps = make_future_dataframe(
@@ -557,15 +639,21 @@ class Chronos2Forecaster(ChronosForecaster):
             for _, group in timestamps.groupby("unique_id")
         ]
 
-        medians = []
-        for forecast in forecasts:
-            medians.append(forecast[0, quantile_idx, :].numpy().astype(np.float64))
+        if quantiles:
+            medians = list(medians_q)
+        else:
+            medians = []
+            for forecast in forecasts:
+                medians.append(forecast[0, quantile_idx, :].numpy().astype(np.float64))
 
         forecast_df = pd.DataFrame({
             self.params.group_id: unique_ids,
             self.params.date_col: timestamps,
             self.params.target: medians,
         })
+        if quantiles:
+            for i, level in enumerate(levels):
+                forecast_df[QUANTILE_COLUMN_PREFIX + quantile_key(level)] = list(qs[:, i, :])
         return forecast_df, None
 
     def forecast(self, df: pd.DataFrame, spark=None):
@@ -617,6 +705,7 @@ class Chronos2Forecaster(ChronosForecaster):
                 pred_df[target_col].to_numpy(),
             )
         )
+        quantiles_map = quantile_maps(pred_df, group_col)
 
         for key in keys:
             try:
@@ -632,6 +721,7 @@ class Chronos2Forecaster(ChronosForecaster):
                         forecast,
                         actual,
                         b"",
+                        quantiles_map.get(key),
                     )
                 )
             except (ModelPredictionError, DataPreparationError) as err:
@@ -659,6 +749,7 @@ class Chronos2Forecaster(ChronosForecaster):
         num_devices = device_count
         _col_map = list(col_map) if col_map else []
         _has_covariates = len(_col_map) > 0
+        quantiles = [float(q) for q in self.params.get("native_quantiles") or []]
 
         @pandas_udf('array<double>')
         def predict_udf(
@@ -694,14 +785,10 @@ class Chronos2Forecaster(ChronosForecaster):
                     end = min(i + batch_size, n)
 
                     if not _has_covariates:
-                        contexts = [
+                        inputs = [
                             torch.tensor(list(y_batch.iloc[j]))
                             for j in range(i, end)
                         ]
-                        forecasts = pipeline.predict(
-                            inputs=contexts,
-                            prediction_length=prediction_length,
-                        )
                     else:
                         inputs = []
                         for j in range(i, end):
@@ -732,10 +819,14 @@ class Chronos2Forecaster(ChronosForecaster):
                                 entry["future_covariates"] = future_cov
                             inputs.append(entry)
 
-                        forecasts = pipeline.predict(
-                            inputs=inputs,
-                            prediction_length=prediction_length,
-                        )
+                    if quantiles:
+                        medians, qs, _ = quantile_forecasts(pipeline, inputs, prediction_length, quantiles)
+                        median.extend(encode_quantile_forecasts(medians, qs))
+                        continue
+                    forecasts = pipeline.predict(
+                        inputs=inputs,
+                        prediction_length=prediction_length,
+                    )
 
                     for forecast in forecasts:
                         median.append(

@@ -13,6 +13,7 @@ from sktime.performance_metrics.forecasting import (
 )
 import mlflow
 from mmf_sa.exceptions import UnsupportedMetricError
+from mmf_sa.calibration import quantile_columns
 mlflow.set_registry_uri("databricks-uc")
 
 MMF_PACKAGE = "git+https://github.com/databricks-industry-solutions/many-model-forecasting.git"
@@ -184,11 +185,13 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
                         metrics["forecast"],
                         metrics["actual"],
                         metrics["model_pickle"],
+                        metrics.get("forecast_quantiles"),
                     )
                 ]
                 results.extend(evaluation_results)
             elif isinstance(metrics, list):
-                results.extend(metrics)
+                # Models without native quantiles return 7-tuples; pad forecast_quantiles with None.
+                results.extend(tuple(m) + (None,) * (8 - len(m)) for m in metrics)
 
             curr_date += stride_offset
 
@@ -200,7 +203,8 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
                      "metric_value",
                      "forecast",
                      "actual",
-                     "model_pickle"],
+                     "model_pickle",
+                     "forecast_quantiles"],
         )
 
         return res_df
@@ -247,4 +251,16 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
             "metric_value": metric_value,
             "forecast": pred_df[self.params["target"]].to_numpy("float"),
             "actual": val_df[self.params["target"]].to_numpy(),
-            "model_pickle": cloudpickle.dumps(model_fitted)}
+            "model_pickle": cloudpickle.dumps(model_fitted),
+            "forecast_quantiles": self.forecast_quantiles(pred_df)}
+
+    @staticmethod
+    def forecast_quantiles(pred_df: pd.DataFrame):
+        """
+        Native quantiles of a one-series forecast frame, from its QUANTILE_COLUMN_PREFIX columns.
+        Returns: dict of quantile key -> array of length prediction_length, or None without such columns.
+        """
+        cols = quantile_columns(pred_df)
+        if not cols:
+            return None
+        return {key: pred_df[c].to_numpy("float") for key, c in cols.items()}

@@ -167,6 +167,54 @@ def resolve_prediction_intervals_conf(
 
 
 # ---------------------------------------------------------------------------
+# Native quantiles (spec sections 7.1 and 7.4).
+# ---------------------------------------------------------------------------
+
+# Prefix of the per-quantile columns that a model's predict() adds next to the point forecast
+# when native quantiles are requested, e.g. "__q_0.1".
+QUANTILE_COLUMN_PREFIX = "__q_"
+
+
+def quantile_key(q: float) -> str:
+    """Key of a quantile level in the quantile maps: no trailing zeros, e.g. "0.1", "0.025", "0.975"."""
+    return format(round(float(q), 6), "g")
+
+
+def level_quantiles(level: float):
+    """Lower and upper quantile levels of a central interval level in percent (80 -> 0.1, 0.9)."""
+    a = (100 - level) / 200
+    return round(a, 6), round(1 - a, 6)
+
+
+def requested_quantiles(pi_conf) -> list:
+    """
+    Quantile levels to request from models with native intervals, given the prediction_intervals block.
+    Returns the sorted quantiles of every configured level (including levels_by_group) and the
+    median, or the configured `quantiles` plus the median.
+    """
+    if pi_conf.get("quantiles"):
+        qs = {round(float(q), 6) for q in pi_conf["quantiles"]}
+    else:
+        levels = set(pi_conf["levels"] or [])
+        for group_levels in ((pi_conf.get("coverage") or {}).get("levels_by_group") or {}).values():
+            levels.update(group_levels)
+        qs = {q for level in levels for q in level_quantiles(level)}
+    qs.add(0.5)
+    return sorted(qs)
+
+
+def central_levels(quantiles) -> list:
+    """Central interval levels in percent whose bounds are the given quantiles (0.1 or 0.9 -> 80)."""
+    levels = {round(abs(200 * q - 100), 6) for q in quantiles if q != 0.5}
+    return sorted(int(lv) if float(lv).is_integer() else lv for lv in levels)
+
+
+def quantile_columns(frame: pd.DataFrame) -> dict:
+    """Maps quantile keys to the QUANTILE_COLUMN_PREFIX columns of a frame."""
+    return {c[len(QUANTILE_COLUMN_PREFIX):]: c for c in frame.columns if str(c).startswith(QUANTILE_COLUMN_PREFIX)}
+
+
+# ---------------------------------------------------------------------------
 # Calibration math (docs/specs/confidence_interval.md, sections 7.2 and 7.6).
 #
 # Pure numpy/pandas, ported from docs/specs/experiments/pi_grouping_m5.py. Arrays of
