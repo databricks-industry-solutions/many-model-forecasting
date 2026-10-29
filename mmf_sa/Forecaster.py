@@ -25,11 +25,13 @@ from pyspark.sql.types import (
     ArrayType,
     IntegerType,
     MapType,
+    BooleanType,
 )
-from pyspark.sql.functions import lit, avg, min, max, col, posexplode, to_date, countDistinct
+from pyspark.sql.functions import lit, avg, min, max, col, posexplode, to_date, to_timestamp, countDistinct
 from mmf_sa.models.abstract_model import ForecastingRegressor, collect_sorted
 from mmf_sa.models import ModelRegistry
 from mmf_sa.data_quality_checks import DataQualityChecks
+from mmf_sa import calibration
 from mmf_sa.calibration import requested_quantiles, resolve_prediction_intervals_conf
 from mmf_sa.exceptions import (
     ConfigurationError,
@@ -239,15 +241,172 @@ class Forecaster:
             writer = writer.option("mergeSchema", "true")
         return writer
 
+    def calibration_output_table(self) -> str:
+        """Name of the calibration_output table: the calibration_output setting, or <evaluation_output>_calibration."""
+        return self.conf.get("calibration_output") or f"{self.conf['evaluation_output']}_calibration"
+
+    @staticmethod
+    def calibration_features_one_series(pdf: pd.DataFrame, group_id: str, date_col: str, target: str,
+                                        season_length: int, periods: int, extra_cols: list) -> pd.DataFrame:
+        """
+        Scale and classification features of one series, from the `periods` points before its first
+        backtest window (column _first_window). Runs in a Pandas UDF.
+        """
+        pdf = pdf.sort_values(date_col)
+        hist = pdf[pdf[date_col] < pdf["_first_window"].iloc[0]].tail(periods)
+        row = {group_id: str(pdf[group_id].iloc[0])}
+        row.update(calibration.series_features(hist[target].fillna(0).to_numpy(), season_length))
+        for c in extra_cols:
+            row[c] = None if pdf[c].isna().all() else str(pdf[c].dropna().iloc[0])
+        return pd.DataFrame([row])
+
+    def calibration_features(self, first_window: pd.DataFrame) -> Tuple[pd.DataFrame, float]:
+        """
+        Per-series features (sigma, classes, user group columns), indexed by series id, and the minimum
+        of the training target.
+        Parameters:
+            first_window (pd.DataFrame): Series id and first backtest window start date per series.
+        """
+        gid, date_col, target = self.conf["group_id"], self.conf["date_col"], self.conf["target"]
+        freq = self.conf["freq"]
+        extra_cols = calibration.group_columns(self.conf.prediction_intervals)
+        train = self.resolve_source("train_data")
+        missing = [c for c in extra_cols if c not in train.columns]
+        if missing:
+            raise ConfigurationError(f"prediction_intervals.coverage.group_col: column(s) {missing} "
+                                     "not found in train_data")
+        min_target = train.agg(min(col(target))).collect()[0][0]
+        train = train.select(col(gid).cast(StringType()).alias(gid), to_timestamp(col(date_col)).alias(date_col),
+                             col(target).cast(DoubleType()).alias(target), *extra_cols)
+        windows = self.spark.createDataFrame(
+            first_window.assign(**{gid: first_window[gid].astype(str)})).withColumnRenamed(
+            "backtest_window_start_date", "_first_window")
+        schema = StructType(
+            [StructField(gid, StringType())]
+            + [StructField(c, DoubleType()) for c in ("sigma", "volume", "cv", "adi", "cv2")]
+            + [StructField(c, StringType()) for c in extra_cols]
+        )
+        fn = functools.partial(
+            Forecaster.calibration_features_one_series, group_id=gid, date_col=date_col, target=target,
+            season_length=calibration.SEASON_LENGTH[freq], periods=calibration.FEATURE_PERIODS[freq],
+            extra_cols=extra_cols)
+        feats = (
+            train.join(windows, on=gid, how="inner")
+            .groupby(gid).applyInPandas(fn, schema=schema)
+            .toPandas()
+            .set_index(gid)
+        )
+        feats["sigma"], n_replaced = calibration.positive_sigma(feats["sigma"].to_numpy())
+        if n_replaced:
+            _logger.warning(f"{n_replaced} series have no positive seasonal-naive scale (e.g. an all-zero "
+                            "history); they use the median scale of the other series.")
+        return calibration.classify_series(feats), (0.0 if min_target is None else float(min_target))
+
     def run_calibration(self):
         """
-        Calibrates prediction intervals from the backtest results in evaluation_output, and
-        writes calibration_output for scoring (docs/specs/confidence_interval.md, section 11).
+        Calibrates prediction intervals from the backtest results of this run in evaluation_output
+        (docs/specs/confidence_interval.md, section 11). Writes one calibration_output row per model,
+        series, horizon step and level, and the leave-one-window-out interval metrics as new
+        metric_name rows of evaluation_output.
         Parameters: self (Forecaster): A Forecaster object.
         """
-        # Placeholder until the calibration step is implemented: no intervals are produced yet.
-        _logger.warning("prediction_intervals.enabled is set, but calibration is not implemented yet; "
-                        "no prediction intervals will be produced.")
+        pi = self.conf.prediction_intervals
+        calibration.check_supported(pi)
+        gid = self.conf["group_id"]
+        levels = calibration.calibration_levels(pi)
+        print("Starting run_calibration")
+        eval_sdf = self.spark.table(self.conf["evaluation_output"]).filter(
+            (col("run_id") == self.run_id) & (col("metric_name") == self.conf["metric"]))
+        cols = [gid, "backtest_window_start_date", "model", "forecast", "actual"]
+        if "forecast_quantiles" in eval_sdf.columns:
+            cols.append("forecast_quantiles")
+        eval_pdf = eval_sdf.select(*cols).toPandas()
+        if eval_pdf.empty:
+            _logger.warning(f"No backtest rows for run_id {self.run_id} in {self.conf['evaluation_output']}; "
+                            "nothing to calibrate.")
+            return
+        eval_pdf[gid] = eval_pdf[gid].astype(str)
+        features, min_target = self.calibration_features(
+            eval_pdf.groupby(gid, as_index=False)["backtest_window_start_date"].min())
+        clip_lower = calibration.resolve_clip_lower(pi.clip_lower, min_target)
+        print(f"Prediction intervals: clip_lower resolved to {clip_lower}")
+
+        cal_frames, metric_frames = [], []
+        for model_name, model_pdf in eval_pdf.groupby("model"):
+            cubes = calibration.backtest_cubes(model_pdf[model_pdf[gid].isin(features.index)], gid, levels)
+            if cubes["dropped"]:
+                _logger.warning(f"{model_name}: {cubes['dropped']} series dropped from calibration "
+                                "(incomplete or non-finite backtest windows).")
+            ids = cubes["ids"]
+            if len(ids) == 0:
+                _logger.warning(f"{model_name}: no series to calibrate.")
+                continue
+            feats = features.loc[ids]
+            labels = calibration.group_labels(feats, pi)
+            results = calibration.calibrate_model(
+                cubes["y"], cubes["yhat"], feats["sigma"].to_numpy(), pi, labels=labels,
+                native=cubes["native"], clip_lower=clip_lower)
+            n_windows = cubes["y"].shape[1]
+            cal_frames.append(calibration.calibration_rows(
+                model_name, gid, ids, results, features, labels, n_windows,
+                pi.coverage.min_scores_per_group, clip_lower))
+            metric_frames.append(calibration.metric_rows(model_name, gid, ids, cubes["dates"], results))
+            for level, r in results.items():
+                if r["metrics"]:
+                    print(f"{model_name} {level:g}%: {r['method']} ({r['score']}, {r['target']}), "
+                          f"leave-one-window-out coverage {r['metrics']['coverage'].mean():.3f}, "
+                          f"MSIS {r['metrics']['msis'].mean():.3f}")
+        if not cal_frames:
+            return
+        self.write_calibration_output(pd.concat(cal_frames, ignore_index=True))
+        self.write_interval_metrics(pd.concat(metric_frames, ignore_index=True))
+        print("Finished run_calibration")
+
+    def write_calibration_output(self, rows: pd.DataFrame):
+        gid = self.conf["group_id"]
+        schema = StructType(
+            [StructField(c, StringType()) for c in ("model", "method", "score", "coverage_target", gid, "pool_key")]
+            + [StructField("step", IntegerType()), StructField("level", DoubleType()),
+               StructField("q_lo", DoubleType()), StructField("q_hi", DoubleType()),
+               StructField("n_windows", IntegerType()), StructField("shrinkage_weight", DoubleType()),
+               StructField("infinite_bound", BooleanType()), StructField("clip_lower", DoubleType()),
+               StructField("sigma", DoubleType())]
+            + [StructField(c, StringType()) for c in ("abc_class", "xyz_class", "sb_class")]
+        )
+        rows = rows.astype({"step": "int32", "n_windows": "int32", "infinite_bound": bool})
+        rows["shrinkage_weight"] = rows["shrinkage_weight"].astype(float)
+        rows["clip_lower"] = rows["clip_lower"].astype(float)
+        (
+            self.spark.createDataFrame(rows[[f.name for f in schema.fields]], schema)
+            .withColumn("run_id", lit(self.run_id))
+            .withColumn("run_date", lit(self.run_date))
+            .withColumn("use_case", lit(self.conf["use_case_name"]))
+            .write.mode("append").option("mergeSchema", "true")
+            .saveAsTable(self.calibration_output_table())
+        )
+
+    def write_interval_metrics(self, rows: pd.DataFrame):
+        if rows.empty:
+            return
+        gid = self.conf["group_id"]
+        schema = StructType([
+            StructField(gid, StringType()),
+            StructField("backtest_window_start_date", TimestampType()),
+            StructField("metric_name", StringType()),
+            StructField("metric_value", DoubleType()),
+            StructField("model", StringType()),
+        ])
+        self.evaluation_writer(
+            self.spark.createDataFrame(rows[[f.name for f in schema.fields]], schema)
+            .withColumn("forecast", lit(None).cast(ArrayType(DoubleType())))
+            .withColumn("actual", lit(None).cast(ArrayType(DoubleType())))
+            .withColumn("model_pickle", lit(None).cast(BinaryType()))
+            .withColumn("forecast_quantiles", lit(None).cast(MapType(StringType(), ArrayType(DoubleType()))))
+            .withColumn("run_id", lit(self.run_id))
+            .withColumn("run_date", lit(self.run_date))
+            .withColumn("use_case", lit(self.conf["use_case_name"]))
+            .withColumn("model_uri", lit(""))
+        ).saveAsTable(self.conf["evaluation_output"])
 
     def evaluate_models(self) -> set:
         """

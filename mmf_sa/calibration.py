@@ -573,3 +573,307 @@ def classify_series(features: pd.DataFrame) -> pd.DataFrame:
         out["xyz_class"] = "X"
     out["abc_xyz"] = out["abc_class"] + out["xyz_class"]
     return out
+
+
+# ---------------------------------------------------------------------------
+# One model's calibration (spec section 11.1), as called by Forecaster.run_calibration.
+# ---------------------------------------------------------------------------
+
+# Season length of the seasonal-naive scale, and length of the history used for the scale
+# and the classes (the periods just before the first backtest window), per frequency.
+SEASON_LENGTH = {"H": 24, "D": 7, "W": 52, "M": 12}
+FEATURE_PERIODS = {"H": 24 * 28, "D": 365, "W": 104, "M": 24}
+
+
+def calibration_levels(pi_conf) -> list:
+    """Central levels to calibrate: `levels`, or the central levels of `quantiles`."""
+    if pi_conf.get("quantiles"):
+        return central_levels(pi_conf["quantiles"])
+    return sorted(pi_conf["levels"])
+
+
+def check_supported(pi_conf) -> None:
+    """Raises ConfigurationError for settings that are validated but not implemented yet."""
+    if pi_conf.get("recency_decay") is not None:
+        raise ConfigurationError("prediction_intervals.recency_decay is not supported yet")
+    if (pi_conf.get("coverage") or {}).get("levels_by_group") is not None:
+        raise ConfigurationError("prediction_intervals.coverage.levels_by_group is not supported yet")
+    if pi_conf.get("score") == "abs":
+        raise ConfigurationError("prediction_intervals.score 'abs' is not supported yet; use signed_normalized")
+
+
+def _native_band(native, level, n, w, h):
+    band = (native or {}).get(level)
+    if band is None:
+        return None
+    lo, hi = band
+    if lo.shape != (n, w, h) or hi.shape != (n, w, h):
+        raise ValueError(f"native band at level {level} must have shape {(n, w, h)}")
+    return lo, hi
+
+
+def calibrate_model(y, yhat, sigma, pi_conf, labels=None, native=None, clip_lower=None):
+    """
+    Calibrates one model's prediction intervals from its backtest, for every configured level.
+    Parameters:
+        y, yhat (np.ndarray): Actuals and point forecasts of the backtest windows (N, W, H), oldest window first.
+        sigma (np.ndarray): Per-series scale (N,), positive.
+        pi_conf: The resolved prediction_intervals block.
+        labels: Group label per series (N,), for the group target, the series target's shrinkage
+            and the CQR group pool. None means one pool.
+        native (dict): Optional native bands {level: (lo, hi)} of shape (N, W, H).
+        clip_lower (float): Lower bound of the intervals (resolve_clip_lower), or None.
+    Returns: dict level -> dict with
+        method ("conformal", "cqr" or "native"), score, target, q_lo and q_hi (N, H), infinite (N,),
+        shrinkage_weight (float, or None), metrics {name: (N, W) array} computed leave-one-window-out
+        (empty when W < 2), and native_metrics {name: (N, W) array} for the uncorrected native band.
+    """
+    _check_cube("y", y)
+    _check_cube("yhat", yhat)
+    n, w, h = y.shape
+    sigma = np.asarray(sigma, dtype=float)
+    if sigma.shape != (n,) or not (sigma > 0).all():
+        raise ValueError("sigma must be positive, with one value per series")
+    cov = pi_conf["coverage"]
+    method = pi_conf["method"]
+    results = {}
+    for level in calibration_levels(pi_conf):
+        band = _native_band(native, level, n, w, h)
+        if method in ("native", "cqr") and band is None:
+            _logger.warning(f"prediction_intervals.method is {method!r} but the model has no native band at "
+                            f"level {level}; falling back to conformal calibration of its residuals.")
+        if band is not None and clip_lower is not None:
+            # Calibration and forecast bands are clipped alike (spec section 7.6.4).
+            band = (np.maximum(band[0], clip_lower), band[1])
+        kind = "conformal" if band is None or method == "conformal" else ("native" if method == "native" else "cqr")
+
+        if kind == "cqr":
+            score, target = pi_conf["cqr_score"], pi_conf["cqr_pool"]
+            kappa = cov["shrinkage_kappa"] if target == "series" else None
+
+            def fit(idx):
+                return cqr_corrections(y[:, idx], yhat[:, idx], band[0][:, idx], band[1][:, idx], sigma, level,
+                                       score=score, tail_split=pi_conf["cqr_tail_split"], pool=target,
+                                       labels=labels, shrinkage_kappa=cov["shrinkage_kappa"],
+                                       min_scores_per_group=cov["min_scores_per_group"])
+
+            def bounds(q_lo, q_hi, j):
+                return cqr_bounds(yhat[:, j:j + 1], band[0][:, j:j + 1], band[1][:, j:j + 1], sigma, q_lo, q_hi,
+                                  score)
+        elif kind == "native":
+            score, target, kappa = "native", "native", None
+
+            def fit(idx):
+                return np.zeros((n, h)), np.zeros((n, h)), np.zeros(n, dtype=bool)
+
+            def bounds(q_lo, q_hi, j):
+                return band[0][:, j:j + 1], band[1][:, j:j + 1]
+        else:
+            score, target = pi_conf["score"], cov["target"]
+            kappa = cov["shrinkage_kappa"] if target == "series" else None
+            scale = sigma if score == "signed_normalized" else np.ones(n)
+
+            def fit(idx):
+                scores = (y[:, idx] - yhat[:, idx]) / scale[:, None, None]
+                return residual_quantiles(scores, level, target, labels, shrinkage_kappa=cov["shrinkage_kappa"],
+                                          min_scores_per_group=cov["min_scores_per_group"],
+                                          pool_horizon=cov["pool_horizon"])
+
+            def bounds(q_lo, q_hi, j):
+                return residual_bounds(yhat[:, j:j + 1], scale, q_lo, q_hi)
+
+        q_lo, q_hi, infinite = fit(np.arange(w))
+        metrics = {}
+        if w >= 2:
+            per_window = []
+            for j in range(w):
+                lo, hi = finalize_bounds(*bounds(*fit(np.delete(np.arange(w), j))[:2], j), clip_lower)
+                per_window.append(interval_metrics(y[:, j:j + 1], lo, hi, sigma, level))
+            metrics = {k: np.stack([m[k] for m in per_window], axis=1) for k in per_window[0]}
+        native_metrics = {}
+        if band is not None:
+            per_window = [interval_metrics(y[:, j:j + 1], *finalize_bounds(band[0][:, j:j + 1], band[1][:, j:j + 1],
+                                                                          clip_lower), sigma, level)
+                          for j in range(w)]
+            native_metrics = {k: np.stack([m[k] for m in per_window], axis=1) for k in per_window[0]}
+        results[level] = {
+            "method": kind, "score": score, "target": target, "q_lo": q_lo, "q_hi": q_hi,
+            "infinite": np.asarray(infinite, dtype=bool),
+            "shrinkage_weight": (w / (w + kappa)) if kappa else None,
+            "metrics": metrics, "native_metrics": native_metrics,
+        }
+    return results
+
+
+COMPUTED_GROUP_COLS = ("abc_xyz", "sb_class", "abc_class", "xyz_class")
+MARGINAL_POOL = "__all__"
+
+
+def group_columns(pi_conf) -> list:
+    """User columns of the training data that coverage.group_col refers to (none for MMF-computed classes)."""
+    group_col = pi_conf["coverage"]["group_col"]
+    if group_col is None or group_col == "auto":
+        return []
+    cols = [group_col] if isinstance(group_col, str) else list(group_col)
+    return [c for c in cols if c not in COMPUTED_GROUP_COLS]
+
+
+def group_labels(features: pd.DataFrame, pi_conf):
+    """
+    Group label per series (in the order of features.index) for coverage.group_col, or None.
+    "auto" is ABC x XYZ; several columns are combined as "a|b".
+    """
+    group_col = pi_conf["coverage"]["group_col"]
+    if group_col is None:
+        return None
+    cols = ["abc_xyz"] if group_col == "auto" else ([group_col] if isinstance(group_col, str) else list(group_col))
+    missing = [c for c in cols if c not in features.columns]
+    if missing:
+        raise ConfigurationError(f"prediction_intervals.coverage.group_col: column(s) {missing} not found")
+    return features[cols].astype(str).agg("|".join, axis=1).to_numpy(dtype=object)
+
+
+def positive_sigma(sigma: np.ndarray):
+    """
+    Replaces non-positive or missing scales (e.g. all-zero history) by the median positive scale.
+    Returns: (np.ndarray, int): The scales and the number of series replaced.
+    """
+    sigma = np.asarray(sigma, dtype=float)
+    bad = ~(np.isfinite(sigma) & (sigma > 0))
+    if bad.all():
+        return np.ones_like(sigma), int(bad.sum())
+    return np.where(bad, np.median(sigma[~bad]), sigma), int(bad.sum())
+
+
+def backtest_cubes(frame: pd.DataFrame, series_col: str, levels=()):
+    """
+    Cubes of one model's backtest rows from evaluation_output.
+    Parameters:
+        frame (pd.DataFrame): Rows with series_col, backtest_window_start_date, forecast and actual
+            arrays, and optionally forecast_quantiles maps.
+        series_col (str): Series id column.
+        levels: Central levels whose native bands to extract from forecast_quantiles.
+    Every series keeps its last W windows, W being the most common window count. Series with
+    fewer windows, or with arrays of the wrong length or non-finite values, are dropped.
+    Missing native quantiles fall back to the point forecast.
+    Returns: dict with ids (N,), dates (N, W), y and yhat (N, W, H), native {level: (lo, hi)} or None,
+        and dropped (number of series dropped).
+    """
+    frame = frame.sort_values([series_col, "backtest_window_start_date"])
+    counts = frame.groupby(series_col).size()
+    w = int(counts.mode().iloc[0])
+    h = int(pd.Series([np.size(a) if a is not None else 0 for a in frame["forecast"]]).mode().iloc[0])
+    has_q = "forecast_quantiles" in frame.columns
+    keys = {lv: tuple(quantile_key(q) for q in level_quantiles(lv)) for lv in levels}
+    ids, dates, ys, yhats, bands = [], [], [], [], []
+    dropped = 0
+    for sid, g in frame.groupby(series_col, sort=True):
+        g = g.iloc[-w:]
+        if len(g) < w:
+            dropped += 1
+            continue
+        try:
+            y = np.stack([np.asarray(a, dtype=float).reshape(-1) for a in g["actual"]])
+            yhat = np.stack([np.asarray(a, dtype=float).reshape(-1) for a in g["forecast"]])
+        except (ValueError, TypeError):
+            dropped += 1
+            continue
+        if y.shape != (w, h) or yhat.shape != (w, h) or not (np.isfinite(y).all() and np.isfinite(yhat).all()):
+            dropped += 1
+            continue
+        band = {}
+        for lv, (k_lo, k_hi) in keys.items():
+            los, his = [], []
+            for m, fallback in zip(g["forecast_quantiles"] if has_q else [None] * w, yhat):
+                # Spark returns map columns as dicts, or as lists of (key, value) pairs with some Arrow versions.
+                m = dict(m) if m is not None and not isinstance(m, dict) else (m or {})
+                lo = np.asarray(m.get(k_lo, fallback), dtype=float)
+                hi = np.asarray(m.get(k_hi, fallback), dtype=float)
+                if lo.shape != (h,) or hi.shape != (h,):
+                    lo, hi = fallback, fallback
+                los.append(np.where(np.isfinite(lo), lo, fallback))
+                his.append(np.where(np.isfinite(hi), hi, fallback))
+            band[lv] = (np.stack(los), np.stack(his))
+        ids.append(sid)
+        dates.append(g["backtest_window_start_date"].to_numpy())
+        ys.append(y)
+        yhats.append(yhat)
+        bands.append(band)
+    native = None
+    if has_q and levels and frame["forecast_quantiles"].notna().any():
+        native = {lv: (np.stack([b[lv][0] for b in bands]), np.stack([b[lv][1] for b in bands])) for lv in levels}
+    return {
+        "ids": np.array(ids, dtype=object),
+        "dates": np.array(dates) if dates else np.empty((0, w)),
+        "y": np.stack(ys) if ys else np.empty((0, w, h)),
+        "yhat": np.stack(yhats) if yhats else np.empty((0, w, h)),
+        "native": native if ids else None,
+        "dropped": dropped,
+    }
+
+
+def _metric_name(name: str, level: float, native: bool) -> str:
+    return f"{'native_' if native else ''}{name}_{level:g}"
+
+
+def calibration_rows(model: str, series_col: str, ids, results: dict, features: pd.DataFrame, labels,
+                     n_windows: int, min_scores_per_group: int, clip_lower) -> pd.DataFrame:
+    """
+    calibration_output rows of one model: one row per series, step and level (spec section 11.3).
+    q_lo and q_hi are in units of sigma (or 1 for score "signed"; of the native half-width for CQR "scaled").
+    """
+    n = len(ids)
+    feats = features.loc[ids]
+    if labels is None:
+        pool = np.full(n, MARGINAL_POOL, dtype=object)
+    else:
+        pool = merge_small_groups(labels, n_windows, min_scores_per_group)
+    frames = []
+    for level, r in results.items():
+        h = r["q_lo"].shape[1]
+        pool_key = (np.full(n, MARGINAL_POOL, dtype=object) if r["target"] == "marginal"
+                    else np.full(n, "", dtype=object) if r["method"] == "native" else pool)
+        frames.append(pd.DataFrame({
+            "model": model,
+            "method": r["method"],
+            "score": r["score"],
+            "coverage_target": r["target"],
+            series_col: np.repeat(np.asarray(ids, dtype=object), h),
+            "pool_key": np.repeat(pool_key, h),
+            "step": np.tile(np.arange(1, h + 1), n),
+            "level": float(level),
+            "q_lo": r["q_lo"].ravel(),
+            "q_hi": r["q_hi"].ravel(),
+            "n_windows": n_windows,
+            "shrinkage_weight": r["shrinkage_weight"],
+            "infinite_bound": np.repeat(r["infinite"], h),
+            "clip_lower": clip_lower,
+            "sigma": np.repeat(feats["sigma"].to_numpy(dtype=float), h),
+            "abc_class": np.repeat(feats["abc_class"].to_numpy(dtype=object), h),
+            "xyz_class": np.repeat(feats["xyz_class"].to_numpy(dtype=object), h),
+            "sb_class": np.repeat(feats["sb_class"].to_numpy(dtype=object), h),
+        }))
+    return pd.concat(frames, ignore_index=True)
+
+
+def metric_rows(model: str, series_col: str, ids, dates, results: dict) -> pd.DataFrame:
+    """
+    Interval metric rows of one model for evaluation_output: one row per series, window and metric
+    (coverage_<L>, msis_<L>, width_<L>, computed leave-one-window-out, and native_* for the native band).
+    """
+    n, w = dates.shape
+    frames = []
+    for level, r in results.items():
+        for native, metrics in ((False, r["metrics"]), (True, r["native_metrics"])):
+            for name, values in metrics.items():
+                frames.append(pd.DataFrame({
+                    series_col: np.repeat(np.asarray(ids, dtype=object), w),
+                    "backtest_window_start_date": dates.ravel(),
+                    "metric_name": _metric_name(name, level, native),
+                    "metric_value": values.ravel(),
+                }))
+    if not frames:
+        return pd.DataFrame(columns=[series_col, "backtest_window_start_date", "metric_name", "metric_value"])
+    out = pd.concat(frames, ignore_index=True)
+    out["model"] = model
+    return out
