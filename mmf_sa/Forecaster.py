@@ -72,7 +72,7 @@ class Forecaster:
         self.data_conf = data_conf
         self.conf["prediction_intervals"] = resolve_prediction_intervals_conf(
             self.conf.get("prediction_intervals"))
-        if self.conf.prediction_intervals.enabled and not self.conf.get("evaluation_output"):
+        if self.intervals_enabled and not self.conf.get("evaluation_output"):
             raise ConfigurationError(
                 "prediction_intervals.enabled requires evaluation_output: intervals are "
                 "calibrated on the backtest results stored there."
@@ -198,7 +198,7 @@ class Forecaster:
         failed_models = set()
         if evaluate:
             failed_models = self.evaluate_models()
-        if self.conf.prediction_intervals.enabled:
+        if self.intervals_enabled:
             self.run_calibration()
         if score:
             self.score_models(failed_models)
@@ -225,6 +225,12 @@ class Forecaster:
         quantiles = self.native_quantiles(model_conf)
         override = OmegaConf.create({"native_quantiles": quantiles}) if quantiles else None
         return self.model_registry.get_model(model_conf["name"], override_conf=override)
+
+    def evaluation_quantile_fields(self) -> list:
+        """The forecast_quantiles field of evaluation rows, present only when intervals are enabled."""
+        if not self.intervals_enabled:
+            return []
+        return [StructField("forecast_quantiles", MapType(StringType(), ArrayType(DoubleType())))]
 
     def evaluation_writer(self, sdf: DataFrame):
         """Append writer for evaluation_output. With intervals enabled, existing tables gain forecast_quantiles."""
@@ -307,8 +313,7 @@ class Forecaster:
                     StructField("actual", ArrayType(DoubleType())),
                     StructField("model_pickle", BinaryType()),
                 ]
-                + ([StructField("forecast_quantiles", MapType(StringType(), ArrayType(DoubleType())))]
-                   if self.intervals_enabled else [])
+                + self.evaluation_quantile_fields()
             )
 
             model = self.get_model_for_evaluation(model_conf)
@@ -494,8 +499,7 @@ class Forecaster:
                 StructField("actual", ArrayType(DoubleType())),
                 StructField("model_pickle", BinaryType()),
             ]
-            + ([StructField("forecast_quantiles", MapType(StringType(), ArrayType(DoubleType())))]
-               if self.intervals_enabled else [])
+            + self.evaluation_quantile_fields()
         )
         # Covert to Python-native types before converting to pyspark dataframe
         res_pdf['forecast'] = res_pdf['forecast'].apply(lambda x: [float(i) for i in x])
