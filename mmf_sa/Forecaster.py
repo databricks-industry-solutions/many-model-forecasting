@@ -29,6 +29,7 @@ from pyspark.sql.functions import lit, avg, min, max, col, posexplode, to_date, 
 from mmf_sa.models.abstract_model import ForecastingRegressor, collect_sorted
 from mmf_sa.models import ModelRegistry
 from mmf_sa.data_quality_checks import DataQualityChecks
+from mmf_sa.calibration import resolve_prediction_intervals_conf
 from mmf_sa.exceptions import (
     ConfigurationError,
     ExperimentError,
@@ -68,6 +69,13 @@ class Forecaster:
         else:
             self.run_id = str(uuid.uuid4())
         self.data_conf = data_conf
+        self.conf["prediction_intervals"] = resolve_prediction_intervals_conf(
+            self.conf.get("prediction_intervals"))
+        if self.conf.prediction_intervals.enabled and not self.conf.get("evaluation_output"):
+            raise ConfigurationError(
+                "prediction_intervals.enabled requires evaluation_output: intervals are "
+                "calibrated on the backtest results stored there."
+            )
         self.model_registry = ModelRegistry(self.conf)
         self.spark = spark
         self.serverless = bool(self.conf.get("serverless", False))
@@ -189,10 +197,22 @@ class Forecaster:
         failed_models = set()
         if evaluate:
             failed_models = self.evaluate_models()
+        if self.conf.prediction_intervals.enabled:
+            self.run_calibration()
         if score:
             self.score_models(failed_models)
         print("Finished evaluate_score")
         return self.run_id
+
+    def run_calibration(self):
+        """
+        Calibrates prediction intervals from the backtest results in evaluation_output, and
+        writes calibration_output for scoring (docs/specs/confidence_interval.md, section 11).
+        Parameters: self (Forecaster): A Forecaster object.
+        """
+        # Placeholder until the calibration step is implemented: no intervals are produced yet.
+        _logger.warning("prediction_intervals.enabled is set, but calibration is not implemented yet; "
+                        "no prediction intervals will be produced.")
 
     def evaluate_models(self) -> set:
         """
