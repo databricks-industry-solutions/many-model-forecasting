@@ -59,6 +59,7 @@ def run_forecast(
     run_id: str = None,
     conf: Union[str, Dict[str, Any], OmegaConf] = None,
     prediction_intervals: Dict[str, Any] = None,
+    calibration_output: str = None,
 ) -> str:
 
     """
@@ -99,6 +100,7 @@ def run_forecast(
         run_id (str): A string specifying the run id. If not provided a random string is generated and assigned to each run.
         conf (Union[str, Dict[str, Any], OmegaConf]): A configuration object.
         prediction_intervals (Dict[str, Any]): Prediction-interval settings, merged over the `prediction_intervals` block of the configuration (see docs/specs/confidence_interval.md, section 7.3). E.g. {"enabled": True, "levels": [80, 95]}. Default is None, which keeps the configuration as is (disabled in the shipped configurations).
+        calibration_output (str): A string specifying the output table name for the prediction-interval calibration. Only used when prediction intervals are enabled. Default is None, which uses "<evaluation_output>_calibration".
 
     Returns:
     Dict[str, Union[int, str]]: A dictionary with an integer and a string as values.
@@ -197,6 +199,8 @@ def run_forecast(
         _conf["dynamic_historical_categorical"] = dynamic_historical_categorical
     if run_id is not None:
         _conf["run_id"] = run_id
+    if calibration_output is not None:
+        _conf["calibration_output"] = calibration_output
     if prediction_intervals is not None:
         _conf["prediction_intervals"] = OmegaConf.merge(
             _conf.get("prediction_intervals") or OmegaConf.create(), OmegaConf.create(prediction_intervals)
