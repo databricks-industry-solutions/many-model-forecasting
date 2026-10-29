@@ -29,6 +29,13 @@ from mmf_sa.exceptions import (
 from mmf_sa.calibration import QUANTILE_COLUMN_PREFIX, quantile_columns, quantile_key
 
 _logger = logging.getLogger(__name__)
+_warned_clamped = set()
+
+
+def forecast_levels(quantiles) -> list:
+    """Quantile levels a Chronos predict returns for native_quantiles: sorted, rounded, with the median.
+    The single source of the level order used to pack and unpack the distributed UDF output."""
+    return sorted({round(float(q), 6) for q in quantiles} | {0.5})
 
 
 def quantile_forecasts(pipeline, inputs, prediction_length: int, quantiles):
@@ -41,11 +48,14 @@ def quantile_forecasts(pipeline, inputs, prediction_length: int, quantiles):
         quantiles: Requested quantile levels; the median is added if missing.
     Returns: (np.ndarray, np.ndarray, list): medians (n, H), quantiles (n, Q, H) and the Q levels.
     """
-    levels = sorted({float(q) for q in quantiles} | {0.5})
+    levels = forecast_levels(quantiles)
     trained = getattr(pipeline, "quantiles", None)
-    if trained and (levels[0] < min(trained) or levels[-1] > max(trained)):
+    clamp_key = (tuple(levels), tuple(trained or ()))
+    if trained and (levels[0] < min(trained) or levels[-1] > max(trained)) and clamp_key not in _warned_clamped:
         # Chronos clamps quantiles outside its trained range (0.1-0.9 for Chronos-Bolt), so e.g. a
         # "95%" band is really the widest trained band. CQR corrects this (method: auto).
+        # Logged once per process: predict runs per batch and per backtest window.
+        _warned_clamped.add(clamp_key)
         _logger.warning(
             f"Requested quantiles {levels} exceed the trained range [{min(trained)}, {max(trained)}] "
             "of this Chronos model; they are clamped to it, so the native band is too narrow. "
@@ -77,9 +87,11 @@ def quantile_maps(pred_df: pd.DataFrame, group_col: str) -> dict:
     cols = quantile_columns(pred_df)
     if not cols:
         return {}
+    keys = pred_df[group_col].to_numpy()
+    values = {key: pred_df[c].to_numpy() for key, c in cols.items()}
     return {
-        row[group_col]: {key: np.asarray(row[c], dtype=np.float64) for key, c in cols.items()}
-        for _, row in pred_df[[group_col] + list(cols.values())].iterrows()
+        k: {key: [float(x) for x in values[key][i]] for key in values}
+        for i, k in enumerate(keys)
     }
 
 
@@ -158,8 +170,8 @@ class ChronosForecaster(ForecastingRegressor):
                 forecast_udf(hist_sdf.y).alias("y"))
         ).toPandas()
         if self.params.get("native_quantiles"):
-            levels = sorted({float(q) for q in self.params["native_quantiles"]} | {0.5})
-            forecast_df = decode_quantile_forecasts(forecast_df, "y", levels, self.params["prediction_length"])
+            forecast_df = decode_quantile_forecasts(
+                forecast_df, "y", forecast_levels(self.params["native_quantiles"]), self.params["prediction_length"])
         forecast_df = forecast_df.reset_index(drop=False).rename(
             columns={
                 "unique_id": self.params.group_id,
@@ -204,12 +216,13 @@ class ChronosForecaster(ForecastingRegressor):
             last_dates.append(group[date_col].max())
 
         quantiles = self.params.get("native_quantiles")
+        levels = forecast_levels(quantiles) if quantiles else []
         forecasts_median = []
         forecasts_quantiles = []
         for i in range(0, len(contexts), batch_size):
             batch = contexts[i:i + batch_size]
             if quantiles:
-                medians, qs, levels = quantile_forecasts(pipeline, batch, prediction_length, quantiles)
+                medians, qs, _ = quantile_forecasts(pipeline, batch, prediction_length, quantiles)
                 forecasts_median.extend(list(medians))
                 forecasts_quantiles.extend(list(qs))
                 continue
@@ -552,8 +565,8 @@ class Chronos2Forecaster(ChronosForecaster):
             )
         ).toPandas()
         if self.params.get("native_quantiles"):
-            levels = sorted({float(q) for q in self.params["native_quantiles"]} | {0.5})
-            forecast_df = decode_quantile_forecasts(forecast_df, "y", levels, self.params["prediction_length"])
+            forecast_df = decode_quantile_forecasts(
+                forecast_df, "y", forecast_levels(self.params["native_quantiles"]), self.params["prediction_length"])
 
         forecast_df = forecast_df.reset_index(drop=False).rename(
             columns={

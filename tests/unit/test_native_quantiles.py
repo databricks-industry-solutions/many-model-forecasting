@@ -154,3 +154,32 @@ def test_global_backtest_schema(spark_session, monkeypatch, enabled):
     if enabled:
         assert rows["a"]["forecast_quantiles"] == {"0.1": [0.5, 1.5], "0.9": [1.5, 2.5]}
         assert rows["b"]["forecast_quantiles"] is None
+
+
+def test_forecast_levels_match_requested_quantiles():
+    from mmf_sa.models.chronosforecast.ChronosPipeline import forecast_levels
+    pi = cal.resolve_prediction_intervals_conf({"enabled": True})
+    assert forecast_levels(cal.requested_quantiles(pi)) == QUANTILES
+    assert forecast_levels([0.9, 0.1]) == [0.1, 0.5, 0.9]
+
+
+class _FakePipeline:
+    quantiles = [0.1, 0.5, 0.9]
+
+    def predict_quantiles(self, inputs, prediction_length, quantile_levels):
+        import torch
+        n = len(inputs)
+        q = torch.arange(n * prediction_length * len(quantile_levels), dtype=torch.float32)
+        return q.reshape(n, prediction_length, len(quantile_levels)), None
+
+
+def test_clamp_warning_logged_once(caplog):
+    import torch
+    from mmf_sa.models.chronosforecast import ChronosPipeline as cp
+    cp._warned_clamped.clear()
+    with caplog.at_level("WARNING", logger=cp.__name__):
+        for _ in range(3):
+            medians, qs, levels = cp.quantile_forecasts(_FakePipeline(), [torch.zeros(5)] * 2, 4, QUANTILES)
+    assert sum("trained range" in r.message for r in caplog.records) == 1
+    assert medians.shape == (2, 4) and qs.shape == (2, 5, 4) and levels == QUANTILES
+    np.testing.assert_array_equal(medians, qs[:, 2, :])

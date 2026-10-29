@@ -263,4 +263,4 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
         cols = quantile_columns(pred_df)
         if not cols:
             return None
-        return {key: pred_df[c].to_numpy("float") for key, c in cols.items()}
+        return {key: [float(x) for x in pred_df[c]] for key, c in cols.items()}

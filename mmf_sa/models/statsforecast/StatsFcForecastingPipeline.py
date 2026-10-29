@@ -115,6 +115,8 @@ class StatsFcForecaster(ForecastingRegressor):
         """
         Replaces statsforecast's <model>-lo-<level> / <model>-hi-<level> columns with one
         QUANTILE_COLUMN_PREFIX column per requested quantile. The median is the point forecast.
+        Quantiles are the model's raw band: unlike the point forecast, they are not clipped at 0
+        here; calibration applies prediction_intervals.clip_lower to the bounds.
         """
         out = forecast_df[[c for c in forecast_df.columns if "-lo-" not in c and "-hi-" not in c]].copy()
         for q in quantiles:
