@@ -40,12 +40,14 @@ models:
     model_class: StatsFcBaselineNaive
     framework: StatsForecast
     model_type: local
+    native_intervals: true
 
   StatsForecastBaselineSeasonalNaive:
     module: mmf_sa.models.statsforecast.StatsFcForecastingPipeline
     model_class: StatsFcBaselineSeasonalNaive
     framework: StatsForecast
     model_type: local
+    native_intervals: true
     model_spec:
       season_length: 7
 
@@ -54,6 +56,7 @@ models:
     model_class: StatsFcAutoArima
     framework: StatsForecast
     model_type: local
+    native_intervals: true
     model_spec:
       season_length: 7
       approximation: false
@@ -63,6 +66,7 @@ models:
     model_class: StatsFcAutoETS
     framework: StatsForecast
     model_type: local
+    native_intervals: true
     model_spec:
       season_length: 7
       model: "ZZZ"
@@ -72,6 +76,7 @@ models:
     model_class: StatsFcAutoCES
     framework: StatsForecast
     model_type: local
+    native_intervals: true
     model_spec:
       season_length: 7
       model: "Z"
@@ -81,6 +86,7 @@ models:
     model_class: StatsFcAutoTheta
     framework: StatsForecast
     model_type: local
+    native_intervals: true
     model_spec:
       season_length: 7
       decomposition_type: "multiplicative"
@@ -90,6 +96,7 @@ models:
     model_class: StatsFcAutoTbats
     framework: StatsForecast
     model_type: local
+    native_intervals: true
     model_spec:
       season_length: 7
       use_boxcox: true
@@ -383,6 +390,7 @@ models:
     model_class: ChronosBoltTiny
     framework: Chronos
     model_type: foundation
+    native_intervals: true
     num_samples: 10
     batch_size: 16
 
@@ -391,6 +399,7 @@ models:
     model_class: ChronosBoltMini
     framework: Chronos
     model_type: foundation
+    native_intervals: true
     num_samples: 10
     batch_size: 16
 
@@ -399,6 +408,7 @@ models:
     model_class: ChronosBoltSmall
     framework: Chronos
     model_type: foundation
+    native_intervals: true
     num_samples: 10
     batch_size: 16
 
@@ -407,6 +417,7 @@ models:
     model_class: ChronosBoltBase
     framework: Chronos
     model_type: foundation
+    native_intervals: true
     num_samples: 10
     batch_size: 16
 
@@ -415,6 +426,7 @@ models:
     model_class: Chronos2
     framework: Chronos
     model_type: foundation
+    native_intervals: true
     batch_size: 16
 
   Chronos2Small:
@@ -422,6 +434,7 @@ models:
     model_class: Chronos2Small
     framework: Chronos
     model_type: foundation
+    native_intervals: true
     batch_size: 16
 
   Chronos2Synth:
@@ -429,6 +442,7 @@ models:
     model_class: Chronos2Synth
     framework: Chronos
     model_type: foundation
+    native_intervals: true
     batch_size: 16
 
   MoiraiSmall:
