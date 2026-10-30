@@ -245,7 +245,8 @@ class Forecaster:
         failed_models = set()
         if evaluate:
             failed_models = self.evaluate_models()
-        if self.intervals_enabled:
+        if evaluate and self.intervals_enabled:
+            # Without evaluation, scoring reuses the latest calibration stored for this run_id.
             self.run_calibration()
         if score:
             self.score_models(failed_models)
@@ -324,6 +325,7 @@ class Forecaster:
         feats = materializer.cache(calibration_spark.series_features(
             train, windows, gid, date_col, target, calibration.SEASON_LENGTH[freq],
             calibration.FEATURE_PERIODS[freq], extra_cols))
+        cached = feats
         good = col("sigma").isNotNull() & ~isnan(col("sigma")) & (col("sigma") > 0)
         n_bad = feats.filter(~good).count()
         if n_bad:
@@ -334,7 +336,7 @@ class Forecaster:
                                                                                        else float(median))))
         classified = materializer.cache(calibration_spark.classify(feats, gid))
         classified.count()
-        materializer.uncache(feats)
+        materializer.uncache(cached)
         return classified, 0.0 if min_target is None else float(min_target)
 
     def run_calibration(self):
@@ -355,6 +357,9 @@ class Forecaster:
         active = list(self.model_registry.get_active_model_keys())
         eval_sdf = self.spark.table(self.conf["evaluation_output"]).filter(
             (col("run_id") == self.run_id) & (col("metric_name") == self.conf["metric"]) & col("model").isin(active))
+        # A re-run with the same run_id appends a second backtest; keep each model's latest one.
+        eval_sdf = eval_sdf.withColumn("_latest", max("run_date").over(Window.partitionBy("model"))) \
+            .filter(col("run_date") == col("_latest"))
         cols = [col(gid).cast(StringType()).alias(gid), "backtest_window_start_date", "model", "forecast", "actual"]
         if "forecast_quantiles" in eval_sdf.columns:
             cols.append("forecast_quantiles")
@@ -373,9 +378,14 @@ class Forecaster:
         print(f"Prediction intervals: clip_lower resolved to {clip_lower}")
         try:
             for model_name in sorted(models):
-                result, summary = calibration_spark.calibrate_model_spark(
-                    self.spark, eval_sdf.filter(col("model") == model_name).drop("model"), features, gid,
-                    model_name, pi, clip_lower, materializer)
+                try:
+                    result, summary = calibration_spark.calibrate_model_spark(
+                        self.spark, eval_sdf.filter(col("model") == model_name).drop("model"), features, gid,
+                        model_name, pi, clip_lower, materializer)
+                except Exception as err:
+                    # One model's failure must not stop the others, nor scoring (its intervals will be null).
+                    _logger.error(f"Calibration failed for {model_name}: {repr(err)}", exc_info=err)
+                    continue
                 if summary.get("dropped"):
                     _logger.warning(f"{model_name}: {summary['dropped']} series dropped from calibration "
                                     "(incomplete or non-finite backtest windows).")

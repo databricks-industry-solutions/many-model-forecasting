@@ -401,7 +401,8 @@ Notes and limitations:
 
 - More backtest windows give more accurate intervals per series (the corrections shrink less toward the group), at the cost of more backtest fits. The default `backtest_length` and `stride` give 3 windows, which works with the default settings.
 - statsforecast models clip their target and point forecasts at 0, so `clip_lower: none` does not make their intervals signed.
-- Calibration and scoring must happen in the same `run_forecast` call (or the same `run_id`): a scoring-only run has no calibration, and its interval columns are null.
+- Scoring applies the latest calibration stored for its `run_id`. `run_forecast` evaluates, calibrates and scores in one call; a scoring-only `Forecaster.evaluate_score(evaluate=False)` reuses the calibration of an earlier run only if it is given the same `run_id`, and otherwise writes null interval columns.
+- If one model's calibration fails, the error is logged, the other models are calibrated and scored, and the failed model's interval columns are null.
 - `recency_decay`, `coverage.levels_by_group` and `score: abs` are accepted in the configuration but not supported yet.
 - Calibration and scoring run in Spark: nothing that grows with the number of series is collected to the driver.
 
