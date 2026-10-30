@@ -72,6 +72,7 @@ Gather these from the user (with sensible defaults):
 | `group_id` | `unique_id` | Column name for series identifier |
 | `date_col` | `ds` | Column name for timestamp |
 | `target` | `y` | Column name for target value |
+| `prediction_intervals` | `None` (disabled) | Prediction-interval settings, e.g. `{"enabled": True, "levels": [80, 95]}` — see Step 1d |
 
 ## Available model names
 
@@ -225,6 +226,29 @@ Derive `backtest_length` and `stride` from the user's choice. For option (e), as
 - `stride <= backtest_length`
 
 Report the resulting number of backtest windows: `(backtest_length - prediction_length) / stride + 1`.
+
+### ⛔ STOP GATE — Step 1d: Ask user about prediction intervals
+
+**Always ask. Do NOT proceed until the user answers.**
+
+```
+AskUserQuestion:
+  "Do you want prediction intervals (lower/upper bounds) with the forecasts?
+
+   (a) No — point forecasts only (default)
+
+   (b) Yes, 80% and 95% intervals (recommended for safety stock and planning)
+       → prediction_intervals = {"enabled": True, "levels": [80, 95]}
+
+   (c) Yes, custom levels or quantiles
+       → e.g. {"enabled": True, "levels": [90]} or {"enabled": True, "quantiles": [0.1, 0.5, 0.9]}"
+```
+
+Explain in one or two sentences what the user gets: MMF calibrates the intervals on the backtest, so that they reach the requested coverage. Models with native intervals (statsforecast AutoETS, AutoArima, AutoCES, AutoTheta, AutoTbats, Naive, SeasonalNaive, and the Chronos models) get their native bands corrected; all others get conformal intervals from their backtest errors. The intervals land in `scoring_output` as a `y_quantiles` map, and their out-of-sample coverage in `{use_case}_evaluation_output_interval_metrics` (`coverage_80`, `msis_80`, ...), which Skill 5 reports.
+
+- Option (a): set `{prediction_intervals}` to `None` in every notebook.
+- Options (b)/(c): set `{prediction_intervals}` to the Python dict literal in every notebook (local, global ML, and the GPU orchestrators). If the user wants bound columns for SQL or dashboards, add `"output_format": "both"` (adds `y_lo_80`, `y_hi_80`, ...).
+- If the backtest has only 1 window (Step 1b option (a)), warn that the interval metrics need at least 2 windows, and recommend option (b) of Step 1b (3 windows).
 
 ### Step 1c: Validate and pre-create the MLflow experiment (MANDATORY — fail-fast)
 
@@ -404,6 +428,7 @@ Generate a single notebook from `mmf_local_notebook_template.ipynb` with all loc
 | `{dynamic_historical_numerical}` | Python list; past-only signals for **NeuralForecast** global models (e.g. lagged features), or `[]`. Safe to use. |
 | `{dynamic_historical_categorical}` | Python list, or `[]`. Safe to use. |
 | `{scoring_table}` | `""` unless Skill 1 created `{use_case}_scoring_data`. If scoring table exists, set to `{use_case}_scoring_data`. Empty string means `scoring_data` = `train_table`. |
+| `{prediction_intervals}` | `None`, or the Python dict literal chosen in Step 1d, e.g. `{"enabled": True, "levels": [80, 95]}` |
 
 Use the template from:
 - [mmf_local_notebook_template.ipynb](mmf_local_notebook_template.ipynb) → save locally as `notebooks/{use_case}/run_local.ipynb`
@@ -432,6 +457,7 @@ Identical to the local notebook placeholders, with `{active_models}` filtered to
 | `{dynamic_future_numerical}`, `{dynamic_future_categorical}` | **Populate these when Skill 1 created `{use_case}_scoring_data`** — `global_ml` has the most thoroughly validated `dynamic_future_*` support of any class |
 | `{dynamic_historical_numerical}`, `{dynamic_historical_categorical}` | Past-only signals; safe to use |
 | `{scoring_table}` | `""` unless Skill 1 created `{use_case}_scoring_data`. If so, set to `{use_case}_scoring_data`. |
+| `{prediction_intervals}` | Same as the local notebook (Step 1d) |
 
 Use the template from:
 - [mmf_global_ml_notebook_template.ipynb](mmf_global_ml_notebook_template.ipynb) → save locally as `notebooks/{use_case}/run_global_ml.ipynb`
@@ -482,6 +508,7 @@ For each GPU model class (global and/or foundation), generate an **orchestrator 
 | `{dynamic_historical_numerical}` | Past-only signals for **global** models (lag/roll features), or `[]`. Safe to use. |
 | `{dynamic_historical_categorical}` | Same — often `[]`. Safe to use. |
 | `{scoring_table}` | `""` unless Skill 1 created `{use_case}_scoring_data`. If scoring table exists, set to `{use_case}_scoring_data`. |
+| `{prediction_intervals}` | Same as the local notebook (Step 1d). The orchestrator forwards it to each `run_gpu` call as JSON; each call calibrates its own model. |
 
 Use the template from:
 - [mmf_gpu_orchestrator_notebook_template.ipynb](mmf_gpu_orchestrator_notebook_template.ipynb)
@@ -904,7 +931,7 @@ If the user requests **serverless compute** for local models, omit `job_clusters
 }
 ```
 
-GPU models require ML Runtime clusters and cannot use serverless.
+GPU models (global deep learning and foundation models) are usually run on ML Runtime GPU clusters as above. They can also run on serverless GPU compute (A10 accelerator, environment version 5 or later) with `serverless=True` in `run_forecast`: foundation models then predict on the driver's GPU, because Spark workers on serverless are CPU-only. See [examples/serverless](https://github.com/databricks-industry-solutions/many-model-forecasting/tree/main/examples/serverless).
 
 #### Step 5a: Non-forecastable separate job (if `separate_job` strategy)
 
