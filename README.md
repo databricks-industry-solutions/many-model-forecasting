@@ -390,6 +390,7 @@ In the experiments behind these defaults (about 5,000 M5 series, with AutoETS, S
 |---|---|---|
 | `levels` | `[80, 95]` | Central interval levels in percent. Or set `quantiles`, e.g. `[0.1, 0.5, 0.9]`. |
 | `method` | `auto` | `auto` (native + CQR where available, else conformal), `conformal`, `native` (uncorrected native bands) or `cqr`. |
+| `method_by_model` | `{}` | Per-model override of `method`, by model name, e.g. `{"Chronos2": "conformal", "StatsForecastAutoETS": "native"}`. Models not listed use `method`. |
 | `coverage.target` | `series` | Conformal pooling: `marginal` (all series), `group` (per group) or `series` (per series, shrunk toward its group). |
 | `coverage.group_col` | `auto` | Groups of similar series: `auto` (ABC x XYZ classes computed by MMF), `sb_class`, `abc_class`, a column of the training data, or a list of columns. |
 | `coverage.shrinkage_kappa` | `10` | Strength of the shrinkage toward the group; higher means closer to the group. |
