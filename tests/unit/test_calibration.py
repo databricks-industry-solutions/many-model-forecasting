@@ -3,8 +3,8 @@
 Tests cover:
 - Finite-sample conformal ranks and infinite-bound flags
 - Group merging, shrinkage limits, horizon pooling, clipping and uncrossing
-- Golden tests against the reference experiment notebook
-  (docs/specs/experiments/pi_grouping_m5.py) on a 30-series M5 sample:
+- Golden tests against the reference experiment notebook that chose the defaults,
+  on a 30-series M5 sample:
   features and classes, residual conformal (marginal, group, series shrinkage),
   native bands and every CQR variant. The fixture is built by
   tests/unit/data/make_calibration_golden.py.

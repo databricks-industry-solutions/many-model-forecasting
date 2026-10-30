@@ -1,6 +1,6 @@
 # Prediction-interval validation (Databricks notebooks)
 
-Task 7 of the prediction-interval plan (`docs/specs/confidence_interval.md`, section 11.5). These are Databricks
+End-to-end validation of the prediction intervals on Databricks. These are Databricks
 notebooks (source format), run as one-off jobs on a workspace; they install `mmf_sa` from the branch named in
 their first cell. They are not part of the unit test suite.
 

@@ -1,4 +1,4 @@
-"""Unit tests for native quantiles in the backtest (prediction intervals, P0 step 3).
+"""Unit tests for native quantiles in the backtest (prediction intervals).
 
 Tests cover:
 - Quantile keys, requested quantiles and their central levels

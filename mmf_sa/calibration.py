@@ -1,6 +1,5 @@
 """Prediction-interval configuration and calibration.
 
-See docs/specs/confidence_interval.md (§7.3 for the configuration, §11 for the plan).
 This module holds the `prediction_intervals` configuration (defaults and validation) and
 the calibration math, as pure numpy/pandas functions that the Spark step calls per model.
 """
@@ -127,7 +126,7 @@ def resolve_prediction_intervals_conf(
             raise ConfigurationError(
                 f"prediction_intervals.{key} must be one of {', '.join(sorted(choices))}, got {pi[key]!r}")
     if pi["cqr_score"] == "scaled" and pi["cqr_pool"] == "series":
-        # Near-zero native half-widths make the per-series scaled score blow up (spec §7.6.4).
+        # Near-zero native half-widths make the per-series scaled score blow up.
         raise ConfigurationError("prediction_intervals: cqr_score 'scaled' cannot be combined with cqr_pool 'series'")
 
     if cov["target"] not in _COVERAGE_TARGETS:
@@ -174,7 +173,7 @@ def resolve_prediction_intervals_conf(
 
 
 # ---------------------------------------------------------------------------
-# Native quantiles (spec sections 7.1 and 7.4).
+# Native quantiles.
 # ---------------------------------------------------------------------------
 
 # Prefix of the per-quantile columns that a model's predict() adds next to the point forecast
@@ -235,9 +234,9 @@ def quantile_maps(pred_df: pd.DataFrame, group_col: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Calibration math (docs/specs/confidence_interval.md, sections 7.2 and 7.6).
+# Calibration math.
 #
-# Pure numpy/pandas, ported from docs/specs/experiments/pi_grouping_m5.py. Arrays of
+# Pure numpy/pandas, ported from the experiment that chose the defaults. Arrays of
 # backtest values are cubes of shape (N series, W windows, H steps). Interval levels are
 # central levels in percent (80 means the 10%-90% interval).
 # ---------------------------------------------------------------------------
@@ -510,7 +509,7 @@ def cqr_bounds(yhat: np.ndarray, lo: np.ndarray, hi: np.ndarray, sigma: np.ndarr
 
 def resolve_clip_lower(clip_lower, min_target: float):
     """
-    Lower clipping bound of the intervals (spec section 7.3.1).
+    Lower clipping bound of the intervals.
     Parameters:
         clip_lower: "auto", "none" or a number.
         min_target (float): Minimum of the training target over all series.
@@ -532,7 +531,7 @@ def finalize_bounds(lo: np.ndarray, hi: np.ndarray, clip_lower=None):
 
 def interval_metrics(y: np.ndarray, lo: np.ndarray, hi: np.ndarray, sigma: np.ndarray, level: float):
     """
-    Per-series interval metrics on held-out windows (spec section 8).
+    Per-series interval metrics on held-out windows.
     Parameters:
         y, lo, hi (np.ndarray): Actuals and bounds (N, K, H).
         sigma (np.ndarray): Per-series scale (N,), used to make width and interval score comparable.
@@ -602,7 +601,7 @@ def classify_series(features: pd.DataFrame) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
-# One model's calibration (spec section 11.1), as called by Forecaster.run_calibration.
+# One model's calibration, as called by Forecaster.run_calibration.
 # ---------------------------------------------------------------------------
 
 # Season length of the seasonal-naive scale, and length of the history used for the scale
@@ -876,7 +875,7 @@ def calibrate_model(y, yhat, sigma, pi_conf, labels=None, native=None, clip_lowe
     for level in calibration_levels(pi_conf):
         band = _native_band(native, level, n, w, h)
         if band is not None and clip_lower is not None:
-            # Calibration and forecast bands are clipped alike (spec section 7.6.4).
+            # Calibration and forecast bands are clipped alike.
             band = (np.maximum(band[0], clip_lower), band[1])
         cubes = score_cubes(plan, y, yhat, sigma, band)
 
@@ -1033,7 +1032,7 @@ def _metric_name(name: str, level: float, native: bool) -> str:
 def calibration_rows(model: str, series_col: str, ids, results: dict, features: pd.DataFrame, labels,
                      n_windows: int, min_scores_per_group: int, clip_lower) -> pd.DataFrame:
     """
-    calibration_output rows of one model: one row per series, step and level (spec section 11.3).
+    calibration_output rows of one model: one row per series, step and level.
     q_lo and q_hi are in units of sigma (or 1 for score "signed"; of the native half-width for CQR "scaled").
     """
     n = len(ids)
@@ -1094,7 +1093,7 @@ def metric_rows(model: str, series_col: str, ids, dates, results: dict) -> pd.Da
 
 
 # ---------------------------------------------------------------------------
-# Applying the calibration to forecasts (scoring, spec sections 7.4 and 11.1).
+# Applying the calibration to forecasts (scoring).
 # ---------------------------------------------------------------------------
 
 
@@ -1249,7 +1248,7 @@ def apply_calibration(forecasts: pd.DataFrame, cal_rows: pd.DataFrame, series_co
         cal_rows (pd.DataFrame): The model's calibration_output rows.
         series_col, target (str): Column names.
         levels: Central levels in percent.
-        output_format (str): quantile_map, lo_hi or both (spec section 7.4).
+        output_format (str): quantile_map, lo_hi or both.
     Series without calibration rows use the per-step median correction of the model. Bounds are null
     when they cannot be computed (no calibration at all, or a missing native band).
     Returns: (pd.DataFrame, dict): The forecasts with the interval columns (forecast_quantiles dropped),

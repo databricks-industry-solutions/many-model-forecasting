@@ -342,7 +342,7 @@ class Forecaster:
     def run_calibration(self):
         """
         Calibrates prediction intervals from the backtest results of this run in evaluation_output
-        (docs/specs/confidence_interval.md, sections 11 and 11.6), in Spark: nothing that grows with the
+        in Spark: nothing that grows with the
         number of series is collected to the driver. Writes one calibration_output row per model, series,
         horizon step and level, and the leave-one-window-out interval metrics to the interval metrics
         table (interval_metrics_table).
@@ -1003,7 +1003,7 @@ class Forecaster:
     def write_scoring_output(self, sdf: DataFrame, model_name: str):
         """
         Appends one model's forecasts to scoring_output. With prediction intervals enabled, the calibration
-        of this run is applied first and the interval columns are added (output_format, spec section 7.4).
+        of this run is applied first and the interval columns are added (output_format).
         """
         if not self.intervals_enabled:
             sdf.write.mode("append").saveAsTable(self.conf["scoring_output"])

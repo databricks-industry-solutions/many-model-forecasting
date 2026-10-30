@@ -22,7 +22,7 @@ dynamic_historical_numerical:
 
 dynamic_historical_categorical:
 
-# Prediction intervals (docs/specs/confidence_interval.md, section 7.3). Disabled by default.
+# Prediction intervals (see the "Prediction Intervals" section of the README). Disabled by default.
 # Override with run_forecast(prediction_intervals={...}).
 prediction_intervals:
   enabled: false

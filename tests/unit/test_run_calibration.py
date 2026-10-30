@@ -1,4 +1,4 @@
-"""Unit tests for one model's calibration and its output rows (prediction intervals, P0 step 4).
+"""Unit tests for one model's calibration and its output rows (prediction intervals).
 
 Tests cover:
 - calibrate_model: method resolution (conformal, CQR, native, fallbacks), agreement with the
