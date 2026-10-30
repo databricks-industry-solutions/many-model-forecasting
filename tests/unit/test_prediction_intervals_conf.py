@@ -4,6 +4,7 @@ Tests cover:
 - Defaults, and the identical block shipped in every forecasting_conf_*.yaml
 - Merging a partial user block, including nested coverage keys
 - `quantiles` replacing `levels`
+- `method_by_model`: per-model interval methods, and the model's method (model_method)
 - Rejection of unknown keys and invalid values
 - The native_intervals capability flags in models_conf.yaml
 - Plumbing: run_forecast(prediction_intervals=...) and the Forecaster checks
@@ -14,6 +15,7 @@ import pytest
 from omegaconf import OmegaConf
 
 import mmf_sa
+from mmf_sa import calibration as cal
 from mmf_sa.calibration import DEFAULT_PREDICTION_INTERVALS, resolve_prediction_intervals_conf
 from mmf_sa.exceptions import ConfigurationError
 from mmf_sa.models import ModelRegistry
@@ -43,6 +45,23 @@ def test_partial_override_keeps_other_defaults():
     assert pi["coverage"]["target"] == "series"
     assert pi["coverage"]["group_col"] == "auto"
     assert pi["cqr_pool"] == "group"
+
+
+def test_method_by_model_defaults_to_empty():
+    assert _resolve({"enabled": True})["method_by_model"] == {}
+
+
+def test_method_by_model_accepts_every_method():
+    by_model = {"Chronos2": "conformal", "StatsForecastAutoETS": "native", "FFToto": "cqr", "Moirai": "auto"}
+    pi = _resolve({"method": "conformal", "method_by_model": by_model})
+    assert pi["method_by_model"] == by_model
+
+
+def test_model_method_uses_the_model_entry_else_the_method():
+    pi = cal.resolve_prediction_intervals_conf({"method": "conformal", "method_by_model": {"Chronos2": "cqr"}})
+    assert cal.model_method(pi, "Chronos2") == "cqr"
+    assert cal.model_method(pi, "StatsForecastAutoETS") == "conformal"
+    assert cal.model_method(pi) == "conformal"
 
 
 def test_quantiles_replace_levels():
@@ -75,6 +94,9 @@ def test_accepts_dictconfig_and_valid_alternatives():
     ({"quantiles": [1.0]}, "quantiles"),
     ({"quantiles": [0.1, 0.5, 0.95]}, "central pairs"),
     ({"method": "bootstrap"}, "method"),
+    ({"method_by_model": {"Chronos2": "bootstrap"}}, "method_by_model"),
+    ({"method_by_model": {"Chronos2": None}}, "method_by_model"),
+    ({"method_by_model": ["Chronos2"]}, "method_by_model"),
     ({"cqr_score": "abs"}, "cqr_score"),
     ({"cqr_tail_split": "upper"}, "cqr_tail_split"),
     ({"cqr_pool": "store"}, "cqr_pool"),
@@ -176,3 +198,27 @@ def test_forecaster_resolves_block():
     assert f.conf.prediction_intervals.enabled is False
     with pytest.raises(ConfigurationError, match="method"):
         mmf_sa.Forecaster(conf=_forecaster_conf(method="x"), data_conf={}, spark=None, experiment_id="e")
+
+
+def test_forecaster_warns_once_about_method_by_model_names_that_are_not_active(caplog):
+    by_model = {"StatsForecastAutoETS": "native", "Chronos2": "cqr", "Nope": "cqr", "Other": "native"}
+    conf = OmegaConf.create({"freq": "D", "backtest_length": 14, "evaluation_output": "t",
+                             "active_models": ["StatsForecastAutoETS", "Chronos2"],
+                             "prediction_intervals": {"enabled": True, "method": "conformal",
+                                                      "method_by_model": by_model}})
+    with caplog.at_level("WARNING", logger="mmf_sa.Forecaster"):
+        f = mmf_sa.Forecaster(conf=conf, data_conf={}, spark=None, experiment_id="e")
+    warnings = [r.getMessage() for r in caplog.records if "method_by_model" in r.getMessage()]
+    assert len(warnings) == 1
+    assert "Nope, Other" in warnings[0]
+    assert f.conf.prediction_intervals.method_by_model["StatsForecastAutoETS"] == "native"
+
+
+def test_forecaster_does_not_warn_when_method_by_model_names_are_active(caplog):
+    conf = OmegaConf.create({"freq": "D", "backtest_length": 14, "evaluation_output": "t",
+                             "active_models": ["StatsForecastAutoETS"],
+                             "prediction_intervals": {"enabled": True,
+                                                      "method_by_model": {"StatsForecastAutoETS": "cqr"}}})
+    with caplog.at_level("WARNING", logger="mmf_sa.Forecaster"):
+        mmf_sa.Forecaster(conf=conf, data_conf={}, spark=None, experiment_id="e")
+    assert "method_by_model" not in caplog.text

@@ -1,8 +1,8 @@
 """Unit tests for one model's calibration and its output rows (prediction intervals).
 
 Tests cover:
-- calibrate_model: method resolution (conformal, CQR, native, fallbacks), agreement with the
-  lower-level functions, clipping, and leave-one-window-out metrics
+- calibrate_model: method resolution (conformal, CQR, native, fallbacks), per-model methods
+  (method_by_model), agreement with the lower-level functions, clipping, and leave-one-window-out metrics
 - calibrate_model on the golden M5 sample with the default settings
 - backtest_cubes: window alignment, dropped series, native bands and their fallbacks
 - Group labels, scale fallback, and the calibration_output / metric row builders
@@ -95,6 +95,39 @@ def test_native_methods_fall_back_without_bands(cubes, method, caplog):
         res = cal.calibrate_model(y, yhat, sigma, _pi(method=method), labels=labels)
     assert res[80]["method"] == "conformal"
     assert "falling back" in caplog.text
+
+
+def test_method_by_model_sets_the_method_of_each_model(cubes):
+    y, yhat, sigma, labels, native = cubes
+    pi = _pi(method="conformal", method_by_model={"Chronos2": "cqr", "StatsForecastAutoETS": "native"})
+
+    def method(model):
+        return cal.calibrate_model(y, yhat, sigma, pi, labels=labels, native=native, clip_lower=0.0,
+                                   model=model)[95]["method"]
+
+    assert method("Chronos2") == "cqr"
+    assert method("StatsForecastAutoETS") == "native"
+    assert method("StatsForecastAutoArima") == "conformal"  # not listed: the method of the block
+    assert method(None) == "conformal"
+
+
+def test_method_by_model_matches_the_global_method_it_names(cubes):
+    y, yhat, sigma, labels, native = cubes
+    per_model = cal.calibrate_model(y, yhat, sigma, _pi(method="conformal", method_by_model={"m": "cqr"}),
+                                    labels=labels, native=native, clip_lower=0.0, model="m")
+    global_cqr = cal.calibrate_model(y, yhat, sigma, _pi(method="cqr"), labels=labels, native=native, clip_lower=0.0)
+    for level in per_model:
+        np.testing.assert_array_equal(per_model[level]["q_lo"], global_cqr[level]["q_lo"])
+        np.testing.assert_array_equal(per_model[level]["q_hi"], global_cqr[level]["q_hi"])
+
+
+def test_method_by_model_native_falls_back_without_bands(cubes, caplog):
+    y, yhat, sigma, labels, _ = cubes
+    pi = _pi(method="auto", method_by_model={"Chronos2": "native"})
+    with caplog.at_level("WARNING"):
+        res = cal.calibrate_model(y, yhat, sigma, pi, labels=labels, model="Chronos2")
+    assert res[80]["method"] == "conformal"
+    assert "falling back" in caplog.text and "Chronos2" in caplog.text
 
 
 def test_leave_one_window_out_metrics(cubes):

@@ -109,6 +109,11 @@ class Forecaster:
                 "calibrated on the backtest results stored there."
             )
         self.model_registry = ModelRegistry(self.conf)
+        unknown_methods = set(self.conf.prediction_intervals.method_by_model) - set(
+            self.model_registry.get_active_model_keys())
+        if unknown_methods:
+            _logger.warning("prediction_intervals.method_by_model names models that are not active, ignored: "
+                            f"{', '.join(sorted(unknown_methods))}.")
         self.spark = spark
         self.serverless = bool(self.conf.get("serverless", False))
         if experiment_id:
@@ -260,11 +265,13 @@ class Forecaster:
     def native_quantiles(self, model_conf) -> list:
         """
         Quantile levels a model must produce in its backtest, or None.
-        Only models flagged native_intervals produce them, and only when the intervals use native
-        bands (method auto, native or cqr).
+        Only models flagged native_intervals produce them, and only when the model's interval method
+        (method_by_model, else method) uses native bands: auto, native or cqr.
         """
         pi = self.conf.prediction_intervals
-        if not pi.enabled or not model_conf.get("native_intervals", False) or pi.method == "conformal":
+        if not pi.enabled or not model_conf.get("native_intervals", False):
+            return None
+        if calibration.model_method(pi, model_conf["name"]) == "conformal":
             return None
         return requested_quantiles(pi)
 

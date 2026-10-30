@@ -29,6 +29,7 @@ prediction_intervals:
   levels: [80, 95]            # central interval levels; or set `quantiles` instead
   quantiles:                  # e.g. [0.1, 0.5, 0.9]; replaces `levels` when set
   method: auto                # auto (native + CQR if available, else conformal) | conformal | native | cqr
+  # method_by_model: {Chronos2: conformal}  # per-model method, e.g. {StatsForecastAutoETS: native}; others use method
   cqr_score: asymmetric       # asymmetric | scaled | symmetric
   cqr_tail_split: adaptive    # adaptive | equal
   cqr_pool: group             # group | marginal | series

@@ -477,7 +477,7 @@ def calibrate_model_spark(spark: SparkSession, eval_sdf: DataFrame, features: Da
     levels = cal.calibration_levels(pi_conf)
     has_quantiles = ("forecast_quantiles" in eval_sdf.columns
                      and eval_sdf.filter(F.col("forecast_quantiles").isNotNull()).limit(1).count() > 0)
-    plan = cal.fit_plan(pi_conf, has_quantiles)
+    plan = cal.fit_plan(pi_conf, has_quantiles, model)
     eval_sdf = eval_sdf.join(features.select(series_col), on=series_col, how="left_semi")
     if eval_sdf.limit(1).count() == 0:
         return None, {"dropped": 0}
