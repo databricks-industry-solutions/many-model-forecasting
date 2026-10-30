@@ -29,6 +29,8 @@ from pyspark.sql.types import (
     LongType,
 )
 from pyspark.sql.functions import lit, avg, min, max, col, posexplode, to_date, to_timestamp, countDistinct
+from pyspark.sql.functions import array_sort, collect_list, expr, first, row_number, struct, when
+from pyspark.sql.window import Window
 from mmf_sa.models.abstract_model import ForecastingRegressor, collect_sorted
 from mmf_sa.models import ModelRegistry
 from mmf_sa.data_quality_checks import DataQualityChecks
@@ -999,40 +1001,89 @@ class Forecaster:
             .saveAsTable(self.conf["scoring_output"])
         )
 
-    def add_prediction_intervals(self, sdf: DataFrame, model_name: str) -> DataFrame:
-        """Applies calibration_output of this run and model to scoring rows (one row per series)."""
-        pi = self.conf.prediction_intervals
-        gid, target, date_col = self.conf["group_id"], self.conf["target"], self.conf["date_col"]
-        levels = calibration.calibration_levels(pi)
+    def calibration_rows_for(self, model_name: str):
+        """This run's calibration_output rows of one model, as a Spark DataFrame, or None when there are none."""
         try:
-            cal_rows = (
-                self.spark.table(self.calibration_output_table())
-                .filter((col("run_id") == self.run_id) & (col("model") == model_name))
-                .toPandas()
-            )
+            cal = self.spark.table(self.calibration_output_table()).filter(
+                (col("run_id") == self.run_id) & (col("model") == model_name))
+            if cal.limit(1).count() == 0:
+                return None
+            return cal
         except Exception as err:
-            _logger.warning(f"No calibration_output for this run ({err}); interval columns will be null.")
-            cal_rows = pd.DataFrame()
-        if cal_rows.empty:
+            _logger.warning(f"Cannot read calibration_output ({err}).")
+            return None
+
+    def wide_corrections(self, cal: DataFrame, levels: list) -> DataFrame:
+        """
+        One row per series with its corrections in calibration.correction_column(i, field) columns: q_lo and
+        q_hi as arrays ordered by step, sigma, method and score, for each level i.
+        """
+        gid = self.conf["group_id"]
+        per_level = cal.groupBy(gid, "level").agg(
+            array_sort(collect_list(struct("step", "q_lo", "q_hi"))).alias("_steps"),
+            first("sigma").alias("sigma"), first("method").alias("method"), first("score").alias("score"),
+        ).select(gid, "level", col("_steps.q_lo").alias("q_lo"), col("_steps.q_hi").alias("q_hi"),
+                 "sigma", "method", "score")
+        aggs = []
+        for i, level in enumerate(levels):
+            for field in calibration.CORRECTION_FIELDS:
+                aggs.append(first(when(col("level") == float(level), col(field)), ignorenulls=True)
+                            .alias(calibration.correction_column(i, field)))
+        return per_level.groupBy(gid).agg(*aggs)
+
+    def fallback_corrections(self, cal: DataFrame) -> dict:
+        """Per-level median corrections for series without calibration rows (small: levels x horizon rows)."""
+        gid = self.conf["group_id"]
+        steps = cal.groupBy("level", "step").agg(
+            expr("percentile(q_lo, 0.5)").alias("q_lo"), expr("percentile(q_hi, 0.5)").alias("q_hi"))
+        sigma = cal.filter(col("step") == 1).groupBy("level").agg(expr("percentile(sigma, 0.5)").alias("sigma"))
+        kinds = (cal.filter(col("step") == 1).groupBy("level", "method", "score").count()
+                 .withColumn("_rank", row_number().over(Window.partitionBy("level").orderBy(col("count").desc())))
+                 .filter(col("_rank") == 1).select("level", "method", "score"))
+        stats = steps.join(sigma, "level").join(kinds, "level").toPandas()
+        return calibration.median_corrections(stats)
+
+    def add_prediction_intervals(self, sdf: DataFrame, model_name: str) -> DataFrame:
+        """
+        Applies this run's calibration_output of one model to its scoring rows (one row per series). The
+        corrections are joined to the forecasts and applied per partition, so nothing is collected to the
+        driver except the per-level fallback corrections.
+        """
+        pi = self.conf.prediction_intervals
+        gid, target = self.conf["group_id"], self.conf["target"]
+        levels = calibration.calibration_levels(pi)
+        output_format = pi.output_format
+        cal = self.calibration_rows_for(model_name)
+        if cal is None:
             _logger.warning(f"{model_name}: no calibration rows for run_id {self.run_id}; "
                             "interval columns will be null.")
-        pdf = sdf.toPandas()
-        pdf[gid] = pdf[gid].astype(str)
-        if not cal_rows.empty:
-            cal_rows[gid] = cal_rows[gid].astype(str)
-        out, stats = calibration.apply_calibration(pdf, cal_rows, gid, target, levels, pi.output_format)
-        if stats["fallback"] or stats["null"]:
-            _logger.warning(f"{model_name}: {stats['fallback']} series without calibration used the model's median "
-                            f"correction; {stats['null']} series have null bounds.")
-        # Spark Connect Arrow rejects nanosecond timestamps (see score_foundation_model).
-        out[date_col] = [None if a is None else np.asarray(a, dtype="datetime64[us]") for a in out[date_col]]
+            fallback, clip_lower, joined = {}, None, sdf
+        else:
+            fallback = self.fallback_corrections(cal)
+            clip_row = cal.select("clip_lower").filter(col("clip_lower").isNotNull()).limit(1).collect()
+            clip_lower = float(clip_row[0][0]) if clip_row else None
+            wide = self.wide_corrections(cal, levels)
+            n_missing = sdf.select(gid).join(wide.select(gid), on=gid, how="left_anti").count()
+            if n_missing:
+                _logger.warning(f"{model_name}: {n_missing} series without calibration rows use the model's "
+                                "median correction.")
+            joined = sdf.join(wide, on=gid, how="left")
+
         fields = [f for f in sdf.schema.fields if f.name != "forecast_quantiles"]
-        for name in calibration.interval_columns(target, levels, pi.output_format):
+        for name in calibration.interval_columns(target, levels, output_format):
             dtype = (MapType(StringType(), ArrayType(DoubleType())) if name == calibration.quantiles_column(target)
                      else ArrayType(DoubleType()))
             fields.append(StructField(name, dtype))
         schema = StructType(fields)
-        return self.spark.createDataFrame(out[[f.name for f in fields]], schema)
+        names = [f.name for f in fields]
+
+        def apply_batches(batches):
+            for batch in batches:
+                out, _ = calibration.apply_joined_corrections(
+                    batch.reset_index(drop=True), gid, target, levels, output_format, clip_lower, fallback)
+                yield out[names]
+
+        return joined.mapInPandas(apply_batches, schema)
 
     def get_model_for_scoring(self, model_conf):
         """
