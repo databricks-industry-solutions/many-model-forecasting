@@ -214,6 +214,19 @@ def quantile_columns(frame: pd.DataFrame) -> dict:
     return {c[len(QUANTILE_COLUMN_PREFIX):]: c for c in frame.columns if str(c).startswith(QUANTILE_COLUMN_PREFIX)}
 
 
+def quantile_maps(pred_df: pd.DataFrame, group_col: str) -> dict:
+    """Maps each series of a multi-series forecast frame to its {quantile key: array} dict (empty without quantiles)."""
+    cols = quantile_columns(pred_df)
+    if not cols:
+        return {}
+    keys = pred_df[group_col].to_numpy()
+    values = {key: pred_df[c].to_numpy() for key, c in cols.items()}
+    return {
+        k: {key: [float(x) for x in values[key][i]] for key in values}
+        for i, k in enumerate(keys)
+    }
+
+
 # ---------------------------------------------------------------------------
 # Calibration math (docs/specs/confidence_interval.md, sections 7.2 and 7.6).
 #
@@ -877,3 +890,154 @@ def metric_rows(model: str, series_col: str, ids, dates, results: dict) -> pd.Da
     out = pd.concat(frames, ignore_index=True)
     out["model"] = model
     return out
+
+
+# ---------------------------------------------------------------------------
+# Applying the calibration to forecasts (scoring, spec sections 7.4 and 11.1).
+# ---------------------------------------------------------------------------
+
+
+def quantiles_column(target: str) -> str:
+    """Name of the quantile-map column of scoring_output (output_format quantile_map or both)."""
+    return f"{target}_quantiles"
+
+
+def interval_column(target: str, side: str, level: float) -> str:
+    """Name of a bound column of scoring_output (output_format lo_hi or both), e.g. y_lo_80 or y_hi_97_5."""
+    return f"{target}_{side}_{level:g}".replace(".", "_")
+
+
+def interval_columns(target: str, levels, output_format: str) -> list:
+    """Names of the interval columns that scoring_output gets for an output_format."""
+    cols = []
+    if output_format in ("quantile_map", "both"):
+        cols.append(quantiles_column(target))
+    if output_format in ("lo_hi", "both"):
+        cols += [interval_column(target, side, lv) for lv in levels for side in ("lo", "hi")]
+    return cols
+
+
+def _as_dict(m):
+    if m is None or (isinstance(m, float) and np.isnan(m)):
+        return {}
+    return dict(m) if not isinstance(m, dict) else m
+
+
+def _corrections(cal_rows: pd.DataFrame, series_col: str):
+    """
+    Per-(series, level) corrections from calibration_output rows, plus per-level fallbacks (the
+    median correction per step, and the median scale) for series without rows.
+    """
+    rows = cal_rows.sort_values([series_col, "level", "step"])
+    per_series, fallback = {}, {}
+    for (sid, level), g in rows.groupby([series_col, "level"], sort=False):
+        per_series[(str(sid), float(level))] = {
+            "q_lo": g["q_lo"].to_numpy(float), "q_hi": g["q_hi"].to_numpy(float),
+            "sigma": float(g["sigma"].iloc[0]), "method": g["method"].iloc[0], "score": g["score"].iloc[0],
+        }
+    for level, g in rows.groupby("level"):
+        steps = g.groupby("step")
+        fallback[float(level)] = {
+            "q_lo": steps["q_lo"].median().to_numpy(float), "q_hi": steps["q_hi"].median().to_numpy(float),
+            "sigma": float(g.drop_duplicates(series_col)["sigma"].median()),
+            "method": g["method"].mode().iloc[0], "score": g["score"].mode().iloc[0],
+        }
+    return per_series, fallback
+
+
+def series_bounds(yhat: np.ndarray, native: dict, corr: dict, level: float, clip_lower):
+    """
+    Interval bounds of one series' forecast for one level.
+    Parameters:
+        yhat (np.ndarray): Point forecast (H,).
+        native (dict): The series' native quantiles {key: array (H,)} (may be empty).
+        corr (dict): q_lo, q_hi (H,), sigma, method and score of the series from calibration_output.
+        level (float): Central level in percent.
+        clip_lower (float): Lower bound, or None.
+    Returns: (lo, hi) arrays (H,), or None when the method needs a native band that is missing.
+    """
+    h = len(yhat)
+    q_lo, q_hi = corr["q_lo"][:h], corr["q_hi"][:h]
+    if len(q_lo) != h:
+        return None
+    sigma = corr["sigma"]
+    if corr["method"] == "conformal":
+        scale = sigma if corr["score"] == "signed_normalized" else 1.0
+        lo, hi = yhat + scale * q_lo, yhat + scale * q_hi
+    else:
+        k_lo, k_hi = (quantile_key(q) for q in level_quantiles(level))
+        if k_lo not in native or k_hi not in native:
+            return None
+        lo, hi = np.asarray(native[k_lo], dtype=float), np.asarray(native[k_hi], dtype=float)
+        if clip_lower is not None:
+            lo = np.maximum(lo, clip_lower)
+        if corr["method"] == "cqr":
+            if corr["score"] == "scaled":
+                half = np.maximum((hi - lo) / 2, 1e-3 * sigma)
+                lo, hi = yhat - q_lo * half, yhat + q_hi * half
+            else:
+                lo, hi = lo - sigma * q_lo, hi + sigma * q_hi
+    lo, hi = finalize_bounds(lo, hi, clip_lower)
+    return lo, hi
+
+
+def apply_calibration(forecasts: pd.DataFrame, cal_rows: pd.DataFrame, series_col: str, target: str,
+                      levels, output_format: str = "quantile_map"):
+    """
+    Adds the prediction-interval columns of one model's scoring output.
+    Parameters:
+        forecasts (pd.DataFrame): One row per series with series_col, the target array (point forecast)
+            and optionally forecast_quantiles (native quantiles at forecast time).
+        cal_rows (pd.DataFrame): The model's calibration_output rows.
+        series_col, target (str): Column names.
+        levels: Central levels in percent.
+        output_format (str): quantile_map, lo_hi or both (spec section 7.4).
+    Series without calibration rows use the per-step median correction of the model. Bounds are null
+    when they cannot be computed (no calibration at all, or a missing native band).
+    Returns: (pd.DataFrame, dict): The forecasts with the interval columns (forecast_quantiles dropped),
+        and counts of series that used the fallback or got null bounds.
+    """
+    out = forecasts.drop(columns=["forecast_quantiles"], errors="ignore").copy()
+    levels = sorted(levels)
+    per_series, fallback = _corrections(cal_rows, series_col) if len(cal_rows) else ({}, {})
+    clip_lower = None
+    if len(cal_rows) and cal_rows["clip_lower"].notna().any():
+        clip_lower = float(cal_rows["clip_lower"].dropna().iloc[0])
+    natives = (forecasts["forecast_quantiles"].map(_as_dict) if "forecast_quantiles" in forecasts.columns
+               else pd.Series([{}] * len(forecasts), index=forecasts.index))
+    maps, bounds = [], {(side, lv): [] for lv in levels for side in ("lo", "hi")}
+    stats = {"fallback": 0, "null": 0}
+    for sid, yhat, native in zip(forecasts[series_col], forecasts[target], natives):
+        if yhat is None:
+            maps.append(None)
+            for key in bounds:
+                bounds[key].append(None)
+            continue
+        yhat = np.asarray(yhat, dtype=float)
+        qmap, used_fallback, missing = {}, False, False
+        for lv in levels:
+            corr = per_series.get((str(sid), float(lv)))
+            if corr is None:
+                corr, used_fallback = fallback.get(float(lv)), True
+            b = series_bounds(yhat, native, corr, lv, clip_lower) if corr is not None else None
+            if b is None:
+                missing = True
+                bounds[("lo", lv)].append(None)
+                bounds[("hi", lv)].append(None)
+                continue
+            lo, hi = b
+            k_lo, k_hi = (quantile_key(q) for q in level_quantiles(lv))
+            qmap[k_lo], qmap[k_hi] = [float(x) for x in lo], [float(x) for x in hi]
+            bounds[("lo", lv)].append([float(x) for x in lo])
+            bounds[("hi", lv)].append([float(x) for x in hi])
+            if corr["method"] != "conformal" and "0.5" in native:
+                qmap["0.5"] = [float(x) for x in native["0.5"]]
+        stats["fallback"] += used_fallback
+        stats["null"] += missing
+        maps.append({k: qmap[k] for k in sorted(qmap, key=float)} if qmap else None)
+    if output_format in ("quantile_map", "both"):
+        out[quantiles_column(target)] = maps
+    if output_format in ("lo_hi", "both"):
+        for (side, lv), values in bounds.items():
+            out[interval_column(target, side, lv)] = values
+    return out, stats

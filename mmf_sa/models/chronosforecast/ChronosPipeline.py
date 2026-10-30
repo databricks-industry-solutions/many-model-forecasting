@@ -26,7 +26,7 @@ from mmf_sa.exceptions import (
     ModelPredictionError,
     DataPreparationError,
 )
-from mmf_sa.calibration import QUANTILE_COLUMN_PREFIX, quantile_columns, quantile_key
+from mmf_sa.calibration import QUANTILE_COLUMN_PREFIX, quantile_key, quantile_maps
 
 _logger = logging.getLogger(__name__)
 _warned_clamped = set()
@@ -80,19 +80,6 @@ def decode_quantile_forecasts(forecast_df: pd.DataFrame, target: str, levels, pr
         start = prediction_length * (i + 1)
         forecast_df[QUANTILE_COLUMN_PREFIX + quantile_key(level)] = [v[start:start + prediction_length] for v in packed]
     return forecast_df
-
-
-def quantile_maps(pred_df: pd.DataFrame, group_col: str) -> dict:
-    """Maps each series of a multi-series forecast frame to its {quantile key: array} dict (empty without quantiles)."""
-    cols = quantile_columns(pred_df)
-    if not cols:
-        return {}
-    keys = pred_df[group_col].to_numpy()
-    values = {key: pred_df[c].to_numpy() for key, c in cols.items()}
-    return {
-        k: {key: [float(x) for x in values[key][i]] for key in values}
-        for i, k in enumerate(keys)
-    }
 
 
 class ChronosForecaster(ForecastingRegressor):
