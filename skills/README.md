@@ -16,8 +16,8 @@ The Many-Model Forecasting skill teaches AI assistants how to:
 - **Prepare and clean** time series data with automated imputation and anomaly capping
 - **Profile and classify** series by forecastability using statistical properties (ADF, STL, spectral entropy, SNR)
 - **Handle non-forecastable series** — the user chooses to keep them, apply a simple fallback (Naive, Seasonal Naive, Mean, Zero), or run a separate pipeline with dedicated models
-- **Provision** the right Databricks clusters (CPU with 16 or 32 vCPU options, or GPU) based on model requirements and dataset size
-- **Execute** forecasting pipelines using **StatsForecast**, **SKTime**, **MLForecast (LightGBM)**, **NeuralForecast**, **Chronos**, and **TimesFM** models
+- **Provision** the right Databricks compute (CPU clusters with 16 or 32 vCPU options; serverless GPU or classic GPU clusters) based on model requirements and dataset size
+- **Execute** forecasting pipelines using **StatsForecast**, **SKTime**, **MLForecast (LightGBM)**, **NeuralForecast**, **Chronos**, **TimesFM**, and the zero-shot **foundationforecast** (`FF*`) models
 - **Evaluate** results with multi-metric analysis, best-model selection per series, and business-ready summaries with `forecast_source` tracking
 
 All generated assets are prefixed with a user-provided **use case name** (e.g., `m4`, `rossmann`), allowing multiple forecasting projects to coexist in the same catalog/schema.
@@ -52,7 +52,7 @@ All generated assets are prefixed with a user-provided **use case name** (e.g., 
 | ----- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | 1     | `/prep-and-clean-data`             | Discover tables, map columns, ask user about imputation and anomaly handling                                                                           |
 | 2     | `/profile-and-classify-series`     | **(Optional)** Compute statistical properties, classify forecastability, recommend models, ask user how to handle non-forecastable series (serverless) |
-| 3     | `/provision-forecasting-resources` | Ask user which models and clusters, configure CPU (16 vCPU default, 32 vCPU option) / GPU; size separate NF cluster if needed                          |
+| 3     | `/provision-forecasting-resources` | Ask user which models and clusters, configure CPU (16 vCPU default, 32 vCPU option); serverless GPU (recommended) or classic GPU per GPU class; size separate NF cluster if needed |
 | 4     | `/execute-mmf-forecast`            | Generate orchestrator + run notebooks, create one job per model class (+ NF jobs), run in parallel                                                     |
 | 5     | `/post-process-and-evaluate`       | Best-model selection, WAPE/sMAPE metrics, merge NF results, evaluation summary with `forecast_source`                                                  |
 
@@ -99,13 +99,17 @@ The expected layout, where `{user}` is your Databricks user folder name (typical
             ├── 3-provision-forecasting-resources.md
             ├── 4-execute-mmf-forecast.md
             ├── 5-post-process-and-evaluate.md
+            ├── 6-hierarchical-reconciliation.md
             ├── mmf_local_notebook_template.ipynb
             ├── mmf_global_ml_notebook_template.ipynb
             ├── mmf_gpu_run_notebook_template.ipynb
             ├── mmf_gpu_orchestrator_notebook_template.ipynb
+            ├── mmf_gpu_serverless_notebook_template.ipynb
+            ├── serverless_gpu_ai_v6_environment.yml
             ├── mmf_profiling_notebook_template.ipynb
             ├── mmf_prep_notebook_template.ipynb
-            └── mmf_post_process_notebook_template.ipynb
+            ├── mmf_post_process_notebook_template.ipynb
+            └── mmf_reconciliation_notebook_template.ipynb
 ```
 
 There are two files / folders to upload:
@@ -186,13 +190,17 @@ your-project/
     ├── 3-provision-forecasting-resources.md
     ├── 4-execute-mmf-forecast.md
     ├── 5-post-process-and-evaluate.md
+    ├── 6-hierarchical-reconciliation.md
     ├── mmf_local_notebook_template.ipynb
     ├── mmf_global_ml_notebook_template.ipynb
     ├── mmf_gpu_run_notebook_template.ipynb
     ├── mmf_gpu_orchestrator_notebook_template.ipynb
+    ├── mmf_gpu_serverless_notebook_template.ipynb
+    ├── serverless_gpu_ai_v6_environment.yml
     ├── mmf_profiling_notebook_template.ipynb
     ├── mmf_prep_notebook_template.ipynb
-    └── mmf_post_process_notebook_template.ipynb
+    ├── mmf_post_process_notebook_template.ipynb
+    └── mmf_reconciliation_notebook_template.ipynb
 ```
 
 Re-running the installer is safe — it updates existing configurations without duplication.
@@ -235,7 +243,7 @@ https://github.com/user-attachments/assets/9a9d9e09-68fa-4fda-a2b8-545752ae9a83
 
 #### 3. `/provision-forecasting-resources`
 
-Asks which models to run, then sizes and provisions the appropriate CPU (16 or 32 vCPU) or GPU cluster — including a separate cluster for non-forecastable series if requested.
+Asks which models to run, then sizes and provisions the appropriate CPU (16 or 32 vCPU) or GPU cluster — including a separate cluster for non-forecastable series if requested. GPU model classes can instead run on serverless GPU (one A10, environment AI v6), which needs no cluster.
 
 https://github.com/user-attachments/assets/9586f2a5-abfb-4f00-b255-dd177a2b87eb
 

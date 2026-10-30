@@ -137,7 +137,7 @@ GROUP BY unique_id, model
 Select the best-performing model for each forecastable time series based on the primary metric:
 
 > ⚠️ **Why `latest_run_per_model` and not a single global latest run.** MMF launches
-> **one job per model class** (local, global_ml, global, foundation — see Skill 4 Step 5b),
+> **one job per model class** (local, global_ml, global, foundation, foundationforecast — see Skill 4 Step 5b),
 > and each job's `run_forecast` call writes its **own** `run_id`. Pinning selection to a
 > single global latest `run_id` (e.g. `ORDER BY run_date DESC LIMIT 1`) keeps only the
 > **last job to finish** and silently drops every other model from the competition — the
@@ -150,7 +150,7 @@ Select the best-performing model for each forecastable time series based on the 
 > **Tie-break policy.** Selection uses `ROW_NUMBER()` (not `RANK()`) so exactly **one** model
 > wins per series — no duplicate best-model rows that would inflate win counts and break
 > reconciliation's one-forecast-per-series contract. On an exact metric tie, the **cheaper /
-> simpler compute tier wins** (local → global ML → global DL → foundation), with model name as
+> simpler compute tier wins** (local → global ML → global DL → foundation and foundationforecast), with model name as
 > a final deterministic fallback. This avoids letting an expensive GPU model win a break-even by
 > alphabetical accident and matches the Step 8 guidance to prefer local models when accuracy is comparable.
 
@@ -188,7 +188,7 @@ FROM (
                WHEN model LIKE 'MLForecast%'                            THEN 2  -- global ML (CPU, LightGBM)
                WHEN model LIKE 'NeuralForecast%'                        THEN 3  -- global DL (GPU)
                WHEN model LIKE 'Chronos%' OR model LIKE 'Moirai%'
-                    OR model LIKE 'TimesFM%'                            THEN 4  -- foundation (GPU)
+                    OR model LIKE 'TimesFM%' OR model LIKE 'FF%'        THEN 4  -- foundation / foundationforecast (GPU)
                ELSE 5                                                          -- unknown/custom: least preferred on ties
              END ASC,
              model ASC  -- final deterministic fallback within the same cost tier
@@ -269,7 +269,7 @@ FROM (
                WHEN model LIKE 'MLForecast%'                            THEN 2  -- global ML (CPU, LightGBM)
                WHEN model LIKE 'NeuralForecast%'                        THEN 3  -- global DL (GPU)
                WHEN model LIKE 'Chronos%' OR model LIKE 'Moirai%'
-                    OR model LIKE 'TimesFM%'                            THEN 4  -- foundation (GPU)
+                    OR model LIKE 'TimesFM%' OR model LIKE 'FF%'        THEN 4  -- foundation / foundationforecast (GPU)
                ELSE 5                                                          -- unknown/custom: least preferred on ties
              END ASC,
              model ASC  -- final deterministic fallback within the same cost tier

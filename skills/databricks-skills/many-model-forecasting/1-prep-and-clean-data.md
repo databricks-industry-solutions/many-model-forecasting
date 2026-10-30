@@ -303,7 +303,12 @@ AskUserQuestion:
    Note: The `global_ml` model class (MLForecastLGBM / MLForecastAutoLGBM) has
    end-to-end validated support for dynamic future regressors via its native
    X_df mechanism. If you supply these and a scoring table, global_ml is a
-   strong default — see Skill 3 model selection."
+   strong default — see Skill 3 model selection.
+
+   Ten zero-shot foundationforecast models (FFChronos2, FFTimesFM_3_0,
+   FFTiRex2, FFT0*, FFTimestral_*, ...) also use these columns, with no
+   training. They use only dynamic future columns and ignore static and
+   dynamic historical ones."
 ```
 
 **WAIT for the user to respond.** Store as `{dynamic_future_numerical}` and `{dynamic_future_categorical}`.
@@ -451,6 +456,8 @@ The scoring table must contain one row per `unique_id` × future `ds` for each d
 
 **MUST include `static_features` columns.** When `run_forecast` unions `train_data` and `scoring_data` via `unionByName(..., allowMissingColumns=True)`, any columns missing from the scoring table are filled with NULL. Models that use static features at inference time (NeuralForecast, Chronos-2, TimesFM) would receive NaN instead of the actual category, degrading forecast quality. Populating the static feature columns in the scoring table by joining each `unique_id` against its static values from `train_data` avoids this.
 
+**Foundationforecast (`FF*`) covariate models are strict about the scoring table.** Each series MUST have exactly one row for every future date in the forecast horizon, with no duplicate `(unique_id, ds)` rows and no NULL in any dynamic future column. A missing, duplicate or NULL horizon value raises an error for that model instead of degrading quietly. So if the user may select `FF*` models, the NULL handling below must fill values rather than drop rows (option e), and the Step 6a validation must show `series_missing_scoring = 0` and full horizon coverage for every series.
+
 #### Source: same table (option a)
 
 If the future regressor values come from the **same source table** (rows beyond the training period's end date):
@@ -575,7 +582,8 @@ AskUserQuestion:
    (d) Fill with the column's mean (numerical columns only)
        (good for continuous regressors like temperature)
    (e) Drop rows with NULLs — remove incomplete future dates
-   (f) Proceed as-is — keep NULLs (⚠️ may cause pipeline errors)"
+       (⚠️ foundationforecast FF* models fail on series with missing horizon dates)
+   (f) Proceed as-is — keep NULLs (⚠️ may cause pipeline errors; FF* models fail on NULLs)"
 ```
 
 **WAIT for the user to respond. Do NOT apply any fill strategy until the user confirms.**
@@ -696,8 +704,11 @@ AskUserQuestion:
 
    ⚠️  IMPORTANT TRADE-OFF: Label encoding implies a false ordinal relationship
    between categories (e.g., 'holiday'=0 < 'none'=1 < 'sale'=2). This is
-   acceptable for neural network models (global/foundation) which learn non-linear
-   mappings, but is statistically inappropriate for linear models (StatsForecast).
+   acceptable for neural network models (global/foundation/foundationforecast) which
+   learn non-linear mappings, but is statistically inappropriate for linear models
+   (StatsForecast). Of the foundationforecast models, only FFChronos2 and
+   FFChronos2Small could read the raw strings; the others need numeric codes, so
+   encoding keeps every FF* model usable.
 
    How would you like to proceed?
    (a) Apply label encoding (default — recommended for this pipeline)

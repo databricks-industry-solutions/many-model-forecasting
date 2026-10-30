@@ -268,7 +268,7 @@ ORDER BY series_count DESC
 
 Use `AskUserQuestion` to let the user review and confirm:
 - Recommended model families
-- Required compute types (local/global/foundation)
+- Required compute types (local/global/foundation/foundationforecast)
 - Whether to adjust classification thresholds
 
 ### ⛔ STOP GATE — Step 8b: Optional deep research on feature engineering (post-profiling)
@@ -561,6 +561,10 @@ AskUserQuestion:
    [ ] ChronosBoltSmall
    [ ] ChronosBoltBase
 
+   FOUNDATIONFORECAST MODELS (zero-shot, one GPU, own job):
+   [ ] FFChronos2Small
+   [ ] FFTiRex2
+
    List the model names you want to run."
 ```
 
@@ -622,8 +626,8 @@ Low-Signal (Non-Forecastable):
 | High complexity (entropy >0.6) + long series (>200) | `MLForecastAutoLGBM`, `NeuralForecastAutoNHITS`, `NeuralForecastAutoPatchTST`, `ChronosBoltBase`, `Chronos2`, `TimesFM_2_5_200m` | Neural models learn complex patterns; LightGBM HPO is a strong CPU baseline; largest foundation models for zero-shot |
 | Short series (<50 points) | `StatsForecastAutoETS`, `StatsForecastAutoCES`, `MLForecastLGBM`, `ChronosBoltBase`, `Chronos2`, `TimesFM_2_5_200m` | Simple statistical models, fixed-HP LightGBM with shallow lags (avoiding HPO's CV-folds cost on short data), and zero-shot foundation models |
 | Intermittent/sparse (sparsity >0.3) | `StatsForecastTSB`, `StatsForecastADIDA`, `StatsForecastIMAPA`, `StatsForecastCrostonClassic` | Specialized intermittent demand models (LightGBM is a poor fit for zero-inflated data — sMAPE saturates) |
-| Rich exogenous regressors available (`{use_case}_scoring_data` exists with `dynamic_future_*` columns) | `MLForecastAutoLGBM`, `MLForecastLGBM`, `NeuralForecastAutoNBEATSx`, `NeuralForecastAutoTiDE`, `ChronosBoltBase`, `Chronos2`, `TimesFM_2_5_200m` | MLForecast LightGBM is the most expressive CPU model for known future regressors (end-to-end validated covariate plumbing); NeuralForecast variants supporting `futr_exog_list` complement it on GPU |
-| General / mixed characteristics | `StatsForecastAutoArima`, `MLForecastAutoLGBM`, `NeuralForecastAutoNHITS`, `ChronosBoltBase`, `Chronos2`, `TimesFM_2_5_200m` | Broad coverage across all four model classes (local CPU, global ML CPU, global DL GPU, foundation GPU) |
+| Rich exogenous regressors available (`{use_case}_scoring_data` exists with `dynamic_future_*` columns) | `MLForecastAutoLGBM`, `MLForecastLGBM`, `NeuralForecastAutoNBEATSx`, `NeuralForecastAutoTiDE`, `FFChronos2`, `FFTiRex2`, `ChronosBoltBase`, `Chronos2`, `TimesFM_2_5_200m` | MLForecast LightGBM is the most expressive CPU model for known future regressors (end-to-end validated covariate plumbing); NeuralForecast variants supporting `futr_exog_list` complement it on GPU; `FFChronos2` and `FFTiRex2` use the future regressors zero-shot, with no training |
+| General / mixed characteristics | `StatsForecastAutoArima`, `MLForecastAutoLGBM`, `NeuralForecastAutoNHITS`, `ChronosBoltBase`, `Chronos2`, `TimesFM_2_5_200m` | Broad coverage across four model classes (local CPU, global ML CPU, global DL GPU, foundation GPU). Add `FF*` models (foundationforecast GPU) as a fifth class for more zero-shot benchmarks |
 | Low-signal (non-forecastable) | `StatsForecastBaselineNaive`, `StatsForecastBaselineSeasonalNaive` | Baseline only; flag for human review |
 
 ## ⛔ STOP GATE — Step 11: Confirm before proceeding to next skill
