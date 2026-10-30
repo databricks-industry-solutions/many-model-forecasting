@@ -492,10 +492,20 @@ def calibrate_model_spark(spark: SparkSession, eval_sdf: DataFrame, features: Da
                               .withColumn("_bucket", bucket_column(series_col, n_kept)))
     try:
         adaptive = plan["kind"] == "cqr" and plan["score"] == "asymmetric" and plan["tail_split"] == "adaptive"
-        # Fold W uses all windows; the leave-one-window-out folds only exist with 2 windows or more.
-        folds = list(range(w + 1)) if w >= 2 else [w]
+        folds = list(_folds(w))
         stats, m_lo = {}, {}
-        for i, lv in enumerate(levels):
+        if plan["kind"] == "conformal":
+            # Residual scores do not depend on the level: fold, sort and query them once for all levels.
+            cols = score_columns(plan, 0, clip_lower)
+            scored = materializer.cache(
+                folded(long, w).select("fold", "pool", "step", *[c.alias(n) for n, c in cols.items()]))
+            try:
+                shared = pool_statistics(spark, scored, {
+                    f: [r for lv in levels for r in cal.stat_requests(plan, lv, "main")] for f in folds})
+            finally:
+                materializer.uncache(scored)
+            stats = {lv: shared for lv in levels}
+        for i, lv in enumerate([] if plan["kind"] == "conformal" else levels):
             cols = score_columns(plan, i, clip_lower)
             if not cols:
                 stats[lv] = {f: {} for f in folds}
