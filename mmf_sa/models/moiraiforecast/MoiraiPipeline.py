@@ -15,8 +15,47 @@ from pyspark.sql.functions import pandas_udf
 from pyspark.sql import DataFrame
 from mmf_sa.models.abstract_model import ForecastingRegressor, MODEL_PIP_REQUIREMENTS, collect_sorted
 from mmf_sa.exceptions import UnsupportedMetricError, ModelPredictionError, DataPreparationError
+from mmf_sa.calibration import decode_quantile_forecasts, encode_quantile_forecasts, forecast_levels, quantile_maps
 
 _logger = logging.getLogger(__name__)
+# Native quantiles are empirical quantiles of the sample paths: with fewer samples the tails are poorly estimated.
+MIN_SAMPLES_FOR_QUANTILES = 100
+_warned_few_samples = set()
+
+
+def warn_few_samples(num_samples: int, quantiles) -> None:
+    """Logs once per process that native quantiles from few sample paths are poorly estimated."""
+    if quantiles and num_samples < MIN_SAMPLES_FOR_QUANTILES and not _warned_few_samples:
+        _warned_few_samples.add(num_samples)
+        _logger.warning(
+            f"Native quantiles of this Moirai model are estimated from {num_samples} sample paths, so the tails "
+            f"(e.g. 2.5% and 97.5%) are poorly estimated. Set num_samples to at least {MIN_SAMPLES_FOR_QUANTILES} "
+            "for calibrated prediction intervals.")
+
+
+def sample_quantile_forecasts(samples: np.ndarray, quantiles):
+    """
+    Median and native quantiles of one series from its Moirai sample paths: empirical quantiles per step.
+    Parameters:
+        samples (np.ndarray): Sample paths, shape (num_samples, prediction_length).
+        quantiles: Requested quantile levels; the median is added if missing.
+    Returns: (np.ndarray, np.ndarray, list): the median (H,), the quantiles (Q, H) and the Q levels.
+    """
+    levels = forecast_levels(quantiles)
+    median = np.median(samples, axis=0)
+    qs = np.quantile(np.asarray(samples, dtype=np.float64), levels, axis=0)
+    return median.astype(np.float64), qs, levels
+
+
+def pack_sample_forecasts(samples: np.ndarray, quantiles):
+    """
+    Packs one series' sample paths into the predict UDF output. Without quantiles this is the median, as before;
+    with quantiles it is the median and the quantiles, packed by encode_quantile_forecasts.
+    """
+    if not quantiles:
+        return np.median(samples, axis=0)
+    medians, qs, _ = sample_quantile_forecasts(samples, quantiles)
+    return encode_quantile_forecasts(medians[np.newaxis], qs[np.newaxis])[0]
 
 
 class MoiraiForecaster(ForecastingRegressor):
@@ -91,6 +130,10 @@ class MoiraiForecaster(ForecastingRegressor):
                 forecast_udf(hist_df.y).alias("y"))
         ).toPandas()
 
+        if self.params.get("native_quantiles"):
+            forecast_df = decode_quantile_forecasts(
+                forecast_df, "y", forecast_levels(self.params["native_quantiles"]), self.params["prediction_length"])
+
         forecast_df = forecast_df.reset_index(drop=False).rename(
             columns={
                 "unique_id": self.params.group_id,
@@ -143,6 +186,7 @@ class MoiraiForecaster(ForecastingRegressor):
                 pred_df[target_col].to_numpy(),
             )
         )
+        quantiles_map = quantile_maps(pred_df, group_col)
 
         for key in keys:
             try:
@@ -158,6 +202,7 @@ class MoiraiForecaster(ForecastingRegressor):
                         forecast,
                         actual,
                         b"",
+                        quantiles_map.get(key),
                     )
                 )
             except (ModelPredictionError, DataPreparationError) as err:
@@ -172,6 +217,8 @@ class MoiraiForecaster(ForecastingRegressor):
         prediction_length = self.params["prediction_length"]
         patch_size = self.params.get("patch_size", 16)
         num_samples = self.params["num_samples"]
+        quantiles = [float(q) for q in self.params.get("native_quantiles") or []]
+        warn_few_samples(num_samples, quantiles)
 
         @pandas_udf('array<double>')
         def predict_udf(batch_iterator: Iterator[pd.Series]) -> Iterator[pd.Series]:
@@ -236,7 +283,7 @@ class MoiraiForecaster(ForecastingRegressor):
                         past_observed_target=past_observed_target,
                         past_is_pad=past_is_pad,
                     )
-                    median.append(np.median(forecast[0].cpu().numpy(), axis=0))
+                    median.append(pack_sample_forecasts(forecast[0].cpu().numpy(), quantiles))
             yield pd.Series(median)
         return predict_udf
 
