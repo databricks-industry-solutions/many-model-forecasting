@@ -981,33 +981,27 @@ def series_bounds(yhat: np.ndarray, native: dict, corr: dict, level: float, clip
     return lo, hi
 
 
-def apply_calibration(forecasts: pd.DataFrame, cal_rows: pd.DataFrame, series_col: str, target: str,
-                      levels, output_format: str = "quantile_map"):
+def correction_column(level_index: int, field: str) -> str:
+    """Wide column of a forecast batch holding one correction field (q_lo, q_hi, sigma, method, score) of one level."""
+    return f"_corr{level_index}_{field}"
+
+
+CORRECTION_FIELDS = ("q_lo", "q_hi", "sigma", "method", "score")
+
+
+def _add_intervals(forecasts: pd.DataFrame, corrections, series_col: str, target: str, levels, output_format: str,
+                   clip_lower, fallback: dict):
     """
-    Adds the prediction-interval columns of one model's scoring output.
-    Parameters:
-        forecasts (pd.DataFrame): One row per series with series_col, the target array (point forecast)
-            and optionally forecast_quantiles (native quantiles at forecast time).
-        cal_rows (pd.DataFrame): The model's calibration_output rows.
-        series_col, target (str): Column names.
-        levels: Central levels in percent.
-        output_format (str): quantile_map, lo_hi or both (spec section 7.4).
-    Series without calibration rows use the per-step median correction of the model. Bounds are null
-    when they cannot be computed (no calibration at all, or a missing native band).
-    Returns: (pd.DataFrame, dict): The forecasts with the interval columns (forecast_quantiles dropped),
-        and counts of series that used the fallback or got null bounds.
+    Shared loop of apply_calibration and apply_joined_corrections.
+    corrections(i, sid, level) returns the series' correction dict for a level, or None.
     """
-    out = forecasts.drop(columns=["forecast_quantiles"], errors="ignore").copy()
-    levels = sorted(levels)
-    per_series, fallback = _corrections(cal_rows, series_col) if len(cal_rows) else ({}, {})
-    clip_lower = None
-    if len(cal_rows) and cal_rows["clip_lower"].notna().any():
-        clip_lower = float(cal_rows["clip_lower"].dropna().iloc[0])
+    out = forecasts.drop(columns=["forecast_quantiles"], errors="ignore")
+    out = out[[c for c in out.columns if not str(c).startswith("_corr")]].copy()
     natives = (forecasts["forecast_quantiles"].map(_as_dict) if "forecast_quantiles" in forecasts.columns
                else pd.Series([{}] * len(forecasts), index=forecasts.index))
     maps, bounds = [], {(side, lv): [] for lv in levels for side in ("lo", "hi")}
     stats = {"fallback": 0, "null": 0}
-    for sid, yhat, native in zip(forecasts[series_col], forecasts[target], natives):
+    for i, (sid, yhat, native) in enumerate(zip(forecasts[series_col], forecasts[target], natives)):
         if yhat is None:
             maps.append(None)
             for key in bounds:
@@ -1016,7 +1010,7 @@ def apply_calibration(forecasts: pd.DataFrame, cal_rows: pd.DataFrame, series_co
         yhat = np.asarray(yhat, dtype=float)
         qmap, used_fallback, missing = {}, False, False
         for lv in levels:
-            corr = per_series.get((str(sid), float(lv)))
+            corr = corrections(i, sid, lv)
             if corr is None:
                 corr, used_fallback = fallback.get(float(lv)), True
             b = series_bounds(yhat, native, corr, lv, clip_lower) if corr is not None else None
@@ -1041,3 +1035,72 @@ def apply_calibration(forecasts: pd.DataFrame, cal_rows: pd.DataFrame, series_co
         for (side, lv), values in bounds.items():
             out[interval_column(target, side, lv)] = values
     return out, stats
+
+
+def apply_calibration(forecasts: pd.DataFrame, cal_rows: pd.DataFrame, series_col: str, target: str,
+                      levels, output_format: str = "quantile_map"):
+    """
+    Adds the prediction-interval columns of one model's scoring output, from its calibration_output rows.
+    Pure pandas reference of the distributed path (apply_joined_corrections), for tests and small runs.
+    Parameters:
+        forecasts (pd.DataFrame): One row per series with series_col, the target array (point forecast)
+            and optionally forecast_quantiles (native quantiles at forecast time).
+        cal_rows (pd.DataFrame): The model's calibration_output rows.
+        series_col, target (str): Column names.
+        levels: Central levels in percent.
+        output_format (str): quantile_map, lo_hi or both (spec section 7.4).
+    Series without calibration rows use the per-step median correction of the model. Bounds are null
+    when they cannot be computed (no calibration at all, or a missing native band).
+    Returns: (pd.DataFrame, dict): The forecasts with the interval columns (forecast_quantiles dropped),
+        and counts of series that used the fallback or got null bounds.
+    """
+    levels = sorted(levels)
+    per_series, fallback = _corrections(cal_rows, series_col) if len(cal_rows) else ({}, {})
+    clip_lower = None
+    if len(cal_rows) and cal_rows["clip_lower"].notna().any():
+        clip_lower = float(cal_rows["clip_lower"].dropna().iloc[0])
+    return _add_intervals(forecasts, lambda i, sid, lv: per_series.get((str(sid), float(lv))), series_col, target,
+                          levels, output_format, clip_lower, fallback)
+
+
+def apply_joined_corrections(batch: pd.DataFrame, series_col: str, target: str, levels, output_format: str,
+                             clip_lower, fallback: dict):
+    """
+    Adds the prediction-interval columns to a batch of forecasts that carry their own corrections in the
+    correction_column(i, field) columns (level i of sorted levels; null when the series has no calibration).
+    Runs in mapInPandas at scoring time, so that nothing is collected to the driver.
+    Parameters:
+        fallback (dict): level -> correction dict used for series without calibration (median_corrections).
+    Returns: (pd.DataFrame, dict): As apply_calibration; the correction columns are dropped.
+    """
+    levels = sorted(levels)
+    cols = {(j, f): batch[correction_column(j, f)].to_numpy() for j in range(len(levels)) for f in CORRECTION_FIELDS
+            if correction_column(j, f) in batch.columns}
+    index = {float(lv): j for j, lv in enumerate(levels)}
+
+    def corrections(i, sid, lv):
+        j = index[float(lv)]
+        if (j, "q_lo") not in cols:
+            return None
+        q_lo = cols[(j, "q_lo")][i]
+        if q_lo is None or (isinstance(q_lo, float) and np.isnan(q_lo)):
+            return None
+        return {"q_lo": np.asarray(q_lo, dtype=float), "q_hi": np.asarray(cols[(j, "q_hi")][i], dtype=float),
+                "sigma": float(cols[(j, "sigma")][i]), "method": cols[(j, "method")][i],
+                "score": cols[(j, "score")][i]}
+
+    return _add_intervals(batch, corrections, series_col, target, levels, output_format, clip_lower, fallback)
+
+
+def median_corrections(stats: pd.DataFrame) -> dict:
+    """
+    Fallback corrections per level, from per-(level, step) aggregates of calibration_output with columns
+    level, step, q_lo and q_hi (medians over series), sigma (median scale), method and score (most frequent).
+    """
+    fallback = {}
+    for level, g in stats.sort_values(["level", "step"]).groupby("level"):
+        fallback[float(level)] = {
+            "q_lo": g["q_lo"].to_numpy(float), "q_hi": g["q_hi"].to_numpy(float),
+            "sigma": float(g["sigma"].iloc[0]), "method": g["method"].iloc[0], "score": g["score"].iloc[0],
+        }
+    return fallback

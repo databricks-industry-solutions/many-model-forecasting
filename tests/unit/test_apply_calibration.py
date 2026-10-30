@@ -160,3 +160,49 @@ def test_local_scoring_udf(with_quantiles):
     if with_quantiles:
         fq = out["forecast_quantiles"].iloc[0]
         assert list(fq) == ["0.1", "0.5", "0.9"] and len(fq["0.9"]) == 7
+
+
+def _joined(cal_rows, forecasts, levels):
+    """The wide correction columns that Forecaster.wide_corrections joins to the forecasts."""
+    out = forecasts.copy()
+    for j, lv in enumerate(sorted(levels)):
+        for field in cal.CORRECTION_FIELDS:
+            values = []
+            for sid in out["uid"]:
+                g = cal_rows[(cal_rows["uid"] == sid) & (cal_rows["level"] == float(lv))].sort_values("step")
+                if g.empty:
+                    values.append(None)
+                elif field in ("q_lo", "q_hi"):
+                    values.append(g[field].to_numpy())
+                else:
+                    values.append(g[field].iloc[0])
+            out[cal.correction_column(j, field)] = values
+    return out
+
+
+@pytest.mark.parametrize("method, score, native", [
+    ("conformal", "signed_normalized", None),
+    ("cqr", "asymmetric", "native"),
+    ("cqr", "scaled", "native"),
+])
+def test_joined_corrections_match_reference(method, score, native):
+    rows = _cal_rows(method, score, series=("a",), levels=(80, 95), q_lo=0.5, q_hi=1.0)
+    forecasts = _forecasts(_native() if native else None)
+    expected, stats = cal.apply_calibration(forecasts, rows, "uid", "y", [80, 95], "both")
+    stats_rows = []
+    for lv, g in rows.groupby("level"):
+        for step, gs in g.groupby("step"):
+            stats_rows.append({"level": lv, "step": step, "q_lo": gs["q_lo"].median(), "q_hi": gs["q_hi"].median(),
+                               "sigma": g["sigma"].median(), "method": method, "score": score})
+    fallback = cal.median_corrections(pd.DataFrame(stats_rows))
+    got, _ = cal.apply_joined_corrections(_joined(rows, forecasts, [80, 95]), "uid", "y", [80, 95], "both",
+                                          0.0, fallback)
+    assert stats == {"fallback": 1, "null": 0}  # series "b" has no rows
+    assert list(got.columns) == list(expected.columns)
+    for c in ("y_lo_80", "y_hi_95"):
+        for a, b in zip(got[c], expected[c]):
+            np.testing.assert_allclose(a, b)
+    for a, b in zip(got["y_quantiles"], expected["y_quantiles"]):
+        assert a.keys() == b.keys()
+        for k in a:
+            np.testing.assert_allclose(a[k], b[k])
