@@ -126,14 +126,28 @@ class Forecaster:
         Parameters: self (Forecaster): A Forecaster object. key (str): A string specifying the key.
         Returns: DataFrame: A Spark DataFrame object.
         """
-        if self.data_conf:
-            df_val = self.data_conf.get(key)
-            if df_val is not None and isinstance(df_val, pd.DataFrame):
-                return self.spark.createDataFrame(df_val)
-            elif df_val is not None and isinstance(df_val, DataFrame):
-                return df_val
-        else:
-            return self.spark.read.table(self.conf[key])
+        # A source is a DataFrame in data_conf, or a table name in conf; the two kinds can be mixed
+        # (e.g. train_data as a DataFrame and scoring_data as a table).
+        df_val = (self.data_conf or {}).get(key)
+        if isinstance(df_val, pd.DataFrame):
+            return self.spark.createDataFrame(df_val)
+        if isinstance(df_val, DataFrame):
+            return df_val
+        return self.spark.read.table(self.conf[key])
+
+    def data_source(self, key: str):
+        """The DataFrame (data_conf) or table name (conf) given for a data source, or None."""
+        value = (self.data_conf or {}).get(key)
+        return value if value is not None else self.conf.get(key)
+
+    def has_separate_scoring_data(self) -> bool:
+        """Whether scoring_data is given and is not the training data itself (same table or same DataFrame)."""
+        scoring, train = self.data_source("scoring_data"), self.data_source("train_data")
+        if scoring is None:
+            return False
+        if isinstance(scoring, str) and isinstance(train, str):
+            return scoring != train
+        return scoring is not train
 
     def prepare_data_for_global_model(self, mode: str = None):
         """
@@ -150,9 +164,7 @@ class Forecaster:
         src_df, removed = DataQualityChecks(src_df, self.conf, self.spark).run()
 
         # This block runs when preparing data for scoring
-        if (mode == "scoring") \
-                and (self.conf["scoring_data"]) \
-                and (self.conf["scoring_data"] != self.conf["train_data"]):
+        if (mode == "scoring") and self.has_separate_scoring_data():
             score_df = self.resolve_source("scoring_data")
             score_df = score_df.where(~col(self.conf["group_id"]).isin(removed))
             src_df = src_df.unionByName(score_df, allowMissingColumns=True)
@@ -779,9 +791,7 @@ class Forecaster:
         src_df, removed = DataQualityChecks(src_df, self.conf, self.spark).run()
         # Check if external regressors are provided and if the framework is statsforecast.
         # External regressors are supported only with statsforecast models.
-        if (self.conf["scoring_data"])\
-                and (self.conf["train_data"] != self.conf["scoring_data"])\
-                and (model_conf["framework"] == "StatsForecast"):
+        if self.has_separate_scoring_data() and (model_conf["framework"] == "StatsForecast"):
             score_df = self.resolve_source("scoring_data")
             score_df = score_df.where(~col(self.conf["group_id"]).isin(removed))
             src_df = src_df.unionByName(score_df, allowMissingColumns=True)
