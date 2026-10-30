@@ -244,7 +244,7 @@ AskUserQuestion:
        → e.g. {"enabled": True, "levels": [90]} or {"enabled": True, "quantiles": [0.1, 0.5, 0.9]}"
 ```
 
-Explain in one or two sentences what the user gets: MMF calibrates the intervals on the backtest, so that they reach the requested coverage. Models with native intervals (statsforecast AutoETS, AutoArima, AutoCES, AutoTheta, AutoTbats, Naive, SeasonalNaive, and the Chronos models) get their native bands corrected; all others get conformal intervals from their backtest errors. The intervals land in `scoring_output` as a `y_quantiles` map, and their out-of-sample coverage in `{use_case}_evaluation_output_interval_metrics` (`coverage_80`, `msis_80`, ...), which Skill 5 reports.
+Explain in one or two sentences what the user gets: MMF calibrates the intervals on the backtest, so that they reach the requested coverage. Models with native intervals (statsforecast AutoETS, AutoArima, AutoCES, AutoTheta, AutoTbats, Naive, SeasonalNaive; the Chronos, TimesFM and Moirai models; SKTimeProphet; and the FoundationForecast FF* models) get their native bands corrected; all others get conformal intervals from their backtest errors. The intervals land in `scoring_output` as a `y_quantiles` map, and their out-of-sample coverage in `{use_case}_evaluation_output_interval_metrics` (`coverage_80`, `msis_80`, ...), which Skill 5 reports.
 
 - Option (a): set `{prediction_intervals}` to `None` in every notebook.
 - Options (b)/(c): set `{prediction_intervals}` to the Python dict literal in every notebook (local, global ML, and the GPU orchestrators). If the user wants bound columns for SQL or dashboards, add `"output_format": "both"` (adds `y_lo_80`, `y_hi_80`, ...).
