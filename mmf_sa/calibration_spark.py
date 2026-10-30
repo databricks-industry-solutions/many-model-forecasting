@@ -288,6 +288,7 @@ def series_udf_final(pdf, *, plan, levels, has_band, w, h, clip_lower, stats, m_
     cal_df["kind"] = "calibration"
     met_df = pd.DataFrame(metric_rows, columns=[series_col, "window_date", "metric_name", "metric_value"])
     met_df["kind"] = "metric"
+    met_df["model"] = model
     return pd.concat([cal_df, met_df], ignore_index=True)
 
 

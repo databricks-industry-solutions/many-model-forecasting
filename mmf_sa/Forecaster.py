@@ -329,8 +329,11 @@ class Forecaster:
         calibration.check_supported(pi)
         gid = self.conf["group_id"]
         print("Starting run_calibration")
+        # Only the models of this call: the GPU orchestrator runs one model per run_forecast call with a shared
+        # run_id, and earlier calls have already calibrated theirs.
+        active = list(self.model_registry.get_active_model_keys())
         eval_sdf = self.spark.table(self.conf["evaluation_output"]).filter(
-            (col("run_id") == self.run_id) & (col("metric_name") == self.conf["metric"]))
+            (col("run_id") == self.run_id) & (col("metric_name") == self.conf["metric"]) & col("model").isin(active))
         cols = [col(gid).cast(StringType()).alias(gid), "backtest_window_start_date", "model", "forecast", "actual"]
         if "forecast_quantiles" in eval_sdf.columns:
             cols.append("forecast_quantiles")
