@@ -82,6 +82,7 @@ def test_method_native_keeps_bands(cubes):
     res = cal.calibrate_model(y, yhat, sigma, _pi(method="native"), labels=labels, native=native, clip_lower=0.0)
     r = res[80]
     assert r["method"] == "native"
+    assert r["q_lo"].shape == r["q_hi"].shape == (30, 5)
     assert not r["q_lo"].any() and not r["q_hi"].any()
     for k in r["metrics"]:
         np.testing.assert_allclose(r["metrics"][k], r["native_metrics"][k])
