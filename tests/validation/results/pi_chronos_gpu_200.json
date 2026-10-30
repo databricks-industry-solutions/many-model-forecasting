@@ -1,0 +1,152 @@
+{
+ "cluster": {
+  "node_type": "g5.2xlarge",
+  "spark_version": "18.x-gpu-ml-scala2.13",
+  "workers": 0
+ },
+ "gpus": 1,
+ "series": 200,
+ "experiment_root_created": true,
+ "results": {
+  "distributed": {
+   "run_id": "e1a318f9-9fd4-417f-8e84-1577afb30cbe",
+   "runtime_s": 588.1,
+   "backtest_rows_with_quantiles": {
+    "Chronos2": [
+     600,
+     600
+    ],
+    "ChronosBoltSmall": [
+     600,
+     600
+    ]
+   },
+   "quantile_keys": {
+    "Chronos2": [
+     "0.025",
+     "0.1",
+     "0.5",
+     "0.9",
+     "0.975"
+    ],
+    "ChronosBoltSmall": [
+     "0.025",
+     "0.1",
+     "0.5",
+     "0.9",
+     "0.975"
+    ]
+   },
+   "methods": {
+    "ChronosBoltSmall": "cqr/asymmetric/group",
+    "Chronos2": "cqr/asymmetric/group"
+   },
+   "lowo_coverage": {
+    "Chronos2 native_coverage_80": 0.788,
+    "Chronos2 coverage_80": 0.821,
+    "Chronos2 coverage_95": 0.967,
+    "Chronos2 native_coverage_95": 0.977,
+    "ChronosBoltSmall coverage_95": 0.946,
+    "ChronosBoltSmall native_coverage_95": 0.818,
+    "ChronosBoltSmall coverage_80": 0.827,
+    "ChronosBoltSmall native_coverage_80": 0.814
+   },
+   "heldout": {
+    "Chronos2 80": {
+     "coverage": 0.81,
+     "msis": 4.52,
+     "series": 200,
+     "null": 0
+    },
+    "Chronos2 95": {
+     "coverage": 0.966,
+     "msis": 6.77,
+     "series": 200,
+     "null": 0
+    },
+    "ChronosBoltSmall 80": {
+     "coverage": 0.825,
+     "msis": 4.62,
+     "series": 200,
+     "null": 0
+    },
+    "ChronosBoltSmall 95": {
+     "coverage": 0.947,
+     "msis": 7.51,
+     "series": 200,
+     "null": 0
+    }
+   }
+  },
+  "driver": {
+   "run_id": "83a3cad8-8ed6-4004-be11-76b89eca34e6",
+   "runtime_s": 406.1,
+   "backtest_rows_with_quantiles": {
+    "Chronos2": [
+     600,
+     600
+    ],
+    "ChronosBoltSmall": [
+     600,
+     600
+    ]
+   },
+   "quantile_keys": {
+    "Chronos2": [
+     "0.025",
+     "0.1",
+     "0.5",
+     "0.9",
+     "0.975"
+    ],
+    "ChronosBoltSmall": [
+     "0.025",
+     "0.1",
+     "0.5",
+     "0.9",
+     "0.975"
+    ]
+   },
+   "methods": {
+    "ChronosBoltSmall": "cqr/asymmetric/group",
+    "Chronos2": "cqr/asymmetric/group"
+   },
+   "lowo_coverage": {
+    "Chronos2 native_coverage_80": 0.785,
+    "Chronos2 coverage_80": 0.821,
+    "Chronos2 coverage_95": 0.967,
+    "Chronos2 native_coverage_95": 0.977,
+    "ChronosBoltSmall coverage_95": 0.946,
+    "ChronosBoltSmall native_coverage_95": 0.818,
+    "ChronosBoltSmall coverage_80": 0.828,
+    "ChronosBoltSmall native_coverage_80": 0.814
+   },
+   "heldout": {
+    "Chronos2 80": {
+     "coverage": 0.808,
+     "msis": 4.52,
+     "series": 200,
+     "null": 0
+    },
+    "Chronos2 95": {
+     "coverage": 0.966,
+     "msis": 6.76,
+     "series": 200,
+     "null": 0
+    },
+    "ChronosBoltSmall 80": {
+     "coverage": 0.825,
+     "msis": 4.62,
+     "series": 200,
+     "null": 0
+    },
+    "ChronosBoltSmall 95": {
+     "coverage": 0.947,
+     "msis": 7.51,
+     "series": 200,
+     "null": 0
+    }
+   }
+  }
+ }
+}
