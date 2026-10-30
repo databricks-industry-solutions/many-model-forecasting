@@ -756,14 +756,18 @@ def _lower_quantile(scores: np.ndarray, q: float):
 
 
 def _lookup(stats: dict, pools: np.ndarray, req: tuple, h: int):
-    """Per-series values (N, H) and infinite flags (N,) of a per-step request."""
-    values = np.array([[stats[(p, step + 1, req)][0] for step in range(h)] for p in pools], dtype=float)
-    inf = np.array([stats[(p, 1, req)][1] for p in pools], dtype=bool)
-    return values.reshape(len(pools), h), inf
+    """Per-series values (N, H) and infinite flags (N,) of a per-step request (looked up once per pool)."""
+    uniq, inv = np.unique(np.asarray(pools, dtype=object).astype(str), return_inverse=True)
+    by_pool = {str(p): p for p in pools}
+    values = np.array([[stats[(by_pool[u], step + 1, req)][0] for step in range(h)] for u in uniq], dtype=float)
+    inf = np.array([stats[(by_pool[u], 1, req)][1] for u in uniq], dtype=bool)
+    return values.reshape(len(uniq), h)[inv], inf[inv]
 
 
 def _lookup_pooled(stats: dict, pools: np.ndarray, req: tuple) -> np.ndarray:
-    return np.array([stats[(p, 0, req)][0] for p in pools], dtype=float)
+    uniq, inv = np.unique(np.asarray(pools, dtype=object).astype(str), return_inverse=True)
+    by_pool = {str(p): p for p in pools}
+    return np.array([stats[(by_pool[u], 0, req)][0] for u in uniq], dtype=float)[inv]
 
 
 def _pooled_upper(stats, pools, cubes, score, q, kappa, w, h):

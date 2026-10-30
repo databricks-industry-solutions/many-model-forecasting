@@ -276,21 +276,6 @@ class Forecaster:
         metric_value per series and model without filtering metric_name."""
         return self.conf.get("interval_metrics_output") or f"{self.conf['evaluation_output']}_interval_metrics"
 
-    @staticmethod
-    def calibration_features_one_series(pdf: pd.DataFrame, group_id: str, date_col: str, target: str,
-                                        season_length: int, periods: int, extra_cols: list) -> pd.DataFrame:
-        """
-        Scale and classification features of one series, from the `periods` points before its first
-        backtest window (column _first_window). Runs in a Pandas UDF.
-        """
-        pdf = pdf.sort_values(date_col)
-        hist = pdf[pdf[date_col] < pdf["_first_window"].iloc[0]].tail(periods)
-        row = {group_id: str(pdf[group_id].iloc[0])}
-        row.update(calibration.series_features(hist[target].fillna(0).to_numpy(), season_length))
-        for c in extra_cols:
-            row[c] = None if pdf[c].isna().all() else str(pdf[c].dropna().iloc[0])
-        return pd.DataFrame([row])
-
     def materializer(self) -> "calibration_spark.Materializer":
         """Cache of the prediction-interval steps, with temporary tables next to evaluation_output as fallback."""
         return calibration_spark.Materializer(self.spark, f"{self.conf['evaluation_output']}_pi_tmp")
@@ -315,17 +300,9 @@ class Forecaster:
         train = train.select(col(gid).cast(StringType()).alias(gid), to_timestamp(col(date_col)).alias(date_col),
                              col(target).cast(DoubleType()).alias(target), *extra_cols)
         windows = first_window.withColumnRenamed("backtest_window_start_date", "_first_window")
-        schema = StructType(
-            [StructField(gid, StringType())]
-            + [StructField(c, DoubleType()) for c in ("sigma", "volume", "cv", "adi", "cv2")]
-            + [StructField(c, StringType()) for c in extra_cols]
-        )
-        fn = functools.partial(
-            Forecaster.calibration_features_one_series, group_id=gid, date_col=date_col, target=target,
-            season_length=calibration.SEASON_LENGTH[freq], periods=calibration.FEATURE_PERIODS[freq],
-            extra_cols=extra_cols)
-        feats = materializer.cache(
-            train.join(windows, on=gid, how="inner").groupby(gid).applyInPandas(fn, schema=schema))
+        feats = materializer.cache(calibration_spark.series_features(
+            train, windows, gid, date_col, target, calibration.SEASON_LENGTH[freq],
+            calibration.FEATURE_PERIODS[freq], extra_cols))
         good = col("sigma").isNotNull() & ~isnan(col("sigma")) & (col("sigma") > 0)
         n_bad = feats.filter(~good).count()
         if n_bad:

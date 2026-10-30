@@ -232,3 +232,40 @@ def test_scoring_reads_only_the_latest_calibration_of_a_run(spark, tmp_path):
     cal_rows = f.calibration_rows_for("m")
     wide = f.wide_corrections(cal_rows, [80]).toPandas()
     np.testing.assert_array_equal(wide[cal.correction_column(0, "q_hi")].iloc[0], [2.0, 4.0])
+
+
+@pytest.mark.parametrize("overrides", [{}, {"method": "conformal"}, {"cqr_pool": "series"}])
+def test_spark_matches_numpy_across_many_buckets(spark, monkeypatch, overrides):
+    monkeypatch.setattr(cs, "SERIES_PER_BUCKET", 5)  # 24 series -> 5 buckets
+    ids, y, yhat, sigma, labels, native = _data(seed=7)
+    _compare(spark, ids, y, yhat, sigma, labels, native, _pi(**overrides))
+
+
+def test_spark_series_features_match_numpy(spark):
+    rng = np.random.default_rng(8)
+    rows, firsts, expected = [], [], {}
+    start = pd.Timestamp("2024-01-01")
+    for i, (n_days, zero_share) in enumerate([(60, 0.0), (60, 0.7), (40, 0.95), (5, 0.0), (60, 1.0), (30, 0.3)]):
+        sid = f"s{i}"
+        y = np.where(rng.random(n_days) < zero_share, 0.0, rng.poisson(4, n_days).astype(float))
+        if i == 1:
+            y[3] = np.nan  # a missing value counts as 0
+        first = start + pd.Timedelta(days=n_days - 7)
+        for t in range(n_days):
+            rows.append({"uid": sid, "ds": start + pd.Timedelta(days=t), "y": y[t],
+                         "store": None if t < 2 else f"st{i % 2}"})
+        firsts.append({"uid": sid, "_first_window": first})
+        hist = np.nan_to_num(y[: max(n_days - 7, 0)])[-30:]
+        expected[sid] = cal.series_features(hist, season_length=7)
+    # A series whose history starts at its first window: no history, sigma 0.
+    rows.append({"uid": "late", "ds": start + pd.Timedelta(days=50), "y": 3.0, "store": "st9"})
+    firsts.append({"uid": "late", "_first_window": start + pd.Timedelta(days=50)})
+    expected["late"] = cal.series_features(np.array([]), season_length=7)
+    train = spark.createDataFrame(pd.DataFrame(rows), "uid string, ds timestamp, y double, store string")
+    windows = spark.createDataFrame(pd.DataFrame(firsts), "uid string, _first_window timestamp")
+    got = cs.series_features(train, windows, "uid", "ds", "y", 7, 30, ["store"]).toPandas().set_index("uid")
+    assert set(got.index) == set(expected)
+    for sid, e in expected.items():
+        for k in ("sigma", "volume", "cv", "adi", "cv2"):
+            assert got.loc[sid, k] == pytest.approx(e[k], rel=1e-12, abs=1e-12), (sid, k)
+    assert got.loc["s0", "store"] == "st0" and got.loc["late", "store"] == "st9"
