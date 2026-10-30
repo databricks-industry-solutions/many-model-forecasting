@@ -1,0 +1,144 @@
+{
+ "run_id": "737fbf31-96fa-4dbc-a62a-6092cd43e64f",
+ "windows": 3,
+ "series": 4966,
+ "runtime_s": 6690.4,
+ "heldout": [
+  {
+   "model": "StatsForecastAutoETS",
+   "level": 80,
+   "series": 4966,
+   "coverage": 0.7938122087336746,
+   "msis": 7.2754639206609335,
+   "width": 2.480564057714197,
+   "exp_coverage": 0.788,
+   "exp_msis": 6.448
+  },
+  {
+   "model": "StatsForecastAutoETS",
+   "level": 95,
+   "series": 4966,
+   "coverage": 0.9426241297969048,
+   "msis": 12.605215240902442,
+   "width": 5.03103699234781,
+   "exp_coverage": 0.944,
+   "exp_msis": 9.834
+  },
+  {
+   "model": "StatsForecastBaselineSeasonalNaive",
+   "level": 80,
+   "series": 4966,
+   "coverage": 0.8077498417812554,
+   "msis": 7.8935318422368645,
+   "width": 3.6966897544240354,
+   "exp_coverage": 0.799,
+   "exp_msis": 7.388
+  },
+  {
+   "model": "StatsForecastBaselineSeasonalNaive",
+   "level": 95,
+   "series": 4966,
+   "coverage": 0.9468025430067315,
+   "msis": 11.901710210063394,
+   "width": 6.819727191852946,
+   "exp_coverage": 0.946,
+   "exp_msis": 10.724
+  },
+  {
+   "model": "StatsForecastCrostonSBA",
+   "level": 80,
+   "series": 4966,
+   "coverage": 0.7899790000575342,
+   "msis": 8.781514447556667,
+   "width": 2.5306028631729762,
+   "exp_coverage": 0.783,
+   "exp_msis": 7.195
+  },
+  {
+   "model": "StatsForecastCrostonSBA",
+   "level": 95,
+   "series": 4966,
+   "coverage": 0.9483703469305564,
+   "msis": 19.865258903707623,
+   "width": 5.219609131412334,
+   "exp_coverage": 0.944,
+   "exp_msis": 14.479
+  }
+ ],
+ "equality": [
+  {
+   "model": "StatsForecastAutoETS",
+   "level": 80,
+   "series": 4966,
+   "max_abs_q_diff": 0.0,
+   "max_abs_coverage_diff": 0.0,
+   "lowo_coverage": 0.8146443434401549,
+   "max_abs_msis_diff": 0.0,
+   "lowo_msis": 5.5794770895371615,
+   "max_abs_width_diff": 0.0,
+   "lowo_width": 2.257819035434181
+  },
+  {
+   "model": "StatsForecastAutoETS",
+   "level": 95,
+   "series": 4966,
+   "max_abs_q_diff": 0.0,
+   "max_abs_coverage_diff": 0.0,
+   "lowo_coverage": 0.9485333601825747,
+   "max_abs_msis_diff": 0.0,
+   "lowo_msis": 9.106668816054276,
+   "max_abs_width_diff": 0.0,
+   "lowo_width": 4.79363580625307
+  },
+  {
+   "model": "StatsForecastBaselineSeasonalNaive",
+   "level": 80,
+   "series": 4966,
+   "max_abs_q_diff": 0.0,
+   "max_abs_coverage_diff": 0.0,
+   "lowo_coverage": 0.8200717258308882,
+   "max_abs_msis_diff": 0.0,
+   "lowo_msis": 6.816176870662023,
+   "max_abs_width_diff": 0.0,
+   "lowo_width": 3.520663558884752
+  },
+  {
+   "model": "StatsForecastBaselineSeasonalNaive",
+   "level": 95,
+   "series": 4966,
+   "max_abs_q_diff": 0.0,
+   "max_abs_coverage_diff": 0.0,
+   "lowo_coverage": 0.9493795907408473,
+   "max_abs_msis_diff": 0.0,
+   "lowo_msis": 10.528825208978759,
+   "max_abs_width_diff": 0.0,
+   "lowo_width": 6.637313328881843
+  },
+  {
+   "model": "StatsForecastCrostonSBA",
+   "level": 80,
+   "series": 4966,
+   "max_abs_q_diff": 0.0,
+   "max_abs_coverage_diff": 0.0,
+   "lowo_coverage": 0.8017758855455192,
+   "max_abs_msis_diff": 0.0,
+   "lowo_msis": 6.41920973790497,
+   "max_abs_width_diff": 0.0,
+   "lowo_width": 2.550993871607331
+  },
+  {
+   "model": "StatsForecastCrostonSBA",
+   "level": 95,
+   "series": 4966,
+   "max_abs_q_diff": 0.0,
+   "max_abs_coverage_diff": 0.0,
+   "lowo_coverage": 0.9532871142818786,
+   "max_abs_msis_diff": 0.0,
+   "lowo_msis": 12.875672713805049,
+   "max_abs_width_diff": 0.0,
+   "lowo_width": 5.270288191820567
+  }
+ ],
+ "workspace": "fe-sandbox-air-eu-test",
+ "job_run_id": 196485371683654
+}
