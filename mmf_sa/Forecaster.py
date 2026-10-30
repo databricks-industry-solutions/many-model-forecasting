@@ -26,6 +26,7 @@ from pyspark.sql.types import (
     IntegerType,
     MapType,
     BooleanType,
+    LongType,
 )
 from pyspark.sql.functions import lit, avg, min, max, col, posexplode, to_date, to_timestamp, countDistinct
 from mmf_sa.models.abstract_model import ForecastingRegressor, collect_sorted
@@ -222,8 +223,9 @@ class Forecaster:
             return None
         return requested_quantiles(pi)
 
-    def get_model_for_evaluation(self, model_conf) -> ForecastingRegressor:
-        """Instantiates a model, passing it native_quantiles when it must produce native bands."""
+    def get_model_with_native_quantiles(self, model_conf) -> ForecastingRegressor:
+        """Instantiates a model for evaluation or scoring, passing it native_quantiles when it must produce
+        native bands."""
         quantiles = self.native_quantiles(model_conf)
         override = OmegaConf.create({"native_quantiles": quantiles}) if quantiles else None
         return self.model_registry.get_model(model_conf["name"], override_conf=override)
@@ -475,7 +477,7 @@ class Forecaster:
                 + self.evaluation_quantile_fields()
             )
 
-            model = self.get_model_for_evaluation(model_conf)
+            model = self.get_model_with_native_quantiles(model_conf)
 
             # Use Pandas UDF to forecast individual group
             evaluate_one_local_model_fn = functools.partial(
@@ -713,7 +715,7 @@ class Forecaster:
             )
         with mlflow.start_run(experiment_id=self.experiment_id) as run:
             model_name = model_conf["name"]
-            model = self.get_model_for_evaluation(model_conf)
+            model = self.get_model_with_native_quantiles(model_conf)
             hist_df, removed = self.prepare_data_for_global_model("evaluating")  # Reuse the same as global
             train_df, val_df = self.split_df_train_val(hist_df)
             input_example = train_df[train_df[self.conf['group_id']] == train_df[self.conf['group_id']] \
@@ -794,31 +796,32 @@ class Forecaster:
                 StructField(self.conf["target"], ArrayType(DoubleType())),
                 StructField("model_pickle", BinaryType()),
             ]
+            + self.evaluation_quantile_fields()
         )
-        model = self.model_registry.get_model(model_conf["name"])
+        model = self.get_model_with_native_quantiles(model_conf)
 
         # Use Pandas UDF to distribute scoring
-        score_one_local_model_fn = functools.partial(Forecaster.score_one_local_model, model=model)
+        score_one_local_model_fn = functools.partial(
+            Forecaster.score_one_local_model, model=model, with_quantiles=self.intervals_enabled)
         res_sdf = (
             src_df.groupby(self.conf["group_id"])
             .applyInPandas(score_one_local_model_fn, schema=output_schema)
         )
 
         # Write the results to a delta table
-        (
+        self.write_scoring_output(
             res_sdf.withColumn(self.conf["group_id"], col(self.conf["group_id"]).cast(StringType()))
             .withColumn("run_id", lit(self.run_id))
             .withColumn("run_date", lit(self.run_date))
             .withColumn("use_case", lit(self.conf["use_case_name"]))
             .withColumn("model", lit(model_conf["name"]))
-            .withColumn("model_uri", lit(""))
-            .write.mode("append")
-            .saveAsTable(self.conf["scoring_output"])
+            .withColumn("model_uri", lit("")),
+            model_conf["name"],
         )
 
     @staticmethod
     def score_one_local_model(
-        pdf: pd.DataFrame, model: ForecastingRegressor
+        pdf: pd.DataFrame, model: ForecastingRegressor, with_quantiles: bool = False
     ) -> pd.DataFrame:
         """
         A static method that scores a single local model using the provided pandas DataFrame and model.
@@ -827,6 +830,7 @@ class Forecaster:
         Parameters:
             pdf (pd.DataFrame): A pandas DataFrame.
             model (ForecastingRegressor): A ForecastingRegressor object.
+            with_quantiles (bool): Whether to return the forecast_quantiles column (prediction intervals enabled).
         Returns: res_df (pd.DataFrame): A pandas DataFrame.
         """
         pdf[model.params["date_col"]] = pd.to_datetime(pdf[model.params["date_col"]])
@@ -839,26 +843,28 @@ class Forecaster:
                 res_df[model.params["date_col"]].to_numpy(),
                 res_df[model.params["target"]].to_numpy(),
                 cloudpickle.dumps(model_fitted)]
+            if with_quantiles:
+                data.append(ForecastingRegressor.forecast_quantiles(res_df))
         except (ModelError, ScoringError, DataError) as err:
             _logger.error(
                 f"Error scoring group {group_id} using model {repr(model)}: {err}",
                 exc_info=err,
                 stack_info=True,
             )
-            data = [group_id, None, None, None]
+            data = [group_id, None, None, None] + ([None] if with_quantiles else [])
         except Exception as err:
             _logger.error(
                 f"Unexpected error scoring group {group_id} using model {repr(model)}: {err}",
                 exc_info=err,
                 stack_info=True,
             )
-            data = [group_id, None, None, None]
+            data = [group_id, None, None, None] + ([None] if with_quantiles else [])
         res_df = pd.DataFrame(
             columns=[
                 model.params["group_id"],
                 model.params["date_col"],
                 model.params["target"],
-                "model_pickle"], data=[data]
+                "model_pickle"] + (["forecast_quantiles"] if with_quantiles else []), data=[data]
         )
         return res_df
 
@@ -882,16 +888,15 @@ class Forecaster:
             self.conf["date_col"],
             sdf[self.conf["date_col"]].cast(ArrayType(TimestampType())),
         )
-        (
+        self.write_scoring_output(
             sdf.withColumn(self.conf["group_id"], col(self.conf["group_id"]).cast(StringType()))
             .withColumn("model", lit(model_conf["name"]))
             .withColumn("run_id", lit(self.run_id))
             .withColumn("run_date", lit(self.run_date))
             .withColumn("use_case", lit(self.conf["use_case_name"]))
             .withColumn("model_pickle", lit(b""))
-            .withColumn("model_uri", lit(model_uri))
-            .write.mode("append")
-            .saveAsTable(self.conf["scoring_output"])
+            .withColumn("model_uri", lit(model_uri)),
+            model_conf["name"],
         )
 
     def score_foundation_model(self, model_conf):
@@ -910,10 +915,18 @@ class Forecaster:
         print(f"Running scoring for {model_conf['name']}...")
         model_name = model_conf["name"]
         _, model_uri = self.get_model_for_scoring(model_conf)
-        model = self.model_registry.get_model(model_name)
+        model = self.get_model_with_native_quantiles(model_conf)
         score_df, removed = self.prepare_data_for_global_model("scoring")
         forecast_spark = None if self.serverless else self.spark
         prediction_df, model_pretrained = model.forecast(score_df, spark=forecast_spark)
+        q_cols = list(calibration.quantile_columns(prediction_df).values())
+        if self.intervals_enabled:
+            maps = calibration.quantile_maps(prediction_df, self.conf["group_id"])
+            prediction_df = prediction_df.drop(columns=q_cols)
+            prediction_df["forecast_quantiles"] = [maps.get(k) for k in prediction_df[self.conf["group_id"]]]
+            prediction_df[self.conf["group_id"]] = prediction_df[self.conf["group_id"]].astype(str)
+        elif q_cols:
+            prediction_df = prediction_df.drop(columns=q_cols)
         # Driver-only single-GPU predict paths build ds arrays as numpy
         # datetime64[ns]; Spark Connect (serverless) Arrow rejects nanosecond
         # timestamps. Coerce to microsecond precision before createDataFrame.
@@ -925,24 +938,91 @@ class Forecaster:
                 prediction_df[date_col] = prediction_df[date_col].apply(
                     lambda arr: np.asarray(arr, dtype="datetime64[us]")
                 )
-        sdf = self.spark.createDataFrame(prediction_df).drop('index')
+        sdf = self.spark.createDataFrame(
+            prediction_df,
+            schema=self.foundation_scoring_schema(prediction_df) if self.intervals_enabled else None,
+        ).drop('index')
         # Normalize the date column to TIMESTAMP (LTZ) so the schema matches the
         # table created by score_local_model (which uses ArrayType(TimestampType())).
         # No-op on classic compute (already LTZ); applies NTZ -> LTZ on Spark Connect,
         # where Arrow inference of object-dtype columns containing numpy datetime64
         # arrays produces array<timestamp_ntz> and would otherwise fail Delta merge.
         sdf = sdf.withColumn(date_col, sdf[date_col].cast(ArrayType(TimestampType())))
-        (
+        self.write_scoring_output(
             sdf.withColumn(self.conf["group_id"], col(self.conf["group_id"]).cast(StringType()))
             .withColumn("model", lit(model_conf["name"]))
             .withColumn("run_id", lit(self.run_id))
             .withColumn("run_date", lit(self.run_date))
             .withColumn("use_case", lit(self.conf["use_case_name"]))
             .withColumn("model_pickle", lit(b""))
-            .withColumn("model_uri", lit(model_uri))
-            .write.mode("append")
+            .withColumn("model_uri", lit(model_uri)),
+            model_conf["name"],
+        )
+
+    def foundation_scoring_schema(self, prediction_df: pd.DataFrame) -> StructType:
+        """Explicit schema of a foundation model's predictions with forecast_quantiles (map inference is unreliable)."""
+        fields = []
+        for c in prediction_df.columns:
+            if c == "forecast_quantiles":
+                fields.append(StructField(c, MapType(StringType(), ArrayType(DoubleType()))))
+            elif c == self.conf["date_col"]:
+                fields.append(StructField(c, ArrayType(TimestampType())))
+            elif c == self.conf["target"]:
+                fields.append(StructField(c, ArrayType(DoubleType())))
+            elif c == "index":
+                fields.append(StructField(c, LongType()))
+            else:
+                fields.append(StructField(c, StringType()))
+        return StructType(fields)
+
+    def write_scoring_output(self, sdf: DataFrame, model_name: str):
+        """
+        Appends one model's forecasts to scoring_output. With prediction intervals enabled, the calibration
+        of this run is applied first and the interval columns are added (output_format, spec section 7.4).
+        """
+        if not self.intervals_enabled:
+            sdf.write.mode("append").saveAsTable(self.conf["scoring_output"])
+            return
+        (
+            self.add_prediction_intervals(sdf, model_name)
+            .write.mode("append").option("mergeSchema", "true")
             .saveAsTable(self.conf["scoring_output"])
         )
+
+    def add_prediction_intervals(self, sdf: DataFrame, model_name: str) -> DataFrame:
+        """Applies calibration_output of this run and model to scoring rows (one row per series)."""
+        pi = self.conf.prediction_intervals
+        gid, target, date_col = self.conf["group_id"], self.conf["target"], self.conf["date_col"]
+        levels = calibration.calibration_levels(pi)
+        try:
+            cal_rows = (
+                self.spark.table(self.calibration_output_table())
+                .filter((col("run_id") == self.run_id) & (col("model") == model_name))
+                .toPandas()
+            )
+        except Exception as err:
+            _logger.warning(f"No calibration_output for this run ({err}); interval columns will be null.")
+            cal_rows = pd.DataFrame()
+        if cal_rows.empty:
+            _logger.warning(f"{model_name}: no calibration rows for run_id {self.run_id}; "
+                            "interval columns will be null.")
+        pdf = sdf.toPandas()
+        pdf[gid] = pdf[gid].astype(str)
+        if not cal_rows.empty:
+            cal_rows[gid] = cal_rows[gid].astype(str)
+        out, stats = calibration.apply_calibration(pdf, cal_rows, gid, target, levels, pi.output_format)
+        if stats["fallback"] or stats["null"]:
+            _logger.warning(f"{model_name}: {stats['fallback']} series without calibration used the model's median "
+                            f"correction; {stats['null']} series have null bounds.")
+        # Spark Connect Arrow rejects nanosecond timestamps (see score_foundation_model).
+        out[date_col] = [None if a is None else np.asarray(a, dtype="datetime64[us]") for a in out[date_col]]
+        fields = [f for f in sdf.schema.fields if f.name != "forecast_quantiles"]
+        for name in calibration.interval_columns(target, levels, pi.output_format):
+            dtype = (MapType(StringType(), ArrayType(DoubleType())) if name == calibration.quantiles_column(target)
+                     else ArrayType(DoubleType()))
+            fields.append(StructField(name, dtype))
+        schema = StructType(fields)
+        return self.spark.createDataFrame(out[[f.name for f in fields]], schema)
 
     def get_model_for_scoring(self, model_conf):
         """

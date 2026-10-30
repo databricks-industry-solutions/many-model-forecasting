@@ -132,6 +132,8 @@ class StatsFcForecaster(ForecastingRegressor):
         _df = df[df[self.params.target].notnull()]
         _df = self.prepare_data(_df)
         self.fit(_df)
+        quantiles = self.params.get("native_quantiles")
+        level_kwargs = {"level": central_levels(quantiles)} if quantiles else {}
         if 'dynamic_future_numerical' in self.params.keys() or 'dynamic_future_categorical' in self.params.keys():
             _last_date = _df["ds"].max()
             _future_df = df[
@@ -141,7 +143,8 @@ class StatsFcForecaster(ForecastingRegressor):
             ]
             _future_exogenous = self.prepare_data(_future_df, future=True)
             try:
-                forecast_df = self.model.predict(self.params["prediction_length"], _future_exogenous)
+                forecast_df = self.model.predict(self.params["prediction_length"], _future_exogenous,
+                                                 **level_kwargs)
             except Exception as e:
                 print(
                     f"Removing group_id {df[self.params.group_id][0]} as future exogenous "
@@ -150,9 +153,12 @@ class StatsFcForecaster(ForecastingRegressor):
                     columns=[self.params.date_col, self.params.target]
                 )
         else:
-            forecast_df = self.model.predict(self.params["prediction_length"])
+            forecast_df = self.model.predict(self.params["prediction_length"], **level_kwargs)
 
-        target = [col for col in forecast_df.columns.to_list() if col not in ["unique_id", "ds"]][0]
+        target = [col for col in forecast_df.columns.to_list()
+                  if col not in ["unique_id", "ds"] and "-lo-" not in col and "-hi-" not in col][0]
+        if quantiles:
+            forecast_df = self.native_quantile_columns(forecast_df, target, quantiles)
         forecast_df = forecast_df.reset_index(drop=True).rename(
             columns={
                 "unique_id": self.params.group_id,
