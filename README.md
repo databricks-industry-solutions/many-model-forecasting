@@ -375,7 +375,7 @@ Each model's intervals are calibrated on its own backtest, between evaluation an
 - Models with **native intervals** (statsforecast `Naive`, `SeasonalNaive`, `AutoArima`, `AutoETS`, `AutoCES`, `AutoTheta`, `AutoTbats`, and the Chronos models) produce their native bands in every backtest window. MMF then corrects them with conformalized quantile regression (CQR), so that they reach the requested coverage: native bands often over-cover (statsforecast) or under-cover (Chronos-Bolt only has quantiles up to 10-90%, so its "95%" band is really 80%).
 - **All other models** get conformal intervals from their backtest errors, scaled per series and pooled per group of similar series, then shrunk toward each series' own errors.
 
-In the experiments behind these defaults (about 5,000 M5 series, with AutoETS, SeasonalNaive, CrostonSBA, Chronos-Bolt and Chronos-2), every model reached its nominal coverage within 2 points with only 3 backtest windows. The design, the experiments and the alternatives are documented in [docs/specs/confidence_interval.md](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/docs/specs/confidence_interval.md).
+In the experiments behind these defaults (about 5,000 M5 series, with AutoETS, SeasonalNaive, CrostonSBA, Chronos-Bolt and Chronos-2), every model reached its nominal coverage within 2 points with only 3 backtest windows.
 
 **Outputs**
 

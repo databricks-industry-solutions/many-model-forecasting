@@ -100,7 +100,7 @@ def run_forecast(
         experiment_path (str): A string specifying the experiment path.
         run_id (str): A string specifying the run id. If not provided a random string is generated and assigned to each run.
         conf (Union[str, Dict[str, Any], OmegaConf]): A configuration object.
-        prediction_intervals (Dict[str, Any]): Prediction-interval settings, merged over the `prediction_intervals` block of the configuration (see docs/specs/confidence_interval.md, section 7.3). E.g. {"enabled": True, "levels": [80, 95]}. Default is None, which keeps the configuration as is (disabled in the shipped configurations).
+        prediction_intervals (Dict[str, Any]): Prediction-interval settings, merged over the `prediction_intervals` block of the configuration (see the "Prediction Intervals" section of the README). E.g. {"enabled": True, "levels": [80, 95]}. Default is None, which keeps the configuration as is (disabled in the shipped configurations).
         calibration_output (str): A string specifying the output table name for the prediction-interval calibration. Only used when prediction intervals are enabled. Default is None, which uses "<evaluation_output>_calibration".
         interval_metrics_output (str): A string specifying the output table name for the out-of-sample interval metrics (coverage, interval score, width per series and backtest window). Only used when prediction intervals are enabled. Default is None, which uses "<evaluation_output>_interval_metrics".
 

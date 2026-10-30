@@ -1,4 +1,4 @@
-"""Distributed prediction-interval calibration (docs/specs/confidence_interval.md, section 11.6).
+"""Distributed prediction-interval calibration.
 
 Spark counterpart of calibration.calibrate_model. Nothing that grows with the number of series is
 collected to the driver: only window/horizon counts, group-label counts, pool order statistics

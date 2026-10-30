@@ -365,7 +365,7 @@ def resolve_source(self, key: str) -> DataFrame:
 
 ## Prediction Intervals
 
-Prediction intervals are optional (`prediction_intervals.enabled`, off by default). The user-facing description is in the [main README](../README.md#prediction-intervals), and the design and experiments in [docs/specs/confidence_interval.md](../docs/specs/confidence_interval.md). This section describes the code.
+Prediction intervals are optional (`prediction_intervals.enabled`, off by default). The user-facing description is in the [main README](../README.md#prediction-intervals). This section describes the code.
 
 ### Modules
 

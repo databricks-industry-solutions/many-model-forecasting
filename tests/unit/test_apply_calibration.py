@@ -1,4 +1,4 @@
-"""Unit tests for applying the calibration at scoring time (prediction intervals, P0 step 5).
+"""Unit tests for applying the calibration at scoring time (prediction intervals).
 
 Tests cover:
 - Bounds per method: residual conformal (signed_normalized and signed), CQR asymmetric and

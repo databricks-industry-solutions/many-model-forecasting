@@ -1,6 +1,6 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Prediction-interval validation on M5 (task 7, docs/specs/confidence_interval.md section 11.5)
+# MAGIC # Prediction-interval validation on M5
 # MAGIC
 # MAGIC Runs MMF with prediction intervals on the experiment's M5 sample (same seed, same series), and checks:
 # MAGIC
@@ -49,7 +49,7 @@ t0 = time.time()
 
 # COMMAND ----------
 
-# MAGIC %md ## Data: the experiment's sample (docs/specs/experiments/pi_grouping_m5.py)
+# MAGIC %md ## Data: the experiment's sample (same seed and filters as the experiment that chose the defaults)
 
 # COMMAND ----------
 
@@ -148,7 +148,7 @@ for model, g in score.groupby("model"):
 heldout = pd.DataFrame(heldout)
 display(heldout)
 
-# Experiment, seed 7, W=3, default methods, 4 test windows (pi_grouping_m5_results_cqr_1t_seed7.json).
+# Experiment, seed 7, W=3, default methods, 4 test windows.
 experiment = pd.DataFrame([
     ("StatsForecastAutoETS", 80, 0.788, 6.448), ("StatsForecastAutoETS", 95, 0.944, 9.834),
     ("StatsForecastBaselineSeasonalNaive", 80, 0.799, 7.388), ("StatsForecastBaselineSeasonalNaive", 95, 0.946, 10.724),

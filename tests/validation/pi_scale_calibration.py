@@ -1,6 +1,6 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Prediction-interval scale test: calibration and scoring only (task 7, spec section 11.6)
+# MAGIC # Prediction-interval scale test: calibration and scoring only
 # MAGIC
 # MAGIC The backtest of local models runs one statsforecast fit per series and window, which takes hours at
 # MAGIC 1M series and does not test the prediction-interval code. This notebook writes **synthetic backtest rows**
