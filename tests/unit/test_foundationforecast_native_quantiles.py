@@ -192,7 +192,7 @@ def test_levels_inside_the_native_range_do_not_warn(quantile_library, caplog):
 
 
 @pytest.mark.parametrize("q, expected", [
-    (0.0125, 0.012), (0.9875, 0.988), (0.025, 0.025), (0.1, 0.1), (0.5, 0.5), (0.975, 0.975), (0.0005, 0.0),
+    (0.0125, 0.012), (0.9875, 0.988), (0.025, 0.025), (0.1, 0.1), (0.5, 0.5), (0.975, 0.975), (0.0005, 0.001), (0.9999, 0.999),
 ])
 def test_ff_level_rounds_outward_to_3_decimals(q, expected):
     assert ffp.ff_level(q) == expected
