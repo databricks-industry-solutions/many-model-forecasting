@@ -451,6 +451,16 @@ class FoundationForecastForecaster(ForecastingRegressor):
             )
             return []
         levels = forecast_levels(requested)
+        # foundationforecast accepts levels with at most 3 decimals and raises otherwise (e.g. 0.0125 for a 97.5%
+        # interval): such levels get no native column, and their intervals use the missing-band fallback.
+        unsupported = [level for level in levels if abs(round(level, 3) - level) > 1e-9]
+        if unsupported:
+            _warn_once(
+                f"native_quantiles_precision:{name}",
+                f"{name}: foundationforecast only accepts quantile levels with at most 3 decimals, so "
+                f"{unsupported} are not requested from the model and get no native band.",
+            )
+            levels = [level for level in levels if level not in unsupported]
         if self.native_quantile_range is not None:
             q_min, q_max = self.native_quantile_range
             if levels[0] < q_min or levels[-1] > q_max:

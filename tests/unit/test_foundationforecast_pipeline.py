@@ -44,7 +44,7 @@ EXPECTED_REPOS = {
 }
 NON_COMMERCIAL_MODELS = {"FFTimesFM_3_0", "FFPatchTSTFM_R1"}
 REVENUE_CAPPED_MODELS = {"FFTimestral_5M", "FFTimestral_28M", "FFTimestral_123M", "FFTimestral_209M"}
-MMF_ENTRY_KEYS = {"module", "model_class", "framework", "model_type", "license"}
+MMF_ENTRY_KEYS = {"module", "model_class", "framework", "model_type", "license", "native_intervals"}
 H = 4
 
 
