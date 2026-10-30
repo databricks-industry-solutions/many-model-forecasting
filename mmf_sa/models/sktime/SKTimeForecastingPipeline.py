@@ -9,6 +9,7 @@ from sktime.forecasting.model_selection import (
 from sktime.forecasting.fbprophet import Prophet
 from sktime.forecasting.base import ForecastingHorizon, BaseForecaster
 from mmf_sa.models.abstract_model import ForecastingRegressor
+from mmf_sa.calibration import QUANTILE_COLUMN_PREFIX, central_levels, quantile_key
 
 
 class SKTimeForecastingPipeline(ForecastingRegressor):
@@ -66,9 +67,8 @@ class SKTimeForecastingPipeline(ForecastingRegressor):
     def predict(self, hist_df: pd.DataFrame, val_df: pd.DataFrame = None):
         _df = self.prepare_data(hist_df)
         self.fit(_df)
-        pred_df = self.model.predict(
-            ForecastingHorizon(np.arange(1, self.params.prediction_length + 1))
-        )
+        fh = ForecastingHorizon(np.arange(1, self.params.prediction_length + 1))
+        pred_df = self.model.predict(fh)
         freq = self.params.freq
         if freq == "H":
             freq = "h"
@@ -82,8 +82,30 @@ class SKTimeForecastingPipeline(ForecastingRegressor):
         )
         forecast_df = pd.DataFrame(data=[], index=date_idx).reset_index()
         forecast_df[self.params.target] = pred_df.y.values
+        quantiles = self.params.get("native_quantiles")
+        if quantiles:
+            forecast_df = self.native_quantile_columns(forecast_df, quantiles, fh)
         forecast_df[self.params.target] = forecast_df[self.params.target].clip(0)
         return forecast_df, self.model
+
+    def native_quantile_columns(self, forecast_df: pd.DataFrame, quantiles, fh: ForecastingHorizon) -> pd.DataFrame:
+        """
+        Adds one QUANTILE_COLUMN_PREFIX column per requested quantile, read from the central intervals of
+        sktime's predict_interval: coverage c gives the bounds at the quantiles (1 - c) / 2 and (1 + c) / 2.
+        The median is the point forecast, as for statsforecast. Quantiles are the model's raw band: unlike
+        the point forecast, they are not clipped here; calibration applies prediction_intervals.clip_lower.
+        The model is fitted once by predict, so each coverage only costs a prediction.
+        """
+        levels = central_levels(quantiles)
+        bands = self.model.predict_interval(fh, coverage=[level / 100 for level in levels]) if levels else None
+        for q in quantiles:
+            if q == 0.5:
+                values = forecast_df[self.params.target]
+            else:
+                (level,) = central_levels([q])
+                values = bands[(bands.columns[0][0], level / 100, "lower" if q < 0.5 else "upper")]
+            forecast_df[QUANTILE_COLUMN_PREFIX + quantile_key(q)] = values.to_numpy(dtype=float)
+        return forecast_df
 
     def forecast(self, x, spark=None):
         return self.predict(x)
