@@ -109,10 +109,11 @@ class Forecaster:
                 "calibrated on the backtest results stored there."
             )
         self.model_registry = ModelRegistry(self.conf)
+        # Known models that are not active are skipped silently: the GPU orchestrator runs one model per Forecaster.
         unknown_methods = set(self.conf.prediction_intervals.method_by_model) - set(
-            self.model_registry.get_active_model_keys())
+            self.model_registry.all_models_conf)
         if unknown_methods:
-            _logger.warning("prediction_intervals.method_by_model names models that are not active, ignored: "
+            _logger.warning("prediction_intervals.method_by_model names unknown models, ignored: "
                             f"{', '.join(sorted(unknown_methods))}.")
         self.spark = spark
         self.serverless = bool(self.conf.get("serverless", False))
