@@ -2,6 +2,7 @@ import os
 import functools
 import logging
 import pathlib
+import posixpath
 from datetime import datetime
 import uuid
 import yaml
@@ -50,6 +51,28 @@ from mmf_sa.exceptions import (
 _logger = logging.getLogger(__name__)
 os.environ['NIXTLA_ID_AS_COL'] = '1'
 mlflow.set_registry_uri("databricks-uc")
+
+
+def ensure_workspace_parent_dir(path: str) -> None:
+    """
+    Creates the workspace folder that will hold an MLflow experiment, e.g. /Users/me/mmf for /Users/me/mmf/exp.
+    Uses the Workspace API (databricks-sdk, a dependency of mlflow), which works on classic and serverless compute;
+    os.makedirs on /Workspace does not create workspace folders on serverless. Falls back to os.makedirs.
+    """
+    parent = posixpath.dirname(path[len("/Workspace"):] if path.startswith("/Workspace/") else path)
+    if parent in ("", "/"):
+        return
+    try:
+        from databricks.sdk import WorkspaceClient
+        WorkspaceClient().workspace.mkdirs(parent)
+        return
+    except Exception as err:
+        _logger.debug(f"Could not create {parent} with the Workspace API ({err}); trying /Workspace{parent}.")
+    try:
+        os.makedirs(f"/Workspace{parent}", exist_ok=True)
+    except OSError as err:
+        _logger.warning(f"Could not create the experiment folder {parent} ({err}); mlflow.set_experiment may fail "
+                        "if it does not exist.")
 
 
 class Forecaster:
@@ -114,9 +137,7 @@ class Forecaster:
         Parameters: self (Forecaster): A Forecaster object.
         Returns: experiment_id (str): A string specifying the experiment id.
         """
-        parent_dir = os.path.dirname(f'/Workspace{self.conf["experiment_path"]}')
-        if not os.path.exists(parent_dir):
-            os.makedirs(parent_dir)
+        ensure_workspace_parent_dir(self.conf["experiment_path"])
         mlflow.set_experiment(self.conf["experiment_path"])
         experiment_id = (
             MlflowClient()
