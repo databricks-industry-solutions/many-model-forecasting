@@ -1,0 +1,91 @@
+{
+ "series": 200,
+ "quantiles": [
+  0.025,
+  0.1,
+  0.5,
+  0.9,
+  0.975
+ ],
+ "torch": "2.4.1",
+ "results": {
+  "MoiraiSmall_s10": {
+   "num_samples": 10,
+   "runtime_s": 16.2,
+   "sample_shapes": [
+    "(10, 28)"
+   ],
+   "decode_roundtrip_max_diff": 0.0,
+   "crossing_share": 0.0,
+   "80": {
+    "method": "cqr/asymmetric/group",
+    "lowo_native_coverage": 0.691,
+    "lowo_coverage": 0.804,
+    "heldout_native_coverage": 0.648,
+    "heldout_coverage": 0.774,
+    "native_width": 2.436
+   },
+   "95": {
+    "method": "cqr/asymmetric/group",
+    "lowo_native_coverage": 0.806,
+    "lowo_coverage": 0.946,
+    "heldout_native_coverage": 0.769,
+    "heldout_coverage": 0.935,
+    "native_width": 4.022
+   },
+   "width_ratio_95_80": 1.651
+  },
+  "MoiraiMoESmall_s10": {
+   "num_samples": 10,
+   "runtime_s": 68.9,
+   "sample_shapes": [
+    "(10, 28)"
+   ],
+   "decode_roundtrip_max_diff": 0.0,
+   "crossing_share": 0.0,
+   "80": {
+    "method": "cqr/asymmetric/group",
+    "lowo_native_coverage": 0.764,
+    "lowo_coverage": 0.811,
+    "heldout_native_coverage": 0.751,
+    "heldout_coverage": 0.812,
+    "native_width": 2.292
+   },
+   "95": {
+    "method": "cqr/asymmetric/group",
+    "lowo_native_coverage": 0.855,
+    "lowo_coverage": 0.949,
+    "heldout_native_coverage": 0.85,
+    "heldout_coverage": 0.948,
+    "native_width": 3.564
+   },
+   "width_ratio_95_80": 1.555
+  },
+  "MoiraiSmall_s100": {
+   "num_samples": 100,
+   "runtime_s": 64.6,
+   "sample_shapes": [
+    "(100, 28)"
+   ],
+   "decode_roundtrip_max_diff": 0.0,
+   "crossing_share": 0.0,
+   "80": {
+    "method": "cqr/asymmetric/group",
+    "lowo_native_coverage": 0.794,
+    "lowo_coverage": 0.812,
+    "heldout_native_coverage": 0.758,
+    "heldout_coverage": 0.785,
+    "native_width": 2.754
+   },
+   "95": {
+    "method": "cqr/asymmetric/group",
+    "lowo_native_coverage": 0.942,
+    "lowo_coverage": 0.951,
+    "heldout_native_coverage": 0.926,
+    "heldout_coverage": 0.936,
+    "native_width": 5.313
+   },
+   "width_ratio_95_80": 1.929
+  }
+ }
+}
