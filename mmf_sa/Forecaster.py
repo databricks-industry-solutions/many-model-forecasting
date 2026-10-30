@@ -77,6 +77,9 @@ class Forecaster:
         self.data_conf = data_conf
         self.conf["prediction_intervals"] = resolve_prediction_intervals_conf(
             self.conf.get("prediction_intervals"))
+        if self.intervals_enabled:
+            # Fail before the backtest for settings that are validated but not implemented yet.
+            calibration.check_supported(self.conf.prediction_intervals)
         if self.intervals_enabled and not self.conf.get("evaluation_output"):
             raise ConfigurationError(
                 "prediction_intervals.enabled requires evaluation_output: intervals are "
@@ -149,7 +152,13 @@ class Forecaster:
             return False
         if isinstance(scoring, str) and isinstance(train, str):
             return scoring != train
-        return scoring is not train
+        if scoring is train:
+            return False
+        if isinstance(scoring, DataFrame) and isinstance(train, DataFrame):
+            return not scoring.sameSemantics(train)
+        if isinstance(scoring, pd.DataFrame) and isinstance(train, pd.DataFrame):
+            return not scoring.equals(train)
+        return True
 
     def prepare_data_for_global_model(self, mode: str = None):
         """
@@ -319,8 +328,10 @@ class Forecaster:
                             "they use the median scale of the other series.")
             feats = feats.withColumn("sigma", when(good, col("sigma")).otherwise(lit(1.0 if median is None
                                                                                        else float(median))))
-        return (calibration_spark.classify(feats, gid),
-                0.0 if min_target is None else float(min_target))
+        classified = calibration_spark.classify(feats, gid).persist()
+        classified.count()
+        feats.unpersist()
+        return classified, 0.0 if min_target is None else float(min_target)
 
     def run_calibration(self):
         """
@@ -343,15 +354,15 @@ class Forecaster:
         cols = [col(gid).cast(StringType()).alias(gid), "backtest_window_start_date", "model", "forecast", "actual"]
         if "forecast_quantiles" in eval_sdf.columns:
             cols.append("forecast_quantiles")
-        eval_sdf = eval_sdf.select(*cols)
+        eval_sdf = eval_sdf.select(*cols).persist()
         models = [r[0] for r in eval_sdf.select("model").distinct().collect()]
         if not models:
+            eval_sdf.unpersist()
             _logger.warning(f"No backtest rows for run_id {self.run_id} in {self.conf['evaluation_output']}; "
                             "nothing to calibrate.")
             return
         features, min_target = self.calibration_features(
             eval_sdf.groupBy(gid).agg(min("backtest_window_start_date").alias("backtest_window_start_date")))
-        features = features.persist()
         clip_lower = calibration.resolve_clip_lower(pi.clip_lower, min_target)
         print(f"Prediction intervals: clip_lower resolved to {clip_lower}")
         try:
@@ -378,6 +389,7 @@ class Forecaster:
                     result.unpersist()
         finally:
             features.unpersist()
+            eval_sdf.unpersist()
         print("Finished run_calibration")
 
     def write_calibration_output(self, rows: DataFrame):
@@ -981,20 +993,27 @@ class Forecaster:
         if not self.intervals_enabled:
             sdf.write.mode("append").saveAsTable(self.conf["scoring_output"])
             return
-        (
-            self.add_prediction_intervals(sdf, model_name)
-            .write.mode("append").option("mergeSchema", "true")
-            .saveAsTable(self.conf["scoring_output"])
-        )
+        # The forecasts are used twice (missing-calibration count, then the write): compute them once.
+        sdf = sdf.persist()
+        try:
+            (
+                self.add_prediction_intervals(sdf, model_name)
+                .write.mode("append").option("mergeSchema", "true")
+                .saveAsTable(self.conf["scoring_output"])
+            )
+        finally:
+            sdf.unpersist()
 
     def calibration_rows_for(self, model_name: str):
         """This run's calibration_output rows of one model, as a Spark DataFrame, or None when there are none."""
         try:
             cal = self.spark.table(self.calibration_output_table()).filter(
                 (col("run_id") == self.run_id) & (col("model") == model_name))
-            if cal.limit(1).count() == 0:
+            latest = cal.agg(max("run_date")).collect()[0][0]
+            if latest is None:
                 return None
-            return cal
+            # A re-run with the same run_id appends a second calibration; keep only the latest one.
+            return cal.filter(col("run_date") == lit(latest))
         except Exception as err:
             _logger.warning(f"Cannot read calibration_output ({err}).")
             return None

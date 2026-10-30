@@ -228,7 +228,8 @@ def series_udf_lower(pdf, *, plan, levels, has_band, w, h, clip_lower, stats):
         if clip_lower is not None:
             band = (np.maximum(band[0], clip_lower), band[1])
         cubes = cal.score_cubes(plan, y, yhat, sigma, band)
-        for fold in range(w + 1):
+        # Leave-one-window-out folds only exist with 2 windows or more.
+        for fold in (range(w + 1) if w >= 2 else [w]):
             idx = np.arange(w) if fold == w else np.delete(np.arange(w), fold)
             sub = {k: v[:, idx] for k, v in cubes.items()}
             pool = pools["full" if fold == w else "lowo"]
@@ -358,7 +359,8 @@ def calibrate_model_spark(spark: SparkSession, eval_sdf: DataFrame, features: Da
     long = long.join(F.broadcast(pools), on="_label", how="left").drop("_label").persist()
     try:
         adaptive = plan["kind"] == "cqr" and plan["score"] == "asymmetric" and plan["tail_split"] == "adaptive"
-        folds = range(w + 1)
+        # Fold W uses all windows; the leave-one-window-out folds only exist with 2 windows or more.
+        folds = list(range(w + 1)) if w >= 2 else [w]
         stats, m_lo = {}, {}
         for i, lv in enumerate(levels):
             cols = score_columns(plan, i, clip_lower)

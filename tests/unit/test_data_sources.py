@@ -48,6 +48,7 @@ def test_resolve_source_tables_dataframes_and_mixed():
     ({"train_data": "t", "scoring_data": "s"}, {}, True),
     ({}, {"train_data": TRAIN, "scoring_data": TRAIN}, False),                      # same DataFrame
     ({}, {"train_data": TRAIN, "scoring_data": SCORE}, True),
+    ({}, {"train_data": TRAIN, "scoring_data": TRAIN.copy()}, False),                # same pandas data
     ({"scoring_data": "s"}, {"train_data": TRAIN}, True),                           # mixed
     ({"train_data": "t"}, {"scoring_data": SCORE}, True),
 ])

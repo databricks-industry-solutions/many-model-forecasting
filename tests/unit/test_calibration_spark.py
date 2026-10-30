@@ -192,3 +192,41 @@ def test_spark_classes_match_pandas(spark):
     got = cs.classify(spark.createDataFrame(feats), "uid").toPandas().set_index("uid").loc[expected.index]
     for c in ("sb_class", "abc_class", "xyz_class", "abc_xyz"):
         np.testing.assert_array_equal(got[c].to_numpy(), expected[c].to_numpy(), err_msg=c)
+
+
+def test_spark_single_window_adaptive_cqr(spark):
+    ids, y, yhat, sigma, labels, native = _data(n=12, w=1, h=4, seed=6)
+    _compare(spark, ids, y, yhat, sigma, labels, native, _pi())
+
+
+def test_spark_dataframes_with_the_same_plan_are_not_separate_scoring_data(spark):
+    from omegaconf import OmegaConf
+    from mmf_sa import Forecaster
+    spark.createDataFrame(pd.DataFrame({"a": [1]})).write.mode("overwrite").saveAsTable("default.pi_same_source")
+    df = spark.table("default.pi_same_source")
+    conf = OmegaConf.create({"freq": "D", "backtest_length": 7, "active_models": []})
+    same = Forecaster(conf=conf, data_conf={"train_data": df, "scoring_data": spark.table("default.pi_same_source")},
+                      spark=spark, experiment_id="e")
+    assert not same.has_separate_scoring_data()
+    other = Forecaster(conf=conf, data_conf={"train_data": df, "scoring_data": df.filter("a > 0")}, spark=spark,
+                       experiment_id="e")
+    assert other.has_separate_scoring_data()
+
+
+def test_scoring_reads_only_the_latest_calibration_of_a_run(spark, tmp_path):
+    from omegaconf import OmegaConf
+    from mmf_sa import Forecaster
+    rows = []
+    for run_date, q in ((pd.Timestamp("2024-01-01"), 1.0), (pd.Timestamp("2024-01-02"), 2.0)):
+        for step in (1, 2):
+            rows.append({"model": "m", "method": "conformal", "score": "signed_normalized", "coverage_target": "series",
+                         "uid": "a", "pool_key": "__all__", "step": step, "level": 80.0, "q_lo": -q, "q_hi": q * step,
+                         "sigma": 1.0, "clip_lower": 0.0, "run_id": "r", "run_date": run_date})
+    spark.createDataFrame(pd.DataFrame(rows)).write.mode("overwrite").saveAsTable("default.pi_cal_rerun")
+    conf = OmegaConf.create({"freq": "D", "backtest_length": 7, "active_models": [], "group_id": "uid",
+                             "evaluation_output": "default.pi_eval", "calibration_output": "default.pi_cal_rerun",
+                             "prediction_intervals": {"enabled": True}})
+    f = Forecaster(conf=conf, data_conf={}, spark=spark, experiment_id="e", run_id="r")
+    cal_rows = f.calibration_rows_for("m")
+    wide = f.wide_corrections(cal_rows, [80]).toPandas()
+    np.testing.assert_array_equal(wide[cal.correction_column(0, "q_hi")].iloc[0], [2.0, 4.0])
