@@ -148,6 +148,46 @@ GROUP BY e.unique_id, e.model
 
 Step 5 uses the same WAPE formula for the summary table.
 
+### Step 2b: Prediction-interval report (only if prediction intervals were enabled)
+
+Check whether Skill 4 enabled prediction intervals (Step 1d): the table
+`{use_case}_evaluation_output_interval_metrics` exists. If it does not, skip to Step 3.
+
+The interval metrics are **out of sample**: each backtest window is scored with intervals
+calibrated on the other windows. Compare `coverage_<L>` with the nominal level `L/100`;
+`msis_<L>` is the interval score scaled by the series' seasonal-naive error (lower is better
+at equal coverage). `native_*` rows are the uncorrected native bands, for comparison.
+
+```sql
+SELECT model, metric_name, ROUND(AVG(metric_value), 3) AS value, COUNT(DISTINCT unique_id) AS series
+FROM {catalog}.{schema}.{use_case}_evaluation_output_interval_metrics
+WHERE metric_name RLIKE '^(native_)?(coverage|msis)_'
+GROUP BY model, metric_name
+ORDER BY model, metric_name
+```
+
+Coverage per ABC x XYZ class (the classes MMF used to pool the calibration), for the latest run of each model:
+
+```sql
+WITH cls AS (
+  SELECT DISTINCT model, run_id, unique_id, abc_class, xyz_class
+  FROM {catalog}.{schema}.{use_case}_evaluation_output_calibration
+)
+SELECT m.model, CONCAT(c.abc_class, c.xyz_class) AS abc_xyz, m.metric_name,
+       ROUND(AVG(m.metric_value), 3) AS coverage, COUNT(DISTINCT m.unique_id) AS series
+FROM {catalog}.{schema}.{use_case}_evaluation_output_interval_metrics AS m
+JOIN cls AS c ON m.model = c.model AND m.run_id = c.run_id AND m.unique_id = c.unique_id
+WHERE m.metric_name LIKE 'coverage_%'
+GROUP BY m.model, abc_xyz, m.metric_name
+ORDER BY m.model, m.metric_name, abc_xyz
+```
+
+Report to the user, per model and level: the overall coverage against nominal, the classes more than
+5 points below nominal (under-covered, e.g. lumpy C-Z items), and, for models with native bands, how
+much the calibration changed coverage versus `native_coverage_<L>`. Coverage a few points off nominal
+on small classes is expected noise; a whole model 5+ points below nominal usually means too few
+backtest windows (suggest Step 1b option (b) or (c) of Skill 4).
+
 ### Step 3: Best model selection per series (forecastable)
 
 Select the best-performing model for each forecastable time series based on the primary metric:
@@ -320,6 +360,19 @@ Verify the combined result:
 SELECT forecast_source, COUNT(*) AS series_count
 FROM {catalog}.{schema}.{use_case}_best_models
 GROUP BY forecast_source
+```
+
+### Step 3b: Keep the intervals of the best models (only if prediction intervals were enabled)
+
+Keep the intervals of the selected model for each series (non-forecastable fallback series have none). The columns depend on Skill 4's `output_format`:
+`y_quantiles` (default), and/or `y_lo_<L>` / `y_hi_<L>`.
+
+```sql
+CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_best_models_intervals AS
+SELECT b.unique_id, b.model, b.run_id, s.ds, s.y, s.y_quantiles
+FROM {catalog}.{schema}.{use_case}_best_models AS b
+JOIN {catalog}.{schema}.{use_case}_scoring_output AS s
+  ON b.unique_id = s.unique_id AND b.model = s.model AND b.run_id = s.run_id
 ```
 
 ### Step 4: Model ranking (wins count)
@@ -543,6 +596,8 @@ Combined table of best forecasts for all series (forecastable + non-forecastable
 | `wins_pct` | DOUBLE | Percentage of total series |
 | `avg_{metric}` | DOUBLE | Average primary metric over the series the model won; the name follows `{metric}` (e.g. `avg_smape`) |
 | `avg_wape` | DOUBLE | Average WAPE over the series the model won (NULL for fallback series) |
+
+**Table** (only if prediction intervals were enabled): `<catalog>.<schema>.{use_case}_best_models_intervals` — the best model's forecast and intervals per series (`y_quantiles`: map from quantile level to an array over the horizon).
 
 **Notebook**: `{notebook_base_path}/post_process` — reproducibility notebook that re-creates both output tables
 
