@@ -576,12 +576,18 @@ def classify_series(features: pd.DataFrame) -> pd.DataFrame:
         ["smooth", "erratic", "intermittent"],
         "lumpy",
     )
-    share = out["volume"].sort_values(ascending=False).cumsum() / out["volume"].sum()
+    # Ties are broken by series id, so that the Spark path (calibration_spark.classify) gives the same classes.
+    ids = np.asarray(out.index.astype(str))
+    by_volume = np.lexsort((ids, -out["volume"].to_numpy(dtype=float)))
+    share = pd.Series(np.cumsum(out["volume"].to_numpy(dtype=float)[by_volume]) / out["volume"].sum(),
+                      index=out.index[by_volume])
     out["abc_class"] = (
         pd.cut(share, [-1, ABC_SHARES[0], ABC_SHARES[1], 2], labels=["A", "B", "C"]).astype(str).reindex(out.index)
     )
     if len(out) >= 3:
-        out["xyz_class"] = pd.qcut(out["cv"].rank(method="first"), 3, labels=["X", "Y", "Z"]).astype(str)
+        rank = np.empty(len(out))
+        rank[np.lexsort((ids, out["cv"].to_numpy(dtype=float)))] = np.arange(1, len(out) + 1)
+        out["xyz_class"] = pd.qcut(rank, 3, labels=["X", "Y", "Z"]).astype(str)
     else:
         out["xyz_class"] = "X"
     out["abc_xyz"] = out["abc_class"] + out["xyz_class"]
@@ -625,9 +631,215 @@ def _native_band(native, level, n, w, h):
     return lo, hi
 
 
+def fit_plan(pi_conf, has_band: bool) -> dict:
+    """
+    How one model is calibrated at every level: the method, score, pool and settings.
+    method auto (or cqr) uses CQR when the model has native bands, otherwise conformal calibration of its
+    residuals; native keeps the bands.
+    """
+    cov = pi_conf["coverage"]
+    method = pi_conf["method"]
+    if method in ("native", "cqr") and not has_band:
+        _logger.warning(f"prediction_intervals.method is {method!r} but the model has no native band; "
+                        "falling back to conformal calibration of its residuals.")
+    kind = "conformal" if not has_band or method == "conformal" else ("native" if method == "native" else "cqr")
+    if kind == "cqr":
+        score, target = pi_conf["cqr_score"], pi_conf["cqr_pool"]
+    elif kind == "native":
+        score, target = "native", "native"
+    else:
+        score, target = pi_conf["score"], cov["target"]
+    return {
+        "kind": kind, "score": score, "target": target,
+        "kappa": cov["shrinkage_kappa"] if target == "series" else None,
+        "tail_split": pi_conf["cqr_tail_split"], "pool_horizon": cov["pool_horizon"],
+        "min_scores_per_group": cov["min_scores_per_group"],
+    }
+
+
+def score_cubes(plan: dict, y, yhat, sigma, band=None) -> dict:
+    """
+    Calibration scores of a plan, as cubes (N, W, H). The Spark path computes the same expressions in SQL.
+    band (lo, hi) must already be clipped at clip_lower.
+    """
+    s3 = sigma[:, None, None]
+    if plan["kind"] == "conformal":
+        scale = s3 if plan["score"] == "signed_normalized" else np.ones_like(s3)
+        return {"e": (y - yhat) / scale}
+    if plan["kind"] == "native":
+        return {}
+    lo, hi = band
+    if plan["score"] == "symmetric":
+        return {"sym": np.maximum(lo - y, y - hi) / s3}
+    if plan["score"] == "scaled":
+        return {"scl": np.abs(y - yhat) / native_half_width(lo, hi, sigma)}
+    return {"slo": (lo - y) / s3, "shi": (y - hi) / s3}
+
+
+def pools_for(plan: dict, labels, n_series: int, n_windows: int) -> np.ndarray:
+    """Pool of each series for a plan: one marginal pool, or its group label merged for n_windows windows."""
+    if plan["target"] in ("marginal", "native") or labels is None:
+        return np.full(n_series, MARGINAL_POOL, dtype=object)
+    return merge_small_groups(labels, n_windows, plan["min_scores_per_group"])
+
+
+def stat_requests(plan: dict, level: float, phase: str = "main", m_lo: float = None) -> list:
+    """
+    Pool order statistics a plan needs at a level: (score, q, upper, steps_pooled) tuples.
+    phase "lower" is the first pass of the adaptive CQR split (lower tail only); "main" is everything
+    else, with the upper tail at 1 - alpha + m_lo for the adaptive split.
+    """
+    a = 1 - level / 100
+    series = plan["target"] == "series"
+    if plan["kind"] == "conformal":
+        reqs = [("e", a / 2, False, False), ("e", 1 - a / 2, True, False)]
+        if series:
+            reqs += [("e", a / 2, False, True), ("e", 1 - a / 2, True, True)]
+        return reqs
+    if plan["kind"] != "cqr":
+        return []
+
+    def upper(score, q):
+        return [(score, q, True, False)] + ([(score, q, True, True)] if series else [])
+
+    if plan["score"] == "symmetric":
+        return upper("sym", 1 - a)
+    if plan["score"] == "scaled":
+        return upper("scl", 1 - a)
+    lower = upper("slo", 1 - a / 2)
+    if plan["tail_split"] == "equal":
+        return lower + upper("shi", 1 - a / 2)
+    if phase == "lower":
+        return lower
+    return lower + upper("shi", adaptive_upper_level(level, m_lo))
+
+
+def adaptive_upper_level(level: float, m_lo: float) -> float:
+    """Upper-tail quantile level of the adaptive CQR split, from the lower tail's realised miss rate m_lo."""
+    a = 1 - level / 100
+    return min(1 - a + m_lo, 1 - a / 2)
+
+
+def numpy_pool_statistics(cubes: dict, pools: np.ndarray, requests: list) -> dict:
+    """
+    Pool order statistics: {(pool, step, request): (value, infinite)}, step 0 for steps-pooled requests.
+    The reference of the Spark path (calibration_spark.pool_statistics).
+    """
+    out = {}
+    for p in pd.unique(pools):
+        m = pools == p
+        for req in requests:
+            score, q, upper, pooled = req
+            sub = cubes[score][m]
+            if pooled:
+                value, inf = upper_quantile(sub.reshape(-1), q) if upper else _lower_quantile(sub.reshape(-1), q)
+                out[(p, 0, req)] = (float(value), inf)
+            else:
+                h = sub.shape[2]
+                values, inf = (upper_quantile(sub.reshape(-1, h), q) if upper
+                               else _lower_quantile(sub.reshape(-1, h), q))
+                for step in range(h):
+                    out[(p, step + 1, req)] = (float(values[step]), inf)
+    return out
+
+
+def _lower_quantile(scores: np.ndarray, q: float):
+    k, inf = conformal_rank(scores.shape[0], q, upper=False)
+    return np.sort(scores, axis=0)[k - 1], inf
+
+
+def _lookup(stats: dict, pools: np.ndarray, req: tuple, h: int):
+    """Per-series values (N, H) and infinite flags (N,) of a per-step request."""
+    values = np.array([[stats[(p, step + 1, req)][0] for step in range(h)] for p in pools], dtype=float)
+    inf = np.array([stats[(p, 1, req)][1] for p in pools], dtype=bool)
+    return values.reshape(len(pools), h), inf
+
+
+def _lookup_pooled(stats: dict, pools: np.ndarray, req: tuple) -> np.ndarray:
+    return np.array([stats[(p, 0, req)][0] for p in pools], dtype=float)
+
+
+def _pooled_upper(stats, pools, cubes, score, q, kappa, w, h):
+    req = (score, q, True, False)
+    out, inf = _lookup(stats, pools, req, h)
+    if kappa is None:
+        return out, inf
+    n = len(pools)
+    q_series, _ = upper_quantile(cubes[score].reshape(n, -1).T, q)
+    q_all = _lookup_pooled(stats, pools, (score, q, True, True))
+    lam = w / (w + kappa)
+    return lam * (q_series[:, None] + out - q_all[:, None]) + (1 - lam) * out, inf
+
+
+def cqr_lower_from_statistics(plan, level, cubes, pools, stats):
+    """Lower-tail CQR correction (N, H) of the asymmetric score, from pool statistics."""
+    n, w, h = cubes["slo"].shape
+    a = 1 - level / 100
+    return _pooled_upper(stats, pools, cubes, "slo", 1 - a / 2, plan["kappa"], w, h)
+
+
+def fit_from_statistics(plan: dict, level: float, cubes: dict, pools: np.ndarray, stats: dict, m_lo: float = None,
+                        horizon: int = None):
+    """
+    Calibration of a set of series from their own score cubes (N, W, H) and the pool statistics, which may
+    have been computed over many more series (numpy_pool_statistics or the Spark path).
+    horizon is only needed for the native method, which has no scores.
+    Returns: (q_lo, q_hi, infinite): (N, H), (N, H), (N,), as residual_quantiles / cqr_corrections.
+    """
+    n = len(pools)
+    if plan["kind"] == "native":
+        return np.zeros((n, horizon)), np.zeros((n, horizon)), np.zeros(n, dtype=bool)
+    a = 1 - level / 100
+    if plan["kind"] == "conformal":
+        e = cubes["e"]
+        _, w, h = e.shape
+        g_lo, inf_lo = _lookup(stats, pools, ("e", a / 2, False, False), h)
+        g_hi, inf_hi = _lookup(stats, pools, ("e", 1 - a / 2, True, False), h)
+        if plan["target"] != "series":
+            return g_lo, g_hi, inf_lo | inf_hi
+        lam = w / (w + plan["kappa"])
+        pool = (w < 19) if plan["pool_horizon"] == "auto" else bool(plan["pool_horizon"])
+        if pool:
+            s_lo, s_hi, s_inf = tail_quantiles(e.reshape(n, -1).T, level)
+            all_lo = _lookup_pooled(stats, pools, ("e", a / 2, False, True))
+            all_hi = _lookup_pooled(stats, pools, ("e", 1 - a / 2, True, True))
+            safe_lo = np.where(np.abs(all_lo) > 1e-9, all_lo, 1.0)
+            safe_hi = np.where(np.abs(all_hi) > 1e-9, all_hi, 1.0)
+            r_lo = np.where((np.abs(all_lo) > 1e-9)[:, None], g_lo / safe_lo[:, None], 1.0)
+            r_hi = np.where((np.abs(all_hi) > 1e-9)[:, None], g_hi / safe_hi[:, None], 1.0)
+            q_lo = lam * s_lo[:, None] * r_lo + (1 - lam) * g_lo
+            q_hi = lam * s_hi[:, None] * r_hi + (1 - lam) * g_hi
+        else:
+            s_lo, s_hi, s_inf = tail_quantiles(e.transpose(1, 0, 2), level)
+            q_lo = lam * s_lo + (1 - lam) * g_lo
+            q_hi = lam * s_hi + (1 - lam) * g_hi
+        return q_lo, q_hi, np.full(n, bool(s_inf))
+    score = {"symmetric": "sym", "scaled": "scl"}.get(plan["score"])
+    first = next(iter(cubes.values()))
+    _, w, h = first.shape
+    if score is not None:
+        q, inf = _pooled_upper(stats, pools, cubes, score, 1 - a, plan["kappa"], w, h)
+        return q, q, inf
+    q_lo, inf_lo = _pooled_upper(stats, pools, cubes, "slo", 1 - a / 2, plan["kappa"], w, h)
+    q_hi_level = 1 - a / 2 if plan["tail_split"] == "equal" else adaptive_upper_level(level, m_lo)
+    q_hi, inf_hi = _pooled_upper(stats, pools, cubes, "shi", q_hi_level, plan["kappa"], w, h)
+    return q_lo, q_hi, inf_lo | inf_hi
+
+
+def window_bounds(plan, yhat, band, sigma, q_lo, q_hi):
+    """Bounds of forecasts (N, K, H) for corrections (N, H): residual, CQR-corrected or native band."""
+    if plan["kind"] == "native":
+        return band
+    if plan["kind"] == "cqr":
+        return cqr_bounds(yhat, band[0], band[1], sigma, q_lo, q_hi, plan["score"])
+    scale = sigma if plan["score"] == "signed_normalized" else np.ones_like(sigma)
+    return residual_bounds(yhat, scale, q_lo, q_hi)
+
+
 def calibrate_model(y, yhat, sigma, pi_conf, labels=None, native=None, clip_lower=None):
     """
     Calibrates one model's prediction intervals from its backtest, for every configured level.
+    Numpy reference of the distributed calibration (calibration_spark), which shares fit_from_statistics.
     Parameters:
         y, yhat (np.ndarray): Actuals and point forecasts of the backtest windows (N, W, H), oldest window first.
         sigma (np.ndarray): Per-series scale (N,), positive.
@@ -647,53 +859,31 @@ def calibrate_model(y, yhat, sigma, pi_conf, labels=None, native=None, clip_lowe
     sigma = np.asarray(sigma, dtype=float)
     if sigma.shape != (n,) or not (sigma > 0).all():
         raise ValueError("sigma must be positive, with one value per series")
-    cov = pi_conf["coverage"]
-    method = pi_conf["method"]
+    has_band = native is not None
+    plan = fit_plan(pi_conf, has_band)
     results = {}
     for level in calibration_levels(pi_conf):
         band = _native_band(native, level, n, w, h)
-        if method in ("native", "cqr") and band is None:
-            _logger.warning(f"prediction_intervals.method is {method!r} but the model has no native band at "
-                            f"level {level}; falling back to conformal calibration of its residuals.")
         if band is not None and clip_lower is not None:
             # Calibration and forecast bands are clipped alike (spec section 7.6.4).
             band = (np.maximum(band[0], clip_lower), band[1])
-        kind = "conformal" if band is None or method == "conformal" else ("native" if method == "native" else "cqr")
+        cubes = score_cubes(plan, y, yhat, sigma, band)
 
-        if kind == "cqr":
-            score, target = pi_conf["cqr_score"], pi_conf["cqr_pool"]
-            kappa = cov["shrinkage_kappa"] if target == "series" else None
+        def fit(idx):
+            sub = {k: v[:, idx] for k, v in cubes.items()}
+            pools = pools_for(plan, labels, n, len(idx))
+            m_lo = None
+            if plan["kind"] == "cqr" and plan["score"] == "asymmetric" and plan["tail_split"] == "adaptive":
+                stats = numpy_pool_statistics(sub, pools, stat_requests(plan, level, "lower"))
+                q_lo, _ = cqr_lower_from_statistics(plan, level, sub, pools, stats)
+                # Realised lower miss rate of the corrected band; it is close to 0 once lo is clipped.
+                m_lo = float(np.mean(sub["slo"] > q_lo[:, None, :]))
+            stats = numpy_pool_statistics(sub, pools, stat_requests(plan, level, "main", m_lo))
+            return fit_from_statistics(plan, level, sub, pools, stats, m_lo, horizon=h)
 
-            def fit(idx):
-                return cqr_corrections(y[:, idx], yhat[:, idx], band[0][:, idx], band[1][:, idx], sigma, level,
-                                       score=score, tail_split=pi_conf["cqr_tail_split"], pool=target,
-                                       labels=labels, shrinkage_kappa=cov["shrinkage_kappa"],
-                                       min_scores_per_group=cov["min_scores_per_group"])
-
-            def bounds(q_lo, q_hi, j):
-                return cqr_bounds(yhat[:, j:j + 1], band[0][:, j:j + 1], band[1][:, j:j + 1], sigma, q_lo, q_hi,
-                                  score)
-        elif kind == "native":
-            score, target, kappa = "native", "native", None
-
-            def fit(idx):
-                return np.zeros((n, h)), np.zeros((n, h)), np.zeros(n, dtype=bool)
-
-            def bounds(q_lo, q_hi, j):
-                return band[0][:, j:j + 1], band[1][:, j:j + 1]
-        else:
-            score, target = pi_conf["score"], cov["target"]
-            kappa = cov["shrinkage_kappa"] if target == "series" else None
-            scale = sigma if score == "signed_normalized" else np.ones(n)
-
-            def fit(idx):
-                scores = (y[:, idx] - yhat[:, idx]) / scale[:, None, None]
-                return residual_quantiles(scores, level, target, labels, shrinkage_kappa=cov["shrinkage_kappa"],
-                                          min_scores_per_group=cov["min_scores_per_group"],
-                                          pool_horizon=cov["pool_horizon"])
-
-            def bounds(q_lo, q_hi, j):
-                return residual_bounds(yhat[:, j:j + 1], scale, q_lo, q_hi)
+        def bounds(q_lo, q_hi, j):
+            b = None if band is None else (band[0][:, j:j + 1], band[1][:, j:j + 1])
+            return window_bounds(plan, yhat[:, j:j + 1], b, sigma, q_lo, q_hi)
 
         q_lo, q_hi, infinite = fit(np.arange(w))
         metrics = {}
@@ -710,9 +900,9 @@ def calibrate_model(y, yhat, sigma, pi_conf, labels=None, native=None, clip_lowe
                           for j in range(w)]
             native_metrics = {k: np.stack([m[k] for m in per_window], axis=1) for k in per_window[0]}
         results[level] = {
-            "method": kind, "score": score, "target": target, "q_lo": q_lo, "q_hi": q_hi,
+            "method": plan["kind"], "score": plan["score"], "target": plan["target"], "q_lo": q_lo, "q_hi": q_hi,
             "infinite": np.asarray(infinite, dtype=bool),
-            "shrinkage_weight": (w / (w + kappa)) if kappa else None,
+            "shrinkage_weight": (w / (w + plan["kappa"])) if plan["kappa"] else None,
             "metrics": metrics, "native_metrics": native_metrics,
         }
     return results
