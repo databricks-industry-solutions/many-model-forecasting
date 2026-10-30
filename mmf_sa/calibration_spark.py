@@ -116,8 +116,8 @@ def long_backtest(eval_sdf: DataFrame, series_col: str, levels, has_quantiles: b
             backtest_window_start_date, forecast, actual, optionally forecast_quantiles).
         levels: Central levels whose native bands to extract.
         has_quantiles (bool): Whether native quantiles are read (else no lo/hi columns).
-    Returns: (DataFrame, int, int, int): Rows (series, window, window_date, step, y, yhat, lo_<i>, hi_<i>),
-        W, H, and the number of series dropped.
+    Returns: (DataFrame, int, int, int, int): Rows (series, window, window_date, step, y, yhat, lo_<i>, hi_<i>),
+        W, H, the number of series dropped, and the number kept.
     """
     w = _mode(eval_sdf.groupBy(series_col).count(), "count")
     h = _mode(eval_sdf.select(F.coalesce(F.size("forecast"), F.lit(0)).alias("h")), "h")
@@ -134,7 +134,8 @@ def long_backtest(eval_sdf: DataFrame, series_col: str, levels, has_quantiles: b
             .filter((F.col("_n") == w) & (F.col("_ok") == 1)).select(series_col))
     n_all = eval_sdf.select(series_col).distinct().count()
     rows = kept.join(good, on=series_col, how="inner")
-    dropped = n_all - good.count()
+    n_kept = good.count()
+    dropped = n_all - n_kept
 
     arrays = {"y": F.col("actual"), "yhat": F.col("forecast")}
     if has_quantiles:
@@ -152,7 +153,54 @@ def long_backtest(eval_sdf: DataFrame, series_col: str, levels, has_quantiles: b
     long = wide.withColumn("step", F.explode(F.sequence(F.lit(1), F.lit(h)))).select(
         series_col, "window", "window_date", "step",
         *[F.element_at(n, F.col("step")).cast(DoubleType()).alias(n) for n in arrays])
-    return long, w, h, dropped
+    return long, w, h, dropped, n_kept
+
+
+def series_features(train: DataFrame, first_window: DataFrame, series_col: str, date_col: str, target: str,
+                    season_length: int, periods: int, extra_cols=()) -> DataFrame:
+    """
+    Per-series scale and classification features in Spark SQL, as calibration.series_features over the last
+    `periods` points before each series' first backtest window (missing target values count as 0).
+    Parameters:
+        train (DataFrame): series_col (string), date_col (timestamp), target (double) and extra_cols.
+        first_window (DataFrame): series_col and _first_window (timestamp).
+        extra_cols: Group columns; each takes the series' first non-null value by date, as a string.
+    Returns: DataFrame: series_col, sigma, volume, cv, adi, cv2 and extra_cols, one row per series of first_window
+        that has training rows.
+    """
+    base = train.join(first_window, on=series_col, how="inner")
+    ids = base.select(series_col).distinct()
+    recent = Window.partitionBy(series_col).orderBy(F.col(date_col).desc())
+    in_order = Window.partitionBy(series_col).orderBy(date_col)
+    y = F.coalesce(F.col(target), F.lit(0.0))
+    hist = (base.filter(F.col(date_col) < F.col("_first_window"))
+            .withColumn("_y", y)
+            .withColumn("_rn", F.row_number().over(recent))
+            .filter(F.col("_rn") <= periods)
+            .withColumn("_diff", F.abs(F.col("_y") - F.lag("_y", season_length).over(in_order))))
+    positive = F.when(F.col("_y") > 0, F.col("_y"))
+    agg = hist.groupBy(series_col).agg(
+        F.count(F.lit(1)).alias("_n"), F.sum("_y").alias("volume"), F.avg("_y").alias("_mean"),
+        F.stddev_pop("_y").alias("_std"), F.avg(F.abs("_y")).alias("_mean_abs"), F.avg("_diff").alias("_snaive"),
+        F.count(positive).alias("_nz"), F.avg(positive).alias("_nz_mean"), F.stddev_pop(positive).alias("_nz_std"))
+    out = ids.join(agg, on=series_col, how="left").fillna({"_n": 0, "volume": 0.0, "_nz": 0})
+    snaive = F.when(F.col("_n") > season_length, F.col("_snaive")).otherwise(F.lit(0.0))
+    out = out.select(
+        series_col,
+        F.when(snaive > 0, snaive).otherwise(F.when(F.col("_n") > 0, F.col("_mean_abs")).otherwise(F.lit(0.0)))
+        .alias("sigma"),
+        F.col("volume").cast(DoubleType()).alias("volume"),
+        F.when(F.col("_mean") > 0, F.col("_std") / F.col("_mean")).otherwise(F.lit(float("inf"))).alias("cv"),
+        (F.col("_n") / F.greatest(F.col("_nz"), F.lit(1))).cast(DoubleType()).alias("adi"),
+        F.when(F.col("_nz") > 1, F.pow(F.col("_nz_std") / F.col("_nz_mean"), 2)).otherwise(F.lit(0.0)).alias("cv2"),
+    )
+    for c in extra_cols:
+        firsts = (base.filter(F.col(c).isNotNull())
+                  .withColumn("_rn", F.row_number().over(in_order))
+                  .filter(F.col("_rn") == 1)
+                  .select(series_col, F.col(c).cast(StringType()).alias(c)))
+        out = out.join(firsts, on=series_col, how="left")
+    return out
 
 
 def classify(features: DataFrame, series_col: str) -> DataFrame:
@@ -270,47 +318,63 @@ def pool_statistics(spark: SparkSession, scored: DataFrame, requests: dict) -> d
     return out
 
 
-def _series_cubes(pdf: pd.DataFrame, n_levels: int, has_band: bool, w: int, h: int):
-    pdf = pdf.sort_values(["window", "step"])
+SERIES_PER_BUCKET = 2000
+
+
+def bucket_column(series_col: str, n_series: int):
+    """Hash bucket of a series, so that the per-series numpy work runs on ~SERIES_PER_BUCKET series per UDF call."""
+    n_buckets = max(1, -(-int(n_series) // SERIES_PER_BUCKET))
+    return F.pmod(F.xxhash64(F.col(series_col)), F.lit(n_buckets))
+
+
+def _batch_cubes(pdf: pd.DataFrame, series_col: str, n_levels: int, has_band: bool, w: int, h: int):
+    """Cubes (n, W, H) of the series of one batch (every series has exactly W x H rows), and their first rows."""
+    pdf = pdf.sort_values([series_col, "window", "step"], kind="mergesort")
+    n = len(pdf) // (w * h)
 
     def cube(c):
-        return pdf[c].to_numpy(dtype=float).reshape(1, w, h)
+        return pdf[c].to_numpy(dtype=float).reshape(n, w, h)
 
     bands = {i: (cube(f"lo_{i}"), cube(f"hi_{i}")) for i in range(n_levels)} if has_band else {}
-    dates = pdf.drop_duplicates("window").sort_values("window")["window_date"].to_numpy()
-    return cube("y"), cube("yhat"), bands, dates
+    firsts = pdf.iloc[:: w * h]
+    dates = pdf["window_date"].to_numpy().reshape(n, w, h)[:, :, 0]
+    pools = {"full": firsts["pool_full"].to_numpy(dtype=object), "lowo": firsts["pool_lowo"].to_numpy(dtype=object)}
+    return cube("y"), cube("yhat"), bands, dates, firsts, pools
 
 
-def series_udf_lower(pdf, *, plan, levels, has_band, w, h, clip_lower, stats):
-    """Phase 1 of the adaptive CQR split: per series and fold, the lower-tail misses of the corrected band."""
-    y, yhat, bands, _ = _series_cubes(pdf, len(levels), has_band, w, h)
-    sigma = np.array([float(pdf["sigma"].iloc[0])])
-    pools = {"full": np.array([pdf["pool_full"].iloc[0]], dtype=object),
-             "lowo": np.array([pdf["pool_lowo"].iloc[0]], dtype=object)}
+def _folds(w: int):
+    # Fold W uses all windows; the leave-one-window-out folds only exist with 2 windows or more.
+    return range(w + 1) if w >= 2 else [w]
+
+
+def batch_udf_lower(pdf, *, plan, level, w, h, clip_lower, stats, series_col):
+    """Phase 1 of the adaptive CQR split: per fold, the lower-tail misses of the corrected band over a batch."""
+    y, yhat, bands, _, firsts, pools = _batch_cubes(pdf, series_col, 1, True, w, h)
+    sigma = firsts["sigma"].to_numpy(dtype=float)
+    band = bands[0]
+    if clip_lower is not None:
+        band = (np.maximum(band[0], clip_lower), band[1])
+    cubes = cal.score_cubes(plan, y, yhat, sigma, band)
     rows = []
-    for i, lv in enumerate(levels):
-        band = bands[i]
-        if clip_lower is not None:
-            band = (np.maximum(band[0], clip_lower), band[1])
-        cubes = cal.score_cubes(plan, y, yhat, sigma, band)
-        # Leave-one-window-out folds only exist with 2 windows or more.
-        for fold in (range(w + 1) if w >= 2 else [w]):
-            idx = np.arange(w) if fold == w else np.delete(np.arange(w), fold)
-            sub = {k: v[:, idx] for k, v in cubes.items()}
-            pool = pools["full" if fold == w else "lowo"]
-            q_lo, _ = cal.cqr_lower_from_statistics(plan, lv, sub, pool, stats[lv][fold])
-            rows.append((i, fold, int((sub["slo"] > q_lo[:, None, :]).sum()), int(sub["slo"].size)))
-    return pd.DataFrame(rows, columns=["level_index", "fold", "misses", "n"])
+    for fold in _folds(w):
+        idx = np.arange(w) if fold == w else np.delete(np.arange(w), fold)
+        sub = {k: v[:, idx] for k, v in cubes.items()}
+        q_lo, _ = cal.cqr_lower_from_statistics(plan, level, sub, pools["full" if fold == w else "lowo"],
+                                                stats[fold])
+        rows.append((fold, int((sub["slo"] > q_lo[:, None, :]).sum()), int(sub["slo"].size)))
+    return pd.DataFrame(rows, columns=["fold", "misses", "n"])
 
 
-def series_udf_final(pdf, *, plan, levels, has_band, w, h, clip_lower, stats, m_lo, series_col, model):
-    """Per series: calibration_output rows (fold W) and leave-one-window-out metric rows (folds j < W)."""
-    y, yhat, bands, dates = _series_cubes(pdf, len(levels), has_band, w, h)
-    first = pdf.iloc[0]
-    sid = first[series_col]
-    sigma = np.array([float(first["sigma"])])
-    pools = {"full": np.array([first["pool_full"]], dtype=object), "lowo": np.array([first["pool_lowo"]], dtype=object)}
-    cal_rows, metric_rows = [], []
+def batch_udf_final(pdf, *, plan, levels, has_band, w, h, clip_lower, stats, m_lo, series_col, model):
+    """calibration_output rows (fold W) and leave-one-window-out metric rows (folds j < W) of a batch of series."""
+    y, yhat, bands, dates, firsts, pools = _batch_cubes(pdf, series_col, len(levels), has_band, w, h)
+    n = len(firsts)
+    ids = firsts[series_col].to_numpy(dtype=object)
+    sigma = firsts["sigma"].to_numpy(dtype=float)
+    pool_key = (np.full(n, "", dtype=object) if plan["kind"] == "native"
+                else np.full(n, cal.MARGINAL_POOL, dtype=object) if plan["target"] == "marginal"
+                else pools["full"])
+    cal_frames, metric_frames = [], []
     for i, lv in enumerate(levels):
         band = bands.get(i)
         if band is not None and clip_lower is not None:
@@ -320,39 +384,42 @@ def series_udf_final(pdf, *, plan, levels, has_band, w, h, clip_lower, stats, m_
         def fit(fold):
             idx = np.arange(w) if fold == w else np.delete(np.arange(w), fold)
             sub = {k: v[:, idx] for k, v in cubes.items()}
-            if plan["kind"] == "native":
-                return np.zeros((1, h)), np.zeros((1, h)), np.zeros(1, dtype=bool)
-            pool = pools["full" if fold == w else "lowo"]
-            return cal.fit_from_statistics(plan, lv, sub, pool, stats[lv][fold], m_lo.get((lv, fold)))
+            return cal.fit_from_statistics(plan, lv, sub, pools["full" if fold == w else "lowo"], stats[lv][fold],
+                                           m_lo.get((lv, fold)), horizon=h)
 
         q_lo, q_hi, inf = fit(w)
-        pool_key = ("" if plan["kind"] == "native" else cal.MARGINAL_POOL if plan["target"] == "marginal"
-                    else first["pool_full"])
-        for step in range(h):
-            cal_rows.append({
-                "model": model, "method": plan["kind"], "score": plan["score"], "coverage_target": plan["target"],
-                series_col: sid, "pool_key": pool_key, "step": step + 1, "level": float(lv),
-                "q_lo": float(q_lo[0, step]), "q_hi": float(q_hi[0, step]), "n_windows": w,
-                "shrinkage_weight": (w / (w + plan["kappa"])) if plan["kappa"] else None,
-                "infinite_bound": bool(inf[0]), "clip_lower": clip_lower, "sigma": float(sigma[0]),
-                "abc_class": first["abc_class"], "xyz_class": first["xyz_class"], "sb_class": first["sb_class"],
-            })
+        cal_frames.append(pd.DataFrame({
+            "model": model, "method": plan["kind"], "score": plan["score"], "coverage_target": plan["target"],
+            series_col: np.repeat(ids, h), "pool_key": np.repeat(pool_key, h),
+            "step": np.tile(np.arange(1, h + 1), n), "level": float(lv),
+            "q_lo": q_lo.ravel(), "q_hi": q_hi.ravel(), "n_windows": w,
+            "shrinkage_weight": (w / (w + plan["kappa"])) if plan["kappa"] else None,
+            "infinite_bound": np.repeat(np.asarray(inf, dtype=bool), h), "clip_lower": clip_lower,
+            "sigma": np.repeat(sigma, h),
+            "abc_class": np.repeat(firsts["abc_class"].to_numpy(dtype=object), h),
+            "xyz_class": np.repeat(firsts["xyz_class"].to_numpy(dtype=object), h),
+            "sb_class": np.repeat(firsts["sb_class"].to_numpy(dtype=object), h),
+        }))
+
+        def add_metrics(j, lo, hi, native):
+            for name, value in cal.interval_metrics(y[:, j:j + 1], lo, hi, sigma, lv).items():
+                metric_frames.append(pd.DataFrame({
+                    series_col: ids, "window_date": dates[:, j],
+                    "metric_name": cal._metric_name(name, lv, native), "metric_value": value}))
+
         if w >= 2:
             for j in range(w):
                 fq_lo, fq_hi, _ = fit(j)
                 b = None if band is None else (band[0][:, j:j + 1], band[1][:, j:j + 1])
-                lo, hi = cal.finalize_bounds(*cal.window_bounds(plan, yhat[:, j:j + 1], b, sigma, fq_lo, fq_hi),
-                                             clip_lower)
-                for name, value in cal.interval_metrics(y[:, j:j + 1], lo, hi, sigma, lv).items():
-                    metric_rows.append((sid, dates[j], cal._metric_name(name, lv, False), float(value[0])))
+                add_metrics(j, *cal.finalize_bounds(*cal.window_bounds(plan, yhat[:, j:j + 1], b, sigma, fq_lo, fq_hi),
+                                                    clip_lower), False)
         if band is not None:
             for j in range(w):
-                lo, hi = cal.finalize_bounds(band[0][:, j:j + 1], band[1][:, j:j + 1], clip_lower)
-                for name, value in cal.interval_metrics(y[:, j:j + 1], lo, hi, sigma, lv).items():
-                    metric_rows.append((sid, dates[j], cal._metric_name(name, lv, True), float(value[0])))
-    cal_df = pd.DataFrame(cal_rows)
+                add_metrics(j, *cal.finalize_bounds(band[0][:, j:j + 1], band[1][:, j:j + 1], clip_lower), True)
+    cal_df = pd.concat(cal_frames, ignore_index=True)
     cal_df["kind"] = "calibration"
-    met_df = pd.DataFrame(metric_rows, columns=[series_col, "window_date", "metric_name", "metric_value"])
+    met_df = (pd.concat(metric_frames, ignore_index=True) if metric_frames else
+              pd.DataFrame(columns=[series_col, "window_date", "metric_name", "metric_value"]))
     met_df["kind"] = "metric"
     met_df["model"] = model
     return pd.concat([cal_df, met_df], ignore_index=True)
@@ -361,20 +428,19 @@ def series_udf_final(pdf, *, plan, levels, has_band, w, h, clip_lower, stats, m_
 def lower_miss_rates(long: DataFrame, series_col: str, plan: dict, level: float, level_index: int, w: int, h: int,
                      clip_lower, lower_stats: dict) -> dict:
     """Adaptive CQR split: realised lower miss rate m_lo of every fold, aggregated over all series."""
-    schema = StructType([StructField("level_index", IntegerType()), StructField("fold", IntegerType()),
-                         StructField("misses", LongType()), StructField("n", LongType())])
-    stats = {level: lower_stats}
+    schema = StructType([StructField("fold", IntegerType()), StructField("misses", LongType()),
+                         StructField("n", LongType())])
 
     def fn(pdf):
-        out = series_udf_lower(pdf, plan=plan, levels=[level], has_band=True, w=w, h=h, clip_lower=clip_lower,
-                               stats=stats)
-        return out.astype({"level_index": "int32", "fold": "int32", "misses": "int64", "n": "int64"})
+        out = batch_udf_lower(pdf, plan=plan, level=level, w=w, h=h, clip_lower=clip_lower, stats=lower_stats,
+                              series_col=series_col)
+        return out.astype({"fold": "int32", "misses": "int64", "n": "int64"})
 
     totals = (
-        long.select(series_col, "window", "window_date", "step", "y", "yhat",
+        long.select(series_col, "_bucket", "window", "window_date", "step", "y", "yhat",
                     F.col(f"lo_{level_index}").alias("lo_0"), F.col(f"hi_{level_index}").alias("hi_0"),
                     "sigma", "pool_full", "pool_lowo")
-        .groupBy(series_col).applyInPandas(fn, schema)
+        .groupBy("_bucket").applyInPandas(fn, schema)
         .groupBy("fold").agg(F.sum("misses").alias("misses"), F.sum("n").alias("n"))
         .toPandas()
     )
@@ -382,7 +448,7 @@ def lower_miss_rates(long: DataFrame, series_col: str, plan: dict, level: float,
 
 
 def output_schema(series_col: str) -> StructType:
-    """Union schema of series_udf_final: calibration_output rows and metric rows, told apart by kind."""
+    """Union schema of batch_udf_final: calibration_output rows and metric rows, told apart by kind."""
     return StructType(
         [StructField(c, StringType()) for c in ("kind", "model", "method", "score", "coverage_target", series_col,
                                                 "pool_key")]
@@ -415,14 +481,15 @@ def calibrate_model_spark(spark: SparkSession, eval_sdf: DataFrame, features: Da
     eval_sdf = eval_sdf.join(features.select(series_col), on=series_col, how="left_semi")
     if eval_sdf.limit(1).count() == 0:
         return None, {"dropped": 0}
-    long, w, h, dropped = long_backtest(eval_sdf, series_col, levels, has_quantiles)
+    long, w, h, dropped, n_kept = long_backtest(eval_sdf, series_col, levels, has_quantiles)
 
     label = label_column(pi_conf)
     feats = features.withColumn("_label", label if label is not None else F.lit(cal.MARGINAL_POOL))
     long = long.join(feats.select(series_col, "sigma", "_label", "abc_class", "xyz_class", "sb_class"),
                      on=series_col, how="inner")
     pools = merged_pools(spark, long.select(series_col, "_label").distinct(), plan, w, label is not None)
-    long = materializer.cache(long.join(F.broadcast(pools), on="_label", how="left").drop("_label"))
+    long = materializer.cache(long.join(F.broadcast(pools), on="_label", how="left").drop("_label")
+                              .withColumn("_bucket", bucket_column(series_col, n_kept)))
     try:
         adaptive = plan["kind"] == "cqr" and plan["score"] == "asymmetric" and plan["tail_split"] == "adaptive"
         # Fold W uses all windows; the leave-one-window-out folds only exist with 2 windows or more.
@@ -444,18 +511,18 @@ def calibrate_model_spark(spark: SparkSession, eval_sdf: DataFrame, features: Da
                 materializer.uncache(scored)
 
         def final_fn(pdf):
-            out = series_udf_final(pdf, plan=plan, levels=levels, has_band=has_quantiles, w=w, h=h,
-                                   clip_lower=clip_lower, stats=stats, m_lo=m_lo, series_col=series_col, model=model)
+            out = batch_udf_final(pdf, plan=plan, levels=levels, has_band=has_quantiles, w=w, h=h,
+                                  clip_lower=clip_lower, stats=stats, m_lo=m_lo, series_col=series_col, model=model)
             for c, t in (("step", "Int32"), ("n_windows", "Int32")):
                 if c in out.columns:
                     out[c] = out[c].astype(t)
             return out.reindex(columns=[f.name for f in output_schema(series_col).fields])
 
-        cols = [series_col, "window", "window_date", "step", "y", "yhat", "sigma", "pool_full", "pool_lowo",
-                "abc_class", "xyz_class", "sb_class"]
+        cols = [series_col, "_bucket", "window", "window_date", "step", "y", "yhat", "sigma", "pool_full",
+                "pool_lowo", "abc_class", "xyz_class", "sb_class"]
         if has_quantiles:
             cols += [f"{side}_{i}" for i in range(len(levels)) for side in ("lo", "hi")]
-        result = long.select(*cols).groupBy(series_col).applyInPandas(final_fn, output_schema(series_col))
+        result = long.select(*cols).groupBy("_bucket").applyInPandas(final_fn, output_schema(series_col))
         result = materializer.cache(result)
         result.count()
     finally:
