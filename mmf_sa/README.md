@@ -379,8 +379,9 @@ Prediction intervals are optional (`prediction_intervals.enabled`, off by defaul
 ### Data flow
 
 ```
-evaluate_models   models flagged native_intervals in models_conf.yaml get native_quantiles; their
-                  backtest writes forecast_quantiles (MAP<STRING, ARRAY<DOUBLE>>) to evaluation_output
+evaluate_models   models flagged native_intervals in models_conf.yaml get native_quantiles, unless their
+                  method (method_by_model, else method) is conformal; their backtest writes
+                  forecast_quantiles (MAP<STRING, ARRAY<DOUBLE>>) to evaluation_output
 run_calibration   per-series features (seasonal-naive scale, ABC, XYZ, Syntetos-Boylan) from the history
                   before the first backtest window
                   per model and level: CQR on native bands, or conformal on residuals
