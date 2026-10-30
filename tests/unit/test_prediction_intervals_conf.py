@@ -49,6 +49,7 @@ def test_partial_override_keeps_other_defaults():
 
 def test_method_by_model_defaults_to_empty():
     assert _resolve({"enabled": True})["method_by_model"] == {}
+    assert _resolve({"enabled": True, "method_by_model": None})["method_by_model"] == {}
 
 
 def test_method_by_model_accepts_every_method():
@@ -200,8 +201,10 @@ def test_forecaster_resolves_block():
         mmf_sa.Forecaster(conf=_forecaster_conf(method="x"), data_conf={}, spark=None, experiment_id="e")
 
 
-def test_forecaster_warns_once_about_method_by_model_names_that_are_not_active(caplog):
-    by_model = {"StatsForecastAutoETS": "native", "Chronos2": "cqr", "Nope": "cqr", "Other": "native"}
+def test_forecaster_warns_once_about_method_by_model_names_that_are_not_models(caplog):
+    # TimesFM_2_5_200m is a known model that is not active (as in the GPU orchestrator): no warning for it.
+    by_model = {"StatsForecastAutoETS": "native", "Chronos2": "cqr", "TimesFM_2_5_200m": "conformal",
+                "Nope": "cqr", "Other": "native"}
     conf = OmegaConf.create({"freq": "D", "backtest_length": 14, "evaluation_output": "t",
                              "active_models": ["StatsForecastAutoETS", "Chronos2"],
                              "prediction_intervals": {"enabled": True, "method": "conformal",
@@ -210,7 +213,7 @@ def test_forecaster_warns_once_about_method_by_model_names_that_are_not_active(c
         f = mmf_sa.Forecaster(conf=conf, data_conf={}, spark=None, experiment_id="e")
     warnings = [r.getMessage() for r in caplog.records if "method_by_model" in r.getMessage()]
     assert len(warnings) == 1
-    assert "Nope, Other" in warnings[0]
+    assert "Nope, Other" in warnings[0] and "TimesFM" not in warnings[0]
     assert f.conf.prediction_intervals.method_by_model["StatsForecastAutoETS"] == "native"
 
 

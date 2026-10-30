@@ -87,6 +87,8 @@ def resolve_prediction_intervals_conf(
     else:
         user = dict(conf)
     _check_keys(user, DEFAULT_PREDICTION_INTERVALS, "prediction_intervals")
+    if "method_by_model" in user and user["method_by_model"] is None:
+        user["method_by_model"] = {}
     if not isinstance(user.get("method_by_model", {}), dict):
         raise ConfigurationError(
             f"prediction_intervals.method_by_model must map model names to methods, got {user['method_by_model']!r}")
