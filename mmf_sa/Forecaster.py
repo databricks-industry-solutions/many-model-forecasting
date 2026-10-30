@@ -319,7 +319,8 @@ class Forecaster:
             Forecaster.calibration_features_one_series, group_id=gid, date_col=date_col, target=target,
             season_length=calibration.SEASON_LENGTH[freq], periods=calibration.FEATURE_PERIODS[freq],
             extra_cols=extra_cols)
-        feats = train.join(windows, on=gid, how="inner").groupby(gid).applyInPandas(fn, schema=schema).persist()
+        feats = calibration_spark.cache(
+            train.join(windows, on=gid, how="inner").groupby(gid).applyInPandas(fn, schema=schema))
         good = col("sigma").isNotNull() & ~isnan(col("sigma")) & (col("sigma") > 0)
         n_bad = feats.filter(~good).count()
         if n_bad:
@@ -328,9 +329,9 @@ class Forecaster:
                             "they use the median scale of the other series.")
             feats = feats.withColumn("sigma", when(good, col("sigma")).otherwise(lit(1.0 if median is None
                                                                                        else float(median))))
-        classified = calibration_spark.classify(feats, gid).persist()
+        classified = calibration_spark.cache(calibration_spark.classify(feats, gid))
         classified.count()
-        feats.unpersist()
+        calibration_spark.uncache(feats)
         return classified, 0.0 if min_target is None else float(min_target)
 
     def run_calibration(self):
@@ -354,10 +355,10 @@ class Forecaster:
         cols = [col(gid).cast(StringType()).alias(gid), "backtest_window_start_date", "model", "forecast", "actual"]
         if "forecast_quantiles" in eval_sdf.columns:
             cols.append("forecast_quantiles")
-        eval_sdf = eval_sdf.select(*cols).persist()
+        eval_sdf = calibration_spark.cache(eval_sdf.select(*cols))
         models = [r[0] for r in eval_sdf.select("model").distinct().collect()]
         if not models:
-            eval_sdf.unpersist()
+            calibration_spark.uncache(eval_sdf)
             _logger.warning(f"No backtest rows for run_id {self.run_id} in {self.conf['evaluation_output']}; "
                             "nothing to calibrate.")
             return
@@ -386,10 +387,10 @@ class Forecaster:
                         print(f"{model_name} ({summary['method']}, {summary['score']}, {summary['target']}): "
                               f"leave-one-window-out {r['metric_name']} {r['v']:.3f}")
                 finally:
-                    result.unpersist()
+                    calibration_spark.uncache(result)
         finally:
-            features.unpersist()
-            eval_sdf.unpersist()
+            calibration_spark.uncache(features)
+            calibration_spark.uncache(eval_sdf)
         print("Finished run_calibration")
 
     def write_calibration_output(self, rows: DataFrame):
@@ -994,7 +995,7 @@ class Forecaster:
             sdf.write.mode("append").saveAsTable(self.conf["scoring_output"])
             return
         # The forecasts are used twice (missing-calibration count, then the write): compute them once.
-        sdf = sdf.persist()
+        sdf = calibration_spark.cache(sdf)
         try:
             (
                 self.add_prediction_intervals(sdf, model_name)
@@ -1002,7 +1003,7 @@ class Forecaster:
                 .saveAsTable(self.conf["scoring_output"])
             )
         finally:
-            sdf.unpersist()
+            calibration_spark.uncache(sdf)
 
     def calibration_rows_for(self, model_name: str):
         """This run's calibration_output rows of one model, as a Spark DataFrame, or None when there are none."""

@@ -26,6 +26,32 @@ from mmf_sa import calibration as cal
 _logger = logging.getLogger(__name__)
 
 FULL = "full"  # fold label of the calibration on all windows (fold index W)
+_cache_warned = []
+
+
+def cache(df: DataFrame) -> DataFrame:
+    """
+    df.persist(), or df itself where caching is not available: serverless clients before environment
+    version 5 reject persist() (CACHE_REQUIRES_NEWER_CLIENT_ON_SERVERLESS_GC). Results are the same without
+    the cache; some steps are just recomputed.
+    """
+    try:
+        return df.persist()
+    except Exception as err:
+        if not _cache_warned:
+            _cache_warned.append(True)
+            _logger.warning(f"DataFrame caching is not available on this compute ({type(err).__name__}); "
+                            "prediction-interval steps run uncached, which recomputes some of them. Use serverless "
+                            "environment version 5 or later, or classic compute, to cache them.")
+        return df
+
+
+def uncache(df: DataFrame) -> None:
+    """df.unpersist(), ignored where caching is not available (see cache)."""
+    try:
+        df.unpersist()
+    except Exception:
+        pass
 
 
 def _mode(sdf: DataFrame, column: str) -> int:
@@ -356,7 +382,7 @@ def calibrate_model_spark(spark: SparkSession, eval_sdf: DataFrame, features: Da
     long = long.join(feats.select(series_col, "sigma", "_label", "abc_class", "xyz_class", "sb_class"),
                      on=series_col, how="inner")
     pools = merged_pools(spark, long.select(series_col, "_label").distinct(), plan, w, label is not None)
-    long = long.join(F.broadcast(pools), on="_label", how="left").drop("_label").persist()
+    long = cache(long.join(F.broadcast(pools), on="_label", how="left").drop("_label"))
     try:
         adaptive = plan["kind"] == "cqr" and plan["score"] == "asymmetric" and plan["tail_split"] == "adaptive"
         # Fold W uses all windows; the leave-one-window-out folds only exist with 2 windows or more.
@@ -367,7 +393,7 @@ def calibrate_model_spark(spark: SparkSession, eval_sdf: DataFrame, features: Da
             if not cols:
                 stats[lv] = {f: {} for f in folds}
                 continue
-            scored = folded(long, w).select("fold", "pool", "step", *[c.alias(n) for n, c in cols.items()]).persist()
+            scored = cache(folded(long, w).select("fold", "pool", "step", *[c.alias(n) for n, c in cols.items()]))
             try:
                 if adaptive:
                     lower = pool_statistics(spark, scored, {f: cal.stat_requests(plan, lv, "lower") for f in folds})
@@ -375,7 +401,7 @@ def calibrate_model_spark(spark: SparkSession, eval_sdf: DataFrame, features: Da
                 stats[lv] = pool_statistics(spark, scored, {
                     f: cal.stat_requests(plan, lv, "main", m_lo.get((lv, f))) for f in folds})
             finally:
-                scored.unpersist()
+                uncache(scored)
 
         def final_fn(pdf):
             out = series_udf_final(pdf, plan=plan, levels=levels, has_band=has_quantiles, w=w, h=h,
@@ -390,9 +416,9 @@ def calibrate_model_spark(spark: SparkSession, eval_sdf: DataFrame, features: Da
         if has_quantiles:
             cols += [f"{side}_{i}" for i in range(len(levels)) for side in ("lo", "hi")]
         result = long.select(*cols).groupBy(series_col).applyInPandas(final_fn, output_schema(series_col))
-        result = result.persist()
+        result = cache(result)
         result.count()
     finally:
-        long.unpersist()
+        uncache(long)
     return result, {"dropped": dropped, "w": w, "h": h, "method": plan["kind"], "score": plan["score"],
                     "target": plan["target"]}
