@@ -1,5 +1,6 @@
 import gc
 import logging
+import math
 from typing import Dict, Tuple
 
 import numpy as np
@@ -58,6 +59,13 @@ def _warn_once(key: str, message: str) -> None:
     if key not in _warned:
         _warned.add(key)
         _logger.warning(message)
+
+
+def ff_level(q: float) -> float:
+    """The level requested from foundationforecast for quantile q: q rounded outward (away from the median) to 3
+    decimals, the precision foundationforecast accepts."""
+    rounded = (math.floor if q < 0.5 else math.ceil)(round(q * 1000, 6)) / 1000
+    return round(rounded, 3)
 
 
 def ff_quantile_column(q: float) -> str:
@@ -417,14 +425,15 @@ class FoundationForecastForecaster(ForecastingRegressor):
 
         levels = self._native_levels()
         series = forecast_series(
-            self._get_ff_model(), pdf, self.params["prediction_length"], self.freq, X_df=X_df, quantiles=levels,
+            self._get_ff_model(), pdf, self.params["prediction_length"], self.freq, X_df=X_df,
+            quantiles=sorted(set(levels.values())),
         )
         data = {
             self.params.group_id: [original_ids[uid] for uid in series],
             self.params.date_col: [dates for dates, _, _ in series.values()],
             self.params.target: [values for _, values, _ in series.values()],
         }
-        returned = [level for level in levels if all(level in qs for _, _, qs in series.values())]
+        returned = [level for level, ff_level in levels.items() if all(ff_level in qs for _, _, qs in series.values())]
         if len(returned) < len(levels):
             _warn_once(
                 f"native_quantiles_missing:{self._name()}",
@@ -433,15 +442,18 @@ class FoundationForecastForecaster(ForecastingRegressor):
                 "are not calibrated from native bands.",
             )
         for level in returned:
-            data[QUANTILE_COLUMN_PREFIX + quantile_key(level)] = [qs[level] for _, _, qs in series.values()]
+            data[QUANTILE_COLUMN_PREFIX + quantile_key(level)] = [qs[levels[level]] for _, _, qs in series.values()]
         forecast_df = pd.DataFrame(data)
         return forecast_df, self.model
 
-    def _native_levels(self) -> list:
-        """Quantile levels to request from foundationforecast for native intervals, or [] when none are needed."""
+    def _native_levels(self) -> dict:
+        """
+        Quantile levels for native intervals, mapped to the level requested from foundationforecast for each,
+        or {} when none are needed.
+        """
         requested = self.params.get("native_quantiles")
         if not requested:
-            return []
+            return {}
         name = self._name()
         if not self.native_quantiles_supported:
             _warn_once(
@@ -449,25 +461,24 @@ class FoundationForecastForecaster(ForecastingRegressor):
                 f"{name}: the foundationforecast adapter cannot return quantiles, so its intervals cannot use "
                 "native bands; native_quantiles is ignored.",
             )
-            return []
-        levels = forecast_levels(requested)
+            return {}
         # foundationforecast accepts levels with at most 3 decimals and raises otherwise (e.g. 0.0125 for a 97.5%
-        # interval): such levels get no native column, and their intervals use the missing-band fallback.
-        unsupported = [level for level in levels if abs(round(level, 3) - level) > 1e-9]
-        if unsupported:
+        # interval): such levels are rounded outward, so the band is a little wider, and CQR calibrates it.
+        levels = {level: ff_level(level) for level in forecast_levels(requested)}
+        rounded = [level for level, ff in levels.items() if ff != level]
+        if rounded:
             _warn_once(
                 f"native_quantiles_precision:{name}",
                 f"{name}: foundationforecast only accepts quantile levels with at most 3 decimals, so "
-                f"{unsupported} are not requested from the model and get no native band.",
+                f"{rounded} are requested as {[levels[level] for level in rounded]}.",
             )
-            levels = [level for level in levels if level not in unsupported]
         if self.native_quantile_range is not None:
             q_min, q_max = self.native_quantile_range
-            if levels[0] < q_min or levels[-1] > q_max:
+            if min(levels.values()) < q_min or max(levels.values()) > q_max:
                 # Logged once per process: predict runs per backtest window.
                 _warn_once(
                     f"native_quantiles_clamped:{name}",
-                    f"{name}: requested quantiles {levels} exceed the native range [{q_min}, {q_max}] of this "
+                    f"{name}: requested quantiles {list(levels)} exceed the native range [{q_min}, {q_max}] of this "
                     "model; foundationforecast clamps them to it, so the native band is too narrow. "
                     "Use prediction_intervals.method 'auto' or 'cqr' to calibrate it.",
                 )

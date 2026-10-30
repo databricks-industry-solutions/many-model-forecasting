@@ -5,7 +5,7 @@ Tests cover:
 - The point forecast and the library call with and without native_quantiles
 - calculate_metrics' 8th element: each series' quantile map, None without native quantiles
 - Adapters that cannot return quantiles, and library output that lacks some levels
-- Levels with more than 3 decimals, which foundationforecast rejects, are not requested
+- Levels with more than 3 decimals, which foundationforecast rejects, are requested rounded outward
 - Warnings: levels outside the native range, unsupported adapters, missing levels; each logged once
 """
 import logging
@@ -191,7 +191,14 @@ def test_levels_inside_the_native_range_do_not_warn(quantile_library, caplog):
     assert not [r for r in caplog.records if "native range" in r.message]
 
 
-def test_levels_with_more_than_3_decimals_are_not_requested_and_warn_once(quantile_library, caplog):
+@pytest.mark.parametrize("q, expected", [
+    (0.0125, 0.012), (0.9875, 0.988), (0.025, 0.025), (0.1, 0.1), (0.5, 0.5), (0.975, 0.975), (0.0005, 0.0),
+])
+def test_ff_level_rounds_outward_to_3_decimals(q, expected):
+    assert ffp.ff_level(q) == expected
+
+
+def test_levels_with_more_than_3_decimals_are_requested_rounded_and_warn_once(quantile_library, caplog):
     quantile_library()
     df = make_df(DATES)
     with caplog.at_level(logging.WARNING, logger=ffp.__name__):
@@ -199,7 +206,11 @@ def test_levels_with_more_than_3_decimals_are_not_requested_and_warn_once(quanti
         model.params["native_quantiles"] = [0.0125, 0.1, 0.5, 0.9, 0.9875]
         pred, _ = model.predict(df)
         model.predict(df)
-    assert FakeFFModel.instances[-1].calls[-1]["quantiles"] == [0.1, 0.5, 0.9]
-    assert quantile_columns(pred) == sorted(QUANTILE_COLUMN_PREFIX + k for k in ["0.1", "0.5", "0.9"])
+    assert FakeFFModel.instances[-1].calls[-1]["quantiles"] == [0.012, 0.1, 0.5, 0.9, 0.988]
+    keys = ["0.0125", "0.1", "0.5", "0.9", "0.9875"]
+    assert quantile_columns(pred) == sorted(QUANTILE_COLUMN_PREFIX + k for k in keys)
+    for _, row in pred.iterrows():
+        np.testing.assert_allclose(row[QUANTILE_COLUMN_PREFIX + "0.0125"], row["y"] + (0.012 - 0.5) * 10)
+        np.testing.assert_allclose(row[QUANTILE_COLUMN_PREFIX + "0.9875"], row["y"] + (0.988 - 0.5) * 10)
     messages = [r.message for r in caplog.records if "at most 3 decimals" in r.message]
-    assert len(messages) == 1 and "0.0125" in messages[0] and "0.9875" in messages[0]
+    assert len(messages) == 1 and "0.0125" in messages[0] and "0.988" in messages[0]
