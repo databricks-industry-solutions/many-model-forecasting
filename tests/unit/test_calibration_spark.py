@@ -84,7 +84,8 @@ def _frames(spark, ids, y, yhat, sigma, labels, native, extra_rows=()):
 
 def _compare(spark, ids, y, yhat, sigma, labels, native, pi, clip_lower=0.0, extra_rows=()):
     eval_sdf, feats = _frames(spark, ids, y, yhat, sigma, labels, native, extra_rows)
-    result, summary = cs.calibrate_model_spark(spark, eval_sdf, feats, "uid", "m", pi, clip_lower)
+    result, summary = cs.calibrate_model_spark(spark, eval_sdf, feats, "uid", "m", pi, clip_lower,
+                                               cs.Materializer(spark, "default.pi_tmp"))
     out = result.toPandas()
     result.unpersist()
     ref = cal.calibrate_model(y, yhat, sigma, pi, labels=labels if pi.coverage.group_col else None,
@@ -158,7 +159,8 @@ def test_spark_drops_incomplete_series(spark):
     eval_sdf, feats = _frames(spark, ids, y, yhat, sigma, labels, native, bad)
     feats = feats.unionByName(spark.createDataFrame(pd.DataFrame(
         {"uid": ["zz"], "sigma": [1.0], "abc_xyz": ["A"], "abc_class": "A", "xyz_class": "X", "sb_class": "smooth"})))
-    result, summary = cs.calibrate_model_spark(spark, eval_sdf, feats, "uid", "m", _pi(), 0.0)
+    result, summary = cs.calibrate_model_spark(spark, eval_sdf, feats, "uid", "m", _pi(), 0.0,
+                                               cs.Materializer(spark, "default.pi_tmp"))
     assert summary["dropped"] == 1
     assert "zz" not in set(result.select("uid").distinct().toPandas()["uid"])
     result.unpersist()

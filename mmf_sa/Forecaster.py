@@ -291,12 +291,17 @@ class Forecaster:
             row[c] = None if pdf[c].isna().all() else str(pdf[c].dropna().iloc[0])
         return pd.DataFrame([row])
 
-    def calibration_features(self, first_window: DataFrame) -> Tuple[DataFrame, float]:
+    def materializer(self) -> "calibration_spark.Materializer":
+        """Cache of the prediction-interval steps, with temporary tables next to evaluation_output as fallback."""
+        return calibration_spark.Materializer(self.spark, f"{self.conf['evaluation_output']}_pi_tmp")
+
+    def calibration_features(self, first_window: DataFrame, materializer) -> Tuple[DataFrame, float]:
         """
         Per-series features (sigma, classes, user group columns) as a Spark DataFrame, and the minimum of
         the training target.
         Parameters:
             first_window (DataFrame): Series id (string) and first backtest window start date per series.
+            materializer (calibration_spark.Materializer): Caches the features (returned cached).
         """
         gid, date_col, target = self.conf["group_id"], self.conf["date_col"], self.conf["target"]
         freq = self.conf["freq"]
@@ -319,7 +324,7 @@ class Forecaster:
             Forecaster.calibration_features_one_series, group_id=gid, date_col=date_col, target=target,
             season_length=calibration.SEASON_LENGTH[freq], periods=calibration.FEATURE_PERIODS[freq],
             extra_cols=extra_cols)
-        feats = calibration_spark.cache(
+        feats = materializer.cache(
             train.join(windows, on=gid, how="inner").groupby(gid).applyInPandas(fn, schema=schema))
         good = col("sigma").isNotNull() & ~isnan(col("sigma")) & (col("sigma") > 0)
         n_bad = feats.filter(~good).count()
@@ -329,9 +334,9 @@ class Forecaster:
                             "they use the median scale of the other series.")
             feats = feats.withColumn("sigma", when(good, col("sigma")).otherwise(lit(1.0 if median is None
                                                                                        else float(median))))
-        classified = calibration_spark.cache(calibration_spark.classify(feats, gid))
+        classified = materializer.cache(calibration_spark.classify(feats, gid))
         classified.count()
-        calibration_spark.uncache(feats)
+        materializer.uncache(feats)
         return classified, 0.0 if min_target is None else float(min_target)
 
     def run_calibration(self):
@@ -355,22 +360,24 @@ class Forecaster:
         cols = [col(gid).cast(StringType()).alias(gid), "backtest_window_start_date", "model", "forecast", "actual"]
         if "forecast_quantiles" in eval_sdf.columns:
             cols.append("forecast_quantiles")
-        eval_sdf = calibration_spark.cache(eval_sdf.select(*cols))
+        materializer = self.materializer()
+        eval_sdf = materializer.cache(eval_sdf.select(*cols))
         models = [r[0] for r in eval_sdf.select("model").distinct().collect()]
         if not models:
-            calibration_spark.uncache(eval_sdf)
+            materializer.close()
             _logger.warning(f"No backtest rows for run_id {self.run_id} in {self.conf['evaluation_output']}; "
                             "nothing to calibrate.")
             return
         features, min_target = self.calibration_features(
-            eval_sdf.groupBy(gid).agg(min("backtest_window_start_date").alias("backtest_window_start_date")))
+            eval_sdf.groupBy(gid).agg(min("backtest_window_start_date").alias("backtest_window_start_date")),
+            materializer)
         clip_lower = calibration.resolve_clip_lower(pi.clip_lower, min_target)
         print(f"Prediction intervals: clip_lower resolved to {clip_lower}")
         try:
             for model_name in sorted(models):
                 result, summary = calibration_spark.calibrate_model_spark(
                     self.spark, eval_sdf.filter(col("model") == model_name).drop("model"), features, gid,
-                    model_name, pi, clip_lower)
+                    model_name, pi, clip_lower, materializer)
                 if summary.get("dropped"):
                     _logger.warning(f"{model_name}: {summary['dropped']} series dropped from calibration "
                                     "(incomplete or non-finite backtest windows).")
@@ -387,10 +394,9 @@ class Forecaster:
                         print(f"{model_name} ({summary['method']}, {summary['score']}, {summary['target']}): "
                               f"leave-one-window-out {r['metric_name']} {r['v']:.3f}")
                 finally:
-                    calibration_spark.uncache(result)
+                    materializer.uncache(result)
         finally:
-            calibration_spark.uncache(features)
-            calibration_spark.uncache(eval_sdf)
+            materializer.close()
         print("Finished run_calibration")
 
     def write_calibration_output(self, rows: DataFrame):
@@ -995,7 +1001,8 @@ class Forecaster:
             sdf.write.mode("append").saveAsTable(self.conf["scoring_output"])
             return
         # The forecasts are used twice (missing-calibration count, then the write): compute them once.
-        sdf = calibration_spark.cache(sdf)
+        materializer = self.materializer()
+        sdf = materializer.cache(sdf)
         try:
             (
                 self.add_prediction_intervals(sdf, model_name)
@@ -1003,7 +1010,7 @@ class Forecaster:
                 .saveAsTable(self.conf["scoring_output"])
             )
         finally:
-            calibration_spark.uncache(sdf)
+            materializer.close()
 
     def calibration_rows_for(self, model_name: str):
         """This run's calibration_output rows of one model, as a Spark DataFrame, or None when there are none."""

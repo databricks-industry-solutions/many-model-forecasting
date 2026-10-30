@@ -11,6 +11,7 @@ collected to the driver: only window/horizon counts, group-label counts, pool or
   applyInPandas, with calibration.fit_from_statistics, as in the numpy reference.
 """
 import logging
+import uuid
 
 import numpy as np
 import pandas as pd
@@ -26,32 +27,70 @@ from mmf_sa import calibration as cal
 _logger = logging.getLogger(__name__)
 
 FULL = "full"  # fold label of the calibration on all windows (fold index W)
-_cache_warned = []
 
 
-def cache(df: DataFrame) -> DataFrame:
+class Materializer:
     """
-    df.persist(), or df itself where caching is not available: serverless clients before environment
-    version 5 reject persist() (CACHE_REQUIRES_NEWER_CLIENT_ON_SERVERLESS_GC). Results are the same without
-    the cache; some steps are just recomputed.
+    Caches intermediate DataFrames of the prediction-interval steps, which run many Spark actions on them.
+    Uses df.persist() where available. Where it is not (serverless clients before environment version 5
+    reject it with CACHE_REQUIRES_NEWER_CLIENT_ON_SERVERLESS_GC), each DataFrame is written to a temporary
+    table named <scratch_prefix>_<id> and read back, so that it is not recomputed by every action; the
+    tables are dropped by uncache() and close().
     """
-    try:
-        return df.persist()
-    except Exception as err:
-        if not _cache_warned:
-            _cache_warned.append(True)
-            _logger.warning(f"DataFrame caching is not available on this compute ({type(err).__name__}); "
-                            "prediction-interval steps run uncached, which recomputes some of them. Use serverless "
-                            "environment version 5 or later, or classic compute, to cache them.")
-        return df
 
+    def __init__(self, spark: SparkSession, scratch_prefix: str):
+        self.spark = spark
+        self.scratch_prefix = scratch_prefix
+        self.can_persist = None
+        self.tables = {}
+        self.persisted = []
 
-def uncache(df: DataFrame) -> None:
-    """df.unpersist(), ignored where caching is not available (see cache)."""
-    try:
-        df.unpersist()
-    except Exception:
-        pass
+    def cache(self, df: DataFrame) -> DataFrame:
+        if self.can_persist is not False:
+            try:
+                out = df.persist()
+                self.can_persist = True
+                self.persisted.append(out)
+                return out
+            except Exception as err:
+                self.can_persist = False
+                _logger.warning(f"DataFrame caching is not available on this compute ({type(err).__name__}); "
+                                f"prediction-interval steps materialize intermediate results to temporary tables "
+                                f"{self.scratch_prefix}_* instead, dropped at the end.")
+        name = f"{self.scratch_prefix}_{uuid.uuid4().hex[:12]}"
+        df.write.mode("overwrite").saveAsTable(name)
+        out = self.spark.table(name)
+        self.tables[id(out)] = name
+        return out
+
+    def uncache(self, df: DataFrame) -> None:
+        name = self.tables.pop(id(df), None)
+        if name is not None:
+            self._drop(name)
+            return
+        try:
+            df.unpersist()
+        except Exception:
+            pass
+        self.persisted = [p for p in self.persisted if p is not df]
+
+    def close(self) -> None:
+        """Releases everything still cached: unpersists DataFrames, drops the temporary tables."""
+        for df in self.persisted:
+            try:
+                df.unpersist()
+            except Exception:
+                pass
+        self.persisted = []
+        for name in list(self.tables.values()):
+            self._drop(name)
+        self.tables.clear()
+
+    def _drop(self, name: str) -> None:
+        try:
+            self.spark.sql(f"DROP TABLE IF EXISTS {name}")
+        except Exception as err:
+            _logger.warning(f"Could not drop temporary table {name}: {err}")
 
 
 def _mode(sdf: DataFrame, column: str) -> int:
@@ -359,12 +398,13 @@ def output_schema(series_col: str) -> StructType:
 
 
 def calibrate_model_spark(spark: SparkSession, eval_sdf: DataFrame, features: DataFrame, series_col: str,
-                          model: str, pi_conf, clip_lower):
+                          model: str, pi_conf, clip_lower, materializer: Materializer):
     """
     Calibrates one model in Spark, as calibration.calibrate_model.
     Parameters:
         eval_sdf (DataFrame): The model's evaluation_output rows for the run (series_col as string).
         features (DataFrame): Per-series sigma, classes and group columns (series_col as string).
+        materializer (Materializer): Caches the intermediate results; the returned result is cached with it.
     Returns: (DataFrame or None, dict): Rows of output_schema (kind "calibration" or "metric"), and a
         summary (dropped series, W, H, method) for logging. None when there is nothing to calibrate.
     """
@@ -382,7 +422,7 @@ def calibrate_model_spark(spark: SparkSession, eval_sdf: DataFrame, features: Da
     long = long.join(feats.select(series_col, "sigma", "_label", "abc_class", "xyz_class", "sb_class"),
                      on=series_col, how="inner")
     pools = merged_pools(spark, long.select(series_col, "_label").distinct(), plan, w, label is not None)
-    long = cache(long.join(F.broadcast(pools), on="_label", how="left").drop("_label"))
+    long = materializer.cache(long.join(F.broadcast(pools), on="_label", how="left").drop("_label"))
     try:
         adaptive = plan["kind"] == "cqr" and plan["score"] == "asymmetric" and plan["tail_split"] == "adaptive"
         # Fold W uses all windows; the leave-one-window-out folds only exist with 2 windows or more.
@@ -393,7 +433,7 @@ def calibrate_model_spark(spark: SparkSession, eval_sdf: DataFrame, features: Da
             if not cols:
                 stats[lv] = {f: {} for f in folds}
                 continue
-            scored = cache(folded(long, w).select("fold", "pool", "step", *[c.alias(n) for n, c in cols.items()]))
+            scored = materializer.cache(folded(long, w).select("fold", "pool", "step", *[c.alias(n) for n, c in cols.items()]))
             try:
                 if adaptive:
                     lower = pool_statistics(spark, scored, {f: cal.stat_requests(plan, lv, "lower") for f in folds})
@@ -401,7 +441,7 @@ def calibrate_model_spark(spark: SparkSession, eval_sdf: DataFrame, features: Da
                 stats[lv] = pool_statistics(spark, scored, {
                     f: cal.stat_requests(plan, lv, "main", m_lo.get((lv, f))) for f in folds})
             finally:
-                uncache(scored)
+                materializer.uncache(scored)
 
         def final_fn(pdf):
             out = series_udf_final(pdf, plan=plan, levels=levels, has_band=has_quantiles, w=w, h=h,
@@ -416,9 +456,9 @@ def calibrate_model_spark(spark: SparkSession, eval_sdf: DataFrame, features: Da
         if has_quantiles:
             cols += [f"{side}_{i}" for i in range(len(levels)) for side in ("lo", "hi")]
         result = long.select(*cols).groupBy(series_col).applyInPandas(final_fn, output_schema(series_col))
-        result = cache(result)
+        result = materializer.cache(result)
         result.count()
     finally:
-        uncache(long)
+        materializer.uncache(long)
     return result, {"dropped": dropped, "w": w, "h": h, "method": plan["kind"], "score": plan["score"],
                     "target": plan["target"]}
