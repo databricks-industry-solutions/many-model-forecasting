@@ -6,7 +6,7 @@ Tests cover:
 - calculate_metrics' 8th element: each series' quantile map, None without native quantiles
 - Adapters that cannot return quantiles, and library output that lacks some levels
 - Levels with more than 3 decimals, which foundationforecast rejects, are requested rounded outward
-- Warnings: levels outside the native range, unsupported adapters, missing levels; each logged once
+- Warnings: levels outside the native range, unsupported adapters, missing levels, few sample paths; each logged once
 """
 import logging
 
@@ -214,3 +214,27 @@ def test_levels_with_more_than_3_decimals_are_requested_rounded_and_warn_once(qu
         np.testing.assert_allclose(row[QUANTILE_COLUMN_PREFIX + "0.9875"], row["y"] + (0.988 - 0.5) * 10)
     messages = [r.message for r in caplog.records if "at most 3 decimals" in r.message]
     assert len(messages) == 1 and "0.0125" in messages[0] and "0.988" in messages[0]
+
+
+def test_few_sample_paths_warn_once(quantile_library, caplog):
+    quantile_library()
+    df = make_df(DATES)
+    with caplog.at_level(logging.WARNING, logger=ffp.__name__):
+        make_model("FFToto").predict(df)  # no native quantiles: no warning
+        model = make_native_model("FFToto")
+        model.params["num_samples"] = 32
+        model.predict(df)
+        model.predict(df)
+    messages = [r.message for r in caplog.records if "sample paths" in r.message]
+    assert len(messages) == 1
+    assert "FFToto" in messages[0] and "32" in messages[0] and "num_samples" in messages[0] and "100" in messages[0]
+
+
+def test_enough_sample_paths_or_no_sampling_do_not_warn(quantile_library, caplog):
+    quantile_library()
+    with caplog.at_level(logging.WARNING, logger=ffp.__name__):
+        model = make_native_model("FFToto")
+        model.params["num_samples"] = 256
+        model.predict(make_df(DATES))
+        make_native_model("FFToto2_22m").predict(make_df(DATES))
+    assert not [r for r in caplog.records if "sample paths" in r.message]

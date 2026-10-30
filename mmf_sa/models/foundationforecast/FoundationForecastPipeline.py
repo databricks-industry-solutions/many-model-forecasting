@@ -14,7 +14,9 @@ from sktime.performance_metrics.forecasting import (
     MeanAbsolutePercentageError,
 )
 
-from mmf_sa.calibration import QUANTILE_COLUMN_PREFIX, forecast_levels, quantile_key, quantile_maps
+from mmf_sa.calibration import (
+    MIN_SAMPLES_FOR_QUANTILES, QUANTILE_COLUMN_PREFIX, forecast_levels, quantile_key, quantile_maps,
+)
 from mmf_sa.models.abstract_model import ForecastingRegressor, MODEL_PIP_REQUIREMENTS
 from mmf_sa.models.foundationforecast._runtime import ensure_runtime
 from mmf_sa.exceptions import (
@@ -275,6 +277,9 @@ class FoundationForecastForecaster(ForecastingRegressor):
     # (min, max) quantile levels the model predicts natively, None when unknown. foundationforecast
     # clamps levels outside this range to its edges, so the native band is narrower than requested.
     native_quantile_range: Tuple[float, float] = None
+    # Hyperparameter holding the number of sample paths the native quantiles are estimated from, for models
+    # that sample them (None otherwise).
+    samples_hparam: str = None
 
     def __init__(self, params):
         super().__init__(params)
@@ -483,6 +488,14 @@ class FoundationForecastForecaster(ForecastingRegressor):
                     "model; foundationforecast clamps them to it, so the native band is too narrow. "
                     "Use prediction_intervals.method 'auto' or 'cqr' to calibrate it.",
                 )
+        num_samples = self.params.get(self.samples_hparam) if self.samples_hparam else None
+        if num_samples is not None and num_samples < MIN_SAMPLES_FOR_QUANTILES:
+            _warn_once(
+                f"native_quantiles_samples:{name}",
+                f"{name}: native quantiles are estimated from {num_samples} sample paths, so the tails "
+                f"(e.g. 2.5% and 97.5%) are poorly estimated. Set {self.samples_hparam} to at least "
+                f"{MIN_SAMPLES_FOR_QUANTILES} for calibrated prediction intervals.",
+            )
         return levels
 
     def forecast(self, df: pd.DataFrame, spark=None):
@@ -770,6 +783,7 @@ class FFTiRex2(FFTiRexForecaster):
 
 class FFToto(FFTotoForecaster):
     hparams = FFTotoForecaster.hparams + ("num_samples", "samples_per_batch")
+    samples_hparam = "num_samples"
 
     def __init__(self, params):
         super().__init__(params)

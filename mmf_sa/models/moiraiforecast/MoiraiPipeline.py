@@ -15,11 +15,12 @@ from pyspark.sql.functions import pandas_udf
 from pyspark.sql import DataFrame
 from mmf_sa.models.abstract_model import ForecastingRegressor, MODEL_PIP_REQUIREMENTS, collect_sorted
 from mmf_sa.exceptions import UnsupportedMetricError, ModelPredictionError, DataPreparationError
-from mmf_sa.calibration import decode_quantile_forecasts, encode_quantile_forecasts, forecast_levels, quantile_maps
+from mmf_sa.calibration import (
+    MIN_SAMPLES_FOR_QUANTILES, decode_quantile_forecasts, encode_quantile_forecasts, forecast_levels, quantile_maps,
+)
 
 _logger = logging.getLogger(__name__)
 # Native quantiles are empirical quantiles of the sample paths: with fewer samples the tails are poorly estimated.
-MIN_SAMPLES_FOR_QUANTILES = 100
 _warned_few_samples = set()
 
 
