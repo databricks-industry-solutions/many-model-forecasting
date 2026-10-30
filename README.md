@@ -404,8 +404,8 @@ Notes and limitations:
 - Scoring applies the latest calibration stored for its `run_id`. `run_forecast` evaluates, calibrates and scores in one call; a scoring-only `Forecaster.evaluate_score(evaluate=False)` reuses the calibration of an earlier run only if it is given the same `run_id`, and otherwise writes null interval columns.
 - If one model's calibration fails, the error is logged, the other models are calibrated and scored, and the failed model's interval columns are null.
 - Some foundation models only have quantiles from 10% to 90% (Chronos-Bolt, TimesFM, and most FoundationForecast models): wider levels are clamped to that range, with a warning, and CQR widens them. FoundationForecast only accepts quantile levels with at most 3 decimals: other levels (e.g. the 1.25% of a 97.5% interval) are rounded outward, to 1.2%, before CQR.
-- Moirai's quantiles come from its samples: with the default `num_samples: 20` its tails are coarse (a warning is logged under 100 samples), so raise `num_samples` for better native bands.
-- `SKTimeProphet` bands come from Prophet's `predict_interval`; without `mcmc_samples` they only include the trend uncertainty and under-cover, which CQR corrects. They come from random draws, so they vary slightly between runs.
+- Moirai's and `FFToto`'s quantiles come from sample paths: with their default `num_samples` (10 and 32) the tails are coarse (a warning is logged under 100 samples), so raise `num_samples` for better native bands. `FFToto`'s point forecast, the median of its samples, also changes slightly from run to run.
+- `SKTimeProphet` bands come from Prophet's `predict_interval`. Without `mcmc_samples` they leave out the uncertainty of the seasonality, so their coverage is off nominal (on M5, 86% for the 80% band), which CQR corrects. They come from random draws, so they vary slightly between runs.
 - `recency_decay`, `coverage.levels_by_group` and `score: abs` are accepted in the configuration but not supported yet.
 - Calibration and scoring run in Spark: nothing that grows with the number of series is collected to the driver.
 

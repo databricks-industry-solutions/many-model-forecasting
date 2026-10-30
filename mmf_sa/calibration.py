@@ -180,6 +180,10 @@ def resolve_prediction_intervals_conf(
 # when native quantiles are requested, e.g. "__q_0.1".
 QUANTILE_COLUMN_PREFIX = "__q_"
 
+# Fewest sample paths from which a sampling model's native quantiles are estimated well enough at the tails
+# (e.g. 2.5% and 97.5%); such models log a warning below it.
+MIN_SAMPLES_FOR_QUANTILES = 100
+
 
 def quantile_key(q: float) -> str:
     """Key of a quantile level in the quantile maps: no trailing zeros, e.g. "0.1", "0.025", "0.975"."""
