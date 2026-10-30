@@ -22,6 +22,30 @@ dynamic_historical_numerical:
 
 dynamic_historical_categorical:
 
+# Prediction intervals (see the "Prediction Intervals" section of the README). Disabled by default.
+# Override with run_forecast(prediction_intervals={...}).
+prediction_intervals:
+  enabled: false
+  levels: [80, 95]            # central interval levels; or set `quantiles` instead
+  quantiles:                  # e.g. [0.1, 0.5, 0.9]; replaces `levels` when set
+  method: auto                # auto (native + CQR if available, else conformal) | conformal | native | cqr
+  # method_by_model: {Chronos2: conformal}  # per-model method, e.g. {StatsForecastAutoETS: native}; others use method
+  cqr_score: asymmetric       # asymmetric | scaled | symmetric
+  cqr_tail_split: adaptive    # adaptive | equal
+  cqr_pool: group             # group | marginal | series
+  coverage:
+    target: series            # marginal | group | series
+    group_col: auto           # auto (ABC x XYZ computed by MMF) | sb_class | <column> | [col1, col2] | null
+    level_group_col:          # e.g. abc_class; drives levels_by_group
+    min_scores_per_group: 100 # smaller groups are merged into one "other" pool
+    levels_by_group:          # e.g. {A: [95], B: [90], C: [80]}; overrides `levels`
+    shrinkage_kappa: 10       # series target: q_i = lam*q_series + (1-lam)*q_group, lam = W/(W+kappa)
+    pool_horizon: auto        # series target: pool horizon steps within a series (auto = if W < 19)
+  score: signed_normalized    # abs | signed | signed_normalized
+  recency_decay:              # e.g. 0.9 per window (weighted conformal)
+  clip_lower: auto            # auto | none | <number>
+  output_format: quantile_map # quantile_map | lo_hi | both
+
 active_models:
   - StatsForecastBaselineWindowAverage
   - StatsForecastBaselineSeasonalWindowAverage

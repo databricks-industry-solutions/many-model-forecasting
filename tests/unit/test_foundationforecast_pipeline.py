@@ -44,7 +44,7 @@ EXPECTED_REPOS = {
 }
 NON_COMMERCIAL_MODELS = {"FFTimesFM_3_0", "FFPatchTSTFM_R1"}
 REVENUE_CAPPED_MODELS = {"FFTimestral_5M", "FFTimestral_28M", "FFTimestral_123M", "FFTimestral_209M"}
-MMF_ENTRY_KEYS = {"module", "model_class", "framework", "model_type", "license"}
+MMF_ENTRY_KEYS = {"module", "model_class", "framework", "model_type", "license", "native_intervals"}
 H = 4
 
 
@@ -552,8 +552,9 @@ def test_backtest_reports_metrics_per_series_and_window():
     res = model.backtest(df, start=pd.Timestamp("2024-01-31"))
     assert list(res.columns) == [
         "unique_id", "backtest_window_start_date", "metric_name", "metric_value",
-        "forecast", "actual", "model_pickle",
+        "forecast", "actual", "model_pickle", "forecast_quantiles",
     ]
+    assert res["forecast_quantiles"].isna().all()  # no native quantiles for FoundationForecast models yet
     assert len(res) == 3 * 2
     assert res["metric_name"].eq("smape").all()
     assert res["forecast"].map(len).eq(H).all() and res["actual"].map(len).eq(H).all()

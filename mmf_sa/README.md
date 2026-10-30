@@ -44,6 +44,9 @@ def run_forecast(
     experiment_path: str = None,
     run_id: str = None,
     conf: Union[str, Dict[str, Any], OmegaConf] = None,
+    prediction_intervals: Dict[str, Any] = None,
+    calibration_output: str = None,
+    interval_metrics_output: str = None,
 ) -> str:
 ```
 
@@ -78,8 +81,12 @@ def evaluate_score(self, evaluate: bool = True, score: bool = True) -> str:
     # 2. Evaluation
     if evaluate:
         self.evaluate_models()
-    
-    # 3. Scoring
+
+    # 3. Prediction-interval calibration (only when prediction_intervals.enabled)
+    if self.intervals_enabled:
+        self.run_calibration()
+
+    # 4. Scoring
     if score:
         self.score_models()
     
@@ -355,6 +362,44 @@ def resolve_source(self, key: str) -> DataFrame:
 2. **Quality Checks**: Applies comprehensive data validation
 3. **Format Standardization**: Converts to required format for models
 4. **Feature Engineering**: Processes external regressors and features
+
+## Prediction Intervals
+
+Prediction intervals are optional (`prediction_intervals.enabled`, off by default). The user-facing description is in the [main README](../README.md#prediction-intervals). This section describes the code.
+
+### Modules
+
+| Module | Role |
+|---|---|
+| `mmf_sa/calibration.py` | Pure numpy/pandas. The `prediction_intervals` configuration (defaults, validation), quantile keys and column names, the conformal and CQR math, and the reference implementation `calibrate_model`, which the golden tests check against the experiment notebook. |
+| `mmf_sa/calibration_spark.py` | The distributed calibration used by `run_calibration`: backtest alignment, classes, exact pool order statistics, and the per-series combination in `applyInPandas`. Tests check it against `calibrate_model` to 1e-12. |
+| `Forecaster.run_calibration` | Orchestration: reads this call's backtest rows, computes the per-series features, calibrates each active model, and writes `calibration_output` and `interval_metrics_output`. |
+| `Forecaster.add_prediction_intervals` | At scoring time: joins the corrections to the forecasts and computes the interval columns per partition. |
+
+### Data flow
+
+```
+evaluate_models   models flagged native_intervals in models_conf.yaml get native_quantiles, unless their
+                  method (method_by_model, else method) is conformal; their backtest writes
+                  forecast_quantiles (MAP<STRING, ARRAY<DOUBLE>>) to evaluation_output
+run_calibration   per-series features (seasonal-naive scale, ABC, XYZ, Syntetos-Boylan) from the history
+                  before the first backtest window
+                  per model and level: CQR on native bands, or conformal on residuals
+                  -> calibration_output (per model, series, step, level)
+                  -> interval_metrics_output: coverage_<L>, msis_<L>, width_<L> (leave-one-window-out)
+score_models      native bands at forecast time; corrections joined per series; bounds clipped
+                  (clip_lower) and uncrossed -> interval columns of scoring_output (output_format)
+```
+
+### Adding native intervals to a model
+
+1. Set `native_intervals: true` for the model in `models_conf.yaml`.
+2. When `self.params.native_quantiles` is set, make `predict` (backtest) and `forecast` (scoring) return one column per requested quantile, named with `calibration.QUANTILE_COLUMN_PREFIX + calibration.quantile_key(q)` (e.g. `__q_0.975`), next to the point forecast. `ForecastingRegressor.forecast_quantiles` (local models) and `calibration.quantile_maps` (global and foundation models) turn them into the `forecast_quantiles` map.
+3. Nothing else changes: calibration uses CQR for every model whose backtest rows carry quantiles.
+
+### Scaling
+
+Neither calibration nor scoring collects data that grows with the number of series to the driver. The pooled conformal quantiles are exact order statistics computed with `row_number()` over (fold, pool, step), and the leave-one-window-out folds are computed in one pass. The driver only receives small tables: window and horizon counts, group-label counts, pool statistics (pools x steps), the adaptive CQR miss rates, and the per-level fallback corrections used at scoring for series without calibration.
 
 ## Hierarchical Reconciliation
 
