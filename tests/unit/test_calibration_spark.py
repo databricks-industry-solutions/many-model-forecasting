@@ -3,6 +3,7 @@
 Tests cover, against calibration.calibrate_model on the same data:
 - every method / pool / score: CQR asymmetric (adaptive and equal split), symmetric, scaled; residual
   conformal marginal, group, series (pooled horizon or not), signed score; native
+- per-model methods (method_by_model), with and without native bands
 - small groups merged into __other__, infinite ranks, ties, dropped series, missing native quantiles
 - the M5 golden fixture with the default settings
 - Spark classification against calibration.classify_series, with ties
@@ -82,17 +83,17 @@ def _frames(spark, ids, y, yhat, sigma, labels, native, extra_rows=()):
     return eval_sdf, spark.createDataFrame(feats)
 
 
-def _compare(spark, ids, y, yhat, sigma, labels, native, pi, clip_lower=0.0, extra_rows=()):
+def _compare(spark, ids, y, yhat, sigma, labels, native, pi, clip_lower=0.0, extra_rows=(), model="m"):
     eval_sdf, feats = _frames(spark, ids, y, yhat, sigma, labels, native, extra_rows)
-    result, summary = cs.calibrate_model_spark(spark, eval_sdf, feats, "uid", "m", pi, clip_lower,
+    result, summary = cs.calibrate_model_spark(spark, eval_sdf, feats, "uid", model, pi, clip_lower,
                                                cs.Materializer(spark, "default.pi_tmp"))
     out = result.toPandas()
     result.unpersist()
     ref = cal.calibrate_model(y, yhat, sigma, pi, labels=labels if pi.coverage.group_col else None,
-                              native=native, clip_lower=clip_lower)
+                              native=native, clip_lower=clip_lower, model=model)
     rows = out[out["kind"] == "calibration"]
     metrics = out[out["kind"] == "metric"]
-    assert set(out["model"]) == {"m"}
+    assert set(out["model"]) == {model}
     for lv, r in ref.items():
         got = rows[rows["level"] == float(lv)].sort_values(["uid", "step"])
         assert len(got) == len(ids) * y.shape[2]
@@ -138,6 +139,20 @@ def test_spark_matches_numpy(spark, overrides):
 def test_spark_matches_numpy_without_native_bands(spark):
     ids, y, yhat, sigma, labels, _ = _data(seed=1)
     _compare(spark, ids, y, yhat, sigma, labels, None, _pi())  # falls back to conformal
+
+
+@pytest.mark.parametrize("model, method", [("Chronos2", "cqr"), ("StatsForecastAutoETS", "native"),
+                                           ("StatsForecastAutoArima", "conformal")])
+def test_spark_matches_numpy_with_method_by_model(spark, model, method):
+    ids, y, yhat, sigma, labels, native = _data(seed=9)
+    pi = _pi(method="conformal", method_by_model={"Chronos2": "cqr", "StatsForecastAutoETS": "native"})
+    assert _compare(spark, ids, y, yhat, sigma, labels, native, pi, model=model)["method"] == method
+
+
+def test_spark_method_by_model_without_native_bands_falls_back(spark):
+    ids, y, yhat, sigma, labels, _ = _data(seed=10)
+    pi = _pi(method="conformal", method_by_model={"Chronos2": "cqr"})
+    assert _compare(spark, ids, y, yhat, sigma, labels, None, pi, model="Chronos2")["method"] == "conformal"
 
 
 def test_spark_matches_numpy_with_ties_and_no_clipping(spark):

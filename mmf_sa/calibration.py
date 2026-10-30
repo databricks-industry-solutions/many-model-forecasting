@@ -23,6 +23,7 @@ DEFAULT_PREDICTION_INTERVALS: Dict[str, Any] = {
     "levels": [80, 95],
     "quantiles": None,
     "method": "auto",
+    "method_by_model": {},
     "cqr_score": "asymmetric",
     "cqr_tail_split": "adaptive",
     "cqr_pool": "group",
@@ -86,6 +87,9 @@ def resolve_prediction_intervals_conf(
     else:
         user = dict(conf)
     _check_keys(user, DEFAULT_PREDICTION_INTERVALS, "prediction_intervals")
+    if not isinstance(user.get("method_by_model", {}), dict):
+        raise ConfigurationError(
+            f"prediction_intervals.method_by_model must map model names to methods, got {user['method_by_model']!r}")
     if user.get("coverage") is not None:
         _check_keys(user["coverage"], DEFAULT_PREDICTION_INTERVALS["coverage"], "prediction_intervals.coverage")
 
@@ -125,6 +129,11 @@ def resolve_prediction_intervals_conf(
         if pi[key] not in choices:
             raise ConfigurationError(
                 f"prediction_intervals.{key} must be one of {', '.join(sorted(choices))}, got {pi[key]!r}")
+    for name, method in pi["method_by_model"].items():
+        if method not in _CHOICES["method"]:
+            raise ConfigurationError(
+                f"prediction_intervals.method_by_model[{name!r}] must be one of "
+                f"{', '.join(sorted(_CHOICES['method']))}, got {method!r}")
     if pi["cqr_score"] == "scaled" and pi["cqr_pool"] == "series":
         # Near-zero native half-widths make the per-series scaled score blow up.
         raise ConfigurationError("prediction_intervals: cqr_score 'scaled' cannot be combined with cqr_pool 'series'")
@@ -662,17 +671,27 @@ def _native_band(native, level, n, w, h):
     return lo, hi
 
 
-def fit_plan(pi_conf, has_band: bool) -> dict:
+def model_method(pi_conf, model: Optional[str] = None) -> str:
+    """
+    The interval method of one model: its method_by_model entry, or the method of the block when the model
+    is not listed. Without a model name, the method of the block.
+    """
+    if model is None:
+        return pi_conf["method"]
+    return pi_conf["method_by_model"].get(model, pi_conf["method"])
+
+
+def fit_plan(pi_conf, has_band: bool, model: Optional[str] = None) -> dict:
     """
     How one model is calibrated at every level: the method, score, pool and settings.
     method auto (or cqr) uses CQR when the model has native bands, otherwise conformal calibration of its
-    residuals; native keeps the bands.
+    residuals; native keeps the bands. The method is the model's (model_method).
     """
     cov = pi_conf["coverage"]
-    method = pi_conf["method"]
+    method = model_method(pi_conf, model)
     if method in ("native", "cqr") and not has_band:
-        _logger.warning(f"prediction_intervals.method is {method!r} but the model has no native band; "
-                        "falling back to conformal calibration of its residuals.")
+        _logger.warning(f"prediction_intervals method {method!r} for {model or 'the model'} needs a native band "
+                        "it does not have; falling back to conformal calibration of its residuals.")
     kind = "conformal" if not has_band or method == "conformal" else ("native" if method == "native" else "cqr")
     if kind == "cqr":
         score, target = pi_conf["cqr_score"], pi_conf["cqr_pool"]
@@ -871,7 +890,7 @@ def window_bounds(plan, yhat, band, sigma, q_lo, q_hi):
     return residual_bounds(yhat, scale, q_lo, q_hi)
 
 
-def calibrate_model(y, yhat, sigma, pi_conf, labels=None, native=None, clip_lower=None):
+def calibrate_model(y, yhat, sigma, pi_conf, labels=None, native=None, clip_lower=None, model=None):
     """
     Calibrates one model's prediction intervals from its backtest, for every configured level.
     Numpy reference of the distributed calibration (calibration_spark), which shares fit_from_statistics.
@@ -883,6 +902,7 @@ def calibrate_model(y, yhat, sigma, pi_conf, labels=None, native=None, clip_lowe
             and the CQR group pool. None means one pool.
         native (dict): Optional native bands {level: (lo, hi)} of shape (N, W, H).
         clip_lower (float): Lower bound of the intervals (resolve_clip_lower), or None.
+        model (str): The model's name, to use its method_by_model entry; None uses the method of the block.
     Returns: dict level -> dict with
         method ("conformal", "cqr" or "native"), score, target, q_lo and q_hi (N, H), infinite (N,),
         shrinkage_weight (float, or None), metrics {name: (N, W) array} computed leave-one-window-out
@@ -895,7 +915,7 @@ def calibrate_model(y, yhat, sigma, pi_conf, labels=None, native=None, clip_lowe
     if sigma.shape != (n,) or not (sigma > 0).all():
         raise ValueError("sigma must be positive, with one value per series")
     has_band = native is not None
-    plan = fit_plan(pi_conf, has_band)
+    plan = fit_plan(pi_conf, has_band, model)
     results = {}
     for level in calibration_levels(pi_conf):
         band = _native_band(native, level, n, w, h)

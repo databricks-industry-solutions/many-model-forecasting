@@ -4,7 +4,7 @@ Tests cover:
 - Quantile keys, requested quantiles and their central levels
 - statsforecast: native quantiles in the backtest, unchanged point forecasts
 - The forecast_quantiles column of the local evaluation UDF, with intervals on and off
-- Which models receive native_quantiles (Forecaster.native_quantiles)
+- Which models receive native_quantiles (Forecaster.native_quantiles), per model with method_by_model
 - Chronos UDF packing of medians and quantiles, and per-series quantile maps
 - The Spark schema of evaluation rows written by backtest_global_model
 """
@@ -77,9 +77,9 @@ def test_local_evaluation_udf_columns(with_quantiles):
     assert len(out) == 2
 
 
-def _forecaster(**pi):
+def _forecaster(active=(), **pi):
     conf = OmegaConf.create({"freq": "D", "backtest_length": 14, "evaluation_output": "t",
-                             "active_models": [], "prediction_intervals": pi})
+                             "active_models": list(active), "prediction_intervals": pi})
     return Forecaster(conf=conf, data_conf={}, spark=None, experiment_id="e")
 
 
@@ -90,6 +90,40 @@ def test_native_quantiles_per_model():
     assert _forecaster(enabled=True).native_quantiles(plain) is None
     assert _forecaster(enabled=True, method="conformal").native_quantiles(native) is None
     assert _forecaster(enabled=False).native_quantiles(native) is None
+
+
+NATIVE_ETS = OmegaConf.create({"name": "StatsForecastAutoETS", "native_intervals": True})
+NATIVE_CHRONOS = OmegaConf.create({"name": "Chronos2", "native_intervals": True})
+PLAIN = OmegaConf.create({"name": "StatsForecastTSB"})  # no native bands
+
+
+@pytest.mark.parametrize("method, method_by_model, expected", [
+    ("auto", {}, QUANTILES),
+    ("conformal", {}, None),                                    # global conformal: no quantiles
+    ("conformal", {"StatsForecastAutoETS": "cqr"}, QUANTILES),  # the override asks for them
+    ("conformal", {"StatsForecastAutoETS": "native"}, QUANTILES),
+    ("auto", {"StatsForecastAutoETS": "conformal"}, None),      # the override turns them off
+    ("cqr", {"StatsForecastAutoETS": "conformal"}, None),
+    ("native", {"Chronos2": "conformal"}, QUANTILES),           # other models keep the global method
+])
+def test_native_quantiles_follow_the_model_method(method, method_by_model, expected):
+    f = _forecaster(active=["StatsForecastAutoETS", "Chronos2"], enabled=True, method=method,
+                    method_by_model=method_by_model)
+    assert f.native_quantiles(NATIVE_ETS) == expected
+
+
+def test_method_by_model_does_not_change_other_models():
+    f = _forecaster(active=["StatsForecastAutoETS", "Chronos2", "StatsForecastTSB"], enabled=True,
+                    method="conformal", method_by_model={"StatsForecastAutoETS": "cqr"})
+    assert f.native_quantiles(NATIVE_CHRONOS) is None
+
+
+def test_method_by_model_never_asks_models_without_native_bands_for_quantiles():
+    f = _forecaster(active=["StatsForecastTSB"], enabled=True, method="conformal",
+                    method_by_model={"StatsForecastTSB": "native"})
+    assert f.native_quantiles(PLAIN) is None
+    assert _forecaster(enabled=False, method_by_model={"StatsForecastAutoETS": "cqr"}).native_quantiles(
+        NATIVE_ETS) is None
 
 
 def test_chronos_udf_packing_round_trip():
