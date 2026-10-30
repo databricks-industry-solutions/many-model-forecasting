@@ -91,6 +91,7 @@ def _compare(spark, ids, y, yhat, sigma, labels, native, pi, clip_lower=0.0, ext
                               native=native, clip_lower=clip_lower)
     rows = out[out["kind"] == "calibration"]
     metrics = out[out["kind"] == "metric"]
+    assert set(out["model"]) == {"m"}
     for lv, r in ref.items():
         got = rows[rows["level"] == float(lv)].sort_values(["uid", "step"])
         assert len(got) == len(ids) * y.shape[2]
