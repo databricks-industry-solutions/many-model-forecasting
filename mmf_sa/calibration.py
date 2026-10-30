@@ -114,6 +114,13 @@ def resolve_prediction_intervals_conf(
             if not _is_number(q) or not 0 < q < 1:
                 raise ConfigurationError(
                     f"prediction_intervals.quantiles must be numbers in (0, 1), got {q!r}")
+        # Intervals are central: every quantile other than the median needs its mirror 1 - q.
+        qs = {round(float(q), 6) for q in pi["quantiles"]}
+        unpaired = sorted(q for q in qs if q != 0.5 and round(1 - q, 6) not in qs)
+        if unpaired:
+            raise ConfigurationError(
+                f"prediction_intervals.quantiles must come in central pairs (q and 1 - q); missing the mirror of "
+                f"{unpaired}")
 
     for key, choices in _CHOICES.items():
         if pi[key] not in choices:

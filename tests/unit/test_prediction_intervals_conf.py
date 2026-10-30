@@ -73,6 +73,7 @@ def test_accepts_dictconfig_and_valid_alternatives():
     ({"levels": [0]}, "levels"),
     ({"levels": None}, "levels"),
     ({"quantiles": [1.0]}, "quantiles"),
+    ({"quantiles": [0.1, 0.5, 0.95]}, "central pairs"),
     ({"method": "bootstrap"}, "method"),
     ({"cqr_score": "abs"}, "cqr_score"),
     ({"cqr_tail_split": "upper"}, "cqr_tail_split"),
@@ -153,6 +154,14 @@ def _forecaster_conf(**pi):
 def test_forecaster_requires_evaluation_output_when_enabled():
     with pytest.raises(ConfigurationError, match="evaluation_output"):
         mmf_sa.Forecaster(conf=_forecaster_conf(enabled=True), data_conf={}, spark=None, experiment_id="e")
+
+
+@pytest.mark.parametrize("pi", [{"enabled": True, "recency_decay": 0.9}, {"enabled": True, "score": "abs"}])
+def test_forecaster_rejects_unsupported_settings_before_the_backtest(pi):
+    conf = OmegaConf.create({"freq": "D", "backtest_length": 14, "active_models": [], "evaluation_output": "t",
+                             "prediction_intervals": pi})
+    with pytest.raises(ConfigurationError, match="not supported"):
+        mmf_sa.Forecaster(conf=conf, data_conf={}, spark=None, experiment_id="e")
 
 
 def test_forecaster_resolves_block():
