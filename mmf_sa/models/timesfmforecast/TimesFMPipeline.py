@@ -16,8 +16,47 @@ from pyspark.sql import DataFrame
 from utilsforecast.processing import make_future_dataframe
 from mmf_sa.models.abstract_model import ForecastingRegressor, MODEL_PIP_REQUIREMENTS, collect_sorted
 from mmf_sa.exceptions import MissingFeatureError, UnsupportedMetricError, ModelPredictionError, DataPreparationError
+from mmf_sa.calibration import (
+    QUANTILE_COLUMN_PREFIX, decode_quantile_forecasts, encode_quantile_forecasts, forecast_levels, quantile_key,
+    quantile_maps,
+)
 
 _logger = logging.getLogger(__name__)
+_warned_clamped = set()
+
+# Quantile levels of TimesFM 2.5's quantile forecast, after the mean (index 0). The point forecast is the
+# 0.5 level (index 5), so the median column equals the point forecast.
+TIMESFM_QUANTILE_LEVELS = (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9)
+
+
+def quantile_forecasts(quantile_output, levels):
+    """
+    Native quantiles of one series from a TimesFM 2.5 quantile forecast.
+    Parameters:
+        quantile_output: Quantile forecast of one series, (H, 1 + len(TIMESFM_QUANTILE_LEVELS)), mean first.
+        levels: Requested quantile levels, sorted (see forecast_levels).
+    Returns: np.ndarray: quantiles (len(levels), H). Levels between two deciles are interpolated linearly,
+        levels outside [0.1, 0.9] are clamped to the nearest decile.
+    """
+    deciles = np.asarray(TIMESFM_QUANTILE_LEVELS)
+    clamp_key = tuple(levels)
+    if (levels[0] < deciles[0] or levels[-1] > deciles[-1]) and clamp_key not in _warned_clamped:
+        # TimesFM only provides the deciles 0.1-0.9, so e.g. a "95%" band is really the 80% band. CQR corrects this
+        # (method: auto). Logged once per process: predict runs per batch and per backtest window.
+        _warned_clamped.add(clamp_key)
+        _logger.warning(
+            f"Requested quantiles {list(levels)} exceed the quantiles TimesFM provides "
+            f"[{deciles[0]}, {deciles[-1]}]; they are clamped to them, so the native band is too narrow. "
+            "Use prediction_intervals.method 'auto' or 'cqr' to calibrate it.")
+    # Weights of each requested level on the deciles (np.interp clamps to the outer deciles).
+    weights = np.zeros((len(levels), len(deciles)))
+    for i, level in enumerate(levels):
+        pos = np.interp(level, deciles, np.arange(len(deciles)))
+        lo = min(int(np.floor(pos)), len(deciles) - 2)
+        weights[i, lo] = lo + 1 - pos
+        weights[i, lo + 1] = pos - lo
+    values = np.asarray(quantile_output, dtype=np.float64)[:, 1:]  # drop the mean
+    return (values @ weights.T).T
 
 
 class TimesFMForecaster(ForecastingRegressor):
@@ -208,6 +247,7 @@ class TimesFMForecaster(ForecastingRegressor):
         num_devices = device_count
         _col_map = list(col_map) if col_map else []
         _has_covariates = len(_col_map) > 0
+        _levels = forecast_levels(self.params["native_quantiles"]) if self.params.get("native_quantiles") else []
 
         @pandas_udf('array<double>')
         def predict_udf(
@@ -258,7 +298,7 @@ class TimesFMForecaster(ForecastingRegressor):
                 ]
 
                 if not _has_covariates:
-                    forecasts, _ = model.forecast(
+                    forecasts, quantile_outputs = model.forecast(
                         horizon=prediction_length,
                         inputs=inputs,
                     )
@@ -288,7 +328,7 @@ class TimesFMForecaster(ForecastingRegressor):
                                 str(s) for s in col_batch
                             ]
 
-                    forecasts, _ = model.forecast_with_covariates(
+                    forecasts, quantile_outputs = model.forecast_with_covariates(
                         inputs=inputs,
                         dynamic_numerical_covariates=dyn_num_dict,
                         dynamic_categorical_covariates=dyn_cat_dict,
@@ -300,9 +340,11 @@ class TimesFMForecaster(ForecastingRegressor):
                         normalize_xreg_target_per_input=True,
                     )
 
-                yield pd.Series(
-                    [arr.astype(np.float64) for arr in forecasts]
-                )
+                points = [arr.astype(np.float64) for arr in forecasts]
+                if _levels:
+                    quantiles = [quantile_forecasts(q, _levels) for q in quantile_outputs]
+                    points = encode_quantile_forecasts(points, quantiles)
+                yield pd.Series(points)
 
         return predict_udf
 
@@ -367,6 +409,9 @@ class TimesFMForecaster(ForecastingRegressor):
             )
         ).toPandas()
 
+        if self.params.get("native_quantiles"):
+            forecast_df = decode_quantile_forecasts(
+                forecast_df, "y", forecast_levels(self.params["native_quantiles"]), self.params["prediction_length"])
         forecast_df = forecast_df.reset_index(drop=False).rename(
             columns={
                 "unique_id": self.params.group_id,
@@ -409,7 +454,7 @@ class TimesFMForecaster(ForecastingRegressor):
             and not dynamic_categorical_covariates \
             and not static_numerical_covariates \
             and not static_categorical_covariates:
-            forecasts, _ = model.forecast(
+            forecasts, quantile_outputs = model.forecast(
                 horizon=self.params.prediction_length,
                 inputs=forecast_input,
             )
@@ -423,7 +468,7 @@ class TimesFMForecaster(ForecastingRegressor):
                 return_backcast=True,
             )
             model.compile(xreg_config)
-            forecasts, _ = model.forecast_with_covariates(
+            forecasts, quantile_outputs = model.forecast_with_covariates(
                 inputs=forecast_input,
                 dynamic_numerical_covariates=dynamic_numerical_covariates,
                 dynamic_categorical_covariates=dynamic_categorical_covariates,
@@ -443,11 +488,17 @@ class TimesFMForecaster(ForecastingRegressor):
             freq=self.params.freq,
         )
         timestamps = [group['ds'].values for _, group in timestamps.groupby('unique_id')]
-        forecast_df = pd.DataFrame({
+        columns = {
             self.params.group_id: unique_ids,
             self.params.date_col: timestamps,
             self.params.target: [arr.astype(np.float64) for arr in forecasts],
-        })
+        }
+        if self.params.get("native_quantiles"):
+            levels = forecast_levels(self.params["native_quantiles"])
+            quantiles = [quantile_forecasts(q, levels) for q in quantile_outputs]
+            for i, level in enumerate(levels):
+                columns[QUANTILE_COLUMN_PREFIX + quantile_key(level)] = [q[i] for q in quantiles]
+        forecast_df = pd.DataFrame(columns)
 
         # Todo
         # forecast_df[self.params.target] = forecast_df[self.params.target].clip(0.01)
@@ -500,6 +551,7 @@ class TimesFMForecaster(ForecastingRegressor):
                 pred_df[target_col].to_numpy(),
             )
         )
+        quantiles_map = quantile_maps(pred_df, group_col)
 
         for key in keys:
             try:
@@ -515,6 +567,7 @@ class TimesFMForecaster(ForecastingRegressor):
                         forecast,
                         actual,
                         b"",
+                        quantiles_map.get(key),
                     )
                 )
             except (ModelPredictionError, DataPreparationError) as err:
