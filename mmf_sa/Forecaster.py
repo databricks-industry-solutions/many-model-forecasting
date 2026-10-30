@@ -261,6 +261,12 @@ class Forecaster:
         """Name of the calibration_output table: the calibration_output setting, or <evaluation_output>_calibration."""
         return self.conf.get("calibration_output") or f"{self.conf['evaluation_output']}_calibration"
 
+    def interval_metrics_table(self) -> str:
+        """Name of the interval metrics table: the interval_metrics_output setting, or
+        <evaluation_output>_interval_metrics. Kept apart from evaluation_output, whose readers average
+        metric_value per series and model without filtering metric_name."""
+        return self.conf.get("interval_metrics_output") or f"{self.conf['evaluation_output']}_interval_metrics"
+
     @staticmethod
     def calibration_features_one_series(pdf: pd.DataFrame, group_id: str, date_col: str, target: str,
                                         season_length: int, periods: int, extra_cols: list) -> pd.DataFrame:
@@ -321,8 +327,8 @@ class Forecaster:
         Calibrates prediction intervals from the backtest results of this run in evaluation_output
         (docs/specs/confidence_interval.md, sections 11 and 11.6), in Spark: nothing that grows with the
         number of series is collected to the driver. Writes one calibration_output row per model, series,
-        horizon step and level, and the leave-one-window-out interval metrics as new metric_name rows of
-        evaluation_output.
+        horizon step and level, and the leave-one-window-out interval metrics to the interval metrics
+        table (interval_metrics_table).
         Parameters: self (Forecaster): A Forecaster object.
         """
         pi = self.conf.prediction_intervals
@@ -392,20 +398,17 @@ class Forecaster:
         )
 
     def write_interval_metrics(self, rows: DataFrame):
-        """Appends interval metric rows (series, window_date, metric_name, metric_value, model) to evaluation_output."""
+        """Appends interval metric rows (series, window, metric_name, metric_value, model) to the interval metrics table."""
         gid = self.conf["group_id"]
-        self.evaluation_writer(
+        (
             rows.select(gid, col("window_date").alias("backtest_window_start_date"), "metric_name",
                         "metric_value", "model")
-            .withColumn("forecast", lit(None).cast(ArrayType(DoubleType())))
-            .withColumn("actual", lit(None).cast(ArrayType(DoubleType())))
-            .withColumn("model_pickle", lit(None).cast(BinaryType()))
-            .withColumn("forecast_quantiles", lit(None).cast(MapType(StringType(), ArrayType(DoubleType()))))
             .withColumn("run_id", lit(self.run_id))
             .withColumn("run_date", lit(self.run_date))
             .withColumn("use_case", lit(self.conf["use_case_name"]))
-            .withColumn("model_uri", lit(""))
-        ).saveAsTable(self.conf["evaluation_output"])
+            .write.mode("append").option("mergeSchema", "true")
+            .saveAsTable(self.interval_metrics_table())
+        )
 
     def evaluate_models(self) -> set:
         """
