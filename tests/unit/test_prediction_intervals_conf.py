@@ -110,6 +110,12 @@ def test_native_interval_flags():
         "StatsForecastAutoETS", "StatsForecastAutoCES", "StatsForecastAutoTheta", "StatsForecastAutoTbats",
         "ChronosBoltTiny", "ChronosBoltMini", "ChronosBoltSmall", "ChronosBoltBase",
         "Chronos2", "Chronos2Small", "Chronos2Synth",
+        "SKTimeProphet", "TimesFM_2_5_200m",
+        "MoiraiSmall", "MoiraiBase", "MoiraiLarge", "MoiraiMoESmall", "MoiraiMoEBase", "MoiraiMoELarge",
+        "FFChronos2", "FFChronos2Small", "FFTimesFM_2_5_200m", "FFTimesFM_3_0", "FFTiRex2", "FFToto",
+        "FFToto2_22m", "FFToto2_313m", "FFToto2_1B", "FFFlowState", "FFPatchTSTFM_R2", "FFPatchTSTFM_R1",
+        "FFTafsutBase", "FFT0Beta", "FFT0Gamma", "FFTimestral_5M", "FFTimestral_28M", "FFTimestral_123M",
+        "FFTimestral_209M",
     }
 
 

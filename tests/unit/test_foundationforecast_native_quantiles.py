@@ -5,6 +5,7 @@ Tests cover:
 - The point forecast and the library call with and without native_quantiles
 - calculate_metrics' 8th element: each series' quantile map, None without native quantiles
 - Adapters that cannot return quantiles, and library output that lacks some levels
+- Levels with more than 3 decimals, which foundationforecast rejects, are not requested
 - Warnings: levels outside the native range, unsupported adapters, missing levels; each logged once
 """
 import logging
@@ -188,3 +189,17 @@ def test_levels_inside_the_native_range_do_not_warn(quantile_library, caplog):
     with caplog.at_level(logging.WARNING, logger=ffp.__name__):
         make_native_model("FFPatchTSTFM_R2").predict(make_df(DATES))
     assert not [r for r in caplog.records if "native range" in r.message]
+
+
+def test_levels_with_more_than_3_decimals_are_not_requested_and_warn_once(quantile_library, caplog):
+    quantile_library()
+    df = make_df(DATES)
+    with caplog.at_level(logging.WARNING, logger=ffp.__name__):
+        model = make_model("FFChronos2")
+        model.params["native_quantiles"] = [0.0125, 0.1, 0.5, 0.9, 0.9875]
+        pred, _ = model.predict(df)
+        model.predict(df)
+    assert FakeFFModel.instances[-1].calls[-1]["quantiles"] == [0.1, 0.5, 0.9]
+    assert quantile_columns(pred) == sorted(QUANTILE_COLUMN_PREFIX + k for k in ["0.1", "0.5", "0.9"])
+    messages = [r.message for r in caplog.records if "at most 3 decimals" in r.message]
+    assert len(messages) == 1 and "0.0125" in messages[0] and "0.9875" in messages[0]
