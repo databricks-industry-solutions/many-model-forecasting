@@ -63,9 +63,9 @@ def _warn_once(key: str, message: str) -> None:
 
 def ff_level(q: float) -> float:
     """The level requested from foundationforecast for quantile q: q rounded outward (away from the median) to 3
-    decimals, the precision foundationforecast accepts."""
-    rounded = (math.floor if q < 0.5 else math.ceil)(round(q * 1000, 6)) / 1000
-    return round(rounded, 3)
+    decimals, within [0.001, 0.999], the levels foundationforecast accepts."""
+    milli = (math.floor if q < 0.5 else math.ceil)(round(q * 1000, 6))
+    return min(max(milli, 1), 999) / 1000
 
 
 def ff_quantile_column(q: float) -> str:
@@ -433,7 +433,8 @@ class FoundationForecastForecaster(ForecastingRegressor):
             self.params.date_col: [dates for dates, _, _ in series.values()],
             self.params.target: [values for _, values, _ in series.values()],
         }
-        returned = [level for level, ff_level in levels.items() if all(ff_level in qs for _, _, qs in series.values())]
+        returned = [level for level, requested in levels.items()
+                    if all(requested in qs for _, _, qs in series.values())]
         if len(returned) < len(levels):
             _warn_once(
                 f"native_quantiles_missing:{self._name()}",
@@ -657,8 +658,8 @@ class FFChronosForecaster(FoundationForecastForecaster):
     hparams = ("batch_size", "dtype")
     supports_future_covariates = True
     accepts_categorical_strings = True
-    # Chronos-2 default quantiles (see Chronos2Forecaster).
-    native_quantile_range = (0.1, 0.9)
+    # The quantiles of the chronos-2 and chronos-2-small checkpoints (chronos_config.quantiles).
+    native_quantile_range = (0.01, 0.99)
 
 
 class FFTimesFMForecaster(FoundationForecastForecaster):
@@ -688,6 +689,8 @@ class FFToto2Forecaster(FFTotoForecaster):
 class FFFlowStateForecaster(FoundationForecastForecaster):
     ff_class = "FlowState"
     hparams = ("context_length", "batch_size", "scale_factor")
+    # The quantiles of the flowstate checkpoint (config.quantiles).
+    native_quantile_range = (0.1, 0.9)
 
 
 class FFPatchTSTFMForecaster(FoundationForecastForecaster):
