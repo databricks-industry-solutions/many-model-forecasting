@@ -456,7 +456,7 @@ The scoring table must contain one row per `unique_id` × future `ds` for each d
 
 **MUST include `static_features` columns.** When `run_forecast` unions `train_data` and `scoring_data` via `unionByName(..., allowMissingColumns=True)`, any columns missing from the scoring table are filled with NULL. Models that use static features at inference time (NeuralForecast, Chronos-2, TimesFM) would receive NaN instead of the actual category, degrading forecast quality. Populating the static feature columns in the scoring table by joining each `unique_id` against its static values from `train_data` avoids this.
 
-**Foundationforecast (`FF*`) covariate models are strict about the scoring table.** Each series MUST have exactly one row for every future date in the forecast horizon, with no duplicate `(unique_id, ds)` rows and no NULL in any dynamic future column. A missing, duplicate or NULL horizon value raises an error for that model instead of degrading quietly. So if the user may select `FF*` models, the NULL handling below must fill values rather than drop rows (option e), and the Step 6a validation must show `series_missing_scoring = 0` and full horizon coverage for every series.
+**Every model that uses dynamic future columns needs a complete horizon.** Each series MUST have exactly one row for every future date in the forecast horizon, with no duplicate `(unique_id, ds)` rows and no NULL in any dynamic future column. Models handle gaps differently, and none of them well: foundationforecast (`FF*`) models and NeuralForecast raise errors, which fails the whole model; StatsForecast drops series with missing dates and returns NaN forecasts for NULL values; and MLForecast silently fills gaps (forward/back fill, then 0) and forecasts from made-up values. So the NULL handling below should fill values rather than drop rows, and the Step 6a validation must show `series_missing_scoring = 0` and full horizon coverage for every series.
 
 #### Source: same table (option a)
 
@@ -582,8 +582,8 @@ AskUserQuestion:
    (d) Fill with the column's mean (numerical columns only)
        (good for continuous regressors like temperature)
    (e) Drop rows with NULLs — remove incomplete future dates
-       (⚠️ foundationforecast FF* models fail on series with missing horizon dates)
-   (f) Proceed as-is — keep NULLs (⚠️ may cause pipeline errors; FF* models fail on NULLs)"
+       (⚠️ leaves gaps in the forecast horizon, which breaks the same models as NULLs)
+   (f) Proceed as-is — keep NULLs (⚠️ may cause pipeline errors)"
 ```
 
 **WAIT for the user to respond. Do NOT apply any fill strategy until the user confirms.**
