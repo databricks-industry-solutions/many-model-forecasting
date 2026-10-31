@@ -339,7 +339,6 @@ The **recommended** compute for GPU classes. Each class runs as one serverless j
 **Use a classic GPU cluster instead when:**
 - the workspace has no serverless GPU (for example, GCP, or a workspace without serverless compute);
 - NeuralForecast training needs more than one GPU (serverless gives one A10);
-- the user selected `Moirai*` models, which don't support serverless GPU;
 - serverless A10 capacity keeps running out in the workspace's region.
 
 #### GPU Cluster (`{use_case}_gpu_cluster`) — for global DL and foundation models on a classic cluster
@@ -554,7 +553,7 @@ AskUserQuestion:
    (a) Serverless GPU — one A10 GPU, environment AI v6 (recommended)
        No cluster to size or start. Each class runs as its own serverless job.
    (b) Classic GPU cluster — single-node, Databricks Runtime 18 ML
-       Needed for multi-GPU NeuralForecast training or Moirai models; you pick the instance type.
+       Needed for multi-GPU NeuralForecast training; you pick the instance type.
    (c) Mix — choose per class
 
    Selected GPU classes: {selected_gpu_classes}

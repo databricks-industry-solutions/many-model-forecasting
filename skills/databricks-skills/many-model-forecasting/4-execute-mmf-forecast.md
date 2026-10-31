@@ -154,7 +154,6 @@ Before generating notebooks, validate:
 | `active_models` all in model names list above | Mandatory | "Unknown model: {name}" |
 | Model types consistent with cluster config | Warning | "GPU models selected but only CPU cluster configured" |
 | `FF*` models selected → a foundationforecast compute (classic `{use_case}_ff_gpu_cluster` or serverless GPU) is configured | Mandatory | "Foundationforecast models need their own GPU compute; they cannot share the foundation models' environment" |
-| `Moirai*` models are not on serverless GPU | Mandatory | "Moirai does not support serverless GPU; use a classic GPU cluster" |
 | `train_table` exists and has required schema | Mandatory | "Training table missing or invalid schema" |
 
 ```sql
@@ -983,7 +982,6 @@ Use this template instead of Job 3, 4 or 5 for each GPU class the user put on se
 **Serverless GPU rules:**
 - **No `job_clusters`, `spark_version` or `node_type_id`.** The task's `compute.hardware_accelerator` picks the GPU and the environment picks the software.
 - **One A10 GPU per task.** NeuralForecast trains on that single GPU; foundation and foundationforecast inference runs on the driver's GPU (`serverless=True` in the notebook).
-- **Moirai is not supported** on serverless GPU (`run_forecast` raises). Keep Moirai models on a classic GPU cluster.
 - **Startup can take several minutes** while the environment installs, and A10 capacity can run out in some regions. If the run fails with a capacity or environment-timeout error, retry it; if it keeps failing, offer to switch that class to a classic GPU cluster (Skill 3).
 - **Serverless tasks retry automatically** after some failures. When monitoring (Step 6), read the run's overall state, not the first task attempt.
 
