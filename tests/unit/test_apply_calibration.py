@@ -3,6 +3,8 @@
 Tests cover:
 - Bounds per method: residual conformal (signed_normalized and signed), CQR asymmetric and
   scaled, native; clipping and uncrossing
+- Nested levels: wider intervals contain the narrower ones and the median, so quantiles never cross
+- A series whose forecast is missing gets null intervals
 - Fallback for series without calibration rows, and null bounds without a native band
 - output_format columns (quantile_map, lo_hi, both) and their names
 - The local scoring UDF with native quantiles, and statsforecast forecast() quantiles
@@ -16,7 +18,7 @@ from mmf_sa import Forecaster
 from mmf_sa.intervals.quantiles import QUANTILE_COLUMN_PREFIX
 from mmf_sa.intervals.scoring import (
     CORRECTION_FIELDS, apply_calibration, apply_joined_corrections, correction_column, interval_columns,
-    median_corrections,
+    median_corrections, nest_bounds,
 )
 from mmf_sa.models.statsforecast.StatsFcForecastingPipeline import StatsFcAutoETS
 
@@ -210,3 +212,50 @@ def test_joined_corrections_match_reference(method, score, native):
         assert a.keys() == b.keys()
         for k in a:
             np.testing.assert_allclose(a[k], b[k])
+
+
+def test_nest_bounds_widens_each_level_to_contain_the_narrower_one():
+    nested = nest_bounds({95: (np.array([1.5, 0.5]), np.array([2.5, 4.0])),
+                          80: (np.array([1.0, 1.0]), np.array([3.0, 3.0]))})
+    np.testing.assert_array_equal(nested[80][0], [1.0, 1.0])  # the narrowest level is unchanged
+    np.testing.assert_array_equal(nested[95][0], [1.0, 0.5])
+    np.testing.assert_array_equal(nested[95][1], [3.0, 4.0])
+
+
+def test_nest_bounds_contains_the_median():
+    nested = nest_bounds({80: (np.array([1.0, 1.0]), np.array([3.0, 3.0]))}, median=np.array([0.5, 3.5]))
+    np.testing.assert_array_equal(nested[80][0], [0.5, 1.0])
+    np.testing.assert_array_equal(nested[80][1], [3.0, 3.5])
+
+
+def test_scored_quantiles_never_cross_across_levels():
+    # The 95% corrections are narrower than the 80% ones, as the pooled step profile can make them on
+    # zero-heavy series: scoring widens the 95% interval to contain the 80% one.
+    rows = pd.concat([_cal_rows("conformal", "signed_normalized", levels=(80,), q_lo=-2.0, q_hi=2.0),
+                      _cal_rows("conformal", "signed_normalized", levels=(95,), q_lo=-1.0, q_hi=1.0)])
+    out, _ = apply_calibration(_forecasts(), rows, "uid", "y", [80, 95], output_format="both")
+    for _, r in out.iterrows():
+        q = r["y_quantiles"]
+        cube = np.stack([q[k] for k in sorted(q, key=float)])
+        assert (np.diff(cube, axis=0) >= 0).all()
+        np.testing.assert_array_equal(r["y_lo_95"], r["y_lo_80"])
+        np.testing.assert_array_equal(q["0.975"], r["y_hi_95"])
+
+
+def test_the_native_median_is_clipped_and_inside_the_band():
+    native = {"0.1": [0.5, 1.0, 2.0], "0.9": [2.0, 3.0, 4.0], "0.5": [-1.0, 3.5, 3.0]}
+    out, _ = apply_calibration(_forecasts([native, native]), _cal_rows("cqr", "asymmetric", q_lo=0.0, q_hi=0.0),
+                               "uid", "y", [80])
+    q = out.loc[0, "y_quantiles"]
+    np.testing.assert_array_equal(q["0.5"], [0.0, 3.5, 3.0])  # clipped at clip_lower = 0
+    np.testing.assert_array_equal(q["0.1"], [0.0, 1.0, 2.0])  # widened down to the clipped median
+    np.testing.assert_array_equal(q["0.9"], [2.0, 3.5, 4.0])  # widened up to the median
+
+
+def test_a_missing_forecast_gets_null_intervals():
+    forecasts = _forecasts()
+    forecasts.at[1, "y"] = None
+    out, stats = apply_calibration(forecasts, _cal_rows("conformal", "signed_normalized"), "uid", "y", [80],
+                                   output_format="both")
+    assert out.loc[1, "y_quantiles"] is None and out.loc[1, "y_lo_80"] is None
+    assert out.loc[0, "y_quantiles"] is not None and stats == {"fallback": 0, "null": 0}

@@ -170,6 +170,26 @@ def correction_column(level_index: int, field: str) -> str:
 CORRECTION_FIELDS = ("q_lo", "q_hi", "sigma", "method", "score")
 
 
+def nest_bounds(level_bounds: dict, median: np.ndarray = None) -> dict:
+    """
+    Makes the intervals of one series nested, so that its quantiles do not cross: each level is widened to contain
+    the next narrower one, and the narrowest one to contain the median (if given).
+    Levels are calibrated independently, and the per-series step profile of pooled conformal scores can order them
+    the wrong way on zero-heavy series. Widening keeps every level's calibrated coverage (it can only increase).
+    Parameters:
+        level_bounds (dict): level -> (lo, hi) arrays (H,).
+        median (np.ndarray): Native median (H,), or None.
+    Returns: dict level -> (lo, hi), nested.
+    """
+    out, inner = {}, (median, median) if median is not None else None
+    for lv in sorted(level_bounds):
+        lo, hi = level_bounds[lv]
+        if inner is not None:
+            lo, hi = np.minimum(lo, inner[0]), np.maximum(hi, inner[1])
+        out[lv] = inner = (lo, hi)
+    return out
+
+
 def _add_intervals(forecasts: pd.DataFrame, corrections, series_col: str, target: str, levels, output_format: str,
                    clip_lower, fallback: dict):
     """
@@ -189,7 +209,8 @@ def _add_intervals(forecasts: pd.DataFrame, corrections, series_col: str, target
                 bounds[key].append(None)
             continue
         yhat = np.asarray(yhat, dtype=float)
-        qmap, used_fallback, missing = {}, False, False
+        qmap, used_fallback, missing, median = {}, False, False, None
+        level_bounds = {}
         for lv in levels:
             corr = corrections(i, sid, lv)
             if corr is None:
@@ -197,16 +218,25 @@ def _add_intervals(forecasts: pd.DataFrame, corrections, series_col: str, target
             b = series_bounds(yhat, native, corr, lv, clip_lower) if corr is not None else None
             if b is None:
                 missing = True
+                continue
+            level_bounds[lv] = b
+            if corr["method"] != "conformal" and "0.5" in native:
+                median = np.asarray(native["0.5"], dtype=float)
+                if clip_lower is not None:
+                    median = np.maximum(median, clip_lower)
+        level_bounds = nest_bounds(level_bounds, median)
+        for lv in levels:
+            if lv not in level_bounds:
                 bounds[("lo", lv)].append(None)
                 bounds[("hi", lv)].append(None)
                 continue
-            lo, hi = b
+            lo, hi = level_bounds[lv]
             k_lo, k_hi = (quantile_key(q) for q in level_quantiles(lv))
             qmap[k_lo], qmap[k_hi] = [float(x) for x in lo], [float(x) for x in hi]
             bounds[("lo", lv)].append([float(x) for x in lo])
             bounds[("hi", lv)].append([float(x) for x in hi])
-            if corr["method"] != "conformal" and "0.5" in native:
-                qmap["0.5"] = [float(x) for x in native["0.5"]]
+        if median is not None and qmap:
+            qmap["0.5"] = [float(x) for x in median]
         stats["fallback"] += used_fallback
         stats["null"] += missing
         maps.append({k: qmap[k] for k in sorted(qmap, key=float)} if qmap else None)

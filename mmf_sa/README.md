@@ -394,7 +394,8 @@ run_calibration   per-series features (seasonal-naive scale, ABC, XYZ, Syntetos-
                   -> calibration_output (per model, series, step, level)
                   -> interval_metrics_output: coverage_<L>, msis_<L>, width_<L> (leave-one-window-out)
 score_models      native bands at forecast time; corrections joined per series; bounds clipped
-                  (clip_lower) and uncrossed -> interval columns of scoring_output (output_format)
+                  (clip_lower), uncrossed and nested across levels -> interval columns of scoring_output
+                  (output_format)
 ```
 
 ### Adding native intervals to a model
