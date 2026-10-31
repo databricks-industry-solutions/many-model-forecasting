@@ -268,7 +268,7 @@ ORDER BY series_count DESC
 
 Use `AskUserQuestion` to let the user review and confirm:
 - Recommended model families
-- Required compute types (local/global/foundation)
+- Required compute types (local/global/foundation/foundationforecast)
 - Whether to adjust classification thresholds
 
 ### ⛔ STOP GATE — Step 8b: Optional deep research on feature engineering (post-profiling)
@@ -315,7 +315,7 @@ AskUserQuestion:
    Would you like deep research on additional feature engineering — scoped to your brief, intermittent/seasonal patterns, and the models recommended?
 
    (a) Yes — research (web + authoritative sources as needed) and return a concise, actionable feature-engineering brief; scope all findings to the forecast brief; do not alter Delta tables unless I explicitly ask
-   (b) No — skip research and continue to the handoff (Step 9)"
+   (b) No — skip research and continue to Step 9"
 ```
 
 **Do NOT proceed until the user responds.**
@@ -586,6 +586,32 @@ SELECT 'non_forecastable', COUNT(DISTINCT unique_id)
 FROM {catalog}.{schema}.{use_case}_train_data_non_forecastable
 ```
 
+### ⛔ STOP GATE — Step 11: Confirm before proceeding to next skill
+
+```
+AskUserQuestion:
+  "✅ Profiling complete for use case '{use_case}'.
+
+   Summary:
+   • Total series profiled: {total}
+   • High-confidence (forecastable): {high} ({high_pct}%)
+   • Low-signal (non-forecastable): {low} ({low_pct}%)
+   • Non-forecastable strategy: {strategy_description}
+   • Recommended model types: {model_types}
+   • Profile table: {catalog}.{schema}.{use_case}_series_profile
+   • Pipeline config: {catalog}.{schema}.{use_case}_pipeline_config
+   {if strategy == 'fallback': '• Fallback forecasts: {catalog}.{schema}.{use_case}_scoring_output_non_forecastable'}
+   {if strategy != 'include': '• Forecastable training data: {catalog}.{schema}.{use_case}_train_data_forecastable'}
+   {if strategy == 'separate_job': '• Non-forecastable training data: {catalog}.{schema}.{use_case}_train_data_non_forecastable'}
+   {if strategy == 'separate_job': '• Non-forecastable models: {non_forecastable_models}'}
+
+   Would you like to proceed to cluster provisioning and model selection?
+   (a) Yes, proceed to /provision-forecasting-resources
+   (b) No, stop here — I'll come back later"
+```
+
+**Do NOT proceed until the user responds.**
+
 ## Statistical Properties Computed
 
 | Property | Method | Library |
@@ -622,35 +648,9 @@ Low-Signal (Non-Forecastable):
 | High complexity (entropy >0.6) + long series (>200) | `MLForecastAutoLGBM`, `NeuralForecastAutoNHITS`, `NeuralForecastAutoPatchTST`, `ChronosBoltBase`, `Chronos2`, `TimesFM_2_5_200m` | Neural models learn complex patterns; LightGBM HPO is a strong CPU baseline; largest foundation models for zero-shot |
 | Short series (<50 points) | `StatsForecastAutoETS`, `StatsForecastAutoCES`, `MLForecastLGBM`, `ChronosBoltBase`, `Chronos2`, `TimesFM_2_5_200m` | Simple statistical models, fixed-HP LightGBM with shallow lags (avoiding HPO's CV-folds cost on short data), and zero-shot foundation models |
 | Intermittent/sparse (sparsity >0.3) | `StatsForecastTSB`, `StatsForecastADIDA`, `StatsForecastIMAPA`, `StatsForecastCrostonClassic` | Specialized intermittent demand models (LightGBM is a poor fit for zero-inflated data — sMAPE saturates) |
-| Rich exogenous regressors available (`{use_case}_scoring_data` exists with `dynamic_future_*` columns) | `MLForecastAutoLGBM`, `MLForecastLGBM`, `NeuralForecastAutoNBEATSx`, `NeuralForecastAutoTiDE`, `ChronosBoltBase`, `Chronos2`, `TimesFM_2_5_200m` | MLForecast LightGBM is the most expressive CPU model for known future regressors (end-to-end validated covariate plumbing); NeuralForecast variants supporting `futr_exog_list` complement it on GPU |
-| General / mixed characteristics | `StatsForecastAutoArima`, `MLForecastAutoLGBM`, `NeuralForecastAutoNHITS`, `ChronosBoltBase`, `Chronos2`, `TimesFM_2_5_200m` | Broad coverage across all four model classes (local CPU, global ML CPU, global DL GPU, foundation GPU) |
+| Rich exogenous regressors available (`{use_case}_scoring_data` exists with `dynamic_future_*` columns) | `MLForecastAutoLGBM`, `MLForecastLGBM`, `NeuralForecastAutoNBEATSx`, `NeuralForecastAutoTiDE`, `ChronosBoltBase`, `Chronos2`, `TimesFM_2_5_200m` | MLForecast LightGBM is the most expressive CPU model for known future regressors (end-to-end validated covariate plumbing); NeuralForecast variants supporting `futr_exog_list` complement it on GPU; any covariate-capable `FF*` model uses the future regressors zero-shot, with no training: `FFChronos2`, `FFChronos2Small`, `FFTimesFM_3_0`, `FFTiRex2`, `FFT0Beta`, `FFT0Gamma`, `FFTimestral_5M`, `FFTimestral_28M`, `FFTimestral_123M`, `FFTimestral_209M` (`FFTimesFM_3_0` is non-commercial) |
+| General / mixed characteristics | `StatsForecastAutoArima`, `MLForecastAutoLGBM`, `NeuralForecastAutoNHITS`, `ChronosBoltBase`, `Chronos2`, `TimesFM_2_5_200m` | Broad coverage across four model classes (local CPU, global ML CPU, global DL GPU, foundation GPU). Add `FF*` models (foundationforecast GPU) as a fifth class for more zero-shot benchmarks |
 | Low-signal (non-forecastable) | `StatsForecastBaselineNaive`, `StatsForecastBaselineSeasonalNaive` | Baseline only; flag for human review |
-
-## ⛔ STOP GATE — Step 11: Confirm before proceeding to next skill
-
-```
-AskUserQuestion:
-  "✅ Profiling complete for use case '{use_case}'.
-
-   Summary:
-   • Total series profiled: {total}
-   • High-confidence (forecastable): {high} ({high_pct}%)
-   • Low-signal (non-forecastable): {low} ({low_pct}%)
-   • Non-forecastable strategy: {strategy_description}
-   • Recommended model types: {model_types}
-   • Profile table: {catalog}.{schema}.{use_case}_series_profile
-   • Pipeline config: {catalog}.{schema}.{use_case}_pipeline_config
-   {if strategy == 'fallback': '• Fallback forecasts: {catalog}.{schema}.{use_case}_scoring_output_non_forecastable'}
-   {if strategy != 'include': '• Forecastable training data: {catalog}.{schema}.{use_case}_train_data_forecastable'}
-   {if strategy == 'separate_job': '• Non-forecastable training data: {catalog}.{schema}.{use_case}_train_data_non_forecastable'}
-   {if strategy == 'separate_job': '• Non-forecastable models: {non_forecastable_models}'}
-
-   Would you like to proceed to cluster provisioning and model selection?
-   (a) Yes, proceed to /provision-forecasting-resources
-   (b) No, stop here — I'll come back later"
-```
-
-**Do NOT proceed until the user responds.**
 
 ## Output
 

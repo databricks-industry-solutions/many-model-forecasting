@@ -5,8 +5,10 @@
 **Slash command:** `/execute-mmf-forecast`
 
 Validates parameters, asks the user about backtesting setup, generates notebooks
-using the **orchestrator + run_gpu** pattern, creates **one job per model class**
-(local, global, foundation), and triggers them **in parallel**.
+(the **orchestrator + run_gpu** pattern for GPU classes on classic GPU clusters, a
+single **run_serverless_{class}** notebook for GPU classes on serverless GPU), creates
+**one job per model class** (local, global_ml, global, foundation, foundationforecast),
+and triggers them **in parallel**.
 
 ## ⛔ Preconditions — DO NOT SKIP
 
@@ -15,8 +17,8 @@ using the **orchestrator + run_gpu** pattern, creates **one job per model class*
 | Precondition | How to verify | If missing |
 |---|---|---|
 | `{catalog}.{schema}.{use_case}_train_data` exists (or `_train_data_forecastable` for fallback/separate_job) | `get_table` or `SELECT 1 FROM ... LIMIT 1` | Go back to **Skill 1 (`/prep-and-clean-data`)** |
-| `active_models` has been chosen by the user (grouped by local / global / foundation) | Check conversation state | Go back to **Skill 3 (`/provision-forecasting-resources`)** |
-| Cluster config has been confirmed by the user | Check conversation state | Go back to **Skill 3** |
+| `active_models` has been chosen by the user (grouped by local / global_ml / global / foundation / foundationforecast) | Check conversation state | Go back to **Skill 3 (`/provision-forecasting-resources`)** |
+| Cluster config, including the compute type (classic GPU or serverless GPU) of each GPU class, has been confirmed by the user | Check conversation state | Go back to **Skill 3** |
 | `{forecast_problem_brief}` is in conversation context | Check prior turns | Reconfirm with the user |
 | `{use_case}` name is known | Check conversation state | Go back to **Skill 1** |
 
@@ -85,6 +87,8 @@ Use these exact names in the `active_models` parameter:
 
 **Foundation models (GPU single-node):** `ChronosBoltTiny`, `ChronosBoltMini`, `ChronosBoltSmall`, `ChronosBoltBase`, `Chronos2`, `Chronos2Small`, `Chronos2Synth`, `TimesFM_2_5_200m`
 
+**Foundationforecast models (GPU single-node, one GPU):** `FFChronos2`, `FFChronos2Small`, `FFTimesFM_2_5_200m`, `FFTimesFM_3_0`, `FFTiRex2`, `FFToto`, `FFToto2_22m`, `FFToto2_313m`, `FFToto2_1B`, `FFFlowState`, `FFPatchTSTFM_R2`, `FFPatchTSTFM_R1`, `FFTafsutBase`, `FFT0Beta`, `FFT0Gamma`, `FFTimestral_5M`, `FFTimestral_28M`, `FFTimestral_123M`, `FFTimestral_209M`. These are pretrained models run through the [foundationforecast](https://github.com/TimeCopilot/foundationforecast) package. They need a different torch build from the foundation models, so they always run in their own job. Ten of them use known-future covariates (see the [Feature type decision guide](#feature-type-decision-guide)).
+
 ## Steps
 
 ### Step 0a: Read non-forecastable strategy from pipeline config
@@ -104,7 +108,7 @@ Based on the strategy, determine which training table to use for the **main pipe
 |----------|--------------------------|--------------------------|
 | `include` (or config missing) | `{use_case}_train_data` | All series run together — no separate handling |
 | `fallback` | `{use_case}_train_data_forecastable` | Already handled in Skill 2 — fallback forecasts in `{use_case}_scoring_output_non_forecastable` |
-| `separate_job` | `{use_case}_train_data_forecastable` | Separate job created in Step 5a below |
+| `separate_job` | `{use_case}_train_data_forecastable` | Separate jobs created in Step 5b below |
 
 Set `{train_table}` to the correct table name for all subsequent notebook generation steps.
 
@@ -149,6 +153,7 @@ Before generating notebooks, validate:
 | `freq` ∈ {H, D, W, M} | Mandatory | "Unsupported frequency" |
 | `active_models` all in model names list above | Mandatory | "Unknown model: {name}" |
 | Model types consistent with cluster config | Warning | "GPU models selected but only CPU cluster configured" |
+| `FF*` models selected → a foundationforecast compute (classic `{use_case}_ff_gpu_cluster` or serverless GPU) is configured | Mandatory | "Foundationforecast models need their own GPU compute; they cannot share the foundation models' environment" |
 | `train_table` exists and has required schema | Mandatory | "Training table missing or invalid schema" |
 
 ```sql
@@ -349,7 +354,7 @@ Present all parameters to the user via `AskUserQuestion` for validation.
 
 ### Feature type decision guide
 
-`mmf_sa` supports five covariate types. **By default, always use `[]` for every covariate list and `""` for `scoring_table`** — the pipeline runs in univariate mode and all model families (local, global_ml, global_dl, foundation) work well without covariates.
+`mmf_sa` supports five covariate types. **By default, always use `[]` for every covariate list and `""` for `scoring_table`** — the pipeline runs in univariate mode and all model families (local, global_ml, global_dl, foundation, foundationforecast) work well without covariates.
 
 | Feature type | Recommended? | When values are needed | Safe default |
 |---|---|---|---|
@@ -362,6 +367,13 @@ Present all parameters to the user via `AskUserQuestion` for validation.
 > **When to use `dynamic_future_*`.** If Skill 1 created `{use_case}_scoring_data` with dynamic future regressors, use those column names here and set `{scoring_table}` to `{use_case}_scoring_data`. The scoring table was already validated in Skill 1 (coverage, NULLs, series completeness). If Skill 1 did NOT create a scoring table (user chose univariate mode or only static/historical regressors), always use `[]` for `dynamic_future_*` and `""` for `{scoring_table}`.
 >
 > **Strongest support: `global_ml`.** When `dynamic_future_*` regressors are configured, MLForecast LightGBM (`MLForecastLGBM`, `MLForecastAutoLGBM`) has the most thoroughly validated end-to-end coverage among MMF model classes: the eval path builds a complete per-(unique_id, future_ds) `X_df` skeleton from the `new_df`'s last dates and left-merges the future regressors; the scoring path consumes the unioned `train + scoring_data` table identically. If your project relies on known future regressors, prefer `global_ml` as the primary class (it's CPU-only, so cost is also moderate). NeuralForecast variants in `global_dl` and `Chronos*` foundation models accept `dynamic_future_*` too but with framework-specific caveats.
+>
+> **Zero-shot alternative: `foundationforecast`.** Ten `FF*` models use `dynamic_future_*` covariates without training: `FFChronos2`, `FFChronos2Small`, `FFTimesFM_3_0`, `FFTiRex2`, `FFT0Beta`, `FFT0Gamma`, `FFTimestral_5M`, `FFTimestral_28M`, `FFTimestral_123M`, `FFTimestral_209M`. Run them next to `global_ml` when known future regressors exist. Their rules are stricter than the other classes':
+> - They use **only** `dynamic_future_*`. They ignore `static_features` and `dynamic_historical_*`. The other nine `FF*` models ignore all covariates and log a warning.
+> - Every series needs a covariate value for each of the `prediction_length` dates after its last `ds`, in the scoring table. A missing date, a duplicate date or a NULL value **raises an error** instead of dropping the series.
+> - Only `FFChronos2` and `FFChronos2Small` accept string categoricals. The other covariate models need numeric columns, so pass categorical columns to them already encoded as numbers (Skill 1 Step 6b).
+> - Weekly series must all fall on the same weekday.
+> - `FFTimesFM_3_0` and `FFPatchTSTFM_R1` have non-commercial licenses, and the `FFTimestral_*` checkpoints need a commercial license from Mistral above USD 20M monthly revenue. Mention this when the user selects them.
 >
 > **Warning:** When `dynamic_future_*` columns are specified but the scoring table is incomplete, `mmf_sa` either raises an error or silently removes the affected series from the forecast — producing no output for those series with no warning in the final results.
 
@@ -436,11 +448,17 @@ Identical to the local notebook placeholders, with `{active_models}` filtered to
 Use the template from:
 - [mmf_global_ml_notebook_template.ipynb](mmf_global_ml_notebook_template.ipynb) → save locally as `notebooks/{use_case}/run_global_ml.ipynb`
 
+> **Which notebooks each GPU class gets** depends on the compute type the user chose for it in Skill 3:
+> - **Classic GPU cluster** → `run_gpu` (3b) + one orchestrator per class (3c).
+> - **Serverless GPU** → one `run_serverless_{class}` notebook per class (3d). No `run_gpu` or orchestrator for that class.
+>
+> Generate `run_gpu` only if at least one GPU class runs on a classic cluster.
+
 #### 3b: GPU run notebook (static — no placeholder substitution)
 
 Copy the `mmf_gpu_run_notebook_template.ipynb` **as-is** to `notebooks/{use_case}/run_gpu.ipynb`. This notebook:
 - Receives all parameters via `dbutils.widgets` (catalog, schema, model, run_id, etc.)
-- Auto-detects whether the model is global or foundation and installs the correct `mmf_sa` extras
+- Auto-detects whether the model is global DL, foundation or foundationforecast and installs the correct `mmf_sa` extras (foundationforecast: `mmf_sa[foundationforecast]` with the CUDA 12.8 torch build)
 - Runs a single model per invocation
 - Is called by the orchestrator notebooks via `dbutils.notebook.run()`
 
@@ -451,7 +469,7 @@ Use the template from:
 
 #### 3c: GPU orchestrator notebooks (one per model class)
 
-For each GPU model class (global and/or foundation), generate an **orchestrator notebook** from `mmf_gpu_orchestrator_notebook_template.ipynb`. Each orchestrator:
+For each GPU model class on a classic GPU cluster (global, foundation and/or foundationforecast), generate an **orchestrator notebook** from `mmf_gpu_orchestrator_notebook_template.ipynb`. Each orchestrator:
 - Holds the list of active models for its class
 - Loops through the models and calls `run_gpu` for each via `dbutils.notebook.run()`
 - Each `dbutils.notebook.run()` invocation gets a fresh Python process, avoiding CUDA memory conflicts
@@ -486,9 +504,68 @@ For each GPU model class (global and/or foundation), generate an **orchestrator 
 Use the template from:
 - [mmf_gpu_orchestrator_notebook_template.ipynb](mmf_gpu_orchestrator_notebook_template.ipynb)
 
-Generate up to two orchestrators, saving locally:
+Generate up to three orchestrators, saving locally:
 - `notebooks/{use_case}/orchestrator_global.ipynb` — if any global models selected
 - `notebooks/{use_case}/orchestrator_foundation.ipynb` — if any foundation models selected
+- `notebooks/{use_case}/orchestrator_foundationforecast.ipynb` — if any `FF*` models selected
+
+#### 3d: Serverless GPU notebooks (one per GPU class on serverless GPU)
+
+For each GPU class the user put on serverless GPU in Skill 3, generate one notebook from `mmf_gpu_serverless_notebook_template.ipynb`. It installs the class's packages once, then calls `run_forecast(..., serverless=True)` once per model, in the same notebook.
+
+> **Why not orchestrator + run_gpu on serverless.** Serverless GPU tasks get their environment from the job's `environments` spec and `%pip`; `dbutils.notebook.run()` child notebooks on serverless GPU have not been validated with MMF. Calling `run_forecast` once per model in one notebook is the tested pattern: MMF releases each model's weights before loading the next. `serverless=True` moves foundation and foundationforecast inference to the driver's GPU, because serverless Spark workers have no GPU.
+
+Placeholders: the same as the orchestrator table above (without `{num_nodes}`), plus `{pip_install_args}`. Fill `{pip_install_args}` with exactly one of these, by class:
+
+| Class | `{pip_install_args}` |
+|---|---|
+| Global DL | `"mmf_sa[global] @ git+https://github.com/databricks-industry-solutions/many-model-forecasting.git@main"` |
+| Foundation | `"mmf_sa[foundation] @ git+https://github.com/databricks-industry-solutions/many-model-forecasting.git@main"` |
+| Foundationforecast | `--extra-index-url https://download.pytorch.org/whl/cu128 "mmf_sa[foundationforecast] @ git+https://github.com/databricks-industry-solutions/many-model-forecasting.git@main" torch==2.11.0+cu128 torchvision==0.26.0+cu128 torchaudio==2.11.0+cu128` |
+
+Use the template from:
+- [mmf_gpu_serverless_notebook_template.ipynb](mmf_gpu_serverless_notebook_template.ipynb)
+
+Save locally, one per serverless class:
+- `notebooks/{use_case}/run_serverless_global.ipynb`
+- `notebooks/{use_case}/run_serverless_foundation.ipynb`
+- `notebooks/{use_case}/run_serverless_foundationforecast.ipynb`
+
+#### 3e: Non-forecastable notebooks (if `separate_job` strategy)
+
+**Only generate these if `non_forecastable_strategy == 'separate_job'`.** Skip for `include` or `fallback`.
+
+Generate notebooks for the non-forecastable pipeline using the same templates, but with:
+- `{train_table}` → `{use_case}_train_data_non_forecastable`
+- `{active_models}` → the non-forecastable models selected in Skill 2/3
+- `{use_case}` output table suffix → `{use_case}_nf` (to avoid overwriting main pipeline outputs)
+
+The evaluation and scoring output tables for non-forecastable series are:
+- `{use_case}_nf_evaluation_output`
+- `{use_case}_nf_scoring_output`
+
+##### Non-forecastable local models notebook
+
+If the non-forecastable models include local (CPU multi-node) models, generate a notebook from `mmf_local_notebook_template.ipynb`:
+- Save locally as `notebooks/{use_case}/run_local_nf.ipynb`; Step 4 imports it as `{notebook_base_path}/run_local_nf`
+
+##### Non-forecastable global ML models notebook
+
+If the non-forecastable models include any `MLForecast*` model, generate a notebook from `mmf_global_ml_notebook_template.ipynb`:
+- Save locally as `notebooks/{use_case}/run_global_ml_nf.ipynb`; Step 4 imports it as `{notebook_base_path}/run_global_ml_nf`
+
+Identical placeholder substitution to the main `run_global_ml` notebook, except `{train_table}` points at `{use_case}_train_data_non_forecastable` and the output tables use the `_nf_` infix (see the start of 3e).
+
+##### Non-forecastable GPU orchestrator notebooks
+
+If the non-forecastable models include global DL, foundation or foundationforecast models, generate orchestrator notebooks:
+- `notebooks/{use_case}/orchestrator_global_nf.ipynb` — if any global DL models
+- `notebooks/{use_case}/orchestrator_foundation_nf.ipynb` — if any foundation models
+- `notebooks/{use_case}/orchestrator_foundationforecast_nf.ipynb` — if any `FF*` models
+
+These orchestrators call the same `run_gpu` notebook (shared with the main pipeline).
+
+If a GPU class runs on serverless GPU, generate `notebooks/{use_case}/run_serverless_{class}_nf.ipynb` from the serverless template instead, with the same `{train_table}` and `{use_case}_nf` substitutions. Step 5b creates its job from the [serverless GPU job template](#serverless-gpu-jobs-global-dl-foundation-foundationforecast) with job name `{use_case}_nf_{class}_forecasting_{username}`.
 
 #### Frequency-specific configuration (automatic)
 
@@ -538,6 +615,7 @@ run_forecast(
 - **StatsForecast (local)**: runs univariate by default. Can accept `dynamic_future_*` covariates but these require a scoring table — **avoid unless the user explicitly provides one**.
 - **NeuralForecast (global)**: benefits from **`static_features`** and **`dynamic_historical_*`** (past-only signals used during training). Can also accept `dynamic_future_*` but same caveat applies.
 - **Foundation (Chronos / TimesFM)**: benefits from **`static_features`**. Can accept `dynamic_future_*` in the current implementation but does not use `dynamic_historical_*`.
+- **Foundationforecast (`FF*`)**: ten models use **`dynamic_future_*`** only; the rest are univariate. See the foundationforecast note in the [Feature type decision guide](#feature-type-decision-guide).
 
 **If `{use_case}_scoring_data` exists from Skill 1**, set `{scoring_table}` to `{use_case}_scoring_data` and populate `dynamic_future_*` lists with the column names carried forward. The scoring table was already validated in Skill 1. See also [run_external_regressors_daily.ipynb](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/run_external_regressors_daily.ipynb) for the reference pattern.
 
@@ -560,7 +638,7 @@ databricks workspace import {notebook_base_path}/run_global_ml \
   --file /tmp/{use_case}_run_global_ml.ipynb \
   --format JUPYTER --overwrite
 
-# GPU run notebook (static — uploaded verbatim)
+# GPU run notebook (static — uploaded verbatim; only if a GPU class runs on a classic cluster)
 databricks workspace import {notebook_base_path}/run_gpu \
   --file /tmp/{use_case}_run_gpu.ipynb \
   --format JUPYTER --overwrite
@@ -573,6 +651,22 @@ databricks workspace import {notebook_base_path}/orchestrator_global \
 # Foundation orchestrator (if foundation models selected)
 databricks workspace import {notebook_base_path}/orchestrator_foundation \
   --file /tmp/{use_case}_orchestrator_foundation.ipynb \
+  --format JUPYTER --overwrite
+
+# Foundationforecast orchestrator (if FF* models selected, classic GPU)
+databricks workspace import {notebook_base_path}/orchestrator_foundationforecast \
+  --file /tmp/{use_case}_orchestrator_foundationforecast.ipynb \
+  --format JUPYTER --overwrite
+
+# Serverless GPU notebooks (one per GPU class on serverless GPU; {class} = global, foundation or foundationforecast)
+databricks workspace import {notebook_base_path}/run_serverless_{class} \
+  --file /tmp/{use_case}_run_serverless_{class}.ipynb \
+  --format JUPYTER --overwrite
+
+# Non-forecastable notebooks (only if separate_job; see Step 3e). Same pattern with an _nf suffix
+# for each one generated: run_local_nf, run_global_ml_nf, orchestrator_{class}_nf, run_serverless_{class}_nf
+databricks workspace import {notebook_base_path}/run_local_nf \
+  --file /tmp/{use_case}_run_local_nf.ipynb \
   --format JUPYTER --overwrite
 ```
 > ⚠️ Do NOT use the `upload_file` MCP tool — it creates a FILE, not a NOTEBOOK. If a path already exists as a FILE from a prior failed upload, delete it first before importing.
@@ -589,9 +683,12 @@ w = WorkspaceClient()
 notebooks = {
     "run_local": "/tmp/{use_case}_run_local.ipynb",
     "run_global_ml": "/tmp/{use_case}_run_global_ml.ipynb",          # if any MLForecast model selected
-    "run_gpu": "/tmp/{use_case}_run_gpu.ipynb",
-    "orchestrator_global": "/tmp/{use_case}_orchestrator_global.ipynb",       # if global DL models selected
-    "orchestrator_foundation": "/tmp/{use_case}_orchestrator_foundation.ipynb",  # if foundation models selected
+    "run_gpu": "/tmp/{use_case}_run_gpu.ipynb",                               # if a GPU class runs on a classic cluster
+    "orchestrator_global": "/tmp/{use_case}_orchestrator_global.ipynb",       # if global DL models selected (classic)
+    "orchestrator_foundation": "/tmp/{use_case}_orchestrator_foundation.ipynb",  # if foundation models selected (classic)
+    "orchestrator_foundationforecast": "/tmp/{use_case}_orchestrator_foundationforecast.ipynb",  # if FF* models selected (classic)
+    "run_serverless_foundationforecast": "/tmp/{use_case}_run_serverless_foundationforecast.ipynb",  # one entry per GPU class on serverless GPU
+    "run_local_nf": "/tmp/{use_case}_run_local_nf.ipynb",  # separate_job only: one entry per Step 3e notebook (_nf suffix)
 }
 
 for name, local_path in notebooks.items():
@@ -629,6 +726,9 @@ Job names follow the pattern `{use_case}_{type}_forecasting_{username}` (no date
 - Global ML: `{use_case}_global_ml_forecasting_{username}`
 - Global (DL): `{use_case}_global_forecasting_{username}`
 - Foundation: `{use_case}_foundation_forecasting_{username}`
+- Foundationforecast: `{use_case}_foundationforecast_forecasting_{username}`
+
+The name is the same whether the class runs on a classic GPU cluster or on serverless GPU. If the user switches a class between the two, update the job with the other template (classic jobs have `job_clusters`; serverless jobs have `environments` instead).
 
 For each model class selected, **upsert** the job:
 1. Search for an existing job with that exact name owned by `{full_email}`
@@ -637,13 +737,13 @@ For each model class selected, **upsert** the job:
 
 This ensures there is always exactly one job per type per user — no accumulation of stale jobs.
 
-> ⚠️ **One job per model class — no exceptions.** Do NOT combine model classes into a single multi-task job. Local, global ML, global DL, and foundation models require different compute (multi-node CPU vs single-node CPU vs single-node GPU) and must run independently in parallel.
+> ⚠️ **One job per model class — no exceptions.** Do NOT combine model classes into a single multi-task job. Local, global ML, global DL, foundation and foundationforecast models require different compute (multi-node CPU vs single-node CPU vs single-node GPU) or different Python environments, and must run independently in parallel.
 
 ---
 
 ### Step 5b: Create one job per model class (triggered in parallel)
 
-> ⚠️ **One job per model class — no exceptions.** Do NOT combine model classes into a single multi-task job. Create separate jobs for local, global_ml, global, and foundation models. This is required for correct cluster assignment (multi-node CPU vs single-node CPU vs single-node GPU) and independent parallelism.
+> ⚠️ **One job per model class — no exceptions.** Do NOT combine model classes into a single multi-task job. Create separate jobs for local, global_ml, global, foundation and foundationforecast models. This is required for correct cluster assignment (multi-node CPU vs single-node CPU vs single-node GPU) and independent parallelism.
 
 > ⛔ **MANDATORY `spark_version` + topology per job class — DO NOT SUBSTITUTE.**
 > The JSON templates below have intentionally different `spark_version` AND `num_workers` values. They are **not interchangeable** and must be used exactly as written:
@@ -652,11 +752,14 @@ This ensures there is always exactly one job per type per user — no accumulati
 > |---|---|---|
 > | Local models | `18.x-cpu-ml-scala2.13` | `{cpu_workers}` (multi-node, sized by series count) |
 > | Global ML models | `18.x-cpu-ml-scala2.13` | **`0` (single-node always)** + `spark.master=local[*]` + singleNode profile + ResourceClass tag |
-> | Global DL models | `18.x-gpu-ml-scala2.13` | `0` (single-node always) |
-> | Foundation models | `18.x-gpu-ml-scala2.13` | `0` (single-node always) |
+> | Global DL models (classic GPU) | `18.x-gpu-ml-scala2.13` | `0` (single-node always) |
+> | Foundation models (classic GPU) | `18.x-gpu-ml-scala2.13` | `0` (single-node always) |
+> | Foundationforecast models (classic GPU) | `18.x-gpu-ml-scala2.13` | `0` (single-node always) |
 > | NF Local models *(if `separate_job`)* | `18.x-cpu-ml-scala2.13` | `{nf_cpu_workers}` |
 > | NF Global ML models *(if `separate_job`)* | `18.x-cpu-ml-scala2.13` | `0` (single-node) |
-> | NF Global / NF Foundation *(if `separate_job`)* | `18.x-gpu-ml-scala2.13` | `0` (single-node) |
+> | NF Global / NF Foundation / NF Foundationforecast *(if `separate_job`, classic GPU)* | `18.x-gpu-ml-scala2.13` | `0` (single-node) |
+>
+> GPU classes on **serverless GPU** have no `job_clusters` and no `spark_version`. They use the [serverless GPU job template](#serverless-gpu-jobs-global-dl-foundation-foundationforecast) below instead.
 >
 > The agent is FORBIDDEN from:
 > - Reusing the local job's `spark_version` (`18.x-cpu-ml-scala2.13`) inside the global DL or foundation JSON. A GPU node type with a CPU runtime fails to start or silently runs on CPU.
@@ -754,7 +857,7 @@ All jobs must include:
 
 > **Note the `spark_conf` triple.** `spark.master=local[*]` + `spark.databricks.cluster.profile=singleNode` + `custom_tags.ResourceClass=SingleNode` MUST all be present. Missing any one degrades to multi-node mode (which then conflicts with `num_workers: 0`).
 
-#### Job 3: Global DL models (if any global DL models selected)
+#### Job 3: Global DL models (if any global DL models selected, classic GPU)
 
 ```json
 {
@@ -795,7 +898,7 @@ All jobs must include:
 }
 ```
 
-#### Job 4: Foundation models (if any foundation models selected)
+#### Job 4: Foundation models (if any foundation models selected, classic GPU)
 
 ```json
 {
@@ -836,56 +939,103 @@ All jobs must include:
 }
 ```
 
+#### Job 5: Foundationforecast models (if any `FF*` models selected, classic GPU)
+
+Same cluster as Job 4, but its own job and its own cluster `{use_case}_ff_gpu_cluster`: `run_gpu` installs `mmf_sa[foundationforecast]` with a different torch build, which must not share an environment with the foundation models. FF inference uses one GPU, so `{ff_gpu_node_type}` is a single-GPU instance (Skill 3).
+
+```json
+{
+  "name": "{use_case}_foundationforecast_forecasting_{username}",
+  "description": "MMF foundationforecast forecasting | use_case={use_case} | catalog={catalog}.{schema} | models={active_ff_models} | horizon={prediction_length} | created={YYYYMMDD}",
+  "tags": {
+    "aidevkit_project": "mmf-agent",
+    "created_by": "databricks-ai-dev-kit"
+  },
+  "tasks": [{
+    "task_key": "foundationforecast_models",
+    "notebook_task": {
+      "notebook_path": "{notebook_base_path}/orchestrator_foundationforecast",
+      "base_parameters": {
+        "experiment_path": "{experiment_path}"
+      }
+    },
+    "job_cluster_key": "{use_case}_ff_gpu_cluster"
+  }],
+  "job_clusters": [{
+    "job_cluster_key": "{use_case}_ff_gpu_cluster",
+    "new_cluster": {
+      "spark_version": "18.x-gpu-ml-scala2.13",
+      "node_type_id": "{ff_gpu_node_type}",
+      "num_workers": 0,
+      "data_security_mode": "SINGLE_USER",
+      "spark_conf": {
+        "spark.master": "local[*]",
+        "spark.databricks.cluster.profile": "singleNode",
+        "spark.databricks.delta.formatCheck.enabled": "false",
+        "spark.databricks.delta.schema.autoMerge.enabled": "true"
+      },
+      "custom_tags": {
+        "ResourceClass": "SingleNode"
+      }
+    }
+  }]
+}
+```
+
+#### Serverless GPU jobs (global DL, foundation, foundationforecast)
+
+Use this template instead of Job 3, 4 or 5 for each GPU class the user put on serverless GPU in Skill 3. `{class}` is `global`, `foundation` or `foundationforecast`, and `{active_class_models}` is that class's model list.
+
+```json
+{
+  "name": "{use_case}_{class}_forecasting_{username}",
+  "description": "MMF {class} forecasting | use_case={use_case} | catalog={catalog}.{schema} | models={active_class_models} | horizon={prediction_length} | compute=serverless GPU A10, AI v6 | created={YYYYMMDD}",
+  "tags": {
+    "aidevkit_project": "mmf-agent",
+    "created_by": "databricks-ai-dev-kit"
+  },
+  "tasks": [{
+    "task_key": "{class}_models",
+    "notebook_task": {
+      "notebook_path": "{notebook_base_path}/run_serverless_{class}",
+      "source": "WORKSPACE",
+      "base_parameters": {
+        "experiment_path": "{experiment_path}"
+      }
+    },
+    "compute": {
+      "hardware_accelerator": "GPU_1xA10"
+    },
+    "environment_key": "gpu_env",
+    "timeout_seconds": 21600
+  }],
+  "environments": [{
+    "environment_key": "gpu_env",
+    "spec": {
+      "base_environment": "{ai_v6_base_environment}"
+    }
+  }]
+}
+```
+
+**`{ai_v6_base_environment}`:**
+1. Use `workspace-base-environments/databricks_ai_v6`, the Databricks-provided AI v6 environment.
+2. If `create_job` / `update_job` rejects it (some workspaces accept only a workspace YAML path as `base_environment`), upload [serverless_gpu_ai_v6_environment.yml](serverless_gpu_ai_v6_environment.yml) **as a file** (not a notebook) to `/Workspace/Users/{full_email}/{project_folder}/env/databricks_ai_v6.yml`, and use that `/Workspace/...` path. The file pins the AI v6 packages and uses public package indexes.
+
+**Serverless GPU rules:**
+- **No `job_clusters`, `spark_version` or `node_type_id`.** The task's `compute.hardware_accelerator` picks the GPU and the environment picks the software.
+- **One A10 GPU per task.** NeuralForecast trains on that single GPU; foundation and foundationforecast inference runs on the driver's GPU (`serverless=True` in the notebook).
+- **Startup can take several minutes** while the environment installs, and A10 capacity can run out in some regions. If the run fails with a capacity or environment-timeout error, retry it; if it keeps failing, offer to switch that class to a classic GPU cluster (Skill 3).
+- **Serverless tasks retry automatically** after some failures. When monitoring (Step 6), read the run's overall state, not the first task attempt.
+
 **Important notes:**
 - **All clusters** use `data_security_mode: "SINGLE_USER"` because ML runtimes (`*-cpu-ml-*` and `*-gpu-ml-*`) reject `USER_ISOLATION`.
 - GPU clusters are **always single-node** (`num_workers: 0`) with `spark.master: local[*]`, `spark.databricks.cluster.profile: singleNode`, and `custom_tags: {"ResourceClass": "SingleNode"}`. All three are required for proper single-node mode.
-- Global and foundation jobs each get their own ephemeral GPU cluster so they can run **in parallel**.
+- Global, foundation and foundationforecast jobs each get their own ephemeral GPU cluster or serverless GPU task so they can run **in parallel**.
+- **New output tables.** `{use_case}_evaluation_output` and `{use_case}_scoring_output` are created by the first job that writes to them. If they don't exist yet and several jobs write their first results at the same moment, one write can fail with `TABLE_OR_VIEW_ALREADY_EXISTS`. Launching all jobs together is fine in practice because the classes finish their first model at different times; if a job fails with this error, rerun it.
 - Only create jobs for model classes the user actually selected.
 
-Use `create_job` (or `update_job` on upsert) to create each job. **After `create_job` / `update_job` and BEFORE `run_job`, run Step 5c.**
-
-### Step 5c: Verify each job's cluster runtime (MANDATORY)
-
-> ⛔ **This step is not optional and cannot be skipped.** It exists to catch the most common failure mode: the agent copying the local job's `spark_version` into the global or foundation JSON (e.g. using `18.x-cpu-ml-scala2.13` for a GPU cluster). The verification reads the runtime back from the API after job creation, so it does not depend on the agent's intent.
-
-For every job created in Step 5b (and Step 5a if `separate_job`), call `get_job` and inspect each entry in `job_clusters[*].new_cluster.spark_version` AND `job_clusters[*].new_cluster.num_workers`. Required values:
-
-| Job name | Required `spark_version` | Required topology |
-|---|---|---|
-| `{use_case}_local_forecasting_{username}` | `18.x-cpu-ml-scala2.13` | multi-node (`num_workers ≥ 0`, `local[*]` NOT set) |
-| `{use_case}_global_ml_forecasting_{username}` | `18.x-cpu-ml-scala2.13` | **single-node** (`num_workers == 0`, `spark.master==local[*]`, `cluster.profile==singleNode`, `custom_tags.ResourceClass==SingleNode`) |
-| `{use_case}_global_forecasting_{username}` | `18.x-gpu-ml-scala2.13` | single-node (`num_workers == 0`) |
-| `{use_case}_foundation_forecasting_{username}` | `18.x-gpu-ml-scala2.13` | single-node (`num_workers == 0`) |
-| `{use_case}_nf_local_forecasting_{username}` | `18.x-cpu-ml-scala2.13` | multi-node |
-| `{use_case}_nf_global_ml_forecasting_{username}` | `18.x-cpu-ml-scala2.13` | single-node |
-| `{use_case}_nf_global_forecasting_{username}` | `18.x-gpu-ml-scala2.13` | single-node |
-| `{use_case}_nf_foundation_forecasting_{username}` | `18.x-gpu-ml-scala2.13` | single-node |
-
-For each job:
-
-1. Call `get_job(job_id=...)`.
-2. For each cluster in `settings.job_clusters[*]`, check `new_cluster.spark_version` AND `new_cluster.num_workers` (plus, for single-node clusters, `spark_conf['spark.master']` and `custom_tags['ResourceClass']`).
-3. Compare to the expected values from the table above.
-4. If **any** value does not match, do NOT call `run_job`. Instead:
-   - Print a clear error including the job name, the cluster key, the actual values, and the expected values.
-   - Call `update_job` with the corrected JSON template from Step 5b (or 5a) — using the exact values from the table above.
-   - Re-run Step 5c to verify the fix.
-   - Only after the check passes for **all** jobs may the agent proceed to `run_job`.
-
-Report a one-line summary to the user before triggering runs:
-
-```
-Cluster runtime check:
-  • {use_case}_local_forecasting_{username}        → 18.x-cpu-ml-scala2.13  multi-node    ✓
-  • {use_case}_global_ml_forecasting_{username}    → 18.x-cpu-ml-scala2.13  single-node   ✓
-  • {use_case}_global_forecasting_{username}       → 18.x-gpu-ml-scala2.13  single-node   ✓
-  • {use_case}_foundation_forecasting_{username}   → 18.x-gpu-ml-scala2.13  single-node   ✓
-All runtimes and topologies match the pinned values. Proceeding to run_job.
-```
-
-Then call `run_job` for **all jobs simultaneously**.
-
-#### Serverless alternative (local models only)
+#### Serverless CPU alternative (local models only)
 
 If the user requests **serverless compute** for local models, omit `job_clusters` entirely and use `environment_key` instead of `job_cluster_key`:
 
@@ -894,7 +1044,7 @@ If the user requests **serverless compute** for local models, omit `job_clusters
   "name": "{use_case}_local_forecasting",
   "tasks": [{
     "task_key": "local_models",
-    "notebook_task": {"notebook_path": "notebooks/{use_case}/run_local"},
+    "notebook_task": {"notebook_path": "{notebook_base_path}/run_local"},
     "environment_key": "Default"
   }],
   "environments": [{
@@ -904,42 +1054,13 @@ If the user requests **serverless compute** for local models, omit `job_clusters
 }
 ```
 
-GPU models require ML Runtime clusters and cannot use serverless.
+GPU classes on serverless use the [serverless GPU job template](#serverless-gpu-jobs-global-dl-foundation-foundationforecast), not this one: this CPU environment has no GPU.
 
-#### Step 5a: Non-forecastable separate job (if `separate_job` strategy)
+#### Non-forecastable jobs (if `separate_job` strategy)
 
 **Only create these jobs if `non_forecastable_strategy == 'separate_job'`.** Skip entirely for `include` or `fallback` strategies.
 
-Generate notebooks for the non-forecastable pipeline using the same templates, but with:
-- `{train_table}` → `{use_case}_train_data_non_forecastable`
-- `{active_models}` → the non-forecastable models selected in Skill 2/3
-- `{use_case}` output table suffix → `{use_case}_nf` (to avoid overwriting main pipeline outputs)
-
-The evaluation and scoring output tables for non-forecastable series are:
-- `{use_case}_nf_evaluation_output`
-- `{use_case}_nf_scoring_output`
-
-##### Non-forecastable local models notebook
-
-If the non-forecastable models include local (CPU multi-node) models, generate a notebook from `mmf_local_notebook_template.ipynb`:
-- Save locally as `notebooks/{use_case}/run_local_nf.ipynb`
-- Upload to workspace at `notebooks/{use_case}/run_local_nf`
-
-##### Non-forecastable global ML models notebook
-
-If the non-forecastable models include any `MLForecast*` model, generate a notebook from `mmf_global_ml_notebook_template.ipynb`:
-- Save locally as `notebooks/{use_case}/run_global_ml_nf.ipynb`
-- Upload to workspace at `notebooks/{use_case}/run_global_ml_nf`
-
-Identical placeholder substitution to the main `run_global_ml` notebook, except `{train_table}` points at `{use_case}_train_data_non_forecastable` and the output tables use the `_nf_` infix (see Step 5a header).
-
-##### Non-forecastable GPU orchestrator notebooks
-
-If the non-forecastable models include global DL or foundation models, generate orchestrator notebooks:
-- `notebooks/{use_case}/orchestrator_global_nf.ipynb` — if any global DL models
-- `notebooks/{use_case}/orchestrator_foundation_nf.ipynb` — if any foundation models
-
-These orchestrators call the same `run_gpu` notebook (shared with the main pipeline).
+The notebooks for these jobs were generated in Step 3e and imported in Step 4. Their output tables are `{use_case}_nf_evaluation_output` and `{use_case}_nf_scoring_output`.
 
 ##### Job definitions for non-forecastable pipeline
 
@@ -951,7 +1072,7 @@ These orchestrators call the same `run_gpu` notebook (shared with the main pipel
   "tasks": [{
     "task_key": "nf_local_models",
     "notebook_task": {
-      "notebook_path": "notebooks/{use_case}/run_local_nf",
+      "notebook_path": "{notebook_base_path}/run_local_nf",
       "base_parameters": {
         "experiment_path": "{experiment_path}"
       }
@@ -1020,7 +1141,7 @@ These orchestrators call the same `run_gpu` notebook (shared with the main pipel
   "tasks": [{
     "task_key": "nf_global_models",
     "notebook_task": {
-      "notebook_path": "notebooks/{use_case}/orchestrator_global_nf",
+      "notebook_path": "{notebook_base_path}/orchestrator_global_nf",
       "base_parameters": {
         "experiment_path": "{experiment_path}"
       }
@@ -1052,7 +1173,63 @@ These orchestrators call the same `run_gpu` notebook (shared with the main pipel
 
 Same pattern as NF-3 (global DL), with `orchestrator_foundation_nf` notebook.
 
-**Launch all non-forecastable jobs in parallel with the main pipeline jobs.** All jobs (main + NF) are triggered simultaneously.
+**Job NF-5: Non-forecastable foundationforecast models** (if any NF `FF*` models):
+
+Same pattern as NF-3, with job name `{use_case}_nf_foundationforecast_forecasting_{username}`, the `orchestrator_foundationforecast_nf` notebook and its own cluster `{use_case}_nf_ff_gpu_cluster` (same config as `{use_case}_ff_gpu_cluster`).
+
+**Do not trigger these jobs here.** Step 5c verifies them together with the main jobs and then triggers all jobs (main + NF) simultaneously.
+
+Use `create_job` (or `update_job` on upsert) to create each job. **After `create_job` / `update_job` and BEFORE `run_job`, run Step 5c.**
+
+### Step 5c: Verify each job's cluster runtime (MANDATORY)
+
+> ⛔ **This step is not optional and cannot be skipped.** It exists to catch the most common failure mode: the agent copying the local job's `spark_version` into the global or foundation JSON (e.g. using `18.x-cpu-ml-scala2.13` for a GPU cluster). The verification reads the runtime back from the API after job creation, so it does not depend on the agent's intent.
+
+For every job created in Step 5b (including the non-forecastable jobs if `separate_job`), call `get_job` and inspect each entry in `job_clusters[*].new_cluster.spark_version` AND `job_clusters[*].new_cluster.num_workers`. Required values:
+
+| Job name | Required `spark_version` | Required topology |
+|---|---|---|
+| `{use_case}_local_forecasting_{username}` | `18.x-cpu-ml-scala2.13` | multi-node (`num_workers ≥ 0`, `local[*]` NOT set) |
+| `{use_case}_global_ml_forecasting_{username}` | `18.x-cpu-ml-scala2.13` | **single-node** (`num_workers == 0`, `spark.master==local[*]`, `cluster.profile==singleNode`, `custom_tags.ResourceClass==SingleNode`) |
+| `{use_case}_global_forecasting_{username}` | `18.x-gpu-ml-scala2.13` | single-node (`num_workers == 0`) |
+| `{use_case}_foundation_forecasting_{username}` | `18.x-gpu-ml-scala2.13` | single-node (`num_workers == 0`) |
+| `{use_case}_foundationforecast_forecasting_{username}` | `18.x-gpu-ml-scala2.13` | single-node (`num_workers == 0`) |
+| `{use_case}_nf_local_forecasting_{username}` | `18.x-cpu-ml-scala2.13` | multi-node |
+| `{use_case}_nf_global_ml_forecasting_{username}` | `18.x-cpu-ml-scala2.13` | single-node |
+| `{use_case}_nf_global_forecasting_{username}` | `18.x-gpu-ml-scala2.13` | single-node |
+| `{use_case}_nf_foundation_forecasting_{username}` | `18.x-gpu-ml-scala2.13` | single-node |
+| `{use_case}_nf_foundationforecast_forecasting_{username}` | `18.x-gpu-ml-scala2.13` | single-node |
+
+The GPU rows apply to classes on a classic GPU cluster. For a GPU class on **serverless GPU**, check instead that:
+- `settings.job_clusters` is absent or empty;
+- the task has `environment_key` and `compute.hardware_accelerator == "GPU_1xA10"`, and no `job_cluster_key`;
+- the matching `settings.environments[*].spec.base_environment` is `workspace-base-environments/databricks_ai_v6` or the uploaded AI v6 YAML path;
+- the task's notebook is `run_serverless_{class}`.
+
+For each job:
+
+1. Call `get_job(job_id=...)`.
+2. For each cluster in `settings.job_clusters[*]`, check `new_cluster.spark_version` AND `new_cluster.num_workers` (plus, for single-node clusters, `spark_conf['spark.master']` and `custom_tags['ResourceClass']`).
+3. Compare to the expected values from the table above.
+4. If **any** value does not match, do NOT call `run_job`. Instead:
+   - Print a clear error including the job name, the cluster key, the actual values, and the expected values.
+   - Call `update_job` with the corrected JSON template from Step 5b — using the exact values from the table above.
+   - Re-run Step 5c to verify the fix.
+   - Only after the check passes for **all** jobs may the agent proceed to `run_job`.
+
+Report a one-line summary to the user before triggering runs:
+
+```
+Cluster runtime check:
+  • {use_case}_local_forecasting_{username}        → 18.x-cpu-ml-scala2.13  multi-node    ✓
+  • {use_case}_global_ml_forecasting_{username}    → 18.x-cpu-ml-scala2.13  single-node   ✓
+  • {use_case}_global_forecasting_{username}       → 18.x-gpu-ml-scala2.13  single-node   ✓
+  • {use_case}_foundation_forecasting_{username}   → 18.x-gpu-ml-scala2.13  single-node   ✓
+  • {use_case}_foundationforecast_forecasting_{username} → serverless GPU_1xA10, AI v6   ✓
+All runtimes and topologies match the pinned values. Proceeding to run_job.
+```
+
+Then call `run_job` for **all jobs simultaneously**.
 
 ### Step 6: Monitor execution
 
@@ -1064,6 +1241,7 @@ Poll all job run statuses until completion. Report progress to the user with str
 [HH:MM:SS]   Job {use_case}_global_ml_forecasting   (run_id: {global_ml_run_id})
 [HH:MM:SS]   Job {use_case}_global_forecasting      (run_id: {global_run_id})
 [HH:MM:SS]   Job {use_case}_foundation_forecasting  (run_id: {foundation_run_id})
+[HH:MM:SS]   Job {use_case}_foundationforecast_forecasting  (run_id: {ff_run_id})
 {if separate_job:
 [HH:MM:SS]   Job {use_case}_nf_local_forecasting       (run_id: {nf_local_run_id})
 [HH:MM:SS]   Job {use_case}_nf_global_ml_forecasting   (run_id: {nf_global_ml_run_id})
@@ -1073,12 +1251,26 @@ Poll all job run statuses until completion. Report progress to the user with str
 [HH:MM:SS] {use_case}_global_ml_forecasting:   RUNNING (MLForecastLGBM, MLForecastAutoLGBM in one process)
 [HH:MM:SS] {use_case}_global_forecasting:      RUNNING (orchestrator running NeuralForecastAutoNHITS...)
 [HH:MM:SS] {use_case}_foundation_forecasting:  RUNNING (orchestrator running ChronosBoltBase...)
+[HH:MM:SS] {use_case}_foundationforecast_forecasting:  RUNNING (serverless GPU, 4/19 models done)
 [HH:MM:SS] {use_case}_local_forecasting:       SUCCEEDED (duration: 12m 34s)
 [HH:MM:SS] {use_case}_global_ml_forecasting:   SUCCEEDED (duration: 8m 12s)
 [HH:MM:SS] {use_case}_global_forecasting:      SUCCEEDED (duration: 25m 12s)
 [HH:MM:SS] {use_case}_foundation_forecasting:  SUCCEEDED (duration: 18m 45s)
+[HH:MM:SS] {use_case}_foundationforecast_forecasting:  SUCCEEDED (duration: 80m 10s)
 [HH:MM:SS] All jobs completed. Overall status: SUCCEEDED
 ```
+
+- **Progress of a GPU job** comes from the evaluation table: `SELECT COUNT(DISTINCT model) FROM {catalog}.{schema}.{use_case}_evaluation_output WHERE run_id = ...`, or simply the distinct models written since the job started.
+- **Serverless GPU jobs** retry failed tasks automatically, so a run can show a failed first attempt and still be running. Report the run's overall `life_cycle_state` / `result_state`; report a failed attempt only if the run itself ends failed.
+- **A SUCCEEDED job is not proof that its models ran.** `run_forecast` logs a model that fails (for example `RuntimeError: CUDA unknown error` on a faulty GPU host) and moves on, so a job can succeed with no rows written. When each job finishes, check that every model in its `active_models` list has rows in `{use_case}_evaluation_output` and `{use_case}_scoring_output`:
+  ```sql
+  SELECT model, COUNT(DISTINCT unique_id) AS n_series
+  FROM {catalog}.{schema}.{use_case}_evaluation_output
+  WHERE run_id = '{run_id}'   -- or: run_date >= the job's start time
+  GROUP BY model
+  ```
+  Report missing models as failed, and show the error from that model's `run_gpu` child run (classic) or the job's notebook output (serverless). If every model in a classic GPU job failed with the same CUDA error, rerun the job once to get a fresh cluster before changing anything else.
+- **Foundationforecast is the slowest class.** 19 models over 1,000 monthly series took 80–100 minutes on serverless GPU and 2.5–3 hours on a single-A10 classic cluster (`g5.xlarge`, `Standard_NV36ads_A10_v5`) in testing.
 
 ### Step 7: Log run metadata
 

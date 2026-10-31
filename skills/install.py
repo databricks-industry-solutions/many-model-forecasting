@@ -26,12 +26,17 @@ SKILL_FILE_DESCRIPTIONS = {
     "3-provision-forecasting-resources.md": "cluster setup and provisioning",
     "4-execute-mmf-forecast.md": "running the forecasting pipeline",
     "5-post-process-and-evaluate.md": "post-processing and evaluation",
+    "6-hierarchical-reconciliation.md": "hierarchical reconciliation (optional)",
     "mmf_local_notebook_template.ipynb": "local notebook template",
+    "mmf_global_ml_notebook_template.ipynb": "global ML notebook template (MLForecast LightGBM, single-node CPU)",
     "mmf_gpu_run_notebook_template.ipynb": "GPU single-model runner (static, uses widgets)",
     "mmf_gpu_orchestrator_notebook_template.ipynb": "GPU orchestrator (loops models via dbutils.notebook.run)",
+    "mmf_gpu_serverless_notebook_template.ipynb": "serverless GPU runner (one notebook per GPU class, loops models)",
+    "serverless_gpu_ai_v6_environment.yml": "AI v6 environment spec for serverless GPU jobs (fallback base environment)",
     "mmf_profiling_notebook_template.ipynb": "profiling notebook template",
     "mmf_prep_notebook_template.ipynb": "data prep reproducibility notebook (generated after Skill 1)",
     "mmf_post_process_notebook_template.ipynb": "post-processing reproducibility notebook (generated after Skill 5)",
+    "mmf_reconciliation_notebook_template.ipynb": "hierarchical reconciliation notebook (Skill 6)",
 }
 SKILL_FILES = list(SKILL_FILE_DESCRIPTIONS)
 MARKER = "<!-- mmf-dev-kit:skills -->"

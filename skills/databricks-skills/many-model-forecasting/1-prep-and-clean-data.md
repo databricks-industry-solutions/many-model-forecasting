@@ -194,7 +194,7 @@ FROM (
 
 Report the detected frequency to the user.
 
-**Persist the result as `{freq}` ∈ `{H, D, W, M}` for the rest of the skill.** Every subsequent SQL block (Steps 6, 6a, 6b, and the imputation/anomaly steps) MUST be selected by `{freq}` — the agent does NOT pick a template freely. **For `{freq} == "M"` and `{freq} == "W"` the date-alignment rule in Step 6 is mandatory and is verified by Step 6b — it is not optional and cannot be skipped.**
+**Persist the result as `{freq}` ∈ `{H, D, W, M}` for the rest of the skill.** Every subsequent SQL block (Step 6 and its verification, Step 6a, and the imputation/anomaly steps) MUST be selected by `{freq}` — the agent does NOT pick a template freely. **For `{freq} == "M"` and `{freq} == "W"` the date-alignment rule in Step 6 is mandatory and is verified by the Step 6 verification — it is not optional and cannot be skipped.**
 
 ### ⛔ STOP GATE — Step 5: Validate with user
 
@@ -303,7 +303,12 @@ AskUserQuestion:
    Note: The `global_ml` model class (MLForecastLGBM / MLForecastAutoLGBM) has
    end-to-end validated support for dynamic future regressors via its native
    X_df mechanism. If you supply these and a scoring table, global_ml is a
-   strong default — see Skill 3 model selection."
+   strong default — see Skill 3 model selection.
+
+   Ten zero-shot foundationforecast models (FFChronos2, FFTimesFM_3_0,
+   FFTiRex2, FFT0*, FFTimestral_*, ...) also use these columns, with no
+   training. They use only dynamic future columns and ignore static and
+   dynamic historical ones."
 ```
 
 **WAIT for the user to respond.** Store as `{dynamic_future_numerical}` and `{dynamic_future_categorical}`.
@@ -339,7 +344,7 @@ Store the answer as `{future_regressor_source}` (`same_table` or the name of the
 > For `{freq} == "M"`, every produced `ds` value MUST satisfy `ds = LAST_DAY(ds)`.
 > For `{freq} == "W"`, every produced `ds` value MUST satisfy `ds = DATE_TRUNC('week', ds) + INTERVAL 6 DAY`.
 >
-> **Step 6b (immediately below) runs SQL assertions that abort and re-create the table if these rules are violated. The verification is not optional.**
+> **The Step 6 verification (immediately below) runs SQL assertions that abort and re-create the table if these rules are violated. The verification is not optional.**
 
 Create the training table with the MMF-required schema. The SQL depends on the detected (or user-specified) frequency to ensure dates are properly aligned:
 
@@ -401,7 +406,7 @@ Verify creation:
 SELECT COUNT(*) AS count FROM {catalog}.{schema}.{use_case}_train_data
 ```
 
-### Step 6b: Verify date alignment (MANDATORY)
+### Step 6 verification: Date alignment (MANDATORY)
 
 > ⛔ **This step is not optional and cannot be skipped.** It exists to catch any case where Step 6 produced misaligned `ds` values (e.g. the Daily template was used for monthly data). Run the check matching `{freq}`. **If `misaligned_rows > 0`, abort, log the failure, and re-create `{use_case}_train_data` using the correct template from Step 6 — do NOT proceed to imputation, anomaly handling, or scoring data creation until this check passes.**
 
@@ -429,7 +434,7 @@ Report the verification result to the user as a single line:
 
 ### Step 6a: Create {use_case}_scoring_data (if dynamic future regressors)
 
-**Only run this step if the user selected dynamic future regressors (`dynamic_future_numerical` or `dynamic_future_categorical`) in Step 5.**
+**Only run this step if the user selected dynamic future regressors (`dynamic_future_numerical` or `dynamic_future_categorical`) in Step 5a.**
 
 The scoring table must contain one row per `unique_id` × future `ds` for each date in the forecast horizon, with all dynamic future regressor columns populated. During scoring, `run_forecast` unions this table with `train_data` via `unionByName(score_df, allowMissingColumns=True)` — columns present in `train_data` but absent from the scoring table (such as `y`) are automatically filled with NULL.
 
@@ -450,6 +455,8 @@ The scoring table must contain one row per `unique_id` × future `ds` for each d
 **Do NOT include `dynamic_historical_`* columns.** These are past-only (not relevant for future dates) and have no meaningful values for the forecast horizon. The `allowMissingColumns=True` union fills them with NULL for scoring rows. Models that use dynamic historical features (NeuralForecast) only consume them from the historical context window, not from the future scoring rows.
 
 **MUST include `static_features` columns.** When `run_forecast` unions `train_data` and `scoring_data` via `unionByName(..., allowMissingColumns=True)`, any columns missing from the scoring table are filled with NULL. Models that use static features at inference time (NeuralForecast, Chronos-2, TimesFM) would receive NaN instead of the actual category, degrading forecast quality. Populating the static feature columns in the scoring table by joining each `unique_id` against its static values from `train_data` avoids this.
+
+**Every model that uses dynamic future columns needs a complete horizon.** Each series MUST have exactly one row for every future date in the forecast horizon, with no duplicate `(unique_id, ds)` rows and no NULL in any dynamic future column. Models handle gaps differently, and none of them well: foundationforecast (`FF*`) models and NeuralForecast raise errors, which fails the whole model; StatsForecast drops series with missing dates and returns NaN forecasts for NULL values; and MLForecast silently fills gaps (forward/back fill, then 0) and forecasts from made-up values. So the NULL handling below should fill values rather than drop rows, and the Step 6a validation must show `series_missing_scoring = 0` and full horizon coverage for every series.
 
 #### Source: same table (option a)
 
@@ -478,7 +485,7 @@ JOIN (
 
 Adjust the `CAST({ds_col} ...)` and date filtering to match the detected frequency (TIMESTAMP for hourly, DATE for daily/weekly/monthly). For weekly/monthly frequencies, apply the same alignment logic as Step 6 (e.g., `DATE_TRUNC('week', ...) + INTERVAL 6 DAY` for weekly, `LAST_DAY(...)` for monthly) and aggregate regressors accordingly.
 
-> ⛔ **The Step 6b verification applies to `{use_case}_scoring_data` as well.** After creating it, re-run the matching `misaligned_rows` check against `{use_case}_scoring_data`. If `misaligned_rows > 0`, abort and re-create the scoring table — `run_forecast` aligns scoring rows to training rows by exact `(unique_id, ds)` match, so any drift here silently breaks scoring.
+> ⛔ **The Step 6 verification applies to `{use_case}_scoring_data` as well.** After creating it, re-run the matching `misaligned_rows` check against `{use_case}_scoring_data`. If `misaligned_rows > 0`, abort and re-create the scoring table — `run_forecast` aligns scoring rows to training rows by exact `(unique_id, ds)` match, so any drift here silently breaks scoring.
 
 If no `static_features` were selected, omit the `JOIN` and the static columns — the scoring table only needs `unique_id`, `ds`, and the dynamic future columns.
 
@@ -575,6 +582,7 @@ AskUserQuestion:
    (d) Fill with the column's mean (numerical columns only)
        (good for continuous regressors like temperature)
    (e) Drop rows with NULLs — remove incomplete future dates
+       (⚠️ leaves gaps in the forecast horizon, which breaks the same models as NULLs)
    (f) Proceed as-is — keep NULLs (⚠️ may cause pipeline errors)"
 ```
 
@@ -696,8 +704,11 @@ AskUserQuestion:
 
    ⚠️  IMPORTANT TRADE-OFF: Label encoding implies a false ordinal relationship
    between categories (e.g., 'holiday'=0 < 'none'=1 < 'sale'=2). This is
-   acceptable for neural network models (global/foundation) which learn non-linear
-   mappings, but is statistically inappropriate for linear models (StatsForecast).
+   acceptable for neural network models (global/foundation/foundationforecast) which
+   learn non-linear mappings, but is statistically inappropriate for linear models
+   (StatsForecast). Of the foundationforecast models, only FFChronos2 and
+   FFChronos2Small could read the raw strings; the others need numeric codes, so
+   encoding keeps every FF* model usable.
 
    How would you like to proceed?
    (a) Apply label encoding (default — recommended for this pipeline)
@@ -832,7 +843,7 @@ The `SEQUENCE` interval changes by frequency:
 - Weekly (`freq=W`): `INTERVAL 7 DAY`
 - Monthly (`freq=M`): see the drift-safe pattern below — do NOT sequence directly on month-end dates.
 
-> ⛔ **MANDATORY for `freq=M` — drift-safe month spine.** For monthly data, `{use_case}_train_data.ds` values are month-END dates (`LAST_DAY`). You MUST NOT build the spine as `SEQUENCE(min_ds, max_ds, INTERVAL 1 MONTH)` directly: `SEQUENCE` computes `start + i·months`, so a start on the 30th/28th (a short-month end) lands on the 30th/28th of every later month, which is **not** the true last day of 31-day months. The `LEFT JOIN ... ON sp.expected_ds = t.ds` then misses every 31-day month and reports ~58% phantom "missing" for any series whose first month is a 30- or 28-day month. Instead, sequence on month-**starts** and wrap each element in `LAST_DAY(...)` so every generated `ds` is the true month-end (which is exactly what MMF requires and what Step 6b verifies):
+> ⛔ **MANDATORY for `freq=M` — drift-safe month spine.** For monthly data, `{use_case}_train_data.ds` values are month-END dates (`LAST_DAY`). You MUST NOT build the spine as `SEQUENCE(min_ds, max_ds, INTERVAL 1 MONTH)` directly: `SEQUENCE` computes `start + i·months`, so a start on the 30th/28th (a short-month end) lands on the 30th/28th of every later month, which is **not** the true last day of 31-day months. The `LEFT JOIN ... ON sp.expected_ds = t.ds` then misses every 31-day month and reports ~58% phantom "missing" for any series whose first month is a 30- or 28-day month. Instead, sequence on month-**starts** and wrap each element in `LAST_DAY(...)` so every generated `ds` is the true month-end (which is exactly what MMF requires and what the Step 6 verification checks):
 >
 > ```sql
 > date_spine AS (
@@ -845,7 +856,7 @@ The `SEQUENCE` interval changes by frequency:
 > )
 > ```
 >
-> The resulting spine dates are still month-end (`LAST_DAY`), so the join to `{use_case}_train_data` matches correctly and the Step 6b alignment check (`ds <> LAST_DAY(ds)`) still passes. Hourly/Daily/Weekly spines are unaffected — sequencing directly on the actual dates is exact for those frequencies (weekly steps of 7 days preserve the ISO-week-end Sunday).
+> The resulting spine dates are still month-end (`LAST_DAY`), so the join to `{use_case}_train_data` matches correctly and the Step 6 verification check (`ds <> LAST_DAY(ds)`) still passes. Hourly/Daily/Weekly spines are unaffected — sequencing directly on the actual dates is exact for those frequencies (weekly steps of 7 days preserve the ISO-week-end Sunday).
 
 Before presenting the summary, also identify series with **trailing gaps** — i.e., series whose last observed data point is earlier than the global maximum date:
 
@@ -920,7 +931,7 @@ LEFT JOIN {catalog}.{schema}.{use_case}_train_data t
   ON sp.unique_id = t.unique_id AND sp.expected_ds = t.ds
 ```
 
-The `SEQUENCE` interval must match the detected frequency (same as Step 7a). **For `freq=M`, use the drift-safe month spine from Step 7a** (sequence on `TRUNC(min_ds,'MM')` month-starts, then wrap in `LAST_DAY(...)`) — NOT `SEQUENCE(min_ds, max_ds, INTERVAL 1 MONTH)` on month-end dates. Otherwise the backfilled rows land on wrong days (e.g. `2021-10-30` instead of `2021-10-31`), which both mis-joins the original data and fails the Step 6b `ds <> LAST_DAY(ds)` alignment check.
+The `SEQUENCE` interval must match the detected frequency (same as Step 7a). **For `freq=M`, use the drift-safe month spine from Step 7a** (sequence on `TRUNC(min_ds,'MM')` month-starts, then wrap in `LAST_DAY(...)`) — NOT `SEQUENCE(min_ds, max_ds, INTERVAL 1 MONTH)` on month-end dates. Otherwise the backfilled rows land on wrong days (e.g. `2021-10-30` instead of `2021-10-31`), which both mis-joins the original data and fails the Step 6 verification `ds <> LAST_DAY(ds)` check.
 
 > ⛔ **Carry ALL covariate columns through the backfill.** If any exogenous regressors were selected, the `SELECT` MUST include every covariate column (`t.{col}` for each of `{static_features}`, `{dynamic_future_numerical}`, `{dynamic_future_categorical}`, `{dynamic_historical_numerical}`, `{dynamic_historical_categorical}`) — NOT just `y`. Backfilled spine rows (interior gaps and trailing gaps) have no match in the join, so their covariate values come back NULL. These NULLs are then repaired in Step 7d. Dropping the covariate columns here (selecting only `unique_id, ds, y`) would silently discard the regressors and break exogenous models downstream. For univariate runs (no regressors) this reduces to the original `unique_id, ds, y` select.
 
@@ -960,7 +971,7 @@ If `remaining_nulls > 0`, warn the user and suggest excluding those series or sw
 
 Log the count of imputed values per series and excluded series for the cleaning report.
 
-### Step 7d: Impute covariate columns on backfilled rows (MANDATORY if exogenous regressors)
+#### Step 7d: Impute covariate columns on backfilled rows (MANDATORY if exogenous regressors)
 
 > ⛔ **This step is not optional whenever any exogenous regressors were selected.** The Step 7c spine backfill creates rows for interior gaps and trailing gaps. Those rows get `y` imputed (Step 7c), but their **covariate columns are NULL** because they had no match in the join. Since Step 7c already imputes `y`, those rows now pass the pipeline's `_df = df[df[target].notnull()]` filter at scoring time and carry their NULL covariates into model fitting. Regressor-using local models (notably `StatsForecastAutoArima`, which runs an OLS of `y` on the regressor matrix during model selection) then fail with `MissingDataError: exog contains inf or nans`. This mirrors the scoring-side NULL handling in Step 6a — the training table needs the same treatment. Because `data_quality_check=False` at runtime, nothing downstream repairs these NULLs, so it must be done here.
 
@@ -1125,9 +1136,9 @@ WHERE t.unique_id = s.unique_id
 
 Log the count of capped values per series for the cleaning report.
 
-### Step 8d: Reconcile scoring_data with train_data (MANDATORY if scoring_data exists)
+#### Step 8d: Reconcile scoring_data with train_data (MANDATORY if scoring_data exists)
 
-> ⛔ **This step is not optional whenever `{use_case}_scoring_data` exists.** Steps 7c and 8c can remove series from `{use_case}_train_data` (exclusion of series over the missing-data threshold, or any series dropped for other reasons). But `{use_case}_scoring_data` was created earlier in Step 6a with the **full** set of series, so any series excluded from training remains in the scoring table as an orphan. During scoring, `run_forecast` unions the scoring rows into the training source via `unionByName(score_df, allowMissingColumns=True)`; an orphan series contributes only future rows with `y = NULL`, so after the pipeline's `notnull()` filter it becomes an **empty group**. On the local StatsForecast path this makes `StatsForecast.fit` see zero series and raise `ValueError: number sections must be larger than 0.`, failing the whole run. Keeping the two tables' series sets identical is what prevents this — and it is exactly why Skills 4/5 can safely keep `data_quality_check=False`.
+> ⛔ **This step is not optional whenever `{use_case}_scoring_data` exists.** Step 7c can remove series from `{use_case}_train_data` (exclusion of series over the missing-data threshold, or any series dropped for other reasons). But `{use_case}_scoring_data` was created earlier in Step 6a with the **full** set of series, so any series excluded from training remains in the scoring table as an orphan. During scoring, `run_forecast` unions the scoring rows into the training source via `unionByName(score_df, allowMissingColumns=True)`; an orphan series contributes only future rows with `y = NULL`, so after the pipeline's `notnull()` filter it becomes an **empty group**. On the local StatsForecast path this makes `StatsForecast.fit` see zero series and raise `ValueError: number sections must be larger than 0.`, failing the whole run. Keeping the two tables' series sets identical is what prevents this — and it is exactly why Skills 4/5 can safely keep `data_quality_check=False`.
 
 **Skip this step entirely if `{use_case}_scoring_data` was not created (i.e. no dynamic future regressors).**
 
@@ -1254,7 +1265,7 @@ AskUserQuestion:
 - Exogenous regressor column lists carried forward: `{static_features}`, `{dynamic_future_numerical}`, `{dynamic_future_categorical}`, `{dynamic_historical_numerical}`, `{dynamic_historical_categorical}`
 - A reproducibility notebook uploaded to `notebooks/{use_case}/prep_data` that can re-create the training table with the same parameters
 - A summary: number of series, date range, detected frequency, cleaning actions taken
-- **Frequency alignment guarantees** (verified by Step 6b):
+- **Frequency alignment guarantees** (verified by the Step 6 verification):
   - For `freq=M`, every `ds` value in `{use_case}_train_data` (and `{use_case}_scoring_data` if produced) is the last day of its month.
   - For `freq=W`, every `ds` value is an ISO-week-end (Sunday).
   - For `freq=D` and `freq=H`, no alignment transformation is applied.

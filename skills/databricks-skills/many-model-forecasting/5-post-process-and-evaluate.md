@@ -48,7 +48,7 @@ AskUserQuestion:
 
 **Do NOT proceed until the user provides catalog, schema, and use case name.**
 
-### Step 0a-ii: Confirm project folder
+### Step 0a: Confirm project folder
 
 Call `get_current_user()` to obtain `{full_email}`.
 
@@ -70,7 +70,7 @@ Set:
 - `{project_folder}` = user-provided name, or `{use_case}` if they pick (b)
 - `{notebook_base_path}` = `/Users/{full_email}/{project_folder}/notebooks`
 
-### Step 0a: Read non-forecastable strategy from pipeline config
+### Step 0b: Read non-forecastable strategy from pipeline config
 
 Check if `{use_case}_pipeline_config` exists:
 
@@ -109,13 +109,25 @@ SELECT COUNT(*) AS fallback_count FROM {catalog}.{schema}.{use_case}_scoring_out
 
 ### Step 2: Compute multi-metric evaluation
 
-Calculate the primary metric and WAPE from the stored `forecast` and `actual` arrays:
+Calculate the primary metric and WAPE from the stored `forecast` and `actual` arrays. Use each model's latest `run_id`, the same runs Step 3 selects from (`evaluation_output` is append-mode and keeps older runs):
 
 ```sql
+WITH latest_run_per_model AS (
+  SELECT model, run_id
+  FROM (
+    SELECT model, run_id,
+           ROW_NUMBER() OVER (PARTITION BY model ORDER BY run_date DESC, run_id DESC) AS rn
+    FROM (
+      SELECT DISTINCT model, run_id, run_date
+      FROM {catalog}.{schema}.{use_case}_evaluation_output
+    )
+  )
+  WHERE rn = 1
+)
 SELECT
-    unique_id,
-    model,
-    AVG(metric_value) AS avg_primary_metric,
+    e.unique_id,
+    e.model,
+    AVG(e.metric_value) AS avg_primary_metric,
     AVG(
       AGGREGATE(
         TRANSFORM(
@@ -128,16 +140,20 @@ SELECT
         CAST(0.0 AS DOUBLE), (acc, x) -> acc + x
       ), 0)
     ) AS wape
-FROM {catalog}.{schema}.{use_case}_evaluation_output
-GROUP BY unique_id, model
+FROM {catalog}.{schema}.{use_case}_evaluation_output AS e
+INNER JOIN latest_run_per_model AS lr
+  ON e.model = lr.model AND e.run_id = lr.run_id
+GROUP BY e.unique_id, e.model
 ```
+
+Step 5 uses the same WAPE formula for the summary table.
 
 ### Step 3: Best model selection per series (forecastable)
 
 Select the best-performing model for each forecastable time series based on the primary metric:
 
 > ⚠️ **Why `latest_run_per_model` and not a single global latest run.** MMF launches
-> **one job per model class** (local, global_ml, global, foundation — see Skill 4 Step 5b),
+> **one job per model class** (local, global_ml, global, foundation, foundationforecast — see Skill 4 Step 5b),
 > and each job's `run_forecast` call writes its **own** `run_id`. Pinning selection to a
 > single global latest `run_id` (e.g. `ORDER BY run_date DESC LIMIT 1`) keeps only the
 > **last job to finish** and silently drops every other model from the competition — the
@@ -150,9 +166,9 @@ Select the best-performing model for each forecastable time series based on the 
 > **Tie-break policy.** Selection uses `ROW_NUMBER()` (not `RANK()`) so exactly **one** model
 > wins per series — no duplicate best-model rows that would inflate win counts and break
 > reconciliation's one-forecast-per-series contract. On an exact metric tie, the **cheaper /
-> simpler compute tier wins** (local → global ML → global DL → foundation), with model name as
+> simpler compute tier wins** (local → global ML → global DL → foundation and foundationforecast), with model name as
 > a final deterministic fallback. This avoids letting an expensive GPU model win a break-even by
-> alphabetical accident and matches the Step 8 guidance to prefer local models when accuracy is comparable.
+> alphabetical accident and matches the Step 8 guidance to prefer cheaper models when accuracy is comparable.
 
 ```sql
 CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_best_models_forecastable AS
@@ -187,8 +203,8 @@ FROM (
                WHEN model LIKE 'StatsForecast%' OR model LIKE 'SKTime%' THEN 1  -- local (CPU)
                WHEN model LIKE 'MLForecast%'                            THEN 2  -- global ML (CPU, LightGBM)
                WHEN model LIKE 'NeuralForecast%'                        THEN 3  -- global DL (GPU)
-               WHEN model LIKE 'Chronos%' OR model LIKE 'Moirai%'
-                    OR model LIKE 'TimesFM%'                            THEN 4  -- foundation (GPU)
+               WHEN model LIKE 'Chronos%' OR model LIKE 'TimesFM%'
+                    OR model LIKE 'FF%'                                 THEN 4  -- foundation / foundationforecast (GPU)
                ELSE 5                                                          -- unknown/custom: least preferred on ties
              END ASC,
              model ASC  -- final deterministic fallback within the same cost tier
@@ -209,7 +225,7 @@ WHERE eval.rank = 1
 
 ### Step 3a: Incorporate non-forecastable series results
 
-Based on the non-forecastable strategy from Step 0a:
+Based on the non-forecastable strategy from Step 0b:
 
 #### If strategy is `include` (or config missing)
 
@@ -268,8 +284,8 @@ FROM (
                WHEN model LIKE 'StatsForecast%' OR model LIKE 'SKTime%' THEN 1  -- local (CPU)
                WHEN model LIKE 'MLForecast%'                            THEN 2  -- global ML (CPU, LightGBM)
                WHEN model LIKE 'NeuralForecast%'                        THEN 3  -- global DL (GPU)
-               WHEN model LIKE 'Chronos%' OR model LIKE 'Moirai%'
-                    OR model LIKE 'TimesFM%'                            THEN 4  -- foundation (GPU)
+               WHEN model LIKE 'Chronos%' OR model LIKE 'TimesFM%'
+                    OR model LIKE 'FF%'                                 THEN 4  -- foundation / foundationforecast (GPU)
                ELSE 5                                                          -- unknown/custom: least preferred on ties
              END ASC,
              model ASC  -- final deterministic fallback within the same cost tier
@@ -320,16 +336,56 @@ ORDER BY wins_count DESC
 
 ### Step 5: Create evaluation summary table
 
+The primary-metric column is named after `{metric}` (for example `avg_smape`). WAPE is computed for each winning `(unique_id, model, run_id)` from the backtest arrays. Fallback series have no backtest, so their WAPE is NULL. Include the `nf_evaluation_output` branch only for the `separate_job` strategy:
+
 ```sql
 CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_evaluation_summary AS
+WITH series_wape AS (
+  SELECT 'main_pipeline' AS forecast_source, unique_id, model, run_id,
+         AVG(
+           AGGREGATE(
+        TRANSFORM(
+          ARRAYS_ZIP(forecast, actual),
+          x -> ABS(x.actual - x.forecast)
+        ), CAST(0.0 AS DOUBLE), (acc, x) -> acc + x
+      ) /
+      NULLIF(AGGREGATE(
+        TRANSFORM(actual, x -> ABS(x)),
+        CAST(0.0 AS DOUBLE), (acc, x) -> acc + x
+      ), 0)
+         ) AS wape
+  FROM {catalog}.{schema}.{use_case}_evaluation_output
+  GROUP BY unique_id, model, run_id
+
+  -- separate_job strategy only:
+  UNION ALL
+  SELECT 'non_forecastable_pipeline' AS forecast_source, unique_id, model, run_id,
+         AVG(
+           AGGREGATE(
+        TRANSFORM(
+          ARRAYS_ZIP(forecast, actual),
+          x -> ABS(x.actual - x.forecast)
+        ), CAST(0.0 AS DOUBLE), (acc, x) -> acc + x
+      ) /
+      NULLIF(AGGREGATE(
+        TRANSFORM(actual, x -> ABS(x)),
+        CAST(0.0 AS DOUBLE), (acc, x) -> acc + x
+      ), 0)
+         ) AS wape
+  FROM {catalog}.{schema}.{use_case}_nf_evaluation_output
+  GROUP BY unique_id, model, run_id
+)
 SELECT
-    model,
+    b.model,
     COUNT(*) AS wins_count,
     ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER(), 2) AS wins_pct,
-    ROUND(AVG(avg_metric), 4) AS avg_smape,
-    NULL AS avg_wape
-FROM {catalog}.{schema}.{use_case}_best_models
-GROUP BY model
+    ROUND(AVG(b.avg_metric), 4) AS avg_{metric},
+    ROUND(AVG(w.wape), 4) AS avg_wape
+FROM {catalog}.{schema}.{use_case}_best_models AS b
+LEFT JOIN series_wape AS w
+  ON b.forecast_source = w.forecast_source AND b.unique_id = w.unique_id
+     AND b.model = w.model AND b.run_id = w.run_id
+GROUP BY b.model
 ORDER BY wins_count DESC
 ```
 
@@ -404,8 +460,9 @@ If the profile table does not exist, skip this step.
 
 Based on results:
 - If many series have high error: suggest re-running with different models or checking data quality
-- If foundation models won most series: suggest using them for scoring
-- If local and foundation results are similar: suggest using local models for cost efficiency
+- If one model class won most series (local, global ML, global DL, foundation or foundationforecast): suggest using it for scoring
+- If classes are close in accuracy: suggest the cheapest one (local → global ML → global DL → foundation / foundationforecast), the same order the Step 3 tie-break uses
+- If future covariates were used: compare covariate models (MLForecast, NeuralForecast with `futr_exog_list`, covariate `FF*` models) against univariate ones to see whether the covariates helped
 - If the user wants to iterate: allow re-running with different models or parameters
 
 **Strategy-specific suggestions:**
@@ -456,9 +513,9 @@ AskUserQuestion:
    What would you like to do next?
    (a) Re-run forecasting with different models or parameters
    (b) Explore results further (drill into specific series or models)
-   {if strategy == 'include': '(c) Re-run with non-forecastable series handled separately'}
-   {if strategy == 'fallback': '(c) Upgrade non-forecastable series to a separate pipeline (for backtested metrics)'}
-   (d) Done — all outputs are ready for business use"
+   (c) Done — all outputs are ready for business use
+   {if strategy == 'include': '(d) Re-run with non-forecastable series handled separately'}
+   {if strategy == 'fallback': '(d) Upgrade non-forecastable series to a separate pipeline (for backtested metrics)'}"
 ```
 
 ## Outputs
@@ -484,8 +541,8 @@ Combined table of best forecasts for all series (forecastable + non-forecastable
 | `model` | STRING | Model name |
 | `wins_count` | INT | Number of series where this model was best |
 | `wins_pct` | DOUBLE | Percentage of total series |
-| `avg_smape` | DOUBLE | Average sMAPE across all series |
-| `avg_wape` | DOUBLE | Average WAPE across all series |
+| `avg_{metric}` | DOUBLE | Average primary metric over the series the model won; the name follows `{metric}` (e.g. `avg_smape`) |
+| `avg_wape` | DOUBLE | Average WAPE over the series the model won (NULL for fallback series) |
 
 **Notebook**: `notebooks/{use_case}/post_process` — reproducibility notebook that re-creates both output tables
 
