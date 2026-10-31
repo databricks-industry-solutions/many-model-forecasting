@@ -10,7 +10,8 @@
 # MAGIC   is about 1 when the model clamps the 95% levels to its native range;
 # MAGIC * the point forecast: the same as in a run without prediction intervals;
 # MAGIC * calibration: CQR is used, and the leave-one-window-out coverage before and after it;
-# MAGIC * scoring: interval columns are filled, with the held-out coverage of the 28 days after the training data;
+# MAGIC * scoring: interval columns are filled and their quantiles do not cross, with the held-out coverage of the
+# MAGIC   28 days after the training data;
 # MAGIC * the warnings MMF logs on the driver about native quantiles.
 # MAGIC
 # MAGIC `modes` lists the predict paths: `distributed` (`serverless=False`: Pandas UDFs where the model has them) and
@@ -177,6 +178,13 @@ def point_diff(p, run_id, p_nopi, run_id_nopi, model):
             "mean_abs_point": round(float(np.mean([np.abs(a[k]).mean() for k in common])), 4) if common else None}
 
 
+def crossing_share(maps):
+    """Share of scoring rows whose quantile map crosses (a lower level above a higher one) at some step."""
+    rows = [dict(m) for m in maps if m is not None]
+    bad = [(np.diff(np.stack([np.asarray(m[k]) for k in sorted(m, key=float)]), axis=0) < -1e-9).any() for m in rows]
+    return round(float(np.mean(bad)), 4) if bad else None
+
+
 def interval_checks(p, run_id, model):
     cal_rows = spark.table(f"{p}_evaluation_output_calibration").filter(
         (F.col("run_id") == run_id) & (F.col("model") == model))
@@ -191,6 +199,7 @@ def interval_checks(p, run_id, model):
     score = spark.table(f"{p}_scoring_output").filter((F.col("run_id") == run_id) & (F.col("model") == model)).toPandas()
     out["scoring_rows"] = len(score)
     out["scoring_quantile_keys"] = sorted({k for m in score["y_quantiles"] if m is not None for k in dict(m)}, key=float)
+    out["scoring_crossing_share"] = crossing_share(score["y_quantiles"])
     for level in (80, 95):
         a = 1 - level / 100
         cov, msis, nulls = [], [], 0

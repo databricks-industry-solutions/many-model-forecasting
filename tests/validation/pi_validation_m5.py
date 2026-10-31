@@ -129,6 +129,14 @@ calib = spark.table(f"{PREFIX}_evaluation_output_calibration").filter(F.col("run
 sigma = calib.drop_duplicates(["model", "unique_id"]).set_index(["model", "unique_id"])["sigma"]
 actual = {u: g.sort_values("ds")["y"].to_numpy() for u, g in test.groupby("unique_id")}
 
+def crossing_share(maps):
+    """Share of scoring rows whose quantile map crosses (a lower level above a higher one) at some step."""
+    rows = [dict(m) for m in maps if m is not None]
+    bad = [(np.diff(np.stack([np.asarray(m[k]) for k in sorted(m, key=float)]), axis=0) < -1e-9).any() for m in rows]
+    return round(float(np.mean(bad)), 4) if bad else None
+
+
+crossing = {model: crossing_share(g["y_quantiles"]) for model, g in score.groupby("model")}
 heldout = []
 for model, g in score.groupby("model"):
     for level in (80, 95):
@@ -202,5 +210,6 @@ display(equality)
 summary = {
     "run_id": run_id, "windows": W, "series": int(Y["unique_id"].nunique()), "runtime_s": round(t_mmf, 1),
     "heldout": comparison.to_dict(orient="records"), "equality": equality.to_dict(orient="records"),
+    "scoring_crossing_share": crossing,
 }
 dbutils.notebook.exit(json.dumps(summary, default=float))

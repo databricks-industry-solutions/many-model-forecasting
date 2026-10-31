@@ -1,0 +1,842 @@
+{
+ "job_run_id": 745911205226297,
+ "commit": "83dccca",
+ "series": 200,
+ "tasks": {
+  "local": {
+   "env": {
+    "models": [
+     "StatsForecastAutoETS",
+     "StatsForecastCrostonSBA",
+     "SKTimeProphet",
+     "MLForecastLGBM"
+    ],
+    "modes": [
+     "distributed"
+    ],
+    "accelerator": "cpu"
+   },
+   "results": {
+    "StatsForecastAutoETS": {
+     "distributed": {
+      "runtime_s": 222.2,
+      "run_id": "560bf52e-b5b8-4979-8f0a-f24b65aed533",
+      "backtest": {
+       "rows": 600,
+       "rows_with_quantiles": 600,
+       "keys": [
+        "0.025",
+        "0.1",
+        "0.5",
+        "0.9",
+        "0.975"
+       ],
+       "finite_share": 1.0,
+       "non_crossing_share": 1.0,
+       "median_minus_point_rel": 0.0053,
+       "degenerate_share_0.1_0.9": 0.0,
+       "point_outside_0.1_0.9_share": 0.0,
+       "degenerate_share_0.025_0.975": 0.0,
+       "point_outside_0.025_0.975_share": 0.0,
+       "width_ratio_95_80": 1.529
+      },
+      "intervals": {
+       "methods": [
+        "cqr/asymmetric/group"
+       ],
+       "lowo_coverage": {
+        "native_coverage_95": 0.949,
+        "coverage_95": 0.953,
+        "native_coverage_80": 0.883,
+        "coverage_80": 0.814
+       },
+       "scoring_rows": 200,
+       "scoring_quantile_keys": [
+        "0.025",
+        "0.1",
+        "0.5",
+        "0.9",
+        "0.975"
+       ],
+       "scoring_crossing_share": 0.0,
+       "heldout_80": {
+        "coverage": 0.782,
+        "msis": 5.31,
+        "series": 200,
+        "null": 0
+       },
+       "heldout_95": {
+        "coverage": 0.942,
+        "msis": 8.05,
+        "series": 200,
+        "null": 0
+       }
+      },
+      "warnings": [],
+      "point_vs_no_intervals": {
+       "rows_compared": 600,
+       "max_abs_diff": 0.0,
+       "rows_different": 0,
+       "mean_abs_point": 1.2981
+      }
+     }
+    },
+    "StatsForecastCrostonSBA": {
+     "distributed": {
+      "runtime_s": 108.6,
+      "run_id": "3c58a365-a474-4fab-b49d-8d2c73cc4c64",
+      "backtest": {
+       "rows": 600,
+       "rows_with_quantiles": 0
+      },
+      "intervals": {
+       "methods": [
+        "conformal/signed_normalized/series"
+       ],
+       "lowo_coverage": {
+        "coverage_95": 0.96,
+        "coverage_80": 0.81
+       },
+       "scoring_rows": 200,
+       "scoring_quantile_keys": [
+        "0.025",
+        "0.1",
+        "0.9",
+        "0.975"
+       ],
+       "scoring_crossing_share": 0.0,
+       "heldout_80": {
+        "coverage": 0.795,
+        "msis": 5.19,
+        "series": 200,
+        "null": 0
+       },
+       "heldout_95": {
+        "coverage": 0.942,
+        "msis": 7.81,
+        "series": 200,
+        "null": 0
+       }
+      },
+      "warnings": [],
+      "point_vs_no_intervals": {
+       "rows_compared": 600,
+       "max_abs_diff": 0.0,
+       "rows_different": 0,
+       "mean_abs_point": 1.3539
+      }
+     }
+    },
+    "SKTimeProphet": {
+     "distributed": {
+      "runtime_s": 347.6,
+      "run_id": "7344e20a-55bf-424c-96dd-12424c4d330a",
+      "backtest": {
+       "rows": 600,
+       "rows_with_quantiles": 600,
+       "keys": [
+        "0.025",
+        "0.1",
+        "0.5",
+        "0.9",
+        "0.975"
+       ],
+       "finite_share": 1.0,
+       "non_crossing_share": 1.0,
+       "median_minus_point_rel": 0.0116,
+       "degenerate_share_0.1_0.9": 0.0,
+       "point_outside_0.1_0.9_share": 0.0,
+       "degenerate_share_0.025_0.975": 0.0,
+       "point_outside_0.025_0.975_share": 0.0,
+       "width_ratio_95_80": 1.526
+      },
+      "intervals": {
+       "methods": [
+        "cqr/asymmetric/group"
+       ],
+       "lowo_coverage": {
+        "native_coverage_95": 0.942,
+        "coverage_95": 0.95,
+        "native_coverage_80": 0.861,
+        "coverage_80": 0.809
+       },
+       "scoring_rows": 200,
+       "scoring_quantile_keys": [
+        "0.025",
+        "0.1",
+        "0.5",
+        "0.9",
+        "0.975"
+       ],
+       "scoring_crossing_share": 0.0,
+       "heldout_80": {
+        "coverage": 0.792,
+        "msis": 5.13,
+        "series": 200,
+        "null": 0
+       },
+       "heldout_95": {
+        "coverage": 0.944,
+        "msis": 7.74,
+        "series": 200,
+        "null": 0
+       }
+      },
+      "warnings": [],
+      "point_vs_no_intervals": {
+       "rows_compared": 600,
+       "max_abs_diff": 0.0,
+       "rows_different": 0,
+       "mean_abs_point": 1.312
+      }
+     }
+    },
+    "MLForecastLGBM": {
+     "distributed": {
+      "runtime_s": 110.9,
+      "run_id": "c8eeaaae-5c25-46cf-b20c-e9f29241223b",
+      "backtest": {
+       "rows": 600,
+       "rows_with_quantiles": 0
+      },
+      "intervals": {
+       "methods": [
+        "conformal/signed_normalized/series"
+       ],
+       "lowo_coverage": {
+        "coverage_95": 0.959,
+        "coverage_80": 0.814
+       },
+       "scoring_rows": 200,
+       "scoring_quantile_keys": [
+        "0.025",
+        "0.1",
+        "0.9",
+        "0.975"
+       ],
+       "scoring_crossing_share": 0.0,
+       "heldout_80": {
+        "coverage": 0.787,
+        "msis": 5.6,
+        "series": 200,
+        "null": 0
+       },
+       "heldout_95": {
+        "coverage": 0.945,
+        "msis": 8.25,
+        "series": 200,
+        "null": 0
+       }
+      },
+      "warnings": [],
+      "point_vs_no_intervals": {
+       "rows_compared": 600,
+       "max_abs_diff": 0.0,
+       "rows_different": 0,
+       "mean_abs_point": 1.2794
+      }
+     }
+    }
+   }
+  },
+  "foundation": {
+   "env": {
+    "models": [
+     "ChronosBoltSmall",
+     "Chronos2",
+     "TimesFM_2_5_200m"
+    ],
+    "modes": [
+     "distributed",
+     "driver"
+    ],
+    "accelerator": "gpu",
+    "gpus": [
+     "NVIDIA A10G"
+    ],
+    "torch": "2.9.0+cu129"
+   },
+   "results": {
+    "ChronosBoltSmall": {
+     "distributed": {
+      "runtime_s": 336.6,
+      "run_id": "6e1b246f-c318-41bd-af48-d27c151f0bb2",
+      "backtest": {
+       "rows": 600,
+       "rows_with_quantiles": 600,
+       "keys": [
+        "0.025",
+        "0.1",
+        "0.5",
+        "0.9",
+        "0.975"
+       ],
+       "finite_share": 1.0,
+       "non_crossing_share": 1.0,
+       "median_minus_point_rel": 0.0,
+       "degenerate_share_0.1_0.9": 0.0,
+       "point_outside_0.1_0.9_share": 0.0,
+       "degenerate_share_0.025_0.975": 0.0,
+       "point_outside_0.025_0.975_share": 0.0,
+       "width_ratio_95_80": 1.0
+      },
+      "intervals": {
+       "methods": [
+        "cqr/asymmetric/group"
+       ],
+       "lowo_coverage": {
+        "native_coverage_95": 0.818,
+        "coverage_95": 0.946,
+        "native_coverage_80": 0.814,
+        "coverage_80": 0.827
+       },
+       "scoring_rows": 200,
+       "scoring_quantile_keys": [
+        "0.025",
+        "0.1",
+        "0.5",
+        "0.9",
+        "0.975"
+       ],
+       "scoring_crossing_share": 0.0,
+       "heldout_80": {
+        "coverage": 0.825,
+        "msis": 4.62,
+        "series": 200,
+        "null": 0
+       },
+       "heldout_95": {
+        "coverage": 0.947,
+        "msis": 7.51,
+        "series": 200,
+        "null": 0
+       }
+      },
+      "warnings": [],
+      "point_vs_no_intervals": {
+       "rows_compared": 600,
+       "max_abs_diff": 0.00335693359375,
+       "rows_different": 18,
+       "mean_abs_point": 0.8659
+      }
+     },
+     "driver": {
+      "runtime_s": 209.7,
+      "run_id": "a9188c17-efd1-44b6-a507-e4a0c944d998",
+      "backtest": {
+       "rows": 600,
+       "rows_with_quantiles": 600,
+       "keys": [
+        "0.025",
+        "0.1",
+        "0.5",
+        "0.9",
+        "0.975"
+       ],
+       "finite_share": 1.0,
+       "non_crossing_share": 1.0,
+       "median_minus_point_rel": 0.0,
+       "degenerate_share_0.1_0.9": 0.0,
+       "point_outside_0.1_0.9_share": 0.0,
+       "degenerate_share_0.025_0.975": 0.0,
+       "point_outside_0.025_0.975_share": 0.0,
+       "width_ratio_95_80": 1.0
+      },
+      "intervals": {
+       "methods": [
+        "cqr/asymmetric/group"
+       ],
+       "lowo_coverage": {
+        "native_coverage_95": 0.818,
+        "coverage_95": 0.946,
+        "native_coverage_80": 0.814,
+        "coverage_80": 0.828
+       },
+       "scoring_rows": 200,
+       "scoring_quantile_keys": [
+        "0.025",
+        "0.1",
+        "0.5",
+        "0.9",
+        "0.975"
+       ],
+       "scoring_crossing_share": 0.0,
+       "heldout_80": {
+        "coverage": 0.825,
+        "msis": 4.62,
+        "series": 200,
+        "null": 0
+       },
+       "heldout_95": {
+        "coverage": 0.947,
+        "msis": 7.51,
+        "series": 200,
+        "null": 0
+       }
+      },
+      "warnings": [
+       "ChronosBoltSmall: requested quantiles [0.025, 0.1, 0.5, 0.9, 0.975] exceed the native range [0.1, 0.9] of this model; they are clamped to it, so the native band is too narrow. Use prediction_intervals.method 'auto' or 'cqr' to calibrate it."
+      ]
+     }
+    },
+    "Chronos2": {
+     "distributed": {
+      "runtime_s": 269.2,
+      "run_id": "9013d5ca-779d-4df3-b46e-b1972d35d8e9",
+      "backtest": {
+       "rows": 600,
+       "rows_with_quantiles": 600,
+       "keys": [
+        "0.025",
+        "0.1",
+        "0.5",
+        "0.9",
+        "0.975"
+       ],
+       "finite_share": 1.0,
+       "non_crossing_share": 0.9963,
+       "median_minus_point_rel": 0.0,
+       "degenerate_share_0.1_0.9": 0.0,
+       "point_outside_0.1_0.9_share": 0.0014,
+       "degenerate_share_0.025_0.975": 0.0,
+       "point_outside_0.025_0.975_share": 0.0001,
+       "width_ratio_95_80": 1.887
+      },
+      "intervals": {
+       "methods": [
+        "cqr/asymmetric/group"
+       ],
+       "lowo_coverage": {
+        "native_coverage_95": 0.977,
+        "coverage_95": 0.967,
+        "native_coverage_80": 0.788,
+        "coverage_80": 0.821
+       },
+       "scoring_rows": 200,
+       "scoring_quantile_keys": [
+        "0.025",
+        "0.1",
+        "0.5",
+        "0.9",
+        "0.975"
+       ],
+       "scoring_crossing_share": 0.0,
+       "heldout_80": {
+        "coverage": 0.81,
+        "msis": 4.52,
+        "series": 200,
+        "null": 0
+       },
+       "heldout_95": {
+        "coverage": 0.966,
+        "msis": 6.77,
+        "series": 200,
+        "null": 0
+       }
+      },
+      "warnings": [],
+      "point_vs_no_intervals": {
+       "rows_compared": 600,
+       "max_abs_diff": 0.0,
+       "rows_different": 0,
+       "mean_abs_point": 0.8874
+      }
+     },
+     "driver": {
+      "runtime_s": 227.3,
+      "run_id": "fb96111b-c6d5-4870-80fd-1604d0453ddb",
+      "backtest": {
+       "rows": 600,
+       "rows_with_quantiles": 600,
+       "keys": [
+        "0.025",
+        "0.1",
+        "0.5",
+        "0.9",
+        "0.975"
+       ],
+       "finite_share": 1.0,
+       "non_crossing_share": 0.996,
+       "median_minus_point_rel": 0.0,
+       "degenerate_share_0.1_0.9": 0.0,
+       "point_outside_0.1_0.9_share": 0.0015,
+       "degenerate_share_0.025_0.975": 0.0,
+       "point_outside_0.025_0.975_share": 0.0001,
+       "width_ratio_95_80": 1.887
+      },
+      "intervals": {
+       "methods": [
+        "cqr/asymmetric/group"
+       ],
+       "lowo_coverage": {
+        "native_coverage_95": 0.977,
+        "coverage_95": 0.967,
+        "native_coverage_80": 0.785,
+        "coverage_80": 0.821
+       },
+       "scoring_rows": 200,
+       "scoring_quantile_keys": [
+        "0.025",
+        "0.1",
+        "0.5",
+        "0.9",
+        "0.975"
+       ],
+       "scoring_crossing_share": 0.0,
+       "heldout_80": {
+        "coverage": 0.808,
+        "msis": 4.52,
+        "series": 200,
+        "null": 0
+       },
+       "heldout_95": {
+        "coverage": 0.966,
+        "msis": 6.76,
+        "series": 200,
+        "null": 0
+       }
+      },
+      "warnings": []
+     }
+    },
+    "TimesFM_2_5_200m": {
+     "distributed": {
+      "runtime_s": 279.9,
+      "run_id": "44bea10a-f147-4dc3-bfc6-c393615eddf8",
+      "backtest": {
+       "rows": 600,
+       "rows_with_quantiles": 600,
+       "keys": [
+        "0.025",
+        "0.1",
+        "0.5",
+        "0.9",
+        "0.975"
+       ],
+       "finite_share": 1.0,
+       "non_crossing_share": 0.9862,
+       "median_minus_point_rel": 0.0,
+       "degenerate_share_0.1_0.9": 0.0151,
+       "point_outside_0.1_0.9_share": 0.0138,
+       "degenerate_share_0.025_0.975": 0.0151,
+       "point_outside_0.025_0.975_share": 0.0138,
+       "width_ratio_95_80": 1.0
+      },
+      "intervals": {
+       "methods": [
+        "cqr/asymmetric/group"
+       ],
+       "lowo_coverage": {
+        "native_coverage_95": 0.841,
+        "coverage_95": 0.945,
+        "native_coverage_80": 0.841,
+        "coverage_80": 0.828
+       },
+       "scoring_rows": 200,
+       "scoring_quantile_keys": [
+        "0.025",
+        "0.1",
+        "0.5",
+        "0.9",
+        "0.975"
+       ],
+       "scoring_crossing_share": 0.0,
+       "heldout_80": {
+        "coverage": 0.832,
+        "msis": 4.52,
+        "series": 200,
+        "null": 0
+       },
+       "heldout_95": {
+        "coverage": 0.941,
+        "msis": 7.41,
+        "series": 200,
+        "null": 0
+       }
+      },
+      "warnings": [
+       "TimesFM_2_5_200m: requested quantiles [0.025, 0.1, 0.5, 0.9, 0.975] exceed the native range [0.1, 0.9] of this model; they are clamped to it, so the native band is too narrow. Use prediction_intervals.method 'auto' or 'cqr' to calibrate it."
+      ],
+      "point_vs_no_intervals": {
+       "rows_compared": 600,
+       "max_abs_diff": 0.0,
+       "rows_different": 0,
+       "mean_abs_point": 0.9283
+      }
+     },
+     "driver": {
+      "runtime_s": 216.5,
+      "run_id": "e62ddb28-207f-48d0-8200-a89ff03f3db3",
+      "backtest": {
+       "rows": 600,
+       "rows_with_quantiles": 600,
+       "keys": [
+        "0.025",
+        "0.1",
+        "0.5",
+        "0.9",
+        "0.975"
+       ],
+       "finite_share": 1.0,
+       "non_crossing_share": 0.9862,
+       "median_minus_point_rel": 0.0,
+       "degenerate_share_0.1_0.9": 0.0151,
+       "point_outside_0.1_0.9_share": 0.0138,
+       "degenerate_share_0.025_0.975": 0.0151,
+       "point_outside_0.025_0.975_share": 0.0138,
+       "width_ratio_95_80": 1.0
+      },
+      "intervals": {
+       "methods": [
+        "cqr/asymmetric/group"
+       ],
+       "lowo_coverage": {
+        "native_coverage_95": 0.841,
+        "coverage_95": 0.945,
+        "native_coverage_80": 0.841,
+        "coverage_80": 0.828
+       },
+       "scoring_rows": 200,
+       "scoring_quantile_keys": [
+        "0.025",
+        "0.1",
+        "0.5",
+        "0.9",
+        "0.975"
+       ],
+       "scoring_crossing_share": 0.0,
+       "heldout_80": {
+        "coverage": 0.832,
+        "msis": 4.52,
+        "series": 200,
+        "null": 0
+       },
+       "heldout_95": {
+        "coverage": 0.941,
+        "msis": 7.41,
+        "series": 200,
+        "null": 0
+       }
+      },
+      "warnings": []
+     }
+    }
+   }
+  },
+  "ff": {
+   "env": {
+    "models": [
+     "FFChronos2",
+     "FFFlowState",
+     "FFToto"
+    ],
+    "modes": [
+     "distributed"
+    ],
+    "accelerator": "gpu",
+    "gpus": [
+     "NVIDIA A10G"
+    ],
+    "torch": "2.11.0+cu128"
+   },
+   "results": {
+    "FFChronos2": {
+     "distributed": {
+      "runtime_s": 271.1,
+      "run_id": "61acafdb-819f-4acd-8407-74fe2aaf1a8a",
+      "backtest": {
+       "rows": 600,
+       "rows_with_quantiles": 600,
+       "keys": [
+        "0.025",
+        "0.1",
+        "0.5",
+        "0.9",
+        "0.975"
+       ],
+       "finite_share": 1.0,
+       "non_crossing_share": 0.9957,
+       "median_minus_point_rel": 0.0,
+       "degenerate_share_0.1_0.9": 0.0,
+       "point_outside_0.1_0.9_share": 0.0021,
+       "degenerate_share_0.025_0.975": 0.0,
+       "point_outside_0.025_0.975_share": 0.0,
+       "width_ratio_95_80": 1.887
+      },
+      "intervals": {
+       "methods": [
+        "cqr/asymmetric/group"
+       ],
+       "lowo_coverage": {
+        "native_coverage_95": 0.977,
+        "coverage_95": 0.968,
+        "native_coverage_80": 0.782,
+        "coverage_80": 0.82
+       },
+       "scoring_rows": 200,
+       "scoring_quantile_keys": [
+        "0.025",
+        "0.1",
+        "0.5",
+        "0.9",
+        "0.975"
+       ],
+       "scoring_crossing_share": 0.0,
+       "heldout_80": {
+        "coverage": 0.806,
+        "msis": 4.52,
+        "series": 200,
+        "null": 0
+       },
+       "heldout_95": {
+        "coverage": 0.966,
+        "msis": 6.76,
+        "series": 200,
+        "null": 0
+       }
+      },
+      "warnings": [],
+      "point_vs_no_intervals": {
+       "rows_compared": 600,
+       "max_abs_diff": 0.0,
+       "rows_different": 0,
+       "mean_abs_point": 0.888
+      }
+     }
+    },
+    "FFFlowState": {
+     "distributed": {
+      "runtime_s": 257.1,
+      "run_id": "b4b1d71f-fa61-4e57-961c-514d99882f59",
+      "backtest": {
+       "rows": 600,
+       "rows_with_quantiles": 600,
+       "keys": [
+        "0.025",
+        "0.1",
+        "0.5",
+        "0.9",
+        "0.975"
+       ],
+       "finite_share": 1.0,
+       "non_crossing_share": 1.0,
+       "median_minus_point_rel": 0.0,
+       "degenerate_share_0.1_0.9": 0.0001,
+       "point_outside_0.1_0.9_share": 0.0,
+       "degenerate_share_0.025_0.975": 0.0001,
+       "point_outside_0.025_0.975_share": 0.0,
+       "width_ratio_95_80": 1.0
+      },
+      "intervals": {
+       "methods": [
+        "cqr/asymmetric/group"
+       ],
+       "lowo_coverage": {
+        "native_coverage_95": 0.706,
+        "coverage_95": 0.946,
+        "native_coverage_80": 0.706,
+        "coverage_80": 0.796
+       },
+       "scoring_rows": 200,
+       "scoring_quantile_keys": [
+        "0.025",
+        "0.1",
+        "0.5",
+        "0.9",
+        "0.975"
+       ],
+       "scoring_crossing_share": 0.0,
+       "heldout_80": {
+        "coverage": 0.773,
+        "msis": 4.77,
+        "series": 200,
+        "null": 0
+       },
+       "heldout_95": {
+        "coverage": 0.937,
+        "msis": 7.71,
+        "series": 200,
+        "null": 0
+       }
+      },
+      "warnings": [
+       "FFFlowState: requested quantiles [0.025, 0.1, 0.5, 0.9, 0.975] exceed the native range [0.1, 0.9] of this model; they are clamped to it, so the native band is too narrow. Use prediction_intervals.method 'auto' or 'cqr' to calibrate it."
+      ],
+      "point_vs_no_intervals": {
+       "rows_compared": 600,
+       "max_abs_diff": 0.0,
+       "rows_different": 0,
+       "mean_abs_point": 0.8724
+      }
+     }
+    },
+    "FFToto": {
+     "distributed": {
+      "runtime_s": 245.4,
+      "run_id": "1cbbf29c-fb85-49ce-9e9c-4b33d9bbfb0f",
+      "backtest": {
+       "rows": 600,
+       "rows_with_quantiles": 600,
+       "keys": [
+        "0.025",
+        "0.1",
+        "0.5",
+        "0.9",
+        "0.975"
+       ],
+       "finite_share": 1.0,
+       "non_crossing_share": 1.0,
+       "median_minus_point_rel": 0.0,
+       "degenerate_share_0.1_0.9": 0.0,
+       "point_outside_0.1_0.9_share": 0.0,
+       "degenerate_share_0.025_0.975": 0.0,
+       "point_outside_0.025_0.975_share": 0.0,
+       "width_ratio_95_80": 5.011
+      },
+      "intervals": {
+       "methods": [
+        "cqr/asymmetric/group"
+       ],
+       "lowo_coverage": {
+        "native_coverage_95": 0.938,
+        "coverage_95": 0.951,
+        "native_coverage_80": 0.801,
+        "coverage_80": 0.814
+       },
+       "scoring_rows": 200,
+       "scoring_quantile_keys": [
+        "0.025",
+        "0.1",
+        "0.5",
+        "0.9",
+        "0.975"
+       ],
+       "scoring_crossing_share": 0.0,
+       "heldout_80": {
+        "coverage": 0.81,
+        "msis": 4.51,
+        "series": 200,
+        "null": 0
+       },
+       "heldout_95": {
+        "coverage": 0.95,
+        "msis": 10.84,
+        "series": 200,
+        "null": 0
+       }
+      },
+      "warnings": [
+       "FFToto: native quantiles are estimated from 32 sample paths, so the tails (e.g. 2.5% and 97.5%) are poorly estimated. Set num_samples to at least 100 for calibrated prediction intervals."
+      ],
+      "point_vs_no_intervals": {
+       "rows_compared": 600,
+       "max_abs_diff": 11.992652893066406,
+       "rows_different": 600,
+       "mean_abs_point": 0.9228
+      }
+     }
+    }
+   }
+  }
+ }
+}
