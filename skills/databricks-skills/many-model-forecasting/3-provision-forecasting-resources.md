@@ -392,6 +392,10 @@ Same settings as the GPU cluster above (runtime `18.x-gpu-ml-scala2.13`, single-
 | Azure | `Standard_NV36ads_A10_v5` (1× A10, 24 GB) | `Standard_NC4as_T4_v3` (1× T4, 16 GB; the largest models, such as `FFToto2_1B`, need about 4.4 GB of GPU memory) |
 | GCP | `g2-standard-8` (1× L4, 24 GB) | `g2-standard-4` (1× L4) |
 
+#### Non-Forecastable GPU Cluster (`{use_case}_nf_gpu_cluster`) — for separate_job strategy, GPU models only
+
+Only created when `non_forecastable_strategy == 'separate_job'` and the non-forecastable models include global or foundation models on a classic cluster. Same single-node config as the main GPU cluster. A smaller GPU instance is usually sufficient since non-forecastable series are typically fewer and simpler. Non-forecastable `FF*` models on a classic cluster get `{use_case}_nf_ff_gpu_cluster`, with the same config as `{use_case}_ff_gpu_cluster`. GPU classes on serverless GPU need no non-forecastable cluster: their non-forecastable job is another serverless task.
+
 #### On-demand instance requirement (all clusters)
 
 **All clusters MUST use on-demand (non-spot) instances for both driver and worker nodes.** Spot/preemptible instances can be reclaimed mid-run, causing long-running forecasting jobs to fail partway through with no automatic recovery.
@@ -429,17 +433,13 @@ When generating the job cluster JSON, include the cloud-specific availability se
 
 `first_on_demand: 100` ensures all nodes (driver + up to 99 workers) are on-demand. Apply these attributes to **every** cluster configuration — CPU, GPU, and non-forecastable clusters alike.
 
-#### Non-Forecastable GPU Cluster (`{use_case}_nf_gpu_cluster`) — for separate_job strategy, GPU models only
-
-Only created when `non_forecastable_strategy == 'separate_job'` and the non-forecastable models include global or foundation models on a classic cluster. Same single-node config as the main GPU cluster. A smaller GPU instance is usually sufficient since non-forecastable series are typically fewer and simpler. Non-forecastable `FF*` models on a classic cluster get `{use_case}_nf_ff_gpu_cluster`, with the same config as `{use_case}_ff_gpu_cluster`. GPU classes on serverless GPU need no non-forecastable cluster: their non-forecastable job is another serverless task.
-
-### ⛔ STOP GATE — Step 6: Ask user which clusters to start
+### ⛔ STOP GATE — Step 5: Ask user which clusters to start
 
 **Always present the cluster configuration and ask the user to confirm. Do NOT proceed until the user approves.**
 
 Ask about each cluster one at a time. Only ask about cluster types the user's selected models require.
 
-#### Step 6a: CPU cluster configuration (if local models selected)
+#### Step 5a: CPU cluster configuration (if local models selected)
 
 ```
 AskUserQuestion:
@@ -501,7 +501,7 @@ AskUserQuestion:
 
 **WAIT for the user to respond.**
 
-#### Step 6a-bis: ML cluster configuration (if any MLForecast model selected)
+#### Step 5a-bis: ML cluster configuration (if any MLForecast model selected)
 
 Only ask this if the user selected at least one `MLForecast*` model. No worker-count question — the cluster is single-node by definition.
 
@@ -542,7 +542,7 @@ AskUserQuestion:
 
 **WAIT for the user to respond.**
 
-#### Step 6b-0: Compute type for GPU classes (if any global DL, foundation or foundationforecast models selected)
+#### Step 5b-0: Compute type for GPU classes (if any global DL, foundation or foundationforecast models selected)
 
 Ask once, listing only the GPU classes the user selected. Recommend serverless GPU unless one of the "use a classic GPU cluster instead" conditions in [Serverless GPU](#serverless-gpu-a10-ai-v6--for-global-dl-foundation-and-foundationforecast-models) applies; on GCP, recommend classic.
 
@@ -560,9 +560,9 @@ AskUserQuestion:
    {if (c): 'For each class (global DL / foundation / foundationforecast), answer serverless or classic.'}"
 ```
 
-**WAIT for the user to respond.** Record `compute_type` (`serverless` or `classic`) per GPU class. Ask Step 6b only for classes on `classic`, and Step 6c only if foundationforecast is on `classic`. Classes on `serverless` need no further questions.
+**WAIT for the user to respond.** Record `compute_type` (`serverless` or `classic`) per GPU class. Ask Step 5b only for classes on `classic`, and Step 5c only if foundationforecast is on `classic`. Classes on `serverless` need no further questions.
 
-#### Step 6b: GPU cluster configuration (if global DL or foundation models run on a classic cluster)
+#### Step 5b: GPU cluster configuration (if global DL or foundation models run on a classic cluster)
 
 ```
 AskUserQuestion:
@@ -608,7 +608,7 @@ AskUserQuestion:
 
 **WAIT for the user to respond.**
 
-#### Step 6c: Foundationforecast GPU cluster configuration (if `FF*` models run on a classic cluster)
+#### Step 5c: Foundationforecast GPU cluster configuration (if `FF*` models run on a classic cluster)
 
 ```
 AskUserQuestion:
@@ -659,7 +659,7 @@ AskUserQuestion:
 
 Only include clusters that are needed for the selected model types. If `non_forecastable_strategy` is `include` or `fallback`, no non-forecastable clusters are needed.
 
-### Step 7: Unity Catalog enablement verification
+### Step 6: Unity Catalog enablement verification
 
 All clusters MUST have UC enabled. **All ML runtimes** (both CPU-ML and GPU-ML) require `SINGLE_USER`:
 
@@ -689,7 +689,7 @@ Serverless GPU jobs always have UC enabled; they take no `data_security_mode` or
 
 If cluster doesn't have UC → warn user, suggest adding required Spark config.
 
-### Step 8: Present and validate
+### Step 7: Present and validate
 
 Present the complete cluster configuration to the user, including:
 - Cluster key name(s) (prefixed with `{use_case}`)
@@ -700,11 +700,11 @@ Present the complete cluster configuration to the user, including:
 - Compute type per GPU class (serverless GPU: one A10, AI v6; or classic cluster)
 - Selected models grouped by class (local, global_ml, global, foundation, foundationforecast)
 
-### Step 9: Save configuration
+### Step 8: Save configuration
 
 Save the cluster configuration and selected models locally so `/execute-mmf-forecast` can use it when creating the Workflow jobs.
 
-### ⛔ STOP GATE — Step 10: Confirm before proceeding to next skill
+### ⛔ STOP GATE — Step 9: Confirm before proceeding to next skill
 
 ```
 AskUserQuestion:
