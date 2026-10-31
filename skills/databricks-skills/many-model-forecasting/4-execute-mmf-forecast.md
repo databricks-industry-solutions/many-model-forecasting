@@ -108,7 +108,7 @@ Based on the strategy, determine which training table to use for the **main pipe
 |----------|--------------------------|--------------------------|
 | `include` (or config missing) | `{use_case}_train_data` | All series run together — no separate handling |
 | `fallback` | `{use_case}_train_data_forecastable` | Already handled in Skill 2 — fallback forecasts in `{use_case}_scoring_output_non_forecastable` |
-| `separate_job` | `{use_case}_train_data_forecastable` | Separate job created in Step 5a below |
+| `separate_job` | `{use_case}_train_data_forecastable` | Separate jobs created in Step 5b below |
 
 Set `{train_table}` to the correct table name for all subsequent notebook generation steps.
 
@@ -992,58 +992,6 @@ Use this template instead of Job 3, 4 or 5 for each GPU class the user put on se
 - **New output tables.** `{use_case}_evaluation_output` and `{use_case}_scoring_output` are created by the first job that writes to them. If they don't exist yet and several jobs write their first results at the same moment, one write can fail with `TABLE_OR_VIEW_ALREADY_EXISTS`. Launching all jobs together is fine in practice because the classes finish their first model at different times; if a job fails with this error, rerun it.
 - Only create jobs for model classes the user actually selected.
 
-Use `create_job` (or `update_job` on upsert) to create each job. **After `create_job` / `update_job` and BEFORE `run_job`, run Step 5c.**
-
-### Step 5c: Verify each job's cluster runtime (MANDATORY)
-
-> ⛔ **This step is not optional and cannot be skipped.** It exists to catch the most common failure mode: the agent copying the local job's `spark_version` into the global or foundation JSON (e.g. using `18.x-cpu-ml-scala2.13` for a GPU cluster). The verification reads the runtime back from the API after job creation, so it does not depend on the agent's intent.
-
-For every job created in Step 5b (and Step 5a if `separate_job`), call `get_job` and inspect each entry in `job_clusters[*].new_cluster.spark_version` AND `job_clusters[*].new_cluster.num_workers`. Required values:
-
-| Job name | Required `spark_version` | Required topology |
-|---|---|---|
-| `{use_case}_local_forecasting_{username}` | `18.x-cpu-ml-scala2.13` | multi-node (`num_workers ≥ 0`, `local[*]` NOT set) |
-| `{use_case}_global_ml_forecasting_{username}` | `18.x-cpu-ml-scala2.13` | **single-node** (`num_workers == 0`, `spark.master==local[*]`, `cluster.profile==singleNode`, `custom_tags.ResourceClass==SingleNode`) |
-| `{use_case}_global_forecasting_{username}` | `18.x-gpu-ml-scala2.13` | single-node (`num_workers == 0`) |
-| `{use_case}_foundation_forecasting_{username}` | `18.x-gpu-ml-scala2.13` | single-node (`num_workers == 0`) |
-| `{use_case}_foundationforecast_forecasting_{username}` | `18.x-gpu-ml-scala2.13` | single-node (`num_workers == 0`) |
-| `{use_case}_nf_local_forecasting_{username}` | `18.x-cpu-ml-scala2.13` | multi-node |
-| `{use_case}_nf_global_ml_forecasting_{username}` | `18.x-cpu-ml-scala2.13` | single-node |
-| `{use_case}_nf_global_forecasting_{username}` | `18.x-gpu-ml-scala2.13` | single-node |
-| `{use_case}_nf_foundation_forecasting_{username}` | `18.x-gpu-ml-scala2.13` | single-node |
-| `{use_case}_nf_foundationforecast_forecasting_{username}` | `18.x-gpu-ml-scala2.13` | single-node |
-
-The GPU rows apply to classes on a classic GPU cluster. For a GPU class on **serverless GPU**, check instead that:
-- `settings.job_clusters` is absent or empty;
-- the task has `environment_key` and `compute.hardware_accelerator == "GPU_1xA10"`, and no `job_cluster_key`;
-- the matching `settings.environments[*].spec.base_environment` is `workspace-base-environments/databricks_ai_v6` or the uploaded AI v6 YAML path;
-- the task's notebook is `run_serverless_{class}`.
-
-For each job:
-
-1. Call `get_job(job_id=...)`.
-2. For each cluster in `settings.job_clusters[*]`, check `new_cluster.spark_version` AND `new_cluster.num_workers` (plus, for single-node clusters, `spark_conf['spark.master']` and `custom_tags['ResourceClass']`).
-3. Compare to the expected values from the table above.
-4. If **any** value does not match, do NOT call `run_job`. Instead:
-   - Print a clear error including the job name, the cluster key, the actual values, and the expected values.
-   - Call `update_job` with the corrected JSON template from Step 5b (or 5a) — using the exact values from the table above.
-   - Re-run Step 5c to verify the fix.
-   - Only after the check passes for **all** jobs may the agent proceed to `run_job`.
-
-Report a one-line summary to the user before triggering runs:
-
-```
-Cluster runtime check:
-  • {use_case}_local_forecasting_{username}        → 18.x-cpu-ml-scala2.13  multi-node    ✓
-  • {use_case}_global_ml_forecasting_{username}    → 18.x-cpu-ml-scala2.13  single-node   ✓
-  • {use_case}_global_forecasting_{username}       → 18.x-gpu-ml-scala2.13  single-node   ✓
-  • {use_case}_foundation_forecasting_{username}   → 18.x-gpu-ml-scala2.13  single-node   ✓
-  • {use_case}_foundationforecast_forecasting_{username} → serverless GPU_1xA10, AI v6   ✓
-All runtimes and topologies match the pinned values. Proceeding to run_job.
-```
-
-Then call `run_job` for **all jobs simultaneously**.
-
 #### Serverless CPU alternative (local models only)
 
 If the user requests **serverless compute** for local models, omit `job_clusters` entirely and use `environment_key` instead of `job_cluster_key`:
@@ -1065,7 +1013,7 @@ If the user requests **serverless compute** for local models, omit `job_clusters
 
 GPU classes on serverless use the [serverless GPU job template](#serverless-gpu-jobs-global-dl-foundation-foundationforecast), not this one: this CPU environment has no GPU.
 
-#### Step 5a: Non-forecastable separate job (if `separate_job` strategy)
+#### Non-forecastable jobs (if `separate_job` strategy)
 
 **Only create these jobs if `non_forecastable_strategy == 'separate_job'`.** Skip entirely for `include` or `fallback` strategies.
 
@@ -1090,7 +1038,7 @@ If the non-forecastable models include any `MLForecast*` model, generate a noteb
 - Save locally as `notebooks/{use_case}/run_global_ml_nf.ipynb`
 - Upload to workspace at `notebooks/{use_case}/run_global_ml_nf`
 
-Identical placeholder substitution to the main `run_global_ml` notebook, except `{train_table}` points at `{use_case}_train_data_non_forecastable` and the output tables use the `_nf_` infix (see Step 5a header).
+Identical placeholder substitution to the main `run_global_ml` notebook, except `{train_table}` points at `{use_case}_train_data_non_forecastable` and the output tables use the `_nf_` infix (see the non-forecastable jobs header).
 
 ##### Non-forecastable GPU orchestrator notebooks
 
@@ -1218,7 +1166,59 @@ Same pattern as NF-3 (global DL), with `orchestrator_foundation_nf` notebook.
 
 Same pattern as NF-3, with job name `{use_case}_nf_foundationforecast_forecasting_{username}`, the `orchestrator_foundationforecast_nf` notebook and its own cluster `{use_case}_nf_ff_gpu_cluster` (same config as `{use_case}_ff_gpu_cluster`).
 
-**Launch all non-forecastable jobs in parallel with the main pipeline jobs.** All jobs (main + NF) are triggered simultaneously.
+**Do not trigger these jobs here.** Step 5c verifies them together with the main jobs and then triggers all jobs (main + NF) simultaneously.
+
+Use `create_job` (or `update_job` on upsert) to create each job. **After `create_job` / `update_job` and BEFORE `run_job`, run Step 5c.**
+
+### Step 5c: Verify each job's cluster runtime (MANDATORY)
+
+> ⛔ **This step is not optional and cannot be skipped.** It exists to catch the most common failure mode: the agent copying the local job's `spark_version` into the global or foundation JSON (e.g. using `18.x-cpu-ml-scala2.13` for a GPU cluster). The verification reads the runtime back from the API after job creation, so it does not depend on the agent's intent.
+
+For every job created in Step 5b (including the non-forecastable jobs if `separate_job`), call `get_job` and inspect each entry in `job_clusters[*].new_cluster.spark_version` AND `job_clusters[*].new_cluster.num_workers`. Required values:
+
+| Job name | Required `spark_version` | Required topology |
+|---|---|---|
+| `{use_case}_local_forecasting_{username}` | `18.x-cpu-ml-scala2.13` | multi-node (`num_workers ≥ 0`, `local[*]` NOT set) |
+| `{use_case}_global_ml_forecasting_{username}` | `18.x-cpu-ml-scala2.13` | **single-node** (`num_workers == 0`, `spark.master==local[*]`, `cluster.profile==singleNode`, `custom_tags.ResourceClass==SingleNode`) |
+| `{use_case}_global_forecasting_{username}` | `18.x-gpu-ml-scala2.13` | single-node (`num_workers == 0`) |
+| `{use_case}_foundation_forecasting_{username}` | `18.x-gpu-ml-scala2.13` | single-node (`num_workers == 0`) |
+| `{use_case}_foundationforecast_forecasting_{username}` | `18.x-gpu-ml-scala2.13` | single-node (`num_workers == 0`) |
+| `{use_case}_nf_local_forecasting_{username}` | `18.x-cpu-ml-scala2.13` | multi-node |
+| `{use_case}_nf_global_ml_forecasting_{username}` | `18.x-cpu-ml-scala2.13` | single-node |
+| `{use_case}_nf_global_forecasting_{username}` | `18.x-gpu-ml-scala2.13` | single-node |
+| `{use_case}_nf_foundation_forecasting_{username}` | `18.x-gpu-ml-scala2.13` | single-node |
+| `{use_case}_nf_foundationforecast_forecasting_{username}` | `18.x-gpu-ml-scala2.13` | single-node |
+
+The GPU rows apply to classes on a classic GPU cluster. For a GPU class on **serverless GPU**, check instead that:
+- `settings.job_clusters` is absent or empty;
+- the task has `environment_key` and `compute.hardware_accelerator == "GPU_1xA10"`, and no `job_cluster_key`;
+- the matching `settings.environments[*].spec.base_environment` is `workspace-base-environments/databricks_ai_v6` or the uploaded AI v6 YAML path;
+- the task's notebook is `run_serverless_{class}`.
+
+For each job:
+
+1. Call `get_job(job_id=...)`.
+2. For each cluster in `settings.job_clusters[*]`, check `new_cluster.spark_version` AND `new_cluster.num_workers` (plus, for single-node clusters, `spark_conf['spark.master']` and `custom_tags['ResourceClass']`).
+3. Compare to the expected values from the table above.
+4. If **any** value does not match, do NOT call `run_job`. Instead:
+   - Print a clear error including the job name, the cluster key, the actual values, and the expected values.
+   - Call `update_job` with the corrected JSON template from Step 5b — using the exact values from the table above.
+   - Re-run Step 5c to verify the fix.
+   - Only after the check passes for **all** jobs may the agent proceed to `run_job`.
+
+Report a one-line summary to the user before triggering runs:
+
+```
+Cluster runtime check:
+  • {use_case}_local_forecasting_{username}        → 18.x-cpu-ml-scala2.13  multi-node    ✓
+  • {use_case}_global_ml_forecasting_{username}    → 18.x-cpu-ml-scala2.13  single-node   ✓
+  • {use_case}_global_forecasting_{username}       → 18.x-gpu-ml-scala2.13  single-node   ✓
+  • {use_case}_foundation_forecasting_{username}   → 18.x-gpu-ml-scala2.13  single-node   ✓
+  • {use_case}_foundationforecast_forecasting_{username} → serverless GPU_1xA10, AI v6   ✓
+All runtimes and topologies match the pinned values. Proceeding to run_job.
+```
+
+Then call `run_job` for **all jobs simultaneously**.
 
 ### Step 6: Monitor execution
 
