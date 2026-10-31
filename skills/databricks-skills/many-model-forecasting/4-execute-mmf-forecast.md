@@ -531,6 +531,42 @@ Save locally, one per serverless class:
 - `notebooks/{use_case}/run_serverless_foundation.ipynb`
 - `notebooks/{use_case}/run_serverless_foundationforecast.ipynb`
 
+#### 3e: Non-forecastable notebooks (if `separate_job` strategy)
+
+**Only generate these if `non_forecastable_strategy == 'separate_job'`.** Skip for `include` or `fallback`.
+
+Generate notebooks for the non-forecastable pipeline using the same templates, but with:
+- `{train_table}` → `{use_case}_train_data_non_forecastable`
+- `{active_models}` → the non-forecastable models selected in Skill 2/3
+- `{use_case}` output table suffix → `{use_case}_nf` (to avoid overwriting main pipeline outputs)
+
+The evaluation and scoring output tables for non-forecastable series are:
+- `{use_case}_nf_evaluation_output`
+- `{use_case}_nf_scoring_output`
+
+##### Non-forecastable local models notebook
+
+If the non-forecastable models include local (CPU multi-node) models, generate a notebook from `mmf_local_notebook_template.ipynb`:
+- Save locally as `notebooks/{use_case}/run_local_nf.ipynb`; Step 4 imports it as `{notebook_base_path}/run_local_nf`
+
+##### Non-forecastable global ML models notebook
+
+If the non-forecastable models include any `MLForecast*` model, generate a notebook from `mmf_global_ml_notebook_template.ipynb`:
+- Save locally as `notebooks/{use_case}/run_global_ml_nf.ipynb`; Step 4 imports it as `{notebook_base_path}/run_global_ml_nf`
+
+Identical placeholder substitution to the main `run_global_ml` notebook, except `{train_table}` points at `{use_case}_train_data_non_forecastable` and the output tables use the `_nf_` infix (see the start of 3e).
+
+##### Non-forecastable GPU orchestrator notebooks
+
+If the non-forecastable models include global DL, foundation or foundationforecast models, generate orchestrator notebooks:
+- `notebooks/{use_case}/orchestrator_global_nf.ipynb` — if any global DL models
+- `notebooks/{use_case}/orchestrator_foundation_nf.ipynb` — if any foundation models
+- `notebooks/{use_case}/orchestrator_foundationforecast_nf.ipynb` — if any `FF*` models
+
+These orchestrators call the same `run_gpu` notebook (shared with the main pipeline).
+
+If a GPU class runs on serverless GPU, generate `notebooks/{use_case}/run_serverless_{class}_nf.ipynb` from the serverless template instead, with the same `{train_table}` and `{use_case}_nf` substitutions. Step 5b creates its job from the [serverless GPU job template](#serverless-gpu-jobs-global-dl-foundation-foundationforecast) with job name `{use_case}_nf_{class}_forecasting_{username}`.
+
 #### Frequency-specific configuration (automatic)
 
 `run_forecast` **automatically loads the correct frequency-specific YAML config** from the installed `mmf_sa` package based on the `freq` parameter. No explicit `conf` argument is needed in the generated notebooks.
@@ -626,6 +662,12 @@ databricks workspace import {notebook_base_path}/orchestrator_foundationforecast
 databricks workspace import {notebook_base_path}/run_serverless_{class} \
   --file /tmp/{use_case}_run_serverless_{class}.ipynb \
   --format JUPYTER --overwrite
+
+# Non-forecastable notebooks (only if separate_job; see Step 3e). Same pattern with an _nf suffix
+# for each one generated: run_local_nf, run_global_ml_nf, orchestrator_{class}_nf, run_serverless_{class}_nf
+databricks workspace import {notebook_base_path}/run_local_nf \
+  --file /tmp/{use_case}_run_local_nf.ipynb \
+  --format JUPYTER --overwrite
 ```
 > ⚠️ Do NOT use the `upload_file` MCP tool — it creates a FILE, not a NOTEBOOK. If a path already exists as a FILE from a prior failed upload, delete it first before importing.
 
@@ -646,6 +688,7 @@ notebooks = {
     "orchestrator_foundation": "/tmp/{use_case}_orchestrator_foundation.ipynb",  # if foundation models selected (classic)
     "orchestrator_foundationforecast": "/tmp/{use_case}_orchestrator_foundationforecast.ipynb",  # if FF* models selected (classic)
     "run_serverless_foundationforecast": "/tmp/{use_case}_run_serverless_foundationforecast.ipynb",  # one entry per GPU class on serverless GPU
+    "run_local_nf": "/tmp/{use_case}_run_local_nf.ipynb",  # separate_job only: one entry per Step 3e notebook (_nf suffix)
 }
 
 for name, local_path in notebooks.items():
@@ -1001,7 +1044,7 @@ If the user requests **serverless compute** for local models, omit `job_clusters
   "name": "{use_case}_local_forecasting",
   "tasks": [{
     "task_key": "local_models",
-    "notebook_task": {"notebook_path": "notebooks/{use_case}/run_local"},
+    "notebook_task": {"notebook_path": "{notebook_base_path}/run_local"},
     "environment_key": "Default"
   }],
   "environments": [{
@@ -1017,39 +1060,7 @@ GPU classes on serverless use the [serverless GPU job template](#serverless-gpu-
 
 **Only create these jobs if `non_forecastable_strategy == 'separate_job'`.** Skip entirely for `include` or `fallback` strategies.
 
-Generate notebooks for the non-forecastable pipeline using the same templates, but with:
-- `{train_table}` → `{use_case}_train_data_non_forecastable`
-- `{active_models}` → the non-forecastable models selected in Skill 2/3
-- `{use_case}` output table suffix → `{use_case}_nf` (to avoid overwriting main pipeline outputs)
-
-The evaluation and scoring output tables for non-forecastable series are:
-- `{use_case}_nf_evaluation_output`
-- `{use_case}_nf_scoring_output`
-
-##### Non-forecastable local models notebook
-
-If the non-forecastable models include local (CPU multi-node) models, generate a notebook from `mmf_local_notebook_template.ipynb`:
-- Save locally as `notebooks/{use_case}/run_local_nf.ipynb`
-- Upload to workspace at `notebooks/{use_case}/run_local_nf`
-
-##### Non-forecastable global ML models notebook
-
-If the non-forecastable models include any `MLForecast*` model, generate a notebook from `mmf_global_ml_notebook_template.ipynb`:
-- Save locally as `notebooks/{use_case}/run_global_ml_nf.ipynb`
-- Upload to workspace at `notebooks/{use_case}/run_global_ml_nf`
-
-Identical placeholder substitution to the main `run_global_ml` notebook, except `{train_table}` points at `{use_case}_train_data_non_forecastable` and the output tables use the `_nf_` infix (see the non-forecastable jobs header).
-
-##### Non-forecastable GPU orchestrator notebooks
-
-If the non-forecastable models include global DL, foundation or foundationforecast models, generate orchestrator notebooks:
-- `notebooks/{use_case}/orchestrator_global_nf.ipynb` — if any global DL models
-- `notebooks/{use_case}/orchestrator_foundation_nf.ipynb` — if any foundation models
-- `notebooks/{use_case}/orchestrator_foundationforecast_nf.ipynb` — if any `FF*` models
-
-These orchestrators call the same `run_gpu` notebook (shared with the main pipeline).
-
-If a GPU class runs on serverless GPU, generate `notebooks/{use_case}/run_serverless_{class}_nf.ipynb` from the serverless template instead, with the same `{train_table}` and `{use_case}_nf` substitutions, and use the [serverless GPU job template](#serverless-gpu-jobs-global-dl-foundation-foundationforecast) with job name `{use_case}_nf_{class}_forecasting_{username}`.
+The notebooks for these jobs were generated in Step 3e and imported in Step 4. Their output tables are `{use_case}_nf_evaluation_output` and `{use_case}_nf_scoring_output`.
 
 ##### Job definitions for non-forecastable pipeline
 
@@ -1061,7 +1072,7 @@ If a GPU class runs on serverless GPU, generate `notebooks/{use_case}/run_server
   "tasks": [{
     "task_key": "nf_local_models",
     "notebook_task": {
-      "notebook_path": "notebooks/{use_case}/run_local_nf",
+      "notebook_path": "{notebook_base_path}/run_local_nf",
       "base_parameters": {
         "experiment_path": "{experiment_path}"
       }
@@ -1130,7 +1141,7 @@ If a GPU class runs on serverless GPU, generate `notebooks/{use_case}/run_server
   "tasks": [{
     "task_key": "nf_global_models",
     "notebook_task": {
-      "notebook_path": "notebooks/{use_case}/orchestrator_global_nf",
+      "notebook_path": "{notebook_base_path}/orchestrator_global_nf",
       "base_parameters": {
         "experiment_path": "{experiment_path}"
       }
