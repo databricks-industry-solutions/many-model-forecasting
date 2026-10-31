@@ -3,7 +3,7 @@ from abc import abstractmethod
 import numpy as np
 import pandas as pd
 import cloudpickle
-from typing import Any, Dict, List, NamedTuple, Optional, Union
+from typing import Any, Dict, List, NamedTuple, Optional, Tuple, Union
 from pyspark.sql import DataFrame
 from pyspark.sql.functions import array_sort, collect_list, struct
 from sklearn.base import BaseEstimator, RegressorMixin
@@ -14,10 +14,41 @@ from sktime.performance_metrics.forecasting import (
 )
 import mlflow
 from mmf_sa.exceptions import DataPreparationError, ModelPredictionError, UnsupportedMetricError
-from mmf_sa.calibration import quantile_columns, quantile_maps
+from mmf_sa.calibration import MIN_SAMPLES_FOR_QUANTILES, forecast_levels, quantile_columns, quantile_maps
 mlflow.set_registry_uri("databricks-uc")
 
 _logger = logging.getLogger(__name__)
+_warned = set()
+
+
+def warn_once(key: str, message: str) -> None:
+    """Logs a warning once per process: predict runs per backtest window and per batch."""
+    if key not in _warned:
+        _warned.add(key)
+        _logger.warning(message)
+
+
+def warn_if_clamped(model: str, levels, native_range) -> None:
+    """Warns once when quantile levels fall outside the range a model predicts, which clamps them to its edges."""
+    q_min, q_max = native_range
+    if levels and (min(levels) < q_min or max(levels) > q_max):
+        warn_once(
+            f"native_quantiles_clamped:{model}:{tuple(levels)}:{tuple(native_range)}",
+            f"{model}: requested quantiles {list(levels)} exceed the native range [{q_min}, {q_max}] of this model; "
+            "they are clamped to it, so the native band is too narrow. "
+            "Use prediction_intervals.method 'auto' or 'cqr' to calibrate it.",
+        )
+
+
+def warn_if_few_samples(model: str, num_samples, hparam: str = "num_samples") -> None:
+    """Warns once when a model's native quantiles come from fewer sample paths than MIN_SAMPLES_FOR_QUANTILES."""
+    if num_samples is not None and num_samples < MIN_SAMPLES_FOR_QUANTILES:
+        warn_once(
+            f"native_quantiles_samples:{model}",
+            f"{model}: native quantiles are estimated from {num_samples} sample paths, so the tails "
+            f"(e.g. 2.5% and 97.5%) are poorly estimated. Set {hparam} to at least "
+            f"{MIN_SAMPLES_FOR_QUANTILES} for calibrated prediction intervals.",
+        )
 
 # Backtest metrics, by the name used in the `metric` parameter.
 METRICS = {
@@ -122,6 +153,15 @@ def collect_sorted(sdf: DataFrame, group_col: str, order_col: str, value_cols: L
 
 
 class ForecastingRegressor(BaseEstimator, RegressorMixin):
+    # Native quantiles (prediction intervals). Models that return their own quantiles when params.native_quantiles
+    # is set declare it here; models_conf.yaml flags them native_intervals, and a test checks that both agree.
+    native_quantiles_supported: bool = False
+    # (min, max) quantile levels the model predicts; levels outside are clamped to the edges. None when any level
+    # works, or when the range is only known once the model is loaded (Chronos reads it from the checkpoint).
+    native_quantile_range: Optional[Tuple[float, float]] = None
+    # Hyperparameter holding the number of sample paths, for models whose quantiles come from samples.
+    samples_hparam: Optional[str] = None
+
     def __init__(self, params):
         self.params = params
         self.freq = params["freq"].upper()[0]
@@ -139,6 +179,31 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
             pd.DateOffset(hours=params["prediction_length"]) if self.freq == "H" else
             None
         )
+
+    def model_name(self) -> str:
+        return self.params.get("name", type(self).__name__)
+
+    def native_levels(self) -> list:
+        """
+        Quantile levels the model must return for native intervals: params.native_quantiles sorted, with the
+        median (forecast_levels), or [] when none are requested or the model cannot return them.
+        Logs, once per process, that the levels exceed native_quantile_range or come from few sample paths.
+        """
+        requested = self.params.get("native_quantiles")
+        if not requested:
+            return []
+        name = self.model_name()
+        if not self.native_quantiles_supported:
+            warn_once(f"native_quantiles_unsupported:{name}",
+                      f"{name} cannot return quantiles, so its intervals cannot use native bands; "
+                      "native_quantiles is ignored.")
+            return []
+        levels = forecast_levels(requested)
+        if self.native_quantile_range is not None:
+            warn_if_clamped(name, levels, self.native_quantile_range)
+        if self.samples_hparam:
+            warn_if_few_samples(name, self.params.get(self.samples_hparam), self.samples_hparam)
+        return levels
 
     @abstractmethod
     def prepare_data(self, df: pd.DataFrame) -> pd.DataFrame:

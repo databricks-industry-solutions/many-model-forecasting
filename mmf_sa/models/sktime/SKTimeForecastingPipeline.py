@@ -112,6 +112,8 @@ class SKTimeForecastingPipeline(ForecastingRegressor):
 
 
 class SKTimeProphet(SKTimeForecastingPipeline):
+    native_quantiles_supported = True  # bands from Prophet's predict_interval (native_quantile_columns)
+
     def __init__(self, params):
         super().__init__(params)
 

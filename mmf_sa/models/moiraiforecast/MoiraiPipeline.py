@@ -9,23 +9,9 @@ from typing import Iterator
 from pyspark.sql.functions import pandas_udf
 from pyspark.sql import DataFrame
 from mmf_sa.models.abstract_model import ForecastingRegressor, MODEL_PIP_REQUIREMENTS, collect_sorted
-from mmf_sa.calibration import (
-    MIN_SAMPLES_FOR_QUANTILES, decode_quantile_forecasts, encode_quantile_forecasts, forecast_levels,
-)
+from mmf_sa.calibration import decode_quantile_forecasts, encode_quantile_forecasts, forecast_levels
 
 _logger = logging.getLogger(__name__)
-# Native quantiles are empirical quantiles of the sample paths: with fewer samples the tails are poorly estimated.
-_warned_few_samples = set()
-
-
-def warn_few_samples(num_samples: int, quantiles) -> None:
-    """Logs once per process that native quantiles from few sample paths are poorly estimated."""
-    if quantiles and num_samples < MIN_SAMPLES_FOR_QUANTILES and not _warned_few_samples:
-        _warned_few_samples.add(num_samples)
-        _logger.warning(
-            f"Native quantiles of this Moirai model are estimated from {num_samples} sample paths, so the tails "
-            f"(e.g. 2.5% and 97.5%) are poorly estimated. Set num_samples to at least {MIN_SAMPLES_FOR_QUANTILES} "
-            "for calibrated prediction intervals.")
 
 
 def sample_quantile_forecasts(samples: np.ndarray, quantiles):
@@ -54,6 +40,10 @@ def pack_sample_forecasts(samples: np.ndarray, quantiles):
 
 
 class MoiraiForecaster(ForecastingRegressor):
+    # Native quantiles are empirical quantiles of the sample paths: with few samples the tails are poorly estimated.
+    native_quantiles_supported = True
+    samples_hparam = "num_samples"
+
     def __init__(self, params):
         super().__init__(params)
         self.params = params
@@ -158,7 +148,7 @@ class MoiraiForecaster(ForecastingRegressor):
         patch_size = self.params.get("patch_size", 16)
         num_samples = self.params["num_samples"]
         quantiles = [float(q) for q in self.params.get("native_quantiles") or []]
-        warn_few_samples(num_samples, quantiles)
+        self.native_levels()  # warns on the driver when num_samples is too small for the tails
 
         @pandas_udf('array<double>')
         def predict_udf(batch_iterator: Iterator[pd.Series]) -> Iterator[pd.Series]:

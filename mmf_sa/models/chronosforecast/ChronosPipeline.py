@@ -19,7 +19,7 @@ from sktime.performance_metrics.forecasting import (
 from typing import Iterator, Tuple
 from pyspark.sql.functions import pandas_udf
 from pyspark.sql import DataFrame
-from mmf_sa.models.abstract_model import ForecastingRegressor, MODEL_PIP_REQUIREMENTS, collect_sorted
+from mmf_sa.models.abstract_model import ForecastingRegressor, MODEL_PIP_REQUIREMENTS, collect_sorted, warn_if_clamped
 from mmf_sa.exceptions import (
     MissingFeatureError,
     UnsupportedMetricError,
@@ -32,10 +32,9 @@ from mmf_sa.calibration import (
 )
 
 _logger = logging.getLogger(__name__)
-_warned_clamped = set()
 
 
-def quantile_forecasts(pipeline, inputs, prediction_length: int, quantiles):
+def quantile_forecasts(pipeline, inputs, prediction_length: int, quantiles, model: str = "Chronos"):
     """
     Median and native quantiles of a batch, from ChronosPipeline.predict_quantiles.
     Parameters:
@@ -43,20 +42,15 @@ def quantile_forecasts(pipeline, inputs, prediction_length: int, quantiles):
         inputs: Contexts as accepted by pipeline.predict.
         prediction_length (int): Forecast horizon.
         quantiles: Requested quantile levels; the median is added if missing.
+        model (str): Model name, for the warning.
     Returns: (np.ndarray, np.ndarray, list): medians (n, H), quantiles (n, Q, H) and the Q levels.
     """
     levels = forecast_levels(quantiles)
     trained = getattr(pipeline, "quantiles", None)
-    clamp_key = (tuple(levels), tuple(trained or ()))
-    if trained and (levels[0] < min(trained) or levels[-1] > max(trained)) and clamp_key not in _warned_clamped:
+    if trained:
         # Chronos clamps quantiles outside its trained range (0.1-0.9 for Chronos-Bolt), so e.g. a
         # "95%" band is really the widest trained band. CQR corrects this (method: auto).
-        # Logged once per process: predict runs per batch and per backtest window.
-        _warned_clamped.add(clamp_key)
-        _logger.warning(
-            f"Requested quantiles {levels} exceed the trained range [{min(trained)}, {max(trained)}] "
-            "of this Chronos model; they are clamped to it, so the native band is too narrow. "
-            "Use prediction_intervals.method 'auto' or 'cqr' to calibrate it.")
+        warn_if_clamped(model, levels, (min(trained), max(trained)))
     q, _ = pipeline.predict_quantiles(inputs, prediction_length=prediction_length, quantile_levels=levels)
     if isinstance(q, list):  # Chronos-2: one (n_variates, H, Q) tensor per series
         q = torch.stack([x[0] for x in q])
@@ -65,6 +59,9 @@ def quantile_forecasts(pipeline, inputs, prediction_length: int, quantiles):
 
 
 class ChronosForecaster(ForecastingRegressor):
+    # The native range is read from the loaded checkpoint (pipeline.quantiles), in quantile_forecasts.
+    native_quantiles_supported = True
+
     def __init__(self, params):
         super().__init__(params)
         self.params = params
@@ -185,13 +182,13 @@ class ChronosForecaster(ForecastingRegressor):
             last_dates.append(group[date_col].max())
 
         quantiles = self.params.get("native_quantiles")
-        levels = forecast_levels(quantiles) if quantiles else []
+        levels = self.native_levels()
         forecasts_median = []
         forecasts_quantiles = []
         for i in range(0, len(contexts), batch_size):
             batch = contexts[i:i + batch_size]
             if quantiles:
-                medians, qs, _ = quantile_forecasts(pipeline, batch, prediction_length, quantiles)
+                medians, qs, _ = quantile_forecasts(pipeline, batch, prediction_length, quantiles, self.model_name())
                 forecasts_median.extend(list(medians))
                 forecasts_quantiles.extend(list(qs))
                 continue
@@ -242,6 +239,7 @@ class ChronosForecaster(ForecastingRegressor):
         repo = self.repo
         num_devices = device_count
         quantiles = [float(q) for q in self.params.get("native_quantiles") or []]
+        model_name = self.model_name()
 
         @pandas_udf('array<double>')
         def predict_udf(bulk_iterator: Iterator[pd.Series]) -> Iterator[pd.Series]:
@@ -273,7 +271,7 @@ class ChronosForecaster(ForecastingRegressor):
                     contexts = [torch.tensor(list(series)) for series in batch]
                     if quantiles:
                         medians, qs, _ = quantile_forecasts(
-                            pipeline, contexts, self.params["prediction_length"], quantiles)
+                            pipeline, contexts, self.params["prediction_length"], quantiles, model_name)
                         median.extend(encode_quantile_forecasts(medians, qs))
                         continue
                     forecasts = pipeline.predict(
@@ -547,7 +545,7 @@ class Chronos2Forecaster(ChronosForecaster):
         quantiles = self.params.get("native_quantiles")
         if quantiles:
             medians_q, qs, levels = quantile_forecasts(
-                pipeline, inputs, self.params["prediction_length"], quantiles)
+                pipeline, inputs, self.params["prediction_length"], quantiles, self.model_name())
         else:
             forecasts = pipeline.predict(
                 inputs=inputs,
@@ -677,6 +675,7 @@ class Chronos2Forecaster(ChronosForecaster):
         _col_map = list(col_map) if col_map else []
         _has_covariates = len(_col_map) > 0
         quantiles = [float(q) for q in self.params.get("native_quantiles") or []]
+        model_name = self.model_name()
 
         @pandas_udf('array<double>')
         def predict_udf(
@@ -747,7 +746,7 @@ class Chronos2Forecaster(ChronosForecaster):
                             inputs.append(entry)
 
                     if quantiles:
-                        medians, qs, _ = quantile_forecasts(pipeline, inputs, prediction_length, quantiles)
+                        medians, qs, _ = quantile_forecasts(pipeline, inputs, prediction_length, quantiles, model_name)
                         median.extend(encode_quantile_forecasts(medians, qs))
                         continue
                     forecasts = pipeline.predict(

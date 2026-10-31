@@ -189,12 +189,16 @@ class StatsFcBaselineSeasonalWindowAverage(StatsFcForecaster):
 
 
 class StatsFcBaselineNaive(StatsFcForecaster):
+    native_quantiles_supported = True
+
     def __init__(self, params):
         super().__init__(params)
         self.model_spec = Naive()
 
 
 class StatsFcBaselineSeasonalNaive(StatsFcForecaster):
+    native_quantiles_supported = True
+
     def __init__(self, params):
         super().__init__(params)
         self.model_spec = SeasonalNaive(
@@ -203,6 +207,8 @@ class StatsFcBaselineSeasonalNaive(StatsFcForecaster):
 
 
 class StatsFcAutoArima(StatsFcForecaster):
+    native_quantiles_supported = True
+
     def __init__(self, params):
         super().__init__(params)
         self.model_spec = AutoARIMA(
@@ -212,6 +218,8 @@ class StatsFcAutoArima(StatsFcForecaster):
 
 
 class StatsFcAutoETS(StatsFcForecaster):
+    native_quantiles_supported = True
+
     def __init__(self, params):
         super().__init__(params)
         self.model_spec = AutoETS(
@@ -221,6 +229,8 @@ class StatsFcAutoETS(StatsFcForecaster):
 
 
 class StatsFcAutoCES(StatsFcForecaster):
+    native_quantiles_supported = True
+
     def __init__(self, params):
         super().__init__(params)
         self.model_spec = AutoCES(
@@ -230,6 +240,8 @@ class StatsFcAutoCES(StatsFcForecaster):
 
 
 class StatsFcAutoTheta(StatsFcForecaster):
+    native_quantiles_supported = True
+
     def __init__(self, params):
         super().__init__(params)
         self.model_spec = AutoTheta(
@@ -239,6 +251,8 @@ class StatsFcAutoTheta(StatsFcForecaster):
 
 
 class StatsFcAutoTbats(StatsFcForecaster):
+    native_quantiles_supported = True
+
     def __init__(self, params):
         super().__init__(params)
         self.model_spec = AutoTBATS(

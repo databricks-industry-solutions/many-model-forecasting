@@ -211,10 +211,65 @@ class _FakePipeline:
 def test_clamp_warning_logged_once(caplog):
     import torch
     from mmf_sa.models.chronosforecast import ChronosPipeline as cp
-    cp._warned_clamped.clear()
-    with caplog.at_level("WARNING", logger=cp.__name__):
+    with caplog.at_level("WARNING"):
         for _ in range(3):
-            medians, qs, levels = cp.quantile_forecasts(_FakePipeline(), [torch.zeros(5)] * 2, 4, QUANTILES)
-    assert sum("trained range" in r.message for r in caplog.records) == 1
+            medians, qs, levels = cp.quantile_forecasts(
+                _FakePipeline(), [torch.zeros(5)] * 2, 4, QUANTILES, "ChronosBoltSmall")
+    messages = [r.message for r in caplog.records if "native range" in r.message]
+    assert len(messages) == 1 and "ChronosBoltSmall" in messages[0]
     assert medians.shape == (2, 4) and qs.shape == (2, 5, 4) and levels == QUANTILES
     np.testing.assert_array_equal(medians, qs[:, 2, :])
+
+
+# --- The native-quantile contract of ForecastingRegressor (native_levels) -----------------------------------
+
+
+def _contract_model(supported=True, native_range=None, samples_hparam=None, **params):
+    from mmf_sa.models.abstract_model import ForecastingRegressor
+
+    class Model(ForecastingRegressor):
+        native_quantiles_supported = supported
+        native_quantile_range = native_range
+
+    Model.samples_hparam = samples_hparam
+    return Model(OmegaConf.create({"freq": "D", "prediction_length": 4, "name": "M", **params}))
+
+
+def test_native_levels_without_native_quantiles_is_empty(caplog):
+    with caplog.at_level("WARNING"):
+        assert _contract_model().native_levels() == []
+        assert _contract_model(supported=False).native_levels() == []
+    assert caplog.records == []
+
+
+def test_native_levels_are_sorted_with_the_median():
+    assert _contract_model(native_quantiles=[0.9, 0.1]).native_levels() == [0.1, 0.5, 0.9]
+
+
+def test_unsupported_models_ignore_native_quantiles_with_one_warning(caplog):
+    with caplog.at_level("WARNING"):
+        for _ in range(2):
+            assert _contract_model(supported=False, native_quantiles=QUANTILES).native_levels() == []
+    messages = [r.message for r in caplog.records]
+    assert len(messages) == 1 and "M cannot return quantiles" in messages[0]
+
+
+def test_levels_outside_the_native_range_warn_once(caplog):
+    with caplog.at_level("WARNING"):
+        for _ in range(2):
+            assert _contract_model(native_range=(0.1, 0.9), native_quantiles=QUANTILES).native_levels() == QUANTILES
+        _contract_model(native_range=(0.01, 0.99), native_quantiles=QUANTILES).native_levels()
+    messages = [r.message for r in caplog.records]
+    assert len(messages) == 1 and "native range [0.1, 0.9]" in messages[0] and "too narrow" in messages[0]
+
+
+@pytest.mark.parametrize("num_samples, warned", [(10, True), (99, True), (100, False), (None, False)])
+def test_few_sample_paths_warn_once(caplog, num_samples, warned):
+    with caplog.at_level("WARNING"):
+        for _ in range(2):
+            _contract_model(samples_hparam="num_samples", native_quantiles=QUANTILES, num_samples=num_samples
+                            ).native_levels()
+    messages = [r.message for r in caplog.records if "sample paths" in r.message]
+    assert len(messages) == (1 if warned else 0)
+    if warned:
+        assert f"{num_samples} sample paths" in messages[0] and "num_samples to at least 100" in messages[0]

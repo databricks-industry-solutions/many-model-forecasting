@@ -393,8 +393,8 @@ score_models      native bands at forecast time; corrections joined per series; 
 
 ### Adding native intervals to a model
 
-1. Set `native_intervals: true` for the model in `models_conf.yaml`.
-2. When `self.params.native_quantiles` is set, make `predict` (backtest) and `forecast` (scoring) return one column per requested quantile, named with `calibration.QUANTILE_COLUMN_PREFIX + calibration.quantile_key(q)` (e.g. `__q_0.975`), next to the point forecast. `ForecastingRegressor.forecast_quantiles` (local models) and `calibration.quantile_maps` (global and foundation models) turn them into the `forecast_quantiles` map.
+1. Set `native_intervals: true` for the model in `models_conf.yaml`, and `native_quantiles_supported = True` on its class (a unit test checks that both agree). If the model only predicts some quantile levels, set `native_quantile_range = (min, max)`; if its quantiles come from sample paths, set `samples_hparam` to the hyperparameter holding their number.
+2. When `self.params.native_quantiles` is set, make `predict` (backtest) and `forecast` (scoring) return one column per level of `self.native_levels()`, named with `calibration.QUANTILE_COLUMN_PREFIX + calibration.quantile_key(q)` (e.g. `__q_0.975`), next to the point forecast. `native_levels()` sorts the levels, adds the median, and logs once when they exceed `native_quantile_range` or come from fewer than 100 sample paths; call it on the driver, so that the warnings reach the driver log. `ForecastingRegressor.forecast_quantiles` (local models) and `ForecastingRegressor.series_metrics` (global and foundation models) turn the columns into the `forecast_quantiles` map.
 3. Nothing else changes: calibration uses CQR for every model whose backtest rows carry quantiles.
 
 ### Scaling

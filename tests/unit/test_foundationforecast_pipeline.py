@@ -116,7 +116,6 @@ def fake_foundationforecast(monkeypatch):
     monkeypatch.setitem(sys.modules, "torch", fake_torch)
     # The real setup imports tirex2, which would bind the fake torch for later test modules.
     monkeypatch.setattr(_runtime, "_runtime_ready", True)
-    monkeypatch.setattr(ffp, "_warned", set())
     monkeypatch.setattr(ffp, "_current_checkpoint", None)
     yield
 

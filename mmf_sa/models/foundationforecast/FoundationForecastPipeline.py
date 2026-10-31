@@ -9,10 +9,8 @@ import mlflow
 from mlflow.models.signature import ModelSignature, infer_signature
 from mlflow.types import ColSpec, Schema
 
-from mmf_sa.calibration import (
-    MIN_SAMPLES_FOR_QUANTILES, QUANTILE_COLUMN_PREFIX, forecast_levels, quantile_key,
-)
-from mmf_sa.models.abstract_model import ForecastingRegressor, MODEL_PIP_REQUIREMENTS
+from mmf_sa.calibration import QUANTILE_COLUMN_PREFIX, quantile_key
+from mmf_sa.models.abstract_model import ForecastingRegressor, MODEL_PIP_REQUIREMENTS, warn_once as _warn_once
 from mmf_sa.models.foundationforecast._runtime import ensure_runtime
 from mmf_sa.exceptions import (
     DataPreparationError,
@@ -47,14 +45,7 @@ COVARIATE_PARAMS = (
 FUTURE_COVARIATE_PARAMS = ("dynamic_future_numerical", "dynamic_future_categorical")
 
 _FF_ALIAS = "ff_forecast"
-_warned = set()
 _current_checkpoint = None
-
-
-def _warn_once(key: str, message: str) -> None:
-    if key not in _warned:
-        _warned.add(key)
-        _logger.warning(message)
 
 
 def ff_level(q: float) -> float:
@@ -266,14 +257,8 @@ class FoundationForecastForecaster(ForecastingRegressor):
     supports_future_covariates: bool = False
     # Chronos-2 encodes non-numeric covariates itself; the other models cast them to float32.
     accepts_categorical_strings: bool = False
-    # False when the library adapter cannot return quantiles; such models ignore native_quantiles.
-    native_quantiles_supported: bool = True
-    # (min, max) quantile levels the model predicts natively, None when unknown. foundationforecast
-    # clamps levels outside this range to its edges, so the native band is narrower than requested.
-    native_quantile_range: Tuple[float, float] = None
-    # Hyperparameter holding the number of sample paths the native quantiles are estimated from, for models
-    # that sample them (None otherwise).
-    samples_hparam: str = None
+    # Every adapter returns quantiles; native_quantile_range is set per family below (None: any level).
+    native_quantiles_supported = True
 
     def __init__(self, params):
         super().__init__(params)
@@ -448,47 +433,18 @@ class FoundationForecastForecaster(ForecastingRegressor):
 
     def _native_levels(self) -> dict:
         """
-        Quantile levels for native intervals, mapped to the level requested from foundationforecast for each,
-        or {} when none are needed.
+        Quantile levels for native intervals (native_levels), mapped to the level requested from foundationforecast
+        for each, or {} when none are needed.
         """
-        requested = self.params.get("native_quantiles")
-        if not requested:
-            return {}
-        name = self._name()
-        if not self.native_quantiles_supported:
-            _warn_once(
-                f"native_quantiles_unsupported:{name}",
-                f"{name}: the foundationforecast adapter cannot return quantiles, so its intervals cannot use "
-                "native bands; native_quantiles is ignored.",
-            )
-            return {}
         # foundationforecast accepts levels with at most 3 decimals and raises otherwise (e.g. 0.0125 for a 97.5%
         # interval): such levels are rounded outward, so the band is a little wider, and CQR calibrates it.
-        levels = {level: ff_level(level) for level in forecast_levels(requested)}
+        levels = {level: ff_level(level) for level in self.native_levels()}
         rounded = [level for level, ff in levels.items() if ff != level]
         if rounded:
             _warn_once(
-                f"native_quantiles_precision:{name}",
-                f"{name}: foundationforecast only accepts quantile levels with at most 3 decimals, so "
+                f"native_quantiles_precision:{self._name()}",
+                f"{self._name()}: foundationforecast only accepts quantile levels with at most 3 decimals, so "
                 f"{rounded} are requested as {[levels[level] for level in rounded]}.",
-            )
-        if self.native_quantile_range is not None:
-            q_min, q_max = self.native_quantile_range
-            if min(levels.values()) < q_min or max(levels.values()) > q_max:
-                # Logged once per process: predict runs per backtest window.
-                _warn_once(
-                    f"native_quantiles_clamped:{name}",
-                    f"{name}: requested quantiles {list(levels)} exceed the native range [{q_min}, {q_max}] of this "
-                    "model; foundationforecast clamps them to it, so the native band is too narrow. "
-                    "Use prediction_intervals.method 'auto' or 'cqr' to calibrate it.",
-                )
-        num_samples = self.params.get(self.samples_hparam) if self.samples_hparam else None
-        if num_samples is not None and num_samples < MIN_SAMPLES_FOR_QUANTILES:
-            _warn_once(
-                f"native_quantiles_samples:{name}",
-                f"{name}: native quantiles are estimated from {num_samples} sample paths, so the tails "
-                f"(e.g. 2.5% and 97.5%) are poorly estimated. Set {self.samples_hparam} to at least "
-                f"{MIN_SAMPLES_FOR_QUANTILES} for calibrated prediction intervals.",
             )
         return levels
 

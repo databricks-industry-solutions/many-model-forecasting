@@ -16,7 +16,6 @@ from mmf_sa.calibration import (
 )
 
 _logger = logging.getLogger(__name__)
-_warned_clamped = set()
 
 # Quantile levels of TimesFM 2.5's quantile forecast, after the mean (index 0). The point forecast is the
 # 0.5 level (index 5), so the median column equals the point forecast.
@@ -30,18 +29,9 @@ def quantile_forecasts(quantile_output, levels):
         quantile_output: Quantile forecast of one series, (H, 1 + len(TIMESFM_QUANTILE_LEVELS)), mean first.
         levels: Requested quantile levels, sorted (see forecast_levels).
     Returns: np.ndarray: quantiles (len(levels), H). Levels between two deciles are interpolated linearly,
-        levels outside [0.1, 0.9] are clamped to the nearest decile.
+        levels outside [0.1, 0.9] are clamped to the nearest decile (native_levels warns about it).
     """
     deciles = np.asarray(TIMESFM_QUANTILE_LEVELS)
-    clamp_key = tuple(levels)
-    if (levels[0] < deciles[0] or levels[-1] > deciles[-1]) and clamp_key not in _warned_clamped:
-        # TimesFM only provides the deciles 0.1-0.9, so e.g. a "95%" band is really the 80% band. CQR corrects this
-        # (method: auto). Logged once per process: predict runs per batch and per backtest window.
-        _warned_clamped.add(clamp_key)
-        _logger.warning(
-            f"Requested quantiles {list(levels)} exceed the quantiles TimesFM provides "
-            f"[{deciles[0]}, {deciles[-1]}]; they are clamped to them, so the native band is too narrow. "
-            "Use prediction_intervals.method 'auto' or 'cqr' to calibrate it.")
     # Weights of each requested level on the deciles (np.interp clamps to the outer deciles).
     weights = np.zeros((len(levels), len(deciles)))
     for i, level in enumerate(levels):
@@ -54,6 +44,10 @@ def quantile_forecasts(quantile_output, levels):
 
 
 class TimesFMForecaster(ForecastingRegressor):
+    # TimesFM only provides the deciles, so e.g. a "95%" band is really the 80% band; CQR corrects it.
+    native_quantiles_supported = True
+    native_quantile_range = (TIMESFM_QUANTILE_LEVELS[0], TIMESFM_QUANTILE_LEVELS[-1])
+
     def __init__(self, params):
         super().__init__(params)
         self.params = params
@@ -241,7 +235,7 @@ class TimesFMForecaster(ForecastingRegressor):
         num_devices = device_count
         _col_map = list(col_map) if col_map else []
         _has_covariates = len(_col_map) > 0
-        _levels = forecast_levels(self.params["native_quantiles"]) if self.params.get("native_quantiles") else []
+        _levels = self.native_levels()
 
         @pandas_udf('array<double>')
         def predict_udf(
@@ -487,8 +481,8 @@ class TimesFMForecaster(ForecastingRegressor):
             self.params.date_col: timestamps,
             self.params.target: [arr.astype(np.float64) for arr in forecasts],
         }
-        if self.params.get("native_quantiles"):
-            levels = forecast_levels(self.params["native_quantiles"])
+        levels = self.native_levels()
+        if levels:
             quantiles = [quantile_forecasts(q, levels) for q in quantile_outputs]
             for i, level in enumerate(levels):
                 columns[QUANTILE_COLUMN_PREFIX + quantile_key(level)] = [q[i] for q in quantiles]

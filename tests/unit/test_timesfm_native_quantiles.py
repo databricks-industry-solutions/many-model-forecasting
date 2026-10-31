@@ -137,15 +137,13 @@ def test_quantile_forecasts_ignores_the_mean():
 
 
 def test_clamp_warning_logged_once(caplog):
-    tfp._warned_clamped.clear()
-    q = _timesfm_output(1, H)[0]
-    with caplog.at_level("WARNING", logger=tfp.__name__):
+    with caplog.at_level("WARNING"):
         for _ in range(3):
-            quantile_forecasts(q, QUANTILES)
-        quantile_forecasts(q, [0.1, 0.5, 0.9])  # inside the deciles: no warning
+            assert _forecaster(None, QUANTILES).native_levels() == QUANTILES
+        _forecaster(None, [0.1, 0.5, 0.9]).native_levels()  # inside the deciles: no warning
     warnings = [r.message for r in caplog.records if "clamped" in r.message]
     assert len(warnings) == 1
-    assert "method 'auto'" in warnings[0]
+    assert "[0.1, 0.9]" in warnings[0] and "method 'auto'" in warnings[0]
 
 
 def test_predict_single_point_forecast_unchanged_by_quantiles(fake_timesfm):

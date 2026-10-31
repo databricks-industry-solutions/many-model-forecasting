@@ -150,7 +150,6 @@ def test_calculate_metrics_appends_quantile_map(monkeypatch):
 
 @pytest.fixture
 def fresh_warnings(monkeypatch):
-    monkeypatch.setattr(mp, "_warned_few_samples", set())
     # pandas_udf needs a live SparkContext; the warning is raised before the UDF is built.
     monkeypatch.setattr(mp, "pandas_udf", lambda *args, **kwargs: (lambda fn: fn))
 
@@ -163,7 +162,6 @@ def test_few_samples_warning_logged_once(fresh_warnings, caplog):
     with caplog.at_level(logging.WARNING, logger=mp.__name__):
         for _ in range(3):
             _moirai(QUANTILES, num_samples=10).create_predict_udf(1)
-        mp.warn_few_samples(20, QUANTILES)
     records = _warnings(caplog)
     assert len(records) == 1
     assert "num_samples" in records[0].getMessage() and "100" in records[0].getMessage()

@@ -142,6 +142,24 @@ def test_native_interval_flags():
     }
 
 
+def test_native_interval_flags_match_the_model_classes():
+    """Models flagged native_intervals declare native_quantiles_supported, and no other model does."""
+    import importlib
+    models = ModelRegistry.load_models_conf().models
+    checked, mismatched = set(), []
+    for name, m in models.items():
+        try:
+            cls = getattr(importlib.import_module(m.module), m.model_class)
+        except ImportError:
+            continue  # the model's library is not installed in this environment
+        checked.add(name)
+        if bool(m.get("native_intervals")) != cls.native_quantiles_supported:
+            mismatched.append(name)
+    assert mismatched == []
+    flagged = {name for name, m in models.items() if m.get("native_intervals")}
+    assert flagged <= checked  # every flagged model's module loads without its library
+
+
 class _CapturingForecaster:
     captured = None
 
