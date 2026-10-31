@@ -434,7 +434,7 @@ Report the verification result to the user as a single line:
 
 ### Step 6a: Create {use_case}_scoring_data (if dynamic future regressors)
 
-**Only run this step if the user selected dynamic future regressors (`dynamic_future_numerical` or `dynamic_future_categorical`) in Step 5.**
+**Only run this step if the user selected dynamic future regressors (`dynamic_future_numerical` or `dynamic_future_categorical`) in Step 5a.**
 
 The scoring table must contain one row per `unique_id` × future `ds` for each date in the forecast horizon, with all dynamic future regressor columns populated. During scoring, `run_forecast` unions this table with `train_data` via `unionByName(score_df, allowMissingColumns=True)` — columns present in `train_data` but absent from the scoring table (such as `y`) are automatically filled with NULL.
 
@@ -971,7 +971,7 @@ If `remaining_nulls > 0`, warn the user and suggest excluding those series or sw
 
 Log the count of imputed values per series and excluded series for the cleaning report.
 
-### Step 7d: Impute covariate columns on backfilled rows (MANDATORY if exogenous regressors)
+#### Step 7d: Impute covariate columns on backfilled rows (MANDATORY if exogenous regressors)
 
 > ⛔ **This step is not optional whenever any exogenous regressors were selected.** The Step 7c spine backfill creates rows for interior gaps and trailing gaps. Those rows get `y` imputed (Step 7c), but their **covariate columns are NULL** because they had no match in the join. Since Step 7c already imputes `y`, those rows now pass the pipeline's `_df = df[df[target].notnull()]` filter at scoring time and carry their NULL covariates into model fitting. Regressor-using local models (notably `StatsForecastAutoArima`, which runs an OLS of `y` on the regressor matrix during model selection) then fail with `MissingDataError: exog contains inf or nans`. This mirrors the scoring-side NULL handling in Step 6a — the training table needs the same treatment. Because `data_quality_check=False` at runtime, nothing downstream repairs these NULLs, so it must be done here.
 
@@ -1136,9 +1136,9 @@ WHERE t.unique_id = s.unique_id
 
 Log the count of capped values per series for the cleaning report.
 
-### Step 8d: Reconcile scoring_data with train_data (MANDATORY if scoring_data exists)
+#### Step 8d: Reconcile scoring_data with train_data (MANDATORY if scoring_data exists)
 
-> ⛔ **This step is not optional whenever `{use_case}_scoring_data` exists.** Steps 7c and 8c can remove series from `{use_case}_train_data` (exclusion of series over the missing-data threshold, or any series dropped for other reasons). But `{use_case}_scoring_data` was created earlier in Step 6a with the **full** set of series, so any series excluded from training remains in the scoring table as an orphan. During scoring, `run_forecast` unions the scoring rows into the training source via `unionByName(score_df, allowMissingColumns=True)`; an orphan series contributes only future rows with `y = NULL`, so after the pipeline's `notnull()` filter it becomes an **empty group**. On the local StatsForecast path this makes `StatsForecast.fit` see zero series and raise `ValueError: number sections must be larger than 0.`, failing the whole run. Keeping the two tables' series sets identical is what prevents this — and it is exactly why Skills 4/5 can safely keep `data_quality_check=False`.
+> ⛔ **This step is not optional whenever `{use_case}_scoring_data` exists.** Step 7c can remove series from `{use_case}_train_data` (exclusion of series over the missing-data threshold, or any series dropped for other reasons). But `{use_case}_scoring_data` was created earlier in Step 6a with the **full** set of series, so any series excluded from training remains in the scoring table as an orphan. During scoring, `run_forecast` unions the scoring rows into the training source via `unionByName(score_df, allowMissingColumns=True)`; an orphan series contributes only future rows with `y = NULL`, so after the pipeline's `notnull()` filter it becomes an **empty group**. On the local StatsForecast path this makes `StatsForecast.fit` see zero series and raise `ValueError: number sections must be larger than 0.`, failing the whole run. Keeping the two tables' series sets identical is what prevents this — and it is exactly why Skills 4/5 can safely keep `data_quality_check=False`.
 
 **Skip this step entirely if `{use_case}_scoring_data` was not created (i.e. no dynamic future regressors).**
 
