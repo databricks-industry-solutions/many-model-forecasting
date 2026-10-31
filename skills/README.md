@@ -79,7 +79,7 @@ The skill ships as a set of Markdown files plus notebook templates that are load
 
 Pick the section that matches your assistant:
 
-- [Databricks Genie Code (Databricks Assistant)](#option-a--databricks-genie-code-databricks-assistant) — runs inside the Databricks workspace
+- [Databricks Genie Code (Databricks Assistant)](#option-a--databricks-genie-code) — runs inside the Databricks workspace
 - [Claude Code, Cursor, GitHub Copilot, Gemini CLI](#option-b--claude-code-cursor-github-copilot-gemini-cli) — local IDE / CLI assistants
 
 ### Option A — Databricks Genie Code
