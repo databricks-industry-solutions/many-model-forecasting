@@ -13,7 +13,7 @@ import pandas as pd
 import pytest
 from omegaconf import OmegaConf
 
-from mmf_sa.calibration import QUANTILE_COLUMN_PREFIX
+from mmf_sa.intervals.quantiles import QUANTILE_COLUMN_PREFIX
 from mmf_sa.exceptions import UnsupportedMetricError
 from mmf_sa.models.abstract_model import EvaluationRow, ForecastingRegressor, metric_function
 

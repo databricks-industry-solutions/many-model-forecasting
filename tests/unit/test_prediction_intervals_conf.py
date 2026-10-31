@@ -1,4 +1,4 @@
-"""Unit tests for the prediction_intervals configuration (mmf_sa.calibration).
+"""Unit tests for the prediction_intervals configuration (mmf_sa.intervals.config).
 
 Tests cover:
 - Defaults, and the identical block shipped in every forecasting_conf_*.yaml
@@ -15,8 +15,7 @@ import pytest
 from omegaconf import OmegaConf
 
 import mmf_sa
-from mmf_sa import calibration as cal
-from mmf_sa.calibration import DEFAULT_PREDICTION_INTERVALS, resolve_prediction_intervals_conf
+from mmf_sa.intervals.config import DEFAULT_PREDICTION_INTERVALS, model_method, resolve_prediction_intervals_conf
 from mmf_sa.exceptions import ConfigurationError
 from mmf_sa.models import ModelRegistry
 
@@ -59,10 +58,10 @@ def test_method_by_model_accepts_every_method():
 
 
 def test_model_method_uses_the_model_entry_else_the_method():
-    pi = cal.resolve_prediction_intervals_conf({"method": "conformal", "method_by_model": {"Chronos2": "cqr"}})
-    assert cal.model_method(pi, "Chronos2") == "cqr"
-    assert cal.model_method(pi, "StatsForecastAutoETS") == "conformal"
-    assert cal.model_method(pi) == "conformal"
+    pi = resolve_prediction_intervals_conf({"method": "conformal", "method_by_model": {"Chronos2": "cqr"}})
+    assert model_method(pi, "Chronos2") == "cqr"
+    assert model_method(pi, "StatsForecastAutoETS") == "conformal"
+    assert model_method(pi) == "conformal"
 
 
 def test_quantiles_replace_levels():

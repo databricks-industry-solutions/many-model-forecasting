@@ -9,7 +9,7 @@ from typing import Iterator
 from pyspark.sql.functions import pandas_udf
 from pyspark.sql import DataFrame
 from mmf_sa.models.abstract_model import ForecastingRegressor, MODEL_PIP_REQUIREMENTS, collect_sorted
-from mmf_sa.calibration import decode_quantile_forecasts, encode_quantile_forecasts, forecast_levels
+from mmf_sa.intervals.quantiles import decode_quantile_forecasts, encode_quantile_forecasts, forecast_levels
 
 _logger = logging.getLogger(__name__)
 

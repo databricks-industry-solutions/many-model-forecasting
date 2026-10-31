@@ -26,7 +26,7 @@ from mmf_sa.exceptions import (
     ModelPredictionError,
     DataPreparationError,
 )
-from mmf_sa.calibration import (
+from mmf_sa.intervals.quantiles import (
     QUANTILE_COLUMN_PREFIX, decode_quantile_forecasts, encode_quantile_forecasts, forecast_levels, quantile_key,
     quantile_maps,
 )

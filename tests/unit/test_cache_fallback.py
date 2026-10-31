@@ -1,6 +1,6 @@
-"""calibration_spark.Materializer: persist() where available, temporary tables where it is rejected
+"""intervals.spark.Materializer: persist() where available, temporary tables where it is rejected
 (serverless clients before environment version 5: CACHE_REQUIRES_NEWER_CLIENT_ON_SERVERLESS_GC)."""
-from mmf_sa import calibration_spark as cs
+from mmf_sa.intervals import spark as cs
 
 
 class _Writer:

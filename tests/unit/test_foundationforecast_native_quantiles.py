@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from mmf_sa.calibration import QUANTILE_COLUMN_PREFIX
+from mmf_sa.intervals.quantiles import QUANTILE_COLUMN_PREFIX
 from mmf_sa.models.foundationforecast import FoundationForecastPipeline as ffp
 
 from .test_foundationforecast_pipeline import (  # noqa: F401 (fixtures and helpers shared with the FF tests)

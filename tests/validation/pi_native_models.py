@@ -51,8 +51,6 @@ import numpy as np
 import pandas as pd
 from datasetsforecast.m5 import M5
 from pyspark.sql import functions as F
-
-from mmf_sa import calibration as cal
 from mmf_sa import run_forecast
 
 MODELS = [m.strip() for m in dbutils.widgets.get("models").split(",") if m.strip()]

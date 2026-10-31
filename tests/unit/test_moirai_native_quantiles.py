@@ -14,7 +14,7 @@ import pandas as pd
 import pytest
 from omegaconf import OmegaConf
 
-from mmf_sa import calibration as cal
+from mmf_sa.intervals.quantiles import QUANTILE_COLUMN_PREFIX, decode_quantile_forecasts, forecast_levels
 from mmf_sa.models.moiraiforecast import MoiraiPipeline as mp
 
 QUANTILES = [0.025, 0.1, 0.5, 0.9, 0.975]
@@ -51,12 +51,12 @@ def test_point_forecast_is_the_sample_median():
 def test_udf_pack_unpack_round_trip():
     series = [_samples(seed=s) for s in range(3)]
     frame = pd.DataFrame({"unique_id": ["a", "b", "c"], "y": [mp.pack_sample_forecasts(s, QUANTILES) for s in series]})
-    out = cal.decode_quantile_forecasts(frame, "y", cal.forecast_levels(QUANTILES), H)
+    out = decode_quantile_forecasts(frame, "y", forecast_levels(QUANTILES), H)
     np.testing.assert_allclose(
         np.stack(out["y"]), np.stack([np.median(s, axis=0).astype(np.float64) for s in series]), rtol=1e-12)
     for i, key in enumerate(LEVELS):
         expected = np.stack([np.quantile(s.astype(np.float64), QUANTILES[i], axis=0) for s in series])
-        np.testing.assert_allclose(np.stack(out[cal.QUANTILE_COLUMN_PREFIX + key]), expected, rtol=1e-12)
+        np.testing.assert_allclose(np.stack(out[QUANTILE_COLUMN_PREFIX + key]), expected, rtol=1e-12)
 
 
 class _Col:
@@ -123,13 +123,13 @@ def test_predict_keeps_point_forecast_and_adds_quantile_columns(monkeypatch):
     plain = _predict(monkeypatch, None, samples)
     with_q = _predict(monkeypatch, QUANTILES, samples)
 
-    assert not [c for c in plain.columns if str(c).startswith(cal.QUANTILE_COLUMN_PREFIX)]
-    assert list(with_q.columns) == list(plain.columns) + [cal.QUANTILE_COLUMN_PREFIX + k for k in LEVELS]
+    assert not [c for c in plain.columns if str(c).startswith(QUANTILE_COLUMN_PREFIX)]
+    assert list(with_q.columns) == list(plain.columns) + [QUANTILE_COLUMN_PREFIX + k for k in LEVELS]
     assert np.stack(with_q["y"]).shape == (2, H)
     np.testing.assert_array_equal(np.stack(with_q["y"]), np.stack(plain["y"]))
     for i, key in enumerate(LEVELS):
         expected = np.stack([np.quantile(samples[u].astype(np.float64), QUANTILES[i], axis=0) for u in samples])
-        np.testing.assert_allclose(np.stack(with_q[cal.QUANTILE_COLUMN_PREFIX + key]), expected, rtol=1e-12)
+        np.testing.assert_allclose(np.stack(with_q[QUANTILE_COLUMN_PREFIX + key]), expected, rtol=1e-12)
 
 
 def test_calculate_metrics_appends_quantile_map(monkeypatch):

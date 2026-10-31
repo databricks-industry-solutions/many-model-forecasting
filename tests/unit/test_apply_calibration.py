@@ -13,7 +13,11 @@ import pytest
 from omegaconf import OmegaConf
 
 from mmf_sa import Forecaster
-from mmf_sa import calibration as cal
+from mmf_sa.intervals.quantiles import QUANTILE_COLUMN_PREFIX
+from mmf_sa.intervals.scoring import (
+    CORRECTION_FIELDS, apply_calibration, apply_joined_corrections, correction_column, interval_columns,
+    median_corrections,
+)
 from mmf_sa.models.statsforecast.StatsFcForecastingPipeline import StatsFcAutoETS
 
 H = 3
@@ -39,7 +43,7 @@ def _forecasts(native=None):
 
 
 def test_conformal_bounds():
-    out, stats = cal.apply_calibration(_forecasts(), _cal_rows("conformal", "signed_normalized"), "uid", "y", [80])
+    out, stats = apply_calibration(_forecasts(), _cal_rows("conformal", "signed_normalized"), "uid", "y", [80])
     qa = out.loc[0, "y_quantiles"]
     # lo = yhat + 0.5 * (-1, -2, -3), clipped at 0; hi = yhat + 0.5 * (2, 4, 6)
     np.testing.assert_allclose(qa["0.1"], [0.5, 1.0, 1.5])
@@ -50,7 +54,7 @@ def test_conformal_bounds():
 
 
 def test_signed_score_is_not_scaled():
-    out, _ = cal.apply_calibration(_forecasts(), _cal_rows("conformal", "signed"), "uid", "y", [80])
+    out, _ = apply_calibration(_forecasts(), _cal_rows("conformal", "signed"), "uid", "y", [80])
     np.testing.assert_allclose(out.loc[0, "y_quantiles"]["0.9"], [3.0, 6.0, 9.0])
 
 
@@ -61,7 +65,7 @@ def _native():
 
 
 def test_cqr_asymmetric_bounds():
-    out, _ = cal.apply_calibration(_forecasts(_native()), _cal_rows("cqr", "asymmetric", q_lo=0.0, q_hi=1.0),
+    out, _ = apply_calibration(_forecasts(_native()), _cal_rows("cqr", "asymmetric", q_lo=0.0, q_hi=1.0),
                                    "uid", "y", [80])
     qa = out.loc[0, "y_quantiles"]
     np.testing.assert_allclose(qa["0.1"], [0.5, 1.0, 2.0])        # lo - sigma * 0
@@ -71,13 +75,13 @@ def test_cqr_asymmetric_bounds():
 
 
 def test_cqr_clips_the_native_band_first():
-    out, _ = cal.apply_calibration(_forecasts(_native()), _cal_rows("cqr", "asymmetric", levels=(95,), q_lo=0.0, q_hi=0.0),
+    out, _ = apply_calibration(_forecasts(_native()), _cal_rows("cqr", "asymmetric", levels=(95,), q_lo=0.0, q_hi=0.0),
                                    "uid", "y", [95])
     np.testing.assert_allclose(out.loc[0, "y_quantiles"]["0.025"], [0.0, 0.0, 1.0])
 
 
 def test_cqr_scaled_bounds():
-    out, _ = cal.apply_calibration(_forecasts(_native()), _cal_rows("cqr", "scaled", q_lo=1.0, q_hi=1.0),
+    out, _ = apply_calibration(_forecasts(_native()), _cal_rows("cqr", "scaled", q_lo=1.0, q_hi=1.0),
                                    "uid", "y", [80])
     half = np.array([0.75, 1.0, 1.0])
     yhat = np.array([1.0, 2.0, 3.0])
@@ -85,7 +89,7 @@ def test_cqr_scaled_bounds():
 
 
 def test_native_method_passes_the_band():
-    out, _ = cal.apply_calibration(_forecasts(_native()), _cal_rows("native", "native", q_lo=0, q_hi=0),
+    out, _ = apply_calibration(_forecasts(_native()), _cal_rows("native", "native", q_lo=0, q_hi=0),
                                    "uid", "y", [80])
     np.testing.assert_allclose(out.loc[1, "y_quantiles"]["0.9"], [2.0, 3.0, 4.0])
 
@@ -93,27 +97,27 @@ def test_native_method_passes_the_band():
 def test_crossed_bounds_are_uncrossed():
     rows = _cal_rows("conformal", "signed_normalized", q_lo=-1.0, q_hi=-1.0, sigma=1.0, clip=None)
     rows["clip_lower"] = np.nan
-    out, _ = cal.apply_calibration(_forecasts(), rows, "uid", "y", [80])
+    out, _ = apply_calibration(_forecasts(), rows, "uid", "y", [80])
     qa = out.loc[1, "y_quantiles"]
     assert (np.array(qa["0.9"]) >= np.array(qa["0.1"])).all()
     assert min(qa["0.1"]) < 0  # no clipping without clip_lower
 
 
 def test_missing_series_uses_the_fallback():
-    out, stats = cal.apply_calibration(_forecasts(), _cal_rows("conformal", "signed_normalized", series=("a",)),
+    out, stats = apply_calibration(_forecasts(), _cal_rows("conformal", "signed_normalized", series=("a",)),
                                        "uid", "y", [80])
     assert stats == {"fallback": 1, "null": 0}
     np.testing.assert_allclose(out.loc[1, "y_quantiles"]["0.9"], np.array([0.2] * 3) + 0.5 * np.array([2, 4, 6]))
 
 
 def test_cqr_without_native_band_gives_null_bounds():
-    out, stats = cal.apply_calibration(_forecasts(), _cal_rows("cqr", "asymmetric"), "uid", "y", [80], "both")
+    out, stats = apply_calibration(_forecasts(), _cal_rows("cqr", "asymmetric"), "uid", "y", [80], "both")
     assert stats["null"] == 2
     assert out["y_quantiles"].isna().all() and out["y_lo_80"].isna().all()
 
 
 def test_no_calibration_gives_null_columns():
-    out, _ = cal.apply_calibration(_forecasts(), pd.DataFrame(), "uid", "y", [80], "both")
+    out, _ = apply_calibration(_forecasts(), pd.DataFrame(), "uid", "y", [80], "both")
     assert out["y_quantiles"].isna().all() and out["y_hi_80"].isna().all()
 
 
@@ -123,9 +127,9 @@ def test_no_calibration_gives_null_columns():
     ("both", ["y_quantiles", "y_lo_80", "y_hi_80", "y_lo_97_5", "y_hi_97_5"]),
 ])
 def test_output_formats(fmt, columns):
-    assert cal.interval_columns("y", [80, 97.5], fmt) == columns
+    assert interval_columns("y", [80, 97.5], fmt) == columns
     rows = _cal_rows("conformal", "signed_normalized", levels=(80, 97.5))
-    out, _ = cal.apply_calibration(_forecasts(), rows, "uid", "y", [80, 97.5], fmt)
+    out, _ = apply_calibration(_forecasts(), rows, "uid", "y", [80, 97.5], fmt)
     assert [c for c in out.columns if c.startswith("y_")] == columns
     if fmt != "quantile_map":
         np.testing.assert_allclose(out.loc[0, "y_hi_80"], out.loc[0, "y_hi_80"])
@@ -150,7 +154,7 @@ def test_statsforecast_forecast_quantiles():
     plain, _ = _ets().forecast(_series())
     with_q, _ = _ets([0.1, 0.5, 0.9]).forecast(_series())
     np.testing.assert_array_equal(plain["y"], with_q["y"])
-    assert [c for c in with_q.columns if c.startswith(cal.QUANTILE_COLUMN_PREFIX)] == ["__q_0.1", "__q_0.5", "__q_0.9"]
+    assert [c for c in with_q.columns if c.startswith(QUANTILE_COLUMN_PREFIX)] == ["__q_0.1", "__q_0.5", "__q_0.9"]
 
 
 @pytest.mark.parametrize("with_quantiles", [False, True])
@@ -166,7 +170,7 @@ def _joined(cal_rows, forecasts, levels):
     """The wide correction columns that Forecaster.wide_corrections joins to the forecasts."""
     out = forecasts.copy()
     for j, lv in enumerate(sorted(levels)):
-        for field in cal.CORRECTION_FIELDS:
+        for field in CORRECTION_FIELDS:
             values = []
             for sid in out["uid"]:
                 g = cal_rows[(cal_rows["uid"] == sid) & (cal_rows["level"] == float(lv))].sort_values("step")
@@ -176,7 +180,7 @@ def _joined(cal_rows, forecasts, levels):
                     values.append(g[field].to_numpy())
                 else:
                     values.append(g[field].iloc[0])
-            out[cal.correction_column(j, field)] = values
+            out[correction_column(j, field)] = values
     return out
 
 
@@ -188,14 +192,14 @@ def _joined(cal_rows, forecasts, levels):
 def test_joined_corrections_match_reference(method, score, native):
     rows = _cal_rows(method, score, series=("a",), levels=(80, 95), q_lo=0.5, q_hi=1.0)
     forecasts = _forecasts(_native() if native else None)
-    expected, stats = cal.apply_calibration(forecasts, rows, "uid", "y", [80, 95], "both")
+    expected, stats = apply_calibration(forecasts, rows, "uid", "y", [80, 95], "both")
     stats_rows = []
     for lv, g in rows.groupby("level"):
         for step, gs in g.groupby("step"):
             stats_rows.append({"level": lv, "step": step, "q_lo": gs["q_lo"].median(), "q_hi": gs["q_hi"].median(),
                                "sigma": g["sigma"].median(), "method": method, "score": score})
-    fallback = cal.median_corrections(pd.DataFrame(stats_rows))
-    got, _ = cal.apply_joined_corrections(_joined(rows, forecasts, [80, 95]), "uid", "y", [80, 95], "both",
+    fallback = median_corrections(pd.DataFrame(stats_rows))
+    got, _ = apply_joined_corrections(_joined(rows, forecasts, [80, 95]), "uid", "y", [80, 95], "both",
                                           0.0, fallback)
     assert stats == {"fallback": 1, "null": 0}  # series "b" has no rows
     assert list(got.columns) == list(expected.columns)

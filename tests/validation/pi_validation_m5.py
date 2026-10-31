@@ -8,7 +8,7 @@
 # MAGIC    windows equal to the experiment's last `W` calibration windows (h = 28, stride 14). Its forecast of
 # MAGIC    the next 28 days is scored against the actuals, and compared with the experiment's numbers.
 # MAGIC 2. **Reference equality at scale.** MMF's `calibration_output` and interval metrics must equal
-# MAGIC    `mmf_sa.calibration.calibrate_model` (the numpy reference) run on MMF's own backtest.
+# MAGIC    `mmf_sa.intervals.conformal.calibrate_model` (the numpy reference) run on MMF's own backtest.
 # MAGIC
 # MAGIC Results are returned with `dbutils.notebook.exit(json)`.
 
@@ -30,7 +30,9 @@ import pandas as pd
 from datasetsforecast.m5 import M5
 from pyspark.sql import functions as F
 
-from mmf_sa import calibration as cal
+from mmf_sa.intervals.config import resolve_prediction_intervals_conf
+from mmf_sa.intervals.conformal import calibrate_model
+from mmf_sa.intervals.features import backtest_cubes
 from mmf_sa import run_forecast
 
 dbutils.widgets.text("n_series", "5000")
@@ -163,7 +165,6 @@ display(comparison)
 
 # COMMAND ----------
 
-from mmf_sa.calibration import resolve_prediction_intervals_conf
 
 pi = resolve_prediction_intervals_conf({"enabled": True, "output_format": "both"})
 evals = spark.table(f"{PREFIX}_evaluation_output").filter(
@@ -176,10 +177,10 @@ equality = []
 for model, frame in evals.groupby("model"):
     c = calib[calib["model"] == model]
     feats = c.drop_duplicates("unique_id").set_index("unique_id")
-    cubes = cal.backtest_cubes(frame[frame["unique_id"].isin(feats.index)], "unique_id", (80, 95))
+    cubes = backtest_cubes(frame[frame["unique_id"].isin(feats.index)], "unique_id", (80, 95))
     f = feats.loc[cubes["ids"]]
     labels = (f["abc_class"] + f["xyz_class"]).to_numpy(dtype=object)
-    ref = cal.calibrate_model(cubes["y"], cubes["yhat"], f["sigma"].to_numpy(), pi, labels=labels,
+    ref = calibrate_model(cubes["y"], cubes["yhat"], f["sigma"].to_numpy(), pi, labels=labels,
                               native=cubes["native"], clip_lower=clip)
     m = metrics[metrics["model"] == model]
     for level, r in ref.items():

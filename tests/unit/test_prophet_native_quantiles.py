@@ -17,7 +17,7 @@ from omegaconf import OmegaConf
 
 import mmf_sa.models.sktime.SKTimeForecastingPipeline as pipeline_module
 from mmf_sa import Forecaster
-from mmf_sa.calibration import QUANTILE_COLUMN_PREFIX
+from mmf_sa.intervals.quantiles import QUANTILE_COLUMN_PREFIX
 from mmf_sa.models.abstract_model import ForecastingRegressor
 from mmf_sa.models.sktime.SKTimeForecastingPipeline import SKTimeProphet
 

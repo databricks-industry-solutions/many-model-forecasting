@@ -5,7 +5,7 @@ Moirai needs torch<2.5, so it cannot run on DBR 18 ML, and on DBR 15.4 ML the mm
 (see results/pi_native_models_200.json). MMF's Moirai predict is a Spark Pandas UDF that requires CUDA, so this
 script calls the models exactly as that UDF does (same constructor arguments, context = whole history), packs and
 decodes the outputs with MMF's own functions (pack_sample_forecasts, decode_quantile_forecasts), and calibrates with
-calibration.calibrate_model, the numpy reference that the Spark calibration matches to 1e-12.
+conformal.calibrate_model, the numpy reference that the Spark calibration matches to 1e-12.
 
 Usage, in a Python 3.11 environment with `uni2ts==2.0.0` and mmf_sa (pip install -e .), with M5 in /tmp/m5
 (datasetsforecast's M5.download):
@@ -22,13 +22,16 @@ from einops import rearrange
 from uni2ts.model.moirai import MoiraiForecast, MoiraiModule
 from uni2ts.model.moirai_moe import MoiraiMoEForecast, MoiraiMoEModule
 
-from mmf_sa import calibration as cal
+from mmf_sa.intervals.config import level_quantiles, requested_quantiles, resolve_prediction_intervals_conf
+from mmf_sa.intervals.quantiles import QUANTILE_COLUMN_PREFIX, decode_quantile_forecasts, forecast_levels, quantile_key
+from mmf_sa.intervals.conformal import calibrate_model, cqr_bounds, finalize_bounds
+from mmf_sa.intervals.features import classify_series, positive_sigma, series_features
 from mmf_sa.models.moiraiforecast import MoiraiPipeline as mp
 
 M5 = "/tmp/m5/m5/datasets"
 N_SERIES, H, STRIDE, W, TEST_WINDOWS = 200, 28, 14, 3, 4
-QUANTILES = cal.requested_quantiles(cal.resolve_prediction_intervals_conf({"enabled": True}))
-LEVELS = cal.forecast_levels(QUANTILES)
+QUANTILES = requested_quantiles(resolve_prediction_intervals_conf({"enabled": True}))
+LEVELS = forecast_levels(QUANTILES)
 MODELS = {"MoiraiSmall": ("Salesforce/moirai-1.1-R-small", 32), "MoiraiMoESmall": ("Salesforce/moirai-moe-1.0-R-small", 16)}
 
 calendar = pd.read_csv(f"{M5}/calendar.csv", usecols=["date"], parse_dates=["date"])
@@ -77,26 +80,26 @@ def run(name, num_samples):
             packed = mp.pack_sample_forecasts(samples, QUANTILES)
             plain = mp.pack_sample_forecasts(samples, None)  # the point forecast without native quantiles
             rows.append({"y": packed, "plain": plain, "actual": fut})
-        df = cal.decode_quantile_forecasts(pd.DataFrame(rows), "y", LEVELS, H)
+        df = decode_quantile_forecasts(pd.DataFrame(rows), "y", LEVELS, H)
         roundtrip.append(max(float(np.abs(np.asarray(a) - np.asarray(b)).max()) for a, b in zip(df["y"], df["plain"])))
-        q = np.stack([np.stack(df[cal.QUANTILE_COLUMN_PREFIX + cal.quantile_key(lv)]) for lv in LEVELS], 1)  # N,Q,H
+        q = np.stack([np.stack(df[QUANTILE_COLUMN_PREFIX + quantile_key(lv)]) for lv in LEVELS], 1)  # N,Q,H
         crossing.append(float((np.diff(q, axis=1) < -1e-9).any(axis=1).mean()))
         point.append(np.stack(df["y"]))
-        bands.append({lv: (q[:, LEVELS.index(cal.level_quantiles(lv)[0])], q[:, LEVELS.index(cal.level_quantiles(lv)[1])])
+        bands.append({lv: (q[:, LEVELS.index(level_quantiles(lv)[0])], q[:, LEVELS.index(level_quantiles(lv)[1])])
                       for lv in (80, 95)})
         actual.append(np.stack(df["actual"]))
     runtime = round(time.time() - t0, 1)
 
     # Calibration on the backtest windows, as run_calibration does (series features before the first window).
-    feats = pd.DataFrame([cal.series_features(np.nan_to_num(series[u][series[u].index <= cutoffs[0]].to_numpy())[-30:],
+    feats = pd.DataFrame([series_features(np.nan_to_num(series[u][series[u].index <= cutoffs[0]].to_numpy())[-30:],
                                               season_length=7) for u in ids], index=ids)
-    classes = cal.classify_series(feats)
-    sigma, _ = cal.positive_sigma(classes["sigma"].to_numpy())
+    classes = classify_series(feats)
+    sigma, _ = positive_sigma(classes["sigma"].to_numpy())
     yb, fb = np.stack(actual[:W], 1), np.stack(point[:W], 1)  # N, W, H
     native = {lv: (np.maximum(np.stack([b[lv][0] for b in bands[:W]], 1), 0.0), np.stack([b[lv][1] for b in bands[:W]], 1))
               for lv in (80, 95)}
-    pi = cal.resolve_prediction_intervals_conf({"enabled": True})
-    res = cal.calibrate_model(yb, fb, sigma, pi, labels=classes["abc_xyz"].to_numpy(), native=native, clip_lower=0.0,
+    pi = resolve_prediction_intervals_conf({"enabled": True})
+    res = calibrate_model(yb, fb, sigma, pi, labels=classes["abc_xyz"].to_numpy(), native=native, clip_lower=0.0,
                               model=name)
     out = {"num_samples": num_samples, "runtime_s": runtime, "sample_shapes": sorted(map(str, shapes)),
            "decode_roundtrip_max_diff": max(roundtrip), "crossing_share": round(float(np.mean(crossing)), 4)}
@@ -104,7 +107,7 @@ def run(name, num_samples):
     for lv in (80, 95):
         r = res[lv]
         lo_t, hi_t = np.maximum(bands[W][lv][0], 0.0)[:, None, :], bands[W][lv][1][:, None, :]
-        lo, hi = cal.finalize_bounds(*cal.cqr_bounds(ft, lo_t, hi_t, sigma, r["q_lo"], r["q_hi"], r["score"]), 0.0)
+        lo, hi = finalize_bounds(*cqr_bounds(ft, lo_t, hi_t, sigma, r["q_lo"], r["q_hi"], r["score"]), 0.0)
         width_native = float((native[lv][1] - native[lv][0]).mean())
         out[str(lv)] = {
             "method": f"{r['method']}/{r['score']}/{r['target']}",

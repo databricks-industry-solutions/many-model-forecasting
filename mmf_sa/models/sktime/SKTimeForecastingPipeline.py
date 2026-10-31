@@ -9,7 +9,8 @@ from sktime.forecasting.model_selection import (
 from sktime.forecasting.fbprophet import Prophet
 from sktime.forecasting.base import ForecastingHorizon, BaseForecaster
 from mmf_sa.models.abstract_model import ForecastingRegressor
-from mmf_sa.calibration import QUANTILE_COLUMN_PREFIX, central_levels, quantile_key
+from mmf_sa.intervals.config import central_levels
+from mmf_sa.intervals.quantiles import QUANTILE_COLUMN_PREFIX, quantile_key
 
 
 class SKTimeForecastingPipeline(ForecastingRegressor):

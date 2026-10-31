@@ -11,7 +11,7 @@ from pyspark.sql import DataFrame
 from utilsforecast.processing import make_future_dataframe
 from mmf_sa.models.abstract_model import ForecastingRegressor, MODEL_PIP_REQUIREMENTS, collect_sorted
 from mmf_sa.exceptions import MissingFeatureError
-from mmf_sa.calibration import (
+from mmf_sa.intervals.quantiles import (
     QUANTILE_COLUMN_PREFIX, decode_quantile_forecasts, encode_quantile_forecasts, forecast_levels, quantile_key,
 )
 

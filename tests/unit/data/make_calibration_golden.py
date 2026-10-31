@@ -4,7 +4,7 @@ The experiment notebook (the research that chose the prediction-interval default
 this repository; pass its path as the only argument.
 
 The fixture holds the backtest cubes of a small M5 sample and the metrics that the notebook
-computed from them, so that test_calibration.py can check mmf_sa.calibration against the
+computed from them, so that test_calibration.py can check mmf_sa.intervals.conformal against the
 notebook without statsforecast or the M5 data.
 
 Usage (needs statsforecast==2.0.0 and datasetsforecast==0.0.8; downloads M5 to /tmp/m5):
@@ -12,7 +12,7 @@ Usage (needs statsforecast==2.0.0 and datasetsforecast==0.0.8; downloads M5 to /
 
 MIN_SCORES_PER_GROUP is set to 1, so that no group is merged into "__other__": with 30
 series every group would be merged otherwise, and the notebook's per-series step profile
-uses the unmerged labels (mmf_sa.calibration uses the merged ones).
+uses the unmerged labels (mmf_sa.intervals.conformal uses the merged ones).
 """
 import json
 import multiprocessing

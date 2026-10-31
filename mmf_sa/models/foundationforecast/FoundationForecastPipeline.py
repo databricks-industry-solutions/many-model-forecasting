@@ -9,7 +9,7 @@ import mlflow
 from mlflow.models.signature import ModelSignature, infer_signature
 from mlflow.types import ColSpec, Schema
 
-from mmf_sa.calibration import QUANTILE_COLUMN_PREFIX, quantile_key
+from mmf_sa.intervals.quantiles import QUANTILE_COLUMN_PREFIX, quantile_key
 from mmf_sa.models.abstract_model import ForecastingRegressor, MODEL_PIP_REQUIREMENTS, warn_once as _warn_once
 from mmf_sa.models.foundationforecast._runtime import ensure_runtime
 from mmf_sa.exceptions import (

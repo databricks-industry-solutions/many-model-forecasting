@@ -371,10 +371,16 @@ Prediction intervals are optional (`prediction_intervals.enabled`, off by defaul
 
 | Module | Role |
 |---|---|
-| `mmf_sa/calibration.py` | Pure numpy/pandas. The `prediction_intervals` configuration (defaults, validation), quantile keys and column names, the conformal and CQR math, and the reference implementation `calibrate_model`, which the golden tests check against the experiment notebook. |
-| `mmf_sa/calibration_spark.py` | The distributed calibration used by `run_calibration`: backtest alignment, classes, exact pool order statistics, and the per-series combination in `applyInPandas`. Tests check it against `calibrate_model` to 1e-12. |
-| `Forecaster.run_calibration` | Orchestration: reads this call's backtest rows, computes the per-series features, calibrates each active model, and writes `calibration_output` and `interval_metrics_output`. |
-| `Forecaster.add_prediction_intervals` | At scoring time: joins the corrections to the forecasts and computes the interval columns per partition. |
+| `mmf_sa/intervals/config.py` | Pure Python. The `prediction_intervals` configuration (defaults, validation), the level helpers, and each model's interval method. |
+| `mmf_sa/intervals/quantiles.py` | The contract the models use: quantile keys and column names, and the packing of the Spark UDF output into quantile maps. |
+| `mmf_sa/intervals/conformal.py` | Pure numpy/pandas. The conformal and CQR math, pool order statistics, and the reference implementation `calibrate_model`, which the golden tests check against the experiment notebook. |
+| `mmf_sa/intervals/features.py` | Pure numpy/pandas. Per-series scale and classes (ABC, XYZ, Syntetos-Boylan), group labels, and the backtest cubes of one model. |
+| `mmf_sa/intervals/scoring.py` | Pure pandas. The `calibration_output` and interval metric rows, and the application of the corrections to forecasts at scoring. |
+| `mmf_sa/intervals/spark.py` | The distributed calibration used by `run_calibration`: backtest alignment, classes, exact pool order statistics, and the per-series combination in `applyInPandas`. Tests check it against `conformal.calibrate_model` to 1e-12. |
+| `mmf_sa/intervals/calibrator.py` | `IntervalCalibrator`, which the Forecaster creates and delegates its prediction-interval methods to. |
+| `IntervalCalibrator.run_calibration` | Orchestration (also reached through `Forecaster.run_calibration`): reads this call's backtest rows, computes the per-series features, calibrates each active model, and writes `calibration_output` and `interval_metrics_output`. |
+| `IntervalCalibrator.add_prediction_intervals` | At scoring time: joins the corrections to the forecasts and computes the interval columns per partition. |
+| `mmf_sa/calibration.py`, `mmf_sa/calibration_spark.py` | Backward-compatible re-exports of the modules above. |
 
 ### Data flow
 
@@ -394,7 +400,7 @@ score_models      native bands at forecast time; corrections joined per series; 
 ### Adding native intervals to a model
 
 1. Set `native_intervals: true` for the model in `models_conf.yaml`, and `native_quantiles_supported = True` on its class (a unit test checks that both agree). If the model only predicts some quantile levels, set `native_quantile_range = (min, max)`; if its quantiles come from sample paths, set `samples_hparam` to the hyperparameter holding their number.
-2. When `self.params.native_quantiles` is set, make `predict` (backtest) and `forecast` (scoring) return one column per level of `self.native_levels()`, named with `calibration.QUANTILE_COLUMN_PREFIX + calibration.quantile_key(q)` (e.g. `__q_0.975`), next to the point forecast. `native_levels()` sorts the levels, adds the median, and logs once when they exceed `native_quantile_range` or come from fewer than 100 sample paths; call it on the driver, so that the warnings reach the driver log. `ForecastingRegressor.forecast_quantiles` (local models) and `ForecastingRegressor.series_metrics` (global and foundation models) turn the columns into the `forecast_quantiles` map.
+2. When `self.params.native_quantiles` is set, make `predict` (backtest) and `forecast` (scoring) return one column per level of `self.native_levels()`, named with `QUANTILE_COLUMN_PREFIX + quantile_key(q)` from `mmf_sa/intervals/quantiles.py` (e.g. `__q_0.975`), next to the point forecast. `native_levels()` sorts the levels, adds the median, and logs once when they exceed `native_quantile_range` or come from fewer than 100 sample paths; call it on the driver, so that the warnings reach the driver log. `ForecastingRegressor.forecast_quantiles` (local models) and `ForecastingRegressor.series_metrics` (global and foundation models) turn the columns into the `forecast_quantiles` map.
 3. Nothing else changes: calibration uses CQR for every model whose backtest rows carry quantiles.
 
 ### Scaling

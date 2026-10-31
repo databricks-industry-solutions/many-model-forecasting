@@ -21,7 +21,8 @@ from statsforecast.models import (
 )
 from mmf_sa.models.abstract_model import ForecastingRegressor
 from mmf_sa.exceptions import MissingFeatureError, DataPreparationError
-from mmf_sa.calibration import QUANTILE_COLUMN_PREFIX, central_levels, quantile_key
+from mmf_sa.intervals.config import central_levels
+from mmf_sa.intervals.quantiles import QUANTILE_COLUMN_PREFIX, quantile_key
 
 
 class StatsFcForecaster(ForecastingRegressor):

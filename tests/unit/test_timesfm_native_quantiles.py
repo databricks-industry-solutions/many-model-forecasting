@@ -21,7 +21,7 @@ import pytest
 import torch
 from omegaconf import OmegaConf
 
-from mmf_sa.calibration import (
+from mmf_sa.intervals.quantiles import (
     QUANTILE_COLUMN_PREFIX, decode_quantile_forecasts, encode_quantile_forecasts, forecast_levels, quantile_key,
 )
 from mmf_sa.models.timesfmforecast import TimesFMPipeline as tfp

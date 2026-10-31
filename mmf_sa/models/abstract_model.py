@@ -14,7 +14,7 @@ from sktime.performance_metrics.forecasting import (
 )
 import mlflow
 from mmf_sa.exceptions import DataPreparationError, ModelPredictionError, UnsupportedMetricError
-from mmf_sa.calibration import MIN_SAMPLES_FOR_QUANTILES, forecast_levels, quantile_columns, quantile_maps
+from mmf_sa.intervals.quantiles import MIN_SAMPLES_FOR_QUANTILES, forecast_levels, quantile_columns, quantile_maps
 mlflow.set_registry_uri("databricks-uc")
 
 _logger = logging.getLogger(__name__)

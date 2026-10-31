@@ -1,12 +1,12 @@
-"""Equality of the distributed calibration (mmf_sa.calibration_spark) with the numpy reference.
+"""Equality of the distributed calibration (mmf_sa.intervals.spark) with the numpy reference.
 
-Tests cover, against calibration.calibrate_model on the same data:
+Tests cover, against conformal.calibrate_model on the same data:
 - every method / pool / score: CQR asymmetric (adaptive and equal split), symmetric, scaled; residual
   conformal marginal, group, series (pooled horizon or not), signed score; native
 - per-model methods (method_by_model), with and without native bands
 - small groups merged into __other__, infinite ranks, ties, dropped series, missing native quantiles
 - the M5 golden fixture with the default settings
-- Spark classification against calibration.classify_series, with ties
+- Spark classification against features.classify_series, with ties
 
 These tests need Spark Python workers (PySpark >= 3.5 on Python <= 3.11 locally); they are skipped otherwise.
 """
@@ -17,8 +17,12 @@ import pandas as pd
 import pytest
 from pyspark.sql import functions as F
 
-from mmf_sa import calibration as cal
-from mmf_sa import calibration_spark as cs
+from mmf_sa.intervals.config import level_quantiles, resolve_prediction_intervals_conf
+from mmf_sa.intervals.quantiles import quantile_key
+from mmf_sa.intervals.conformal import calibrate_model
+from mmf_sa.intervals.features import classify_series, series_features
+from mmf_sa.intervals.scoring import _metric_name, correction_column
+from mmf_sa.intervals import spark as cs
 
 GOLDEN = pathlib.Path(__file__).parent / "data" / "calibration_golden.npz"
 TOL = 1e-12
@@ -43,7 +47,7 @@ def _pi(**overrides):
             base["coverage"].update(v)
         else:
             base[k] = v
-    return cal.resolve_prediction_intervals_conf(base)
+    return resolve_prediction_intervals_conf(base)
 
 
 def _data(n=24, w=4, h=5, seed=0, ties=False):
@@ -70,7 +74,7 @@ def _frames(spark, ids, y, yhat, sigma, labels, native, extra_rows=()):
             if native is not None:
                 q = {}
                 for lv, (lo, hi) in native.items():
-                    k_lo, k_hi = (cal.quantile_key(x) for x in cal.level_quantiles(lv))
+                    k_lo, k_hi = (quantile_key(x) for x in level_quantiles(lv))
                     q[k_lo], q[k_hi] = [float(x) for x in lo[i, j]], [float(x) for x in hi[i, j]]
             rows.append({"uid": sid, "backtest_window_start_date": dates[j], "forecast": [float(x) for x in yhat[i, j]],
                          "actual": [float(x) for x in y[i, j]], "forecast_quantiles": q})
@@ -89,7 +93,7 @@ def _compare(spark, ids, y, yhat, sigma, labels, native, pi, clip_lower=0.0, ext
                                                cs.Materializer(spark, "default.pi_tmp"))
     out = result.toPandas()
     result.unpersist()
-    ref = cal.calibrate_model(y, yhat, sigma, pi, labels=labels if pi.coverage.group_col else None,
+    ref = calibrate_model(y, yhat, sigma, pi, labels=labels if pi.coverage.group_col else None,
                               native=native, clip_lower=clip_lower, model=model)
     rows = out[out["kind"] == "calibration"]
     metrics = out[out["kind"] == "metric"]
@@ -103,7 +107,7 @@ def _compare(spark, ids, y, yhat, sigma, labels, native, pi, clip_lower=0.0, ext
         assert set(got["method"]) == {r["method"]} and set(got["coverage_target"]) == {r["target"]}
         for native_metric, values in ((False, r["metrics"]), (True, r["native_metrics"])):
             for name, arr in values.items():
-                m = metrics[metrics["metric_name"] == cal._metric_name(name, lv, native_metric)]
+                m = metrics[metrics["metric_name"] == _metric_name(name, lv, native_metric)]
                 m = m.sort_values(["uid", "window_date"])
                 np.testing.assert_allclose(m["metric_value"].to_numpy().reshape(len(ids), -1), arr,
                                            rtol=0, atol=TOL)
@@ -205,7 +209,7 @@ def test_spark_classes_match_pandas(spark):
         "cv2": rng.uniform(0.0, 1.0, n),
     })
     feats.loc[3, "cv"] = np.inf
-    expected = cal.classify_series(feats.set_index("uid"))
+    expected = classify_series(feats.set_index("uid"))
     got = cs.classify(spark.createDataFrame(feats), "uid").toPandas().set_index("uid").loc[expected.index]
     for c in ("sb_class", "abc_class", "xyz_class", "abc_xyz"):
         np.testing.assert_array_equal(got[c].to_numpy(), expected[c].to_numpy(), err_msg=c)
@@ -246,7 +250,7 @@ def test_scoring_reads_only_the_latest_calibration_of_a_run(spark, tmp_path):
     f = Forecaster(conf=conf, data_conf={}, spark=spark, experiment_id="e", run_id="r")
     cal_rows = f.calibration_rows_for("m")
     wide = f.wide_corrections(cal_rows, [80]).toPandas()
-    np.testing.assert_array_equal(wide[cal.correction_column(0, "q_hi")].iloc[0], [2.0, 4.0])
+    np.testing.assert_array_equal(wide[correction_column(0, "q_hi")].iloc[0], [2.0, 4.0])
 
 
 @pytest.mark.parametrize("overrides", [{}, {"method": "conformal"}, {"cqr_pool": "series"}])
@@ -271,11 +275,11 @@ def test_spark_series_features_match_numpy(spark):
                          "store": None if t < 2 else f"st{i % 2}"})
         firsts.append({"uid": sid, "_first_window": first})
         hist = np.nan_to_num(y[: max(n_days - 7, 0)])[-30:]
-        expected[sid] = cal.series_features(hist, season_length=7)
+        expected[sid] = series_features(hist, season_length=7)
     # A series whose history starts at its first window: no history, sigma 0.
     rows.append({"uid": "late", "ds": start + pd.Timedelta(days=50), "y": 3.0, "store": "st9"})
     firsts.append({"uid": "late", "_first_window": start + pd.Timedelta(days=50)})
-    expected["late"] = cal.series_features(np.array([]), season_length=7)
+    expected["late"] = series_features(np.array([]), season_length=7)
     train = spark.createDataFrame(pd.DataFrame(rows), "uid string, ds timestamp, y double, store string")
     windows = spark.createDataFrame(pd.DataFrame(firsts), "uid string, _first_window timestamp")
     got = cs.series_features(train, windows, "uid", "ds", "y", 7, 30, ["store"]).toPandas().set_index("uid")

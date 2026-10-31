@@ -15,7 +15,10 @@ import pytest
 from omegaconf import OmegaConf
 
 from mmf_sa import Forecaster
-from mmf_sa import calibration as cal
+from mmf_sa.intervals.config import (
+    central_levels, level_quantiles, requested_quantiles, resolve_prediction_intervals_conf,
+)
+from mmf_sa.intervals.quantiles import QUANTILE_COLUMN_PREFIX, quantile_key
 from mmf_sa.models.chronosforecast.ChronosPipeline import (
     decode_quantile_forecasts,
     encode_quantile_forecasts,
@@ -27,17 +30,17 @@ QUANTILES = [0.025, 0.1, 0.5, 0.9, 0.975]
 
 
 def test_quantile_helpers():
-    assert [cal.quantile_key(q) for q in QUANTILES] == ["0.025", "0.1", "0.5", "0.9", "0.975"]
-    assert cal.level_quantiles(80) == (0.1, 0.9)
-    pi = cal.resolve_prediction_intervals_conf({"enabled": True})
-    assert cal.requested_quantiles(pi) == QUANTILES
-    assert cal.central_levels(QUANTILES) == [80, 95]
-    by_group = cal.resolve_prediction_intervals_conf(
+    assert [quantile_key(q) for q in QUANTILES] == ["0.025", "0.1", "0.5", "0.9", "0.975"]
+    assert level_quantiles(80) == (0.1, 0.9)
+    pi = resolve_prediction_intervals_conf({"enabled": True})
+    assert requested_quantiles(pi) == QUANTILES
+    assert central_levels(QUANTILES) == [80, 95]
+    by_group = resolve_prediction_intervals_conf(
         {"levels": [80], "coverage": {"level_group_col": "abc", "levels_by_group": {"A": [95], "C": [50]}}})
-    assert cal.requested_quantiles(by_group) == [0.025, 0.1, 0.25, 0.5, 0.75, 0.9, 0.975]
-    assert cal.requested_quantiles(cal.resolve_prediction_intervals_conf({"quantiles": [0.05, 0.95]})) == [
+    assert requested_quantiles(by_group) == [0.025, 0.1, 0.25, 0.5, 0.75, 0.9, 0.975]
+    assert requested_quantiles(resolve_prediction_intervals_conf({"quantiles": [0.05, 0.95]})) == [
         0.05, 0.5, 0.95]
-    assert cal.central_levels([0.0125]) == [97.5]
+    assert central_levels([0.0125]) == [97.5]
 
 
 def _series(n=120, seed=0):
@@ -134,7 +137,7 @@ def test_chronos_udf_packing_round_trip():
     out = decode_quantile_forecasts(frame, "y", QUANTILES, prediction_length=4)
     np.testing.assert_array_equal(np.stack(out["y"]), medians)
     for i, key in enumerate(["0.025", "0.1", "0.5", "0.9", "0.975"]):
-        np.testing.assert_array_equal(np.stack(out[cal.QUANTILE_COLUMN_PREFIX + key]), qs[:, i, :])
+        np.testing.assert_array_equal(np.stack(out[QUANTILE_COLUMN_PREFIX + key]), qs[:, i, :])
     maps = quantile_maps(out.rename(columns={"unique_id": "uid"}), "uid")
     np.testing.assert_array_equal(maps["b"]["0.9"], qs[1, 3, :])
     assert quantile_maps(pd.DataFrame({"uid": ["a"], "y": [[1.0]]}), "uid") == {}
@@ -193,8 +196,8 @@ def test_global_backtest_schema(spark_session, monkeypatch, enabled):
 
 def test_forecast_levels_match_requested_quantiles():
     from mmf_sa.models.chronosforecast.ChronosPipeline import forecast_levels
-    pi = cal.resolve_prediction_intervals_conf({"enabled": True})
-    assert forecast_levels(cal.requested_quantiles(pi)) == QUANTILES
+    pi = resolve_prediction_intervals_conf({"enabled": True})
+    assert forecast_levels(requested_quantiles(pi)) == QUANTILES
     assert forecast_levels([0.9, 0.1]) == [0.1, 0.5, 0.9]
 
 
