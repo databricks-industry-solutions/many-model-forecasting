@@ -194,7 +194,7 @@ FROM (
 
 Report the detected frequency to the user.
 
-**Persist the result as `{freq}` ∈ `{H, D, W, M}` for the rest of the skill.** Every subsequent SQL block (Steps 6, 6a, 6b, and the imputation/anomaly steps) MUST be selected by `{freq}` — the agent does NOT pick a template freely. **For `{freq} == "M"` and `{freq} == "W"` the date-alignment rule in Step 6 is mandatory and is verified by Step 6b — it is not optional and cannot be skipped.**
+**Persist the result as `{freq}` ∈ `{H, D, W, M}` for the rest of the skill.** Every subsequent SQL block (Step 6 and its verification, Step 6a, and the imputation/anomaly steps) MUST be selected by `{freq}` — the agent does NOT pick a template freely. **For `{freq} == "M"` and `{freq} == "W"` the date-alignment rule in Step 6 is mandatory and is verified by the Step 6 verification — it is not optional and cannot be skipped.**
 
 ### ⛔ STOP GATE — Step 5: Validate with user
 
@@ -344,7 +344,7 @@ Store the answer as `{future_regressor_source}` (`same_table` or the name of the
 > For `{freq} == "M"`, every produced `ds` value MUST satisfy `ds = LAST_DAY(ds)`.
 > For `{freq} == "W"`, every produced `ds` value MUST satisfy `ds = DATE_TRUNC('week', ds) + INTERVAL 6 DAY`.
 >
-> **Step 6b (immediately below) runs SQL assertions that abort and re-create the table if these rules are violated. The verification is not optional.**
+> **The Step 6 verification (immediately below) runs SQL assertions that abort and re-create the table if these rules are violated. The verification is not optional.**
 
 Create the training table with the MMF-required schema. The SQL depends on the detected (or user-specified) frequency to ensure dates are properly aligned:
 
@@ -406,7 +406,7 @@ Verify creation:
 SELECT COUNT(*) AS count FROM {catalog}.{schema}.{use_case}_train_data
 ```
 
-### Step 6b: Verify date alignment (MANDATORY)
+### Step 6 verification: Date alignment (MANDATORY)
 
 > ⛔ **This step is not optional and cannot be skipped.** It exists to catch any case where Step 6 produced misaligned `ds` values (e.g. the Daily template was used for monthly data). Run the check matching `{freq}`. **If `misaligned_rows > 0`, abort, log the failure, and re-create `{use_case}_train_data` using the correct template from Step 6 — do NOT proceed to imputation, anomaly handling, or scoring data creation until this check passes.**
 
@@ -485,7 +485,7 @@ JOIN (
 
 Adjust the `CAST({ds_col} ...)` and date filtering to match the detected frequency (TIMESTAMP for hourly, DATE for daily/weekly/monthly). For weekly/monthly frequencies, apply the same alignment logic as Step 6 (e.g., `DATE_TRUNC('week', ...) + INTERVAL 6 DAY` for weekly, `LAST_DAY(...)` for monthly) and aggregate regressors accordingly.
 
-> ⛔ **The Step 6b verification applies to `{use_case}_scoring_data` as well.** After creating it, re-run the matching `misaligned_rows` check against `{use_case}_scoring_data`. If `misaligned_rows > 0`, abort and re-create the scoring table — `run_forecast` aligns scoring rows to training rows by exact `(unique_id, ds)` match, so any drift here silently breaks scoring.
+> ⛔ **The Step 6 verification applies to `{use_case}_scoring_data` as well.** After creating it, re-run the matching `misaligned_rows` check against `{use_case}_scoring_data`. If `misaligned_rows > 0`, abort and re-create the scoring table — `run_forecast` aligns scoring rows to training rows by exact `(unique_id, ds)` match, so any drift here silently breaks scoring.
 
 If no `static_features` were selected, omit the `JOIN` and the static columns — the scoring table only needs `unique_id`, `ds`, and the dynamic future columns.
 
@@ -843,7 +843,7 @@ The `SEQUENCE` interval changes by frequency:
 - Weekly (`freq=W`): `INTERVAL 7 DAY`
 - Monthly (`freq=M`): see the drift-safe pattern below — do NOT sequence directly on month-end dates.
 
-> ⛔ **MANDATORY for `freq=M` — drift-safe month spine.** For monthly data, `{use_case}_train_data.ds` values are month-END dates (`LAST_DAY`). You MUST NOT build the spine as `SEQUENCE(min_ds, max_ds, INTERVAL 1 MONTH)` directly: `SEQUENCE` computes `start + i·months`, so a start on the 30th/28th (a short-month end) lands on the 30th/28th of every later month, which is **not** the true last day of 31-day months. The `LEFT JOIN ... ON sp.expected_ds = t.ds` then misses every 31-day month and reports ~58% phantom "missing" for any series whose first month is a 30- or 28-day month. Instead, sequence on month-**starts** and wrap each element in `LAST_DAY(...)` so every generated `ds` is the true month-end (which is exactly what MMF requires and what Step 6b verifies):
+> ⛔ **MANDATORY for `freq=M` — drift-safe month spine.** For monthly data, `{use_case}_train_data.ds` values are month-END dates (`LAST_DAY`). You MUST NOT build the spine as `SEQUENCE(min_ds, max_ds, INTERVAL 1 MONTH)` directly: `SEQUENCE` computes `start + i·months`, so a start on the 30th/28th (a short-month end) lands on the 30th/28th of every later month, which is **not** the true last day of 31-day months. The `LEFT JOIN ... ON sp.expected_ds = t.ds` then misses every 31-day month and reports ~58% phantom "missing" for any series whose first month is a 30- or 28-day month. Instead, sequence on month-**starts** and wrap each element in `LAST_DAY(...)` so every generated `ds` is the true month-end (which is exactly what MMF requires and what the Step 6 verification checks):
 >
 > ```sql
 > date_spine AS (
@@ -856,7 +856,7 @@ The `SEQUENCE` interval changes by frequency:
 > )
 > ```
 >
-> The resulting spine dates are still month-end (`LAST_DAY`), so the join to `{use_case}_train_data` matches correctly and the Step 6b alignment check (`ds <> LAST_DAY(ds)`) still passes. Hourly/Daily/Weekly spines are unaffected — sequencing directly on the actual dates is exact for those frequencies (weekly steps of 7 days preserve the ISO-week-end Sunday).
+> The resulting spine dates are still month-end (`LAST_DAY`), so the join to `{use_case}_train_data` matches correctly and the Step 6 verification check (`ds <> LAST_DAY(ds)`) still passes. Hourly/Daily/Weekly spines are unaffected — sequencing directly on the actual dates is exact for those frequencies (weekly steps of 7 days preserve the ISO-week-end Sunday).
 
 Before presenting the summary, also identify series with **trailing gaps** — i.e., series whose last observed data point is earlier than the global maximum date:
 
@@ -931,7 +931,7 @@ LEFT JOIN {catalog}.{schema}.{use_case}_train_data t
   ON sp.unique_id = t.unique_id AND sp.expected_ds = t.ds
 ```
 
-The `SEQUENCE` interval must match the detected frequency (same as Step 7a). **For `freq=M`, use the drift-safe month spine from Step 7a** (sequence on `TRUNC(min_ds,'MM')` month-starts, then wrap in `LAST_DAY(...)`) — NOT `SEQUENCE(min_ds, max_ds, INTERVAL 1 MONTH)` on month-end dates. Otherwise the backfilled rows land on wrong days (e.g. `2021-10-30` instead of `2021-10-31`), which both mis-joins the original data and fails the Step 6b `ds <> LAST_DAY(ds)` alignment check.
+The `SEQUENCE` interval must match the detected frequency (same as Step 7a). **For `freq=M`, use the drift-safe month spine from Step 7a** (sequence on `TRUNC(min_ds,'MM')` month-starts, then wrap in `LAST_DAY(...)`) — NOT `SEQUENCE(min_ds, max_ds, INTERVAL 1 MONTH)` on month-end dates. Otherwise the backfilled rows land on wrong days (e.g. `2021-10-30` instead of `2021-10-31`), which both mis-joins the original data and fails the Step 6 verification `ds <> LAST_DAY(ds)` check.
 
 > ⛔ **Carry ALL covariate columns through the backfill.** If any exogenous regressors were selected, the `SELECT` MUST include every covariate column (`t.{col}` for each of `{static_features}`, `{dynamic_future_numerical}`, `{dynamic_future_categorical}`, `{dynamic_historical_numerical}`, `{dynamic_historical_categorical}`) — NOT just `y`. Backfilled spine rows (interior gaps and trailing gaps) have no match in the join, so their covariate values come back NULL. These NULLs are then repaired in Step 7d. Dropping the covariate columns here (selecting only `unique_id, ds, y`) would silently discard the regressors and break exogenous models downstream. For univariate runs (no regressors) this reduces to the original `unique_id, ds, y` select.
 
@@ -1265,7 +1265,7 @@ AskUserQuestion:
 - Exogenous regressor column lists carried forward: `{static_features}`, `{dynamic_future_numerical}`, `{dynamic_future_categorical}`, `{dynamic_historical_numerical}`, `{dynamic_historical_categorical}`
 - A reproducibility notebook uploaded to `notebooks/{use_case}/prep_data` that can re-create the training table with the same parameters
 - A summary: number of series, date range, detected frequency, cleaning actions taken
-- **Frequency alignment guarantees** (verified by Step 6b):
+- **Frequency alignment guarantees** (verified by the Step 6 verification):
   - For `freq=M`, every `ds` value in `{use_case}_train_data` (and `{use_case}_scoring_data` if produced) is the last day of its month.
   - For `freq=W`, every `ds` value is an ISO-week-end (Sunday).
   - For `freq=D` and `freq=H`, no alignment transformation is applied.
