@@ -1,8 +1,9 @@
+import logging
 from abc import abstractmethod
 import numpy as np
 import pandas as pd
 import cloudpickle
-from typing import Dict, List, Union
+from typing import Any, Dict, List, NamedTuple, Optional, Union
 from pyspark.sql import DataFrame
 from pyspark.sql.functions import array_sort, collect_list, struct
 from sklearn.base import BaseEstimator, RegressorMixin
@@ -12,9 +13,39 @@ from sktime.performance_metrics.forecasting import (
     MeanAbsolutePercentageError,
 )
 import mlflow
-from mmf_sa.exceptions import UnsupportedMetricError
-from mmf_sa.calibration import quantile_columns
+from mmf_sa.exceptions import DataPreparationError, ModelPredictionError, UnsupportedMetricError
+from mmf_sa.calibration import quantile_columns, quantile_maps
 mlflow.set_registry_uri("databricks-uc")
+
+_logger = logging.getLogger(__name__)
+
+# Backtest metrics, by the name used in the `metric` parameter.
+METRICS = {
+    "smape": lambda: MeanAbsolutePercentageError(symmetric=True),
+    "mape": lambda: MeanAbsolutePercentageError(symmetric=False),
+    "mae": lambda: MeanAbsoluteError(),
+    "mse": lambda: MeanSquaredError(square_root=False),
+    "rmse": lambda: MeanSquaredError(square_root=True),
+}
+
+
+def metric_function(metric_name: str):
+    """The sktime metric for a `metric` parameter value; raises UnsupportedMetricError for unknown names."""
+    if metric_name not in METRICS:
+        raise UnsupportedMetricError(f"Metric {metric_name} not supported!")
+    return METRICS[metric_name]()
+
+
+class EvaluationRow(NamedTuple):
+    """One series' backtest result for one window: a row of evaluation_output (before run metadata)."""
+    key: Any
+    backtest_window_start_date: Any
+    metric_name: str
+    metric_value: float
+    forecast: np.ndarray
+    actual: np.ndarray
+    model_pickle: bytes = b""
+    forecast_quantiles: Optional[Dict[str, Any]] = None
 
 MMF_PACKAGE = "git+https://github.com/databricks-industry-solutions/many-model-forecasting.git"
 
@@ -176,38 +207,65 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
             metrics = self.calculate_metrics(_df, actuals_df, curr_date, spark)
 
             if isinstance(metrics, dict):
-                evaluation_results = [
-                    (
-                        group_id,
-                        metrics["curr_date"],
-                        metrics["metric_name"],
-                        metrics["metric_value"],
-                        metrics["forecast"],
-                        metrics["actual"],
-                        metrics["model_pickle"],
-                        metrics.get("forecast_quantiles"),
-                    )
-                ]
-                results.extend(evaluation_results)
+                results.append(EvaluationRow(
+                    group_id,
+                    metrics["curr_date"],
+                    metrics["metric_name"],
+                    metrics["metric_value"],
+                    metrics["forecast"],
+                    metrics["actual"],
+                    metrics["model_pickle"],
+                    metrics.get("forecast_quantiles"),
+                ))
             elif isinstance(metrics, list):
-                # Models without native quantiles return 7-tuples; pad forecast_quantiles with None.
-                results.extend(tuple(m) + (None,) * (8 - len(m)) for m in metrics)
+                # Plain tuples are accepted too: model_pickle and forecast_quantiles default to b"" and None.
+                results.extend(EvaluationRow(*m) for m in metrics)
 
             curr_date += stride_offset
 
-        res_df = pd.DataFrame(
-            results,
-            columns=[self.params["group_id"],
-                     "backtest_window_start_date",
-                     "metric_name",
-                     "metric_value",
-                     "forecast",
-                     "actual",
-                     "model_pickle",
-                     "forecast_quantiles"],
-        )
+        res_df = pd.DataFrame(results, columns=[self.params["group_id"], *EvaluationRow._fields[1:]])
 
         return res_df
+
+    def series_metrics(
+            self, pred_df: pd.DataFrame, val_df: pd.DataFrame, curr_date, long_format: bool = False
+    ) -> List[EvaluationRow]:
+        """
+        Backtest rows of a multi-series forecast, one per series of pred_df: the shared body of the
+        calculate_metrics of global and foundation models.
+        Parameters:
+            pred_df (pd.DataFrame): The forecasts. One row per series whose target cell holds the horizon array
+                (with native quantile columns, if any), or with long_format one row per series and step, of which
+                the last prediction_length rows of each series are used.
+            val_df (pd.DataFrame): The actuals, one row per series and step.
+            curr_date: The start of the backtest window.
+        Returns: List[EvaluationRow]. Series whose metric cannot be computed are logged and skipped.
+        """
+        metric_name = self.params["metric"]
+        metric = metric_function(metric_name)
+        group_col = self.params["group_id"]
+        target_col = self.params["target"]
+        actuals = {k: np.asarray(v, dtype=float) for k, v in val_df.groupby(group_col, sort=False)[target_col]}
+        if long_format:
+            prediction_length = int(self.params["prediction_length"])
+            forecasts = {k: v.iloc[-prediction_length:].to_numpy()
+                         for k, v in pred_df.groupby(group_col, sort=False)[target_col]}
+            quantiles = {}
+        else:
+            forecasts = dict(zip(pred_df[group_col].to_numpy(), pred_df[target_col].to_numpy()))
+            quantiles = quantile_maps(pred_df, group_col)
+        rows = []
+        for key in pred_df[group_col].unique():
+            try:
+                actual = actuals[key]
+                forecast = np.asarray(forecasts[key], dtype=float)
+                rows.append(EvaluationRow(key, curr_date, metric_name, metric(actual, forecast), forecast, actual,
+                                          b"", quantiles.get(key)))
+            except (ModelPredictionError, DataPreparationError) as err:
+                _logger.warning(f"Failed to calculate metric for key {key}: {err}")
+            except Exception as err:
+                _logger.warning(f"Unexpected error calculating metric for key {key}: {err}")
+        return rows
 
     def calculate_metrics(
             self, hist_df: pd.DataFrame, val_df: pd.DataFrame, curr_date, spark=None
@@ -223,27 +281,10 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
         Returns: metrics (Dict[str, Union[str, float, bytes]]): A dictionary specifying the metrics.
         """
         pred_df, model_fitted = self.predict(hist_df, val_df)
-        
+
         actual = val_df[self.params["target"]].to_numpy()
         forecast = pred_df[self.params["target"]].to_numpy()
-
-        if self.params["metric"] == "smape":
-            smape = MeanAbsolutePercentageError(symmetric=True)
-            metric_value = smape(actual, forecast)
-        elif self.params["metric"] == "mape":
-            mape = MeanAbsolutePercentageError(symmetric=False)
-            metric_value = mape(actual, forecast)
-        elif self.params["metric"] == "mae":
-            mae = MeanAbsoluteError()
-            metric_value = mae(actual, forecast)
-        elif self.params["metric"] == "mse":
-            mse = MeanSquaredError(square_root=False)
-            metric_value = mse(actual, forecast)
-        elif self.params["metric"] == "rmse":
-            rmse = MeanSquaredError(square_root=True)
-            metric_value = rmse(actual, forecast)
-        else:
-            raise UnsupportedMetricError(f"Metric {self.params['metric']} not supported!")
+        metric_value = metric_function(self.params["metric"])(actual, forecast)
 
         return {
             "curr_date": curr_date,

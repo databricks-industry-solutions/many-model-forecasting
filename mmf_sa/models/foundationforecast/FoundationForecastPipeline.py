@@ -8,14 +8,9 @@ import pandas as pd
 import mlflow
 from mlflow.models.signature import ModelSignature, infer_signature
 from mlflow.types import ColSpec, Schema
-from sktime.performance_metrics.forecasting import (
-    MeanAbsoluteError,
-    MeanSquaredError,
-    MeanAbsolutePercentageError,
-)
 
 from mmf_sa.calibration import (
-    MIN_SAMPLES_FOR_QUANTILES, QUANTILE_COLUMN_PREFIX, forecast_levels, quantile_key, quantile_maps,
+    MIN_SAMPLES_FOR_QUANTILES, QUANTILE_COLUMN_PREFIX, forecast_levels, quantile_key,
 )
 from mmf_sa.models.abstract_model import ForecastingRegressor, MODEL_PIP_REQUIREMENTS
 from mmf_sa.models.foundationforecast._runtime import ensure_runtime
@@ -23,7 +18,6 @@ from mmf_sa.exceptions import (
     DataPreparationError,
     MissingFeatureError,
     ModelPredictionError,
-    UnsupportedMetricError,
 )
 
 _logger = logging.getLogger(__name__)
@@ -506,38 +500,7 @@ class FoundationForecastForecaster(ForecastingRegressor):
         self, hist_df: pd.DataFrame, val_df: pd.DataFrame, curr_date, spark=None
     ) -> list:
         pred_df, _ = self.predict(hist_df, val_df, curr_date, spark)
-        metric_name = self.params["metric"]
-        metric_classes = {
-            "smape": MeanAbsolutePercentageError(symmetric=True),
-            "mape": MeanAbsolutePercentageError(symmetric=False),
-            "mae": MeanAbsoluteError(),
-            "mse": MeanSquaredError(square_root=False),
-            "rmse": MeanSquaredError(square_root=True),
-        }
-        if metric_name not in metric_classes:
-            raise UnsupportedMetricError(f"Metric {metric_name} not supported!")
-        metric_function = metric_classes[metric_name]
-
-        group_col = self.params["group_id"]
-        target_col = self.params["target"]
-        actuals_map = {
-            k: np.asarray(v) for k, v in val_df.groupby(group_col, sort=False)[target_col]
-        }
-        forecasts_map = dict(zip(pred_df[group_col].to_numpy(), pred_df[target_col].to_numpy()))
-        quantiles_map = quantile_maps(pred_df, group_col)
-
-        metrics = []
-        for key, forecast in forecasts_map.items():
-            try:
-                actual = actuals_map[key]
-                forecast = np.asarray(forecast)
-                metric_value = metric_function(actual, forecast)
-                metrics.append(
-                    (key, curr_date, metric_name, metric_value, forecast, actual, b"", quantiles_map.get(key))
-                )
-            except Exception as err:
-                _logger.warning(f"Failed to calculate metric for key {key}: {err}")
-        return metrics
+        return self.series_metrics(pred_df, val_df, curr_date)
 
     def register(self, registered_model_name: str, input_example: pd.DataFrame = None):
         """Log and register the model.

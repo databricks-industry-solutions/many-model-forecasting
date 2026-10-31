@@ -5,18 +5,12 @@ import torch
 import mlflow
 from mlflow.types import Schema, TensorSpec
 from mlflow.models.signature import ModelSignature
-from sktime.performance_metrics.forecasting import (
-    MeanAbsoluteError,
-    MeanSquaredError,
-    MeanAbsolutePercentageError,
-)
 from typing import Iterator
 from pyspark.sql.functions import pandas_udf
 from pyspark.sql import DataFrame
 from mmf_sa.models.abstract_model import ForecastingRegressor, MODEL_PIP_REQUIREMENTS, collect_sorted
-from mmf_sa.exceptions import UnsupportedMetricError, ModelPredictionError, DataPreparationError
 from mmf_sa.calibration import (
-    MIN_SAMPLES_FOR_QUANTILES, decode_quantile_forecasts, encode_quantile_forecasts, forecast_levels, quantile_maps,
+    MIN_SAMPLES_FOR_QUANTILES, decode_quantile_forecasts, encode_quantile_forecasts, forecast_levels,
 )
 
 _logger = logging.getLogger(__name__)
@@ -154,63 +148,8 @@ class MoiraiForecaster(ForecastingRegressor):
     def calculate_metrics(
         self, hist_df: pd.DataFrame, val_df: pd.DataFrame, curr_date, spark=None
     ) -> list:
-        pred_df, model_pretrained = self.predict(hist_df, val_df, curr_date, spark)
-        keys = pred_df[self.params["group_id"]].unique()
-        metrics = []
-        metric_name = self.params["metric"]
-
-        # Metric class instantiated once (outside the loop).
-        metric_classes = {
-            "smape": MeanAbsolutePercentageError(symmetric=True),
-            "mape": MeanAbsolutePercentageError(symmetric=False),
-            "mae": MeanAbsoluteError(),
-            "mse": MeanSquaredError(square_root=False),
-            "rmse": MeanSquaredError(square_root=True),
-        }
-        if metric_name not in metric_classes:
-            raise UnsupportedMetricError(f"Metric {metric_name} not supported!")
-        metric_function = metric_classes[metric_name]
-
-        # Build per-key lookups in a single pass (O(n)) instead of repeating
-        # boolean-mask filters per key (O(n^2)).
-        group_col = self.params["group_id"]
-        target_col = self.params["target"]
-        actuals_map = {
-            k: np.asarray(v)
-            for k, v in val_df.groupby(group_col, sort=False)[target_col]
-        }
-        # pred_df has one row per key whose `target_col` cell is an array-like
-        # (list/ndarray) of horizon values. Build a key→forecast dict directly.
-        forecasts_map = dict(
-            zip(
-                pred_df[group_col].to_numpy(),
-                pred_df[target_col].to_numpy(),
-            )
-        )
-        quantiles_map = quantile_maps(pred_df, group_col)
-
-        for key in keys:
-            try:
-                actual = actuals_map[key]
-                forecast = np.asarray(forecasts_map[key])
-                metric_value = metric_function(actual, forecast)
-                metrics.append(
-                    (
-                        key,
-                        curr_date,
-                        metric_name,
-                        metric_value,
-                        forecast,
-                        actual,
-                        b"",
-                        quantiles_map.get(key),
-                    )
-                )
-            except (ModelPredictionError, DataPreparationError) as err:
-                _logger.warning(f"Failed to calculate metric for key {key}: {err}")
-            except Exception as err:
-                _logger.warning(f"Unexpected error calculating metric for key {key}: {err}")
-        return metrics
+        pred_df, _ = self.predict(hist_df, val_df, curr_date, spark)
+        return self.series_metrics(pred_df, val_df, curr_date)
 
     def create_predict_udf(self, device_count):
         repo = self.repo
