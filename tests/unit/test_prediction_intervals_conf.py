@@ -73,8 +73,7 @@ def test_quantiles_replace_levels():
 def test_accepts_dictconfig_and_valid_alternatives():
     pi = _resolve(OmegaConf.create({
         "method": "conformal",
-        "coverage": {"target": "group", "group_col": ["store", "category"],
-                     "level_group_col": "abc_class", "levels_by_group": {"A": [95], "C": [80]}},
+        "coverage": {"target": "group", "group_col": ["store", "category"]},
         "clip_lower": 0,
         "recency_decay": 0.9,
         "output_format": "both",
@@ -108,8 +107,8 @@ def test_accepts_dictconfig_and_valid_alternatives():
     ({"coverage": {"min_scores_per_group": 0}}, "min_scores_per_group"),
     ({"coverage": {"shrinkage_kappa": 0}}, "shrinkage_kappa"),
     ({"coverage": {"pool_horizon": "yes"}}, "pool_horizon"),
-    ({"coverage": {"levels_by_group": {"A": [95]}}}, "level_group_col"),
-    ({"coverage": {"level_group_col": "abc", "levels_by_group": {"A": [150]}}}, "levels_by_group"),
+    ({"coverage": {"levels_by_group": {"A": [95]}}}, "Unknown key"),  # not an MMF setting: see Skill 5 Step 3b
+    ({"score": "abs"}, "score"),
     ({"recency_decay": 0}, "recency_decay"),
     ({"clip_lower": "zero"}, "clip_lower"),
     ({"output_format": "wide"}, "output_format"),
@@ -202,7 +201,7 @@ def test_forecaster_requires_evaluation_output_when_enabled():
         mmf_sa.Forecaster(conf=_forecaster_conf(enabled=True), data_conf={}, spark=None, experiment_id="e")
 
 
-@pytest.mark.parametrize("pi", [{"enabled": True, "recency_decay": 0.9}, {"enabled": True, "score": "abs"}])
+@pytest.mark.parametrize("pi", [{"enabled": True, "recency_decay": 0.9}])
 def test_forecaster_rejects_unsupported_settings_before_the_backtest(pi):
     conf = OmegaConf.create({"freq": "D", "backtest_length": 14, "active_models": [], "evaluation_output": "t",
                              "prediction_intervals": pi})

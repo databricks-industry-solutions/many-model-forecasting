@@ -181,8 +181,6 @@ def test_rejects_bad_inputs(cubes):
 
 @pytest.mark.parametrize("overrides, message", [
     ({"recency_decay": 0.9}, "recency_decay"),
-    ({"coverage": {"level_group_col": "a", "levels_by_group": {"A": [95]}}}, "levels_by_group"),
-    ({"score": "abs"}, "abs"),
 ])
 def test_unsupported_settings(overrides, message):
     with pytest.raises(ConfigurationError, match=message):

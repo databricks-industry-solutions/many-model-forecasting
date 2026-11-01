@@ -35,9 +35,8 @@ def test_quantile_helpers():
     pi = resolve_prediction_intervals_conf({"enabled": True})
     assert requested_quantiles(pi) == QUANTILES
     assert central_levels(QUANTILES) == [80, 95]
-    by_group = resolve_prediction_intervals_conf(
-        {"levels": [80], "coverage": {"level_group_col": "abc", "levels_by_group": {"A": [95], "C": [50]}}})
-    assert requested_quantiles(by_group) == [0.025, 0.1, 0.25, 0.5, 0.75, 0.9, 0.975]
+    assert requested_quantiles(resolve_prediction_intervals_conf({"levels": [50, 80, 95]})) == [
+        0.025, 0.1, 0.25, 0.5, 0.75, 0.9, 0.975]
     assert requested_quantiles(resolve_prediction_intervals_conf({"quantiles": [0.05, 0.95]})) == [
         0.05, 0.5, 0.95]
     assert central_levels([0.0125]) == [97.5]

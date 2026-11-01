@@ -426,6 +426,28 @@ JOIN {catalog}.{schema}.{use_case}_nf_scoring_output AS s
 WHERE b.forecast_source = 'non_forecastable_pipeline'
 ```
 
+**A level per class of series (optional).** If the user wants e.g. 95% intervals for A items, 90% for B and 80% for
+C, Skill 4 calibrated every level (Step 1d). Keep each series' level by its ABC class, which MMF stored in
+`{use_case}_evaluation_output_calibration`. The quantile keys are `"0.1"`/`"0.9"` for 80%, `"0.05"`/`"0.95"` for 90%
+and `"0.025"`/`"0.975"` for 95%:
+
+```sql
+CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_best_models_service_level AS
+WITH cls AS (
+  SELECT DISTINCT model, run_id, unique_id, abc_class
+  FROM {catalog}.{schema}.{use_case}_evaluation_output_calibration
+)
+SELECT i.unique_id, i.model, i.ds, i.y, c.abc_class,
+       CASE c.abc_class WHEN 'A' THEN 95 WHEN 'B' THEN 90 ELSE 80 END AS level,
+       element_at(i.y_quantiles, CASE c.abc_class WHEN 'A' THEN '0.025' WHEN 'B' THEN '0.05' ELSE '0.1' END) AS y_lo,
+       element_at(i.y_quantiles, CASE c.abc_class WHEN 'A' THEN '0.975' WHEN 'B' THEN '0.95' ELSE '0.9' END) AS y_hi
+FROM {catalog}.{schema}.{use_case}_best_models_intervals AS i
+JOIN cls AS c ON i.model = c.model AND i.run_id = c.run_id AND i.unique_id = c.unique_id
+```
+
+Each level is calibrated on all series, so the coverage reported in Step 2b per ABC x XYZ class is the one to check
+for each class's level.
+
 ### Step 4: Model ranking (wins count)
 
 Count how many series each model won:

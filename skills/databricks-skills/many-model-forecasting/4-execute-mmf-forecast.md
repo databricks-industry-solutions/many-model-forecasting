@@ -256,6 +256,7 @@ Explain in one or two sentences what the user gets: MMF calibrates the intervals
 - Option (a): set `{prediction_intervals}` to `None` in every notebook.
 - Options (b)/(c): set `{prediction_intervals}` to the Python dict literal in every notebook (local, global ML, the GPU orchestrators and the serverless GPU notebooks; the Step 3e non-forecastable notebooks use the same value). If the user wants bound columns for SQL or dashboards, add `"output_format": "both"` (adds `y_lo_80`, `y_hi_80`, ...).
 - If the backtest has only 1 window (Step 1b option (a)), warn that the interval metrics need at least 2 windows, and recommend option (b) of Step 1b (3 windows).
+- If the user wants a different level per class of series (e.g. 95% for A items, 80% for C), put every level they need in `levels` (e.g. `[80, 90, 95]`): Skill 5 Step 3b then keeps each series' level.
 
 ### Step 1c: Validate and pre-create the MLflow experiment (MANDATORY — fail-fast)
 

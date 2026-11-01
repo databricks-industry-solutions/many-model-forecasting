@@ -25,9 +25,7 @@ DEFAULT_PREDICTION_INTERVALS: Dict[str, Any] = {
     "coverage": {
         "target": "series",
         "group_col": "auto",
-        "level_group_col": None,
         "min_scores_per_group": 100,
-        "levels_by_group": None,
         "shrinkage_kappa": 10,
         "pool_horizon": "auto",
     },
@@ -42,7 +40,7 @@ _CHOICES = {
     "cqr_score": {"asymmetric", "scaled", "symmetric"},
     "cqr_tail_split": {"adaptive", "equal"},
     "cqr_pool": {"group", "marginal", "series"},
-    "score": {"abs", "signed", "signed_normalized"},
+    "score": {"signed", "signed_normalized"},
     "output_format": {"quantile_map", "lo_hi", "both"},
 }
 
@@ -155,19 +153,6 @@ def resolve_prediction_intervals_conf(
         raise ConfigurationError("prediction_intervals.coverage.shrinkage_kappa must be a positive number")
     if cov["pool_horizon"] not in ("auto", True, False):
         raise ConfigurationError("prediction_intervals.coverage.pool_horizon must be 'auto', true or false")
-    if cov["levels_by_group"] is not None:
-        if cov["level_group_col"] is None:
-            raise ConfigurationError(
-                "prediction_intervals.coverage.levels_by_group requires coverage.level_group_col")
-        if not isinstance(cov["levels_by_group"], dict) or not cov["levels_by_group"]:
-            raise ConfigurationError(
-                "prediction_intervals.coverage.levels_by_group must map group labels to lists of levels")
-        for label, levels in cov["levels_by_group"].items():
-            if not isinstance(levels, list) or not levels:
-                raise ConfigurationError(
-                    f"prediction_intervals.coverage.levels_by_group[{label!r}] must be a non-empty list of levels")
-            for level in levels:
-                _check_level(level, f"coverage.levels_by_group[{label!r}]")
 
     decay = pi["recency_decay"]
     if decay is not None and (not _is_number(decay) or not 0 < decay <= 1):
@@ -188,16 +173,13 @@ def level_quantiles(level: float):
 def requested_quantiles(pi_conf) -> list:
     """
     Quantile levels to request from models with native intervals, given the prediction_intervals block.
-    Returns the sorted quantiles of every configured level (including levels_by_group) and the
-    median, or the configured `quantiles` plus the median.
+    Returns the sorted quantiles of every configured level and the median, or the configured
+    `quantiles` plus the median.
     """
     if pi_conf.get("quantiles"):
         qs = {round(float(q), 6) for q in pi_conf["quantiles"]}
     else:
-        levels = set(pi_conf["levels"] or [])
-        for group_levels in ((pi_conf.get("coverage") or {}).get("levels_by_group") or {}).values():
-            levels.update(group_levels)
-        qs = {q for level in levels for q in level_quantiles(level)}
+        qs = {q for level in set(pi_conf["levels"] or []) for q in level_quantiles(level)}
     qs.add(0.5)
     return sorted(qs)
 
@@ -234,10 +216,6 @@ def check_supported(pi_conf) -> None:
     """Raises ConfigurationError for settings that are validated but not implemented yet."""
     if pi_conf.get("recency_decay") is not None:
         raise ConfigurationError("prediction_intervals.recency_decay is not supported yet")
-    if (pi_conf.get("coverage") or {}).get("levels_by_group") is not None:
-        raise ConfigurationError("prediction_intervals.coverage.levels_by_group is not supported yet")
-    if pi_conf.get("score") == "abs":
-        raise ConfigurationError("prediction_intervals.score 'abs' is not supported yet; use signed_normalized")
 
 
 def model_method(pi_conf, model: Optional[str] = None) -> str:
