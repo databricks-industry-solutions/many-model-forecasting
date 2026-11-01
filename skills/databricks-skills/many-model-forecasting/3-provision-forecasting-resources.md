@@ -221,8 +221,8 @@ Based on the model types and cloud provider, select from these configurations:
 |---------|-------|
 | **Runtime** | `18.x-cpu-ml-scala2.13` |
 | **Node type** | User-selectable — see CPU instance options below (default: 16 vCPU) |
-| **Workers** | **Always ask the user** — present sizing guideline as recommendation |
-| **Availability** | **On-demand only** — do NOT use spot/preemptible instances (see note below) |
+| **Workers** | **Always ask the user** — present sizing guideline as recommendation. With 0 workers the cluster needs the single-node settings of the ML cluster (`spark.master=local[*]`, `spark.databricks.cluster.profile=singleNode`, `custom_tags: {"ResourceClass": "SingleNode"}`); the same applies to the NF CPU cluster |
+| **Availability** | Driver on-demand. Workers on-demand by default; spot with fallback if the user chooses it in Step 5a (see [Instance availability](#instance-availability-all-classic-clusters)) |
 | **Spark config** | `spark.sql.execution.arrow.enabled=true`, `spark.sql.adaptive.enabled=false`, `spark.databricks.delta.formatCheck.enabled=false`, `spark.databricks.delta.schema.autoMerge.enabled=true` |
 
 **CPU instance options by cloud provider:**
@@ -303,7 +303,7 @@ Present the series count and the sizing guideline to the user, then **ask them t
 | **Runtime** | `18.x-cpu-ml-scala2.13` |
 | **Node type** | User-selectable — same options as the local CPU cluster (default: `i3.4xlarge` on AWS, `Standard_DS5_v2` on Azure, `n1-standard-16` on GCP) |
 | **Workers** | **0 (single-node) — ALWAYS** |
-| **Availability** | **On-demand only** — do NOT use spot/preemptible instances |
+| **Availability** | **On-demand** — the driver is the whole cluster (see [Instance availability](#instance-availability-all-classic-clusters)) |
 | **data_security_mode** | `SINGLE_USER` (ML runtimes do not support `USER_ISOLATION`) |
 | **Spark config** | `spark.master=local[*]`, `spark.databricks.cluster.profile=singleNode`, `spark.databricks.delta.formatCheck.enabled=false`, `spark.databricks.delta.schema.autoMerge.enabled=true` |
 | **custom_tags** | `{"ResourceClass": "SingleNode"}` |
@@ -350,7 +350,7 @@ The **recommended** compute for GPU classes. Each class runs as one serverless j
 | **Runtime** | `18.x-gpu-ml-scala2.13` |
 | **Node type** | User-selectable — see GPU instance options below |
 | **Workers** | **0 (single-node) — ALWAYS** |
-| **Availability** | **On-demand only** — do NOT use spot/preemptible instances (see note below) |
+| **Availability** | **On-demand** — the driver is the whole cluster (see [Instance availability](#instance-availability-all-classic-clusters)) |
 | **data_security_mode** | `SINGLE_USER` (ML runtimes do not support `USER_ISOLATION`) |
 | **Spark config** | `spark.master=local[*]`, `spark.databricks.cluster.profile=singleNode`, `spark.databricks.delta.formatCheck.enabled=false`, `spark.databricks.delta.schema.autoMerge.enabled=true` |
 | **custom_tags** | `{"ResourceClass": "SingleNode"}` |
@@ -396,42 +396,25 @@ Same settings as the GPU cluster above (runtime `18.x-gpu-ml-scala2.13`, single-
 
 Only created when `non_forecastable_strategy == 'separate_job'` and the non-forecastable models include global or foundation models on a classic cluster. Same single-node config as the main GPU cluster. A smaller GPU instance is usually sufficient since non-forecastable series are typically fewer and simpler. Non-forecastable `FF*` models on a classic cluster get `{use_case}_nf_ff_gpu_cluster`, with the same config as `{use_case}_ff_gpu_cluster`. GPU classes on serverless GPU need no non-forecastable cluster: their non-forecastable job is another serverless task.
 
-#### On-demand instance requirement (all clusters)
+#### Instance availability (all classic clusters)
 
-**All clusters MUST use on-demand (non-spot) instances for both driver and worker nodes.** Spot/preemptible instances can be reclaimed mid-run, causing long-running forecasting jobs to fail partway through with no automatic recovery.
+**The driver MUST be on-demand on every cluster.** If a spot driver is reclaimed, the whole run is lost. A single-node cluster (global ML, every classic GPU cluster, and a 0-worker CPU cluster) is only a driver, so it is entirely on-demand.
 
-When generating the job cluster JSON, include the cloud-specific availability settings:
+**Workers of a multi-node local CPU cluster may use spot with on-demand fallback**, if the user picks it in Step 5a. When a spot worker is reclaimed, Spark reruns its tasks on the remaining workers; each task fits a group of series, so the cost is the refit time. The run can still fail if many workers are reclaimed at once, so on-demand stays the default.
 
-**AWS:**
-```json
-{
-  "aws_attributes": {
-    "first_on_demand": 100,
-    "availability": "ON_DEMAND"
-  }
-}
-```
+> ⚠️ **Always write the attributes into the job JSON.** If they are omitted, AWS defaults to `SPOT_WITH_FALLBACK` with `first_on_demand: 0`, which puts even the driver on spot. Azure defaults to on-demand, but set it explicitly anyway.
+>
+> MMF catches each model's exception and continues, so a failure caused by a reclaimed node can leave the job SUCCEEDED with a model missing from the output tables. Skill 4 Step 6 checks that every model wrote rows.
 
-**Azure:**
-```json
-{
-  "azure_attributes": {
-    "first_on_demand": 100,
-    "availability": "ON_DEMAND_AZURE"
-  }
-}
-```
+Skill 4 substitutes these blocks into the job clusters: `{on_demand_attributes}` is always the on-demand block; `{cpu_availability_attributes}` (local CPU clusters) is the spot block only if the user chose spot workers and the cluster has workers, otherwise the on-demand block.
 
-**GCP:**
-```json
-{
-  "gcp_attributes": {
-    "availability": "ON_DEMAND_GCP"
-  }
-}
-```
+| Cloud | On-demand (default; required for single-node clusters) | Spot workers (multi-node local CPU clusters only, if the user chose it) |
+|---|---|---|
+| AWS | `"aws_attributes": {"first_on_demand": 1, "availability": "ON_DEMAND"}` | `"aws_attributes": {"first_on_demand": 1, "availability": "SPOT_WITH_FALLBACK"}` |
+| Azure | `"azure_attributes": {"first_on_demand": 1, "availability": "ON_DEMAND_AZURE"}` | `"azure_attributes": {"first_on_demand": 1, "availability": "SPOT_WITH_FALLBACK_AZURE", "spot_bid_max_price": -1}` |
+| GCP | `"gcp_attributes": {"first_on_demand": 1, "availability": "ON_DEMAND_GCP"}` | `"gcp_attributes": {"first_on_demand": 1, "availability": "PREEMPTIBLE_WITH_FALLBACK_GCP"}` |
 
-`first_on_demand: 100` ensures all nodes (driver + up to 99 workers) are on-demand. Apply these attributes to **every** cluster configuration — CPU, GPU, and non-forecastable clusters alike.
+`first_on_demand: 1` keeps the driver on-demand; `availability` applies to the other nodes. Serverless compute has no availability setting.
 
 ### ⛔ STOP GATE — Step 5: Ask user which clusters to start
 
@@ -485,6 +468,20 @@ AskUserQuestion:
 ```
 
 **WAIT for the user to respond.**
+
+{if workers > 0, ask in a separate question:}
+
+```
+AskUserQuestion:
+  "Which instances should the CPU cluster's workers use? The driver is always on-demand.
+
+   (a) On-demand (recommended) — no reclaims
+   (b) Spot with on-demand fallback — cheaper; a reclaimed worker's series are refit
+       on the remaining workers, so the run takes longer and can fail if many
+       workers are reclaimed at once"
+```
+
+**WAIT for the user to respond.** Record `{cpu_worker_availability}` (`on_demand` or `spot`). The NF CPU cluster uses the same choice when it has workers.
 
 {if non_forecastable_strategy == 'separate_job' and nf_local_models, ask in a separate question:}
 
@@ -713,7 +710,7 @@ AskUserQuestion:
    Main pipeline (forecastable series):
    • Selected models: {model_list_summary}
    • Model classes: {classes_summary}
-   {if cpu:    '• CPU cluster: {cpu_node_type}, {workers} workers (multi-node)'}
+   {if cpu:    '• CPU cluster: {cpu_node_type}, {workers} workers ({cpu_worker_availability} workers, on-demand driver)'}
    {if ml:     '• ML cluster: {ml_node_type}, single-node'}
    {if gpu:    '• GPU cluster: {gpu_node_type}, single-node'}
    {if ff_gpu: '• Foundationforecast GPU cluster: {ff_gpu_node_type}, single-node'}
@@ -722,7 +719,7 @@ AskUserQuestion:
    {if non_forecastable_strategy == 'separate_job':
    Non-forecastable pipeline ({n_non_forecastable} series):
    • Selected models: {nf_model_list_summary}
-   {if nf_cpu: '• NF CPU cluster: {cpu_node_type}, {nf_workers} workers'}
+   {if nf_cpu: '• NF CPU cluster: {cpu_node_type}, {nf_workers} workers (single-node if 0)'}
    {if nf_ml:  '• NF ML cluster: {nf_ml_node_type}, single-node'}
    {if nf_gpu: '• NF GPU cluster: {nf_gpu_node_type}, single-node'}
    {if nf_ff_gpu: '• NF foundationforecast GPU cluster: {ff_gpu_node_type}, single-node'}

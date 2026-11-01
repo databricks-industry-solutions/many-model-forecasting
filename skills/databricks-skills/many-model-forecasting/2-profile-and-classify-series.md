@@ -416,6 +416,17 @@ INNER JOIN {catalog}.{schema}.{use_case}_series_profile p
 WHERE p.forecastability_class = 'high_confidence'
 ```
 
+If `{use_case}_scoring_data` exists (Skill 1 Step 6a), split it the same way. `run_forecast` adds every scoring row to the training data, so a scoring series with no training rows breaks the run (see Skill 1 Step 8d):
+
+```sql
+CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_scoring_data_forecastable AS
+SELECT s.*
+FROM {catalog}.{schema}.{use_case}_scoring_data s
+INNER JOIN {catalog}.{schema}.{use_case}_series_profile p
+  ON s.unique_id = p.unique_id
+WHERE p.forecastability_class = 'high_confidence'
+```
+
 Compute the fallback forecasts on serverless (lightweight SQL/Spark operation):
 
 **Seasonal Naive fallback:**
@@ -531,6 +542,26 @@ INNER JOIN {catalog}.{schema}.{use_case}_series_profile p
 WHERE p.forecastability_class = 'low_signal'
 ```
 
+If `{use_case}_scoring_data` exists (Skill 1 Step 6a), split it the same way, so each job only gets scoring rows for its own series (see Skill 1 Step 8d):
+
+```sql
+CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_scoring_data_forecastable AS
+SELECT s.*
+FROM {catalog}.{schema}.{use_case}_scoring_data s
+INNER JOIN {catalog}.{schema}.{use_case}_series_profile p
+  ON s.unique_id = p.unique_id
+WHERE p.forecastability_class = 'high_confidence'
+```
+
+```sql
+CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_scoring_data_non_forecastable AS
+SELECT s.*
+FROM {catalog}.{schema}.{use_case}_scoring_data s
+INNER JOIN {catalog}.{schema}.{use_case}_series_profile p
+  ON s.unique_id = p.unique_id
+WHERE p.forecastability_class = 'low_signal'
+```
+
 Then ask the user which models to run on the non-forecastable series:
 
 ```
@@ -585,6 +616,8 @@ UNION ALL
 SELECT 'non_forecastable', COUNT(DISTINCT unique_id)
 FROM {catalog}.{schema}.{use_case}_train_data_non_forecastable
 ```
+
+If the scoring table was split, run the same counts on `{use_case}_scoring_data_forecastable` and `{use_case}_scoring_data_non_forecastable`; they must match the training counts.
 
 ### ⛔ STOP GATE — Step 11: Confirm before proceeding to next skill
 
@@ -691,6 +724,10 @@ Created when strategy is `fallback` or `separate_job`. Contains only high-confid
 **Table** (conditional): `<catalog>.<schema>.{use_case}_train_data_non_forecastable`
 
 Created when strategy is `separate_job`. Contains only low-signal series from the training data. Same schema as `{use_case}_train_data`.
+
+**Tables** (conditional): `<catalog>.<schema>.{use_case}_scoring_data_forecastable` and `<catalog>.<schema>.{use_case}_scoring_data_non_forecastable`
+
+Created when `{use_case}_scoring_data` exists: the forecastable table for `fallback` and `separate_job`, the non-forecastable table for `separate_job` only. Same schema as `{use_case}_scoring_data`, filtered to the matching series.
 
 **Table** (conditional): `<catalog>.<schema>.{use_case}_scoring_output_non_forecastable`
 

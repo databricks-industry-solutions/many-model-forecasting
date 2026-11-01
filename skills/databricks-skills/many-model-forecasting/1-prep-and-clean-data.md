@@ -593,16 +593,15 @@ Apply the chosen strategy:
 - **(a) Forward fill**: For each series, carry the last known value from the training table into the scoring rows:
   ```sql
   -- For each column with NULLs, get the last known value per series from train_data
-  UPDATE {catalog}.{schema}.{use_case}_scoring_data s
-  SET {col} = (
-      SELECT {col}
-      FROM {catalog}.{schema}.{use_case}_train_data t
-      WHERE t.unique_id = s.unique_id
-        AND t.{col} IS NOT NULL
-      ORDER BY t.ds DESC
-      LIMIT 1
-  )
-  WHERE s.{col} IS NULL
+  MERGE INTO {catalog}.{schema}.{use_case}_scoring_data AS s
+  USING (
+      SELECT unique_id, MAX_BY({col}, ds) AS v
+      FROM {catalog}.{schema}.{use_case}_train_data
+      WHERE {col} IS NOT NULL
+      GROUP BY unique_id
+  ) AS l
+  ON s.unique_id = l.unique_id
+  WHEN MATCHED AND s.{col} IS NULL THEN UPDATE SET {col} = l.v
   ```
 - **(b) Fill with specific value**: Ask the user for a default value per column, then:
   ```sql
@@ -682,7 +681,7 @@ ALTER TABLE {catalog}.{schema}.{use_case}_scoring_data
     ALTER COLUMN {col} TYPE DOUBLE
 ```
 
-> **Note:** If `ALTER COLUMN ... TYPE` is not supported by the runtime, recreate the table with `CREATE OR REPLACE TABLE ... AS SELECT ..., CAST({col} AS DOUBLE) AS {col}, ...`.
+> **Note:** Delta tables reject `INT → DOUBLE` with `DELTA_UNSUPPORTED_ALTER_TABLE_CHANGE_COL_OP` unless type widening is enabled. If the `ALTER` fails, recreate the table with `CREATE OR REPLACE TABLE ... AS SELECT ..., CAST({col} AS DOUBLE) AS {col}, ...`.
 
 This step runs **before** any label encoding and ensures that all categorical covariate columns — whether they arrived as strings or pre-encoded integers — end up as DOUBLE in both tables.
 
@@ -763,7 +762,7 @@ ALTER TABLE {catalog}.{schema}.{use_case}_train_data
     ALTER COLUMN {col} TYPE DOUBLE
 ```
 
-> **Note:** If `ALTER COLUMN ... TYPE` is not supported by the runtime, recreate the table with the correct types using `CREATE OR REPLACE TABLE ... AS SELECT ..., CAST({col} AS DOUBLE) AS {col}, ...`.
+> **Note:** Delta tables reject `STRING → DOUBLE` with `DELTA_UNSUPPORTED_ALTER_TABLE_CHANGE_COL_OP`, so on Delta skip the `MERGE` + `ALTER` pair and recreate the table in one pass instead: `CREATE OR REPLACE TABLE ... AS SELECT ..., CAST(enc_{col}.encoded_value AS DOUBLE) AS {col}, ... FROM {use_case}_train_data t LEFT JOIN (SELECT original_value, encoded_value FROM {use_case}_label_encoding WHERE column_name = '{col}') enc_{col} ON t.{col} = enc_{col}.original_value` (one `LEFT JOIN` per encoded column; integer columns from Step 6b-i-a can be cast in the same statement).
 
 #### Step 6b-v: Apply the same encoding to scoring_data
 
@@ -937,24 +936,24 @@ The `SEQUENCE` interval must match the detected frequency (same as Step 7a). **F
 
 Then apply the chosen imputation on the now-explicit NULLs:
 
-- **Linear interpolation**: `(LAG(y IGNORE NULLS) + LEAD(y IGNORE NULLS)) / 2`
-- **Forward fill**: `LAST_VALUE(y IGNORE NULLS) OVER (PARTITION BY unique_id ORDER BY ds)`
+- **Linear interpolation**: `(LAG(y) IGNORE NULLS OVER (PARTITION BY unique_id ORDER BY ds) + LEAD(y) IGNORE NULLS OVER (PARTITION BY unique_id ORDER BY ds)) / 2`
+- **Forward fill**: `LAST_VALUE(y) IGNORE NULLS OVER (PARTITION BY unique_id ORDER BY ds ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)`
 - **Fill with 0**: `COALESCE(y, 0)` — appropriate for count/demand data where absence means zero activity
 - **Exclusion**: Remove series exceeding the threshold from `{use_case}_train_data`. ⚠️ If `{use_case}_scoring_data` exists, these excluded series MUST also be removed from it — Step 8d does this reconciliation after all training-table mutations complete.
 
-> **Trailing-gap fallback (required after interpolation).** Linear interpolation needs a future neighbor via `LEAD(y IGNORE NULLS)`. For trailing gaps — rows beyond a series' last observed value — there is no future data point, so `LEAD` returns NULL and interpolation leaves those rows unfilled. After applying interpolation, always run a forward-fill pass on any remaining NULLs:
+> **Trailing-gap fallback (required after interpolation).** Linear interpolation needs a future neighbor via `LEAD(y) IGNORE NULLS`. For trailing gaps — rows beyond a series' last observed value — there is no future data point, so `LEAD` returns NULL and interpolation leaves those rows unfilled. After applying interpolation, always run a forward-fill pass on any remaining NULLs:
 >
 > ```sql
-> UPDATE {catalog}.{schema}.{use_case}_train_data t
-> SET y = (
->   SELECT LAST_VALUE(t2.y IGNORE NULLS) OVER (
->     PARTITION BY t2.unique_id ORDER BY t2.ds
->     ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
->   )
->   FROM {catalog}.{schema}.{use_case}_train_data t2
->   WHERE t2.unique_id = t.unique_id AND t2.ds = t.ds
-> )
-> WHERE t.y IS NULL
+> CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_train_data AS
+> SELECT
+>     unique_id,
+>     ds,
+>     COALESCE(y, LAST_VALUE(y) IGNORE NULLS OVER (
+>         PARTITION BY unique_id ORDER BY ds
+>         ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+>     )) AS y
+>     {for each covariate col: , {col}}
+> FROM {catalog}.{schema}.{use_case}_train_data
 > ```
 >
 > This only affects trailing positions where interpolation could not reach. Forward-fill and fill-with-0 strategies do not need this extra step.
@@ -990,11 +989,11 @@ SELECT
     y
     {for each covariate col in static_features + dynamic_future_* + dynamic_historical_*:
     , COALESCE(
-        LAST_VALUE({col} IGNORE NULLS) OVER (
+        LAST_VALUE({col}) IGNORE NULLS OVER (
             PARTITION BY unique_id ORDER BY ds
             ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
         ),
-        FIRST_VALUE({col} IGNORE NULLS) OVER (
+        FIRST_VALUE({col}) IGNORE NULLS OVER (
             PARTITION BY unique_id ORDER BY ds
             ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING
         )
@@ -1117,22 +1116,24 @@ AskUserQuestion:
 If the user chooses (a), (b), or (c), apply capping using the chosen `{iqr_multiplier}`:
 
 ```sql
-UPDATE {catalog}.{schema}.{use_case}_train_data AS t
-SET y = CASE
-  WHEN t.y < s.q1 - {iqr_multiplier} * s.iqr THEN s.q1 - {iqr_multiplier} * s.iqr
-  WHEN t.y > s.q3 + {iqr_multiplier} * s.iqr THEN s.q3 + {iqr_multiplier} * s.iqr
-  ELSE t.y
-END
-FROM (
+MERGE INTO {catalog}.{schema}.{use_case}_train_data AS t
+USING (
   SELECT unique_id,
          PERCENTILE(y, 0.25) AS q1,
          PERCENTILE(y, 0.75) AS q3,
          PERCENTILE(y, 0.75) - PERCENTILE(y, 0.25) AS iqr
   FROM {catalog}.{schema}.{use_case}_train_data
   GROUP BY unique_id
-) s
-WHERE t.unique_id = s.unique_id
+) AS s
+ON t.unique_id = s.unique_id
+WHEN MATCHED AND (t.y < s.q1 - {iqr_multiplier} * s.iqr OR t.y > s.q3 + {iqr_multiplier} * s.iqr) THEN UPDATE SET
+  y = CASE
+    WHEN t.y < s.q1 - {iqr_multiplier} * s.iqr THEN s.q1 - {iqr_multiplier} * s.iqr
+    ELSE s.q3 + {iqr_multiplier} * s.iqr
+  END
 ```
+
+Databricks SQL has no `UPDATE ... FROM`; use `MERGE` as above. Its `num_updated_rows` is the total number of capped values.
 
 Log the count of capped values per series for the cleaning report.
 
@@ -1208,15 +1209,22 @@ Replace these placeholders:
 - `{ds_col}` → source column mapped to `ds`
 - `{y_col}` → source column mapped to `y`
 - `{freq}` → detected or user-specified frequency (`H`, `D`, `W`, `M`)
-- `{imputation_method}` → chosen imputation strategy (`interpolation`, `forward_fill`, `fill_zero`, `none`)
+- `{static_features}`, `{dynamic_future_numerical}`, `{dynamic_future_categorical}`, `{dynamic_historical_numerical}`, `{dynamic_historical_categorical}` → the Step 5a covariate columns as Python list literals, e.g. `["price", "promo"]`; `[]` when a group is unused
+- `{scoring_source_table}` → table holding the future regressor values (table name only), from the Step 5a future-values question: the source table for option (a), the separate table for option (b), `""` when there are no dynamic future covariates
+- `{scoring_unique_id_col}`, `{scoring_ds_col}` → the id and date columns of `{scoring_source_table}` (`""` when it is `""`)
+- `{scoring_null_strategy}` → the Step 6a "Scoring data NULL handling" choice as a Python dict from each dynamic future column to `"forward_fill"`, `"mode"`, `"mean"`, `"drop"`, `"none"` or a number (the specific fill value), e.g. `{"price": "forward_fill", "promo": 0}`; `{}` when there is no scoring table
+- `{categorical_encoding}` → Step 6b-ii choice: `label` for option (a), `drop` for option (c)
+- `{imputation_method}` → `suggested` when the user accepted the per-series suggestions in Step 7b (interpolation below 5% missing, forward fill up to the threshold), otherwise the single method applied to every series (`interpolation`, `forward_fill`, `fill_zero`, `drop_nulls`, `none`)
 - `{exclusion_threshold}` → exclusion threshold as integer (e.g., `20`)
 - `{iqr_multiplier}` → IQR multiplier as float (e.g., `1.5`; `0` = skip capping)
+
+The notebook re-creates `{use_case}_train_data`, `{use_case}_scoring_data` (when `{scoring_source_table}` is set), `{use_case}_label_encoding` (when string covariates are label-encoded) and `{use_case}_cleaning_report`.
 
 Save the generated notebook to the **local project directory** at:
 
 - `notebooks/{use_case}/prep_data.ipynb`
 
-Then upload it to the Databricks workspace at `notebooks/{use_case}/prep_data`.
+Then upload it to the Databricks workspace at `{notebook_base_path}/prep_data`.
 
 Use the template from:
 
@@ -1246,7 +1254,7 @@ AskUserQuestion:
    }
    {if static_features: '• Static features: {static_features}'}
    {if dynamic_historical: '• Dynamic historical features: {dynamic_historical_columns}'}
-   • Reproducibility notebook: notebooks/{use_case}/prep_data
+   • Reproducibility notebook: {notebook_base_path}/prep_data
 
    Would you like to proceed to the next step?
    (a) Run profiling & classification (optional — estimates series forecastability and recommends models)
@@ -1263,7 +1271,7 @@ AskUserQuestion:
 - A Delta table `<catalog>.<schema>.{use_case}_cleaning_report` with columns: `unique_id`, `original_count`, `final_count`, `missing_filled`, `imputation_method`, `anomalies_capped`, `iqr_multiplier`, `excluded`, `exclusion_reason`
 - **(If dynamic future regressors)** A Delta table `<catalog>.<schema>.{use_case}_scoring_data` with columns `unique_id` (STRING), `ds` (DATE/TIMESTAMP — future dates only), all `static_features` columns (joined from `train_data`), plus all dynamic future regressor columns. Does NOT include `y` or `dynamic_historical_`* columns — `run_forecast` unions this with `train_data` via `allowMissingColumns=True`. This table is passed as `scoring_data` to `run_forecast` in Skill 4. **Reconciled with `train_data` in Step 8d** so it contains no series that were excluded from training — this guarantees no orphan (all-NULL-`y`) group reaches the pipeline, which is what allows Skills 4/5 to run with `data_quality_check=False`.
 - Exogenous regressor column lists carried forward: `{static_features}`, `{dynamic_future_numerical}`, `{dynamic_future_categorical}`, `{dynamic_historical_numerical}`, `{dynamic_historical_categorical}`
-- A reproducibility notebook uploaded to `notebooks/{use_case}/prep_data` that can re-create the training table with the same parameters
+- A reproducibility notebook uploaded to `{notebook_base_path}/prep_data` that can re-create the training table with the same parameters
 - A summary: number of series, date range, detected frequency, cleaning actions taken
 - **Frequency alignment guarantees** (verified by the Step 6 verification):
   - For `freq=M`, every `ds` value in `{use_case}_train_data` (and `{use_case}_scoring_data` if produced) is the last day of its month.

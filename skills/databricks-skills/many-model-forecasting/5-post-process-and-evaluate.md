@@ -486,7 +486,7 @@ Replace these placeholders:
 Save the generated notebook to the **local project directory** at:
 - `notebooks/{use_case}/post_process.ipynb`
 
-Then upload it to the Databricks workspace at `notebooks/{use_case}/post_process`.
+Then upload it to the Databricks workspace at `{notebook_base_path}/post_process`.
 
 Use the template from:
 - [mmf_post_process_notebook_template.ipynb](mmf_post_process_notebook_template.ipynb)
@@ -508,7 +508,7 @@ AskUserQuestion:
    • Overall avg {metric}: {overall_avg} (forecastable series only)
    • Best models table: {catalog}.{schema}.{use_case}_best_models
    • Evaluation summary: {catalog}.{schema}.{use_case}_evaluation_summary
-   • Reproducibility notebook: notebooks/{use_case}/post_process
+   • Reproducibility notebook: {notebook_base_path}/post_process
 
    What would you like to do next?
    (a) Re-run forecasting with different models or parameters
@@ -544,7 +544,7 @@ Combined table of best forecasts for all series (forecastable + non-forecastable
 | `avg_{metric}` | DOUBLE | Average primary metric over the series the model won; the name follows `{metric}` (e.g. `avg_smape`) |
 | `avg_wape` | DOUBLE | Average WAPE over the series the model won (NULL for fallback series) |
 
-**Notebook**: `notebooks/{use_case}/post_process` — reproducibility notebook that re-creates both output tables
+**Notebook**: `{notebook_base_path}/post_process` — reproducibility notebook that re-creates both output tables
 
 ---
 

@@ -259,7 +259,7 @@ See [3-provision-forecasting-resources.md](3-provision-forecasting-resources.md)
 - [mmf_reconciliation_notebook_template.ipynb](mmf_reconciliation_notebook_template.ipynb) — Hierarchical reconciliation (Skill 6): installs `mmf_sa[hierarchical]`, calls `run_reconciliation_multilevel()` with the levels list and membership table, and displays a coherence summary
 
 ### Reproducibility notebooks (generated after interactive sessions)
-- [mmf_prep_notebook_template.ipynb](mmf_prep_notebook_template.ipynb) — Data preparation replay (Skill 1): records all interactive decisions (table selection, column mapping, imputation strategy, anomaly capping) and re-creates `{use_case}_train_data` and `{use_case}_cleaning_report`
+- [mmf_prep_notebook_template.ipynb](mmf_prep_notebook_template.ipynb) — Data preparation replay (Skill 1): records all interactive decisions (table selection, column mapping, covariates, scoring data, categorical encoding, per-series imputation, anomaly capping) and re-creates `{use_case}_train_data`, `{use_case}_scoring_data`, `{use_case}_label_encoding` and `{use_case}_cleaning_report`
 - [mmf_post_process_notebook_template.ipynb](mmf_post_process_notebook_template.ipynb) — Post-processing replay (Skill 5): re-runs best-model selection, evaluation summary, and business report generation
 
 ## Job Architecture (Skill 4)
