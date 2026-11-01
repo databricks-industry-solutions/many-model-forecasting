@@ -25,7 +25,7 @@ from pyspark.sql.window import Window
 from mmf_sa.intervals.config import calibration_levels, level_quantiles
 from mmf_sa.intervals.conformal import (
     MARGINAL_POOL, OTHER_GROUP, conformal_rank, cqr_lower_from_statistics, finalize_bounds, fit_from_statistics,
-    fit_plan, interval_metrics, score_cubes, stat_requests, window_bounds,
+    fit_plan, interval_metrics, score_cubes, scaled_absolute_error, stat_requests, window_bounds, wis_from_metrics,
 )
 from mmf_sa.intervals.features import ABC_SHARES, SB_ADI, SB_CV2
 from mmf_sa.intervals.quantiles import quantile_key
@@ -383,6 +383,16 @@ def batch_udf_final(pdf, *, plan, levels, has_band, w, h, clip_lower, stats, m_l
                 else np.full(n, MARGINAL_POOL, dtype=object) if plan["target"] == "marginal"
                 else pools["full"])
     cal_frames, metric_frames = [], []
+    msis = {(lv, native): np.full((n, w), np.nan) for lv in levels for native in (False, True)}
+
+    def add_metrics(j, lv, lo, hi, native):
+        metrics = interval_metrics(y[:, j:j + 1], lo, hi, sigma, lv)
+        for name, value in metrics.items():
+            metric_frames.append(pd.DataFrame({
+                series_col: ids, "window_date": dates[:, j],
+                "metric_name": _metric_name(name, lv, native), "metric_value": value}))
+        msis[(lv, native)][:, j] = metrics["msis"]
+
     for i, lv in enumerate(levels):
         band = bands.get(i)
         if band is not None and clip_lower is not None:
@@ -409,21 +419,27 @@ def batch_udf_final(pdf, *, plan, levels, has_band, w, h, clip_lower, stats, m_l
             "sb_class": np.repeat(firsts["sb_class"].to_numpy(dtype=object), h),
         }))
 
-        def add_metrics(j, lo, hi, native):
-            for name, value in interval_metrics(y[:, j:j + 1], lo, hi, sigma, lv).items():
-                metric_frames.append(pd.DataFrame({
-                    series_col: ids, "window_date": dates[:, j],
-                    "metric_name": _metric_name(name, lv, native), "metric_value": value}))
-
         if w >= 2:
             for j in range(w):
                 fq_lo, fq_hi, _ = fit(j)
                 b = None if band is None else (band[0][:, j:j + 1], band[1][:, j:j + 1])
-                add_metrics(j, *finalize_bounds(*window_bounds(plan, yhat[:, j:j + 1], b, sigma, fq_lo, fq_hi),
+                add_metrics(j, lv, *finalize_bounds(*window_bounds(plan, yhat[:, j:j + 1], b, sigma, fq_lo, fq_hi),
                                                     clip_lower), False)
         if band is not None:
             for j in range(w):
-                add_metrics(j, *finalize_bounds(band[0][:, j:j + 1], band[1][:, j:j + 1], clip_lower), True)
+                add_metrics(j, lv, *finalize_bounds(band[0][:, j:j + 1], band[1][:, j:j + 1], clip_lower), True)
+    # Level-free metrics, as _level_free_metrics in intervals.conformal: scaled_ae, and the WIS of the calibrated
+    # and of the native bands (from the msis of every level).
+    level_free = {"scaled_ae": scaled_absolute_error(y, yhat, sigma)}
+    if w >= 2:
+        level_free["wis"] = wis_from_metrics(level_free["scaled_ae"], {lv: msis[(lv, False)] for lv in levels}, levels)
+    if has_band:
+        level_free["native_wis"] = wis_from_metrics(level_free["scaled_ae"],
+                                                    {lv: msis[(lv, True)] for lv in levels}, levels)
+    for name, values in level_free.items():
+        for j in range(w):
+            metric_frames.append(pd.DataFrame({
+                series_col: ids, "window_date": dates[:, j], "metric_name": name, "metric_value": values[:, j]}))
     cal_df = pd.concat(cal_frames, ignore_index=True)
     cal_df["kind"] = "calibration"
     met_df = (pd.concat(metric_frames, ignore_index=True) if metric_frames else

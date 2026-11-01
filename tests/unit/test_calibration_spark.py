@@ -111,6 +111,10 @@ def _compare(spark, ids, y, yhat, sigma, labels, native, pi, clip_lower=0.0, ext
                 m = m.sort_values(["uid", "window_date"])
                 np.testing.assert_allclose(m["metric_value"].to_numpy().reshape(len(ids), -1), arr,
                                            rtol=0, atol=TOL)
+    # Level-free metrics (scaled_ae, wis, native_wis) are the same for every level: written once, checked once.
+    for name, arr in next(iter(ref.values()))["level_free"].items():
+        m = metrics[metrics["metric_name"] == name].sort_values(["uid", "window_date"])
+        np.testing.assert_allclose(m["metric_value"].to_numpy().reshape(len(ids), -1), arr, rtol=0, atol=TOL)
     return summary
 
 

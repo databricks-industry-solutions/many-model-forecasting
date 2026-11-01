@@ -309,11 +309,15 @@ def finalize_bounds(lo: np.ndarray, hi: np.ndarray, clip_lower=None):
 def interval_metrics(y: np.ndarray, lo: np.ndarray, hi: np.ndarray, sigma: np.ndarray, level: float):
     """
     Per-series interval metrics on held-out windows.
+    msis is the mean interval score (Gneiting and Raftery, 2007) over sigma. It equals (2/alpha) times the sum of the
+    pinball losses of the two tails at alpha/2 and 1 - alpha/2, which is why no separate pinball metric is kept.
+    miss_lo and miss_hi are the shares of points below lo and above hi, so coverage + miss_lo + miss_hi = 1.
     Parameters:
         y, lo, hi (np.ndarray): Actuals and bounds (N, K, H).
         sigma (np.ndarray): Per-series scale (N,), used to make width and interval score comparable.
         level (float): Central level in percent.
-    Returns: dict of (N,) arrays: coverage, msis (mean interval score / sigma) and width (mean width / sigma).
+    Returns: dict of (N,) arrays: coverage, miss_lo (y < lo), miss_hi (y > hi), msis (mean interval score / sigma)
+        and width (mean width / sigma).
     """
     a = 1 - level / 100
     s3 = sigma[:, None, None]
@@ -321,9 +325,36 @@ def interval_metrics(y: np.ndarray, lo: np.ndarray, hi: np.ndarray, sigma: np.nd
     iscore = ((hi - lo) + (2 / a) * (lo - y) * (y < lo) + (2 / a) * (y - hi) * (y > hi)) / s3
     return {
         "coverage": cover.mean(axis=(1, 2)),
+        "miss_lo": (y < lo).mean(axis=(1, 2)),
+        "miss_hi": (y > hi).mean(axis=(1, 2)),
         "msis": iscore.mean(axis=(1, 2)),
         "width": ((hi - lo) / s3).mean(axis=(1, 2)),
     }
+
+
+def scaled_absolute_error(y: np.ndarray, yhat: np.ndarray, sigma: np.ndarray) -> np.ndarray:
+    """
+    Mean |y - yhat| / sigma of each window, from the point forecast. It is the same for every model, native or not,
+    and does not depend on the level. Parameters: y, yhat (N, W, H); sigma (N,). Returns: (N, W).
+    """
+    return (np.abs(y - yhat) / sigma[:, None, None]).mean(axis=2)
+
+
+def wis_from_metrics(scaled_ae: np.ndarray, msis_by_level: dict, levels) -> np.ndarray:
+    """
+    Weighted interval score (Bracher et al., 2021), a quantile-based approximation of CRPS.
+    wis = (0.5 * scaled_ae + sum_k (alpha_k / 2) * msis_k) / (K + 0.5), with alpha_k = 1 - L_k / 100.
+    Exact on the scaled scale because every term is a mean over the same points.
+    Parameters:
+        scaled_ae (np.ndarray): scaled_absolute_error of the window(s), any shape.
+        msis_by_level (dict): level -> msis of the same shape, for every level in levels.
+        levels: The calibrated central levels in percent.
+    Returns: np.ndarray of the shape of scaled_ae.
+    """
+    total = 0.5 * np.asarray(scaled_ae, dtype=float)
+    for lv in levels:
+        total = total + (1 - lv / 100) / 2 * msis_by_level[lv]
+    return total / (len(levels) + 0.5)
 
 
 def _native_band(native, level, n, w, h):
@@ -563,7 +594,8 @@ def calibrate_model(y, yhat, sigma, pi_conf, labels=None, native=None, clip_lowe
     Returns: dict level -> dict with
         method ("conformal", "cqr" or "native"), score, target, q_lo and q_hi (N, H), infinite (N,),
         shrinkage_weight (float, or None), metrics {name: (N, W) array} computed leave-one-window-out
-        (empty when W < 2), and native_metrics {name: (N, W) array} for the uncorrected native band.
+        (empty when W < 2), native_metrics {name: (N, W) array} for the uncorrected native band, and
+        level_free {name: (N, W) array}: scaled_ae, wis and native_wis (the same dict for every level).
     """
     _check_cube("y", y)
     _check_cube("yhat", yhat)
@@ -617,4 +649,22 @@ def calibrate_model(y, yhat, sigma, pi_conf, labels=None, native=None, clip_lowe
             "shrinkage_weight": (w / (w + plan["kappa"])) if plan["kappa"] else None,
             "metrics": metrics, "native_metrics": native_metrics,
         }
+    level_free = _level_free_metrics(y, yhat, sigma, results, calibration_levels(pi_conf), native is not None)
+    for r in results.values():
+        r["level_free"] = level_free
     return results
+
+
+def _level_free_metrics(y, yhat, sigma, results: dict, levels, has_band: bool) -> dict:
+    """
+    Metrics that do not belong to one level, as {name: (N, W)}: scaled_ae, and the WIS of the calibrated bands
+    (wis, when W >= 2) and of the native bands (native_wis, when every level has one).
+    """
+    scaled_ae = scaled_absolute_error(y, yhat, sigma)
+    out = {"scaled_ae": scaled_ae}
+    if results[levels[0]]["metrics"]:
+        out["wis"] = wis_from_metrics(scaled_ae, {lv: results[lv]["metrics"]["msis"] for lv in levels}, levels)
+    if has_band and all(results[lv]["native_metrics"] for lv in levels):
+        out["native_wis"] = wis_from_metrics(scaled_ae, {lv: results[lv]["native_metrics"]["msis"] for lv in levels},
+                                             levels)
+    return out

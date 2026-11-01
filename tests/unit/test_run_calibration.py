@@ -18,7 +18,7 @@ import pytest
 from mmf_sa.intervals.config import check_supported, resolve_prediction_intervals_conf
 from mmf_sa.intervals.conformal import (
     calibrate_model, cqr_corrections, finalize_bounds, fit_plan, interval_metrics, residual_bounds, residual_quantiles,
-    windows_for_finite_bounds,
+    windows_for_finite_bounds, wis_from_metrics,
 )
 from mmf_sa.intervals.features import backtest_cubes, classify_series, group_columns, group_labels, positive_sigma
 from mmf_sa.intervals.scoring import calibration_rows, metric_rows
@@ -74,7 +74,7 @@ def test_auto_uses_cqr_with_native_bands(cubes):
     np.testing.assert_array_equal(r["q_lo"], q_lo)
     np.testing.assert_array_equal(r["q_hi"], q_hi)
     assert r["shrinkage_weight"] is None
-    assert set(r["native_metrics"]) == {"coverage", "msis", "width"}
+    assert set(r["native_metrics"]) == {"coverage", "miss_lo", "miss_hi", "msis", "width"}
 
 
 def test_method_conformal_ignores_native_bands(cubes):
@@ -286,9 +286,27 @@ def test_output_rows(cubes):
     np.testing.assert_array_equal(first["q_hi"], res[80]["q_hi"][0])
     dates = np.tile(pd.date_range("2024-01-01", periods=4, freq="7D").to_numpy(), (30, 1))
     mrows = metric_rows("AutoETS", "uid", ids, dates, res)
-    assert set(mrows["metric_name"]) == {f"{p}{m}_{lv}" for p in ("", "native_") for m in ("coverage", "msis", "width")
-                                         for lv in (80, 95)}
-    assert len(mrows) == 30 * 4 * 12
+    names = {f"{p}{m}_{lv}" for p in ("", "native_") for m in ("coverage", "miss_lo", "miss_hi", "msis", "width")
+             for lv in (80, 95)}
+    assert set(mrows["metric_name"]) == names | {"scaled_ae", "wis", "native_wis"}
+    # Level-free metrics are written once per series and window, not once per level.
+    assert len(mrows) == 30 * 4 * (len(names) + 3)
+    assert mrows.groupby("metric_name").size().eq(30 * 4).all()
+
+
+def test_wis_and_scaled_ae_are_computed_from_the_level_metrics(cubes):
+    y, yhat, sigma, labels, native = cubes
+    res = calibrate_model(y, yhat, sigma, _pi(), labels=labels, native=native, clip_lower=0.0)
+    lf = res[80]["level_free"]
+    ae = np.abs(y - yhat).mean(axis=2) / sigma[:, None]
+    np.testing.assert_allclose(lf["scaled_ae"], ae)
+    np.testing.assert_allclose(lf["wis"], wis_from_metrics(
+        ae, {lv: res[lv]["metrics"]["msis"] for lv in (80, 95)}, [80, 95]))
+    np.testing.assert_allclose(lf["native_wis"], wis_from_metrics(
+        ae, {lv: res[lv]["native_metrics"]["msis"] for lv in (80, 95)}, [80, 95]))
+    # One level: wis = (0.5 * scaled_ae + alpha / 2 * msis) / 1.5, with alpha = 0.2 at 80%.
+    one = calibrate_model(y, yhat, sigma, _pi(levels=[80]), labels=labels, clip_lower=0.0)[80]
+    np.testing.assert_allclose(one["level_free"]["wis"], (0.5 * ae + 0.1 * one["metrics"]["msis"]) / 1.5)
 
 
 # --- pool_horizon "auto" ------------------------------------------------------------------------------------

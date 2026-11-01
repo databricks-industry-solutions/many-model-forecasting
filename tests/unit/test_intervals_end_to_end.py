@@ -103,9 +103,10 @@ def test_interval_metrics_are_named_per_level_and_native_only_with_bands(spark, 
     kwargs, run_id = run
     metrics = _rows(spark, kwargs["evaluation_output"] + "_interval_metrics", run_id)
     names = metrics.groupby("model")["metric_name"].unique().map(set)
-    plain = {f"{m}_{lv}" for m in ("coverage", "msis", "width") for lv in LEVELS}
-    assert names[CONFORMAL] == plain
-    assert names[NATIVE] == plain | {f"native_{n}" for n in plain}
+    plain = {f"{m}_{lv}" for m in ("coverage", "miss_lo", "miss_hi", "msis", "width") for lv in LEVELS}
+    level_free = {"scaled_ae", "wis"}
+    assert names[CONFORMAL] == plain | level_free
+    assert names[NATIVE] == plain | level_free | {f"native_{n}" for n in plain} | {"native_wis"}
     coverage = metrics[metrics["metric_name"].str.contains("coverage")]["metric_value"]
     assert coverage.between(0, 1).all()
 

@@ -392,7 +392,8 @@ run_calibration   per-series features (seasonal-naive scale, ABC, XYZ, Syntetos-
                   before the first backtest window
                   per model and level: CQR on native bands, or conformal on residuals
                   -> calibration_output (per model, series, step, level)
-                  -> interval_metrics_output: coverage_<L>, msis_<L>, width_<L> (leave-one-window-out)
+                  -> interval_metrics_output: coverage_<L>, miss_lo_<L>, miss_hi_<L>, msis_<L>, width_<L>,
+                     scaled_ae, wis (leave-one-window-out)
 score_models      native bands at forecast time; corrections joined per series; bounds clipped
                   (clip_lower), uncrossed and nested across levels -> interval columns of scoring_output
                   (output_format)

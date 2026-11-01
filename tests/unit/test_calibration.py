@@ -19,7 +19,7 @@ import pytest
 from mmf_sa.intervals.config import resolve_clip_lower
 from mmf_sa.intervals.conformal import (
     OTHER_GROUP, conformal_rank, cqr_bounds, cqr_corrections, finalize_bounds, interval_metrics, merge_small_groups,
-    residual_bounds, residual_quantiles,
+    residual_bounds, residual_quantiles, scaled_absolute_error, wis_from_metrics,
 )
 from mmf_sa.intervals.features import classify_series, series_features
 
@@ -123,6 +123,34 @@ def test_interval_metrics():
     assert m["width"][0] == pytest.approx(1.5)
     # interval score: width 3 + penalties 2/0.2 * (1 + 1 + 6) = 83, over 4 points, / sigma 2
     assert m["msis"][0] == pytest.approx((4 * 3 + 10 * (1 + 1 + 6)) / 4 / 2)
+    # One point below lo (0), two above hi (5 and 10), one covered (3).
+    assert m["miss_lo"][0] == pytest.approx(0.25)
+    assert m["miss_hi"][0] == pytest.approx(0.5)
+    assert m["coverage"][0] + m["miss_lo"][0] + m["miss_hi"][0] == pytest.approx(1.0)
+
+
+def test_wis_hand_example():
+    # Two levels, one series, one window of four points; sigma 2; point forecast 2 everywhere.
+    y = np.array([[[0.0, 5.0, 10.0, 3.0]]])
+    yhat = np.full_like(y, 2.0)
+    sigma = np.array([2.0])
+    ae = scaled_absolute_error(y, yhat, sigma)
+    # mean |y - yhat| = (2 + 3 + 8 + 1) / 4 = 3.5, over sigma 2.
+    np.testing.assert_allclose(ae, [[1.75]])
+    m80 = interval_metrics(y, np.full_like(y, 1.0), np.full_like(y, 4.0), sigma, 80)
+    m95 = interval_metrics(y, np.zeros_like(y), np.full_like(y, 6.0), sigma, 95)
+    # 80%: scores 13, 13, 63, 3 -> mean 23, over 2. 95%: scores 6, 6, 166, 6 -> mean 46, over 2.
+    assert m80["msis"][0] == pytest.approx(11.5)
+    assert m95["msis"][0] == pytest.approx(23.0)
+    # (0.5 * 1.75 + 0.2 / 2 * 11.5 + 0.05 / 2 * 23) / (2 + 0.5) = 2.6 / 2.5
+    wis = wis_from_metrics(ae[:, 0], {80: m80["msis"], 95: m95["msis"]}, [80, 95])
+    assert wis[0] == pytest.approx(1.04)
+
+
+def test_wis_with_one_level_mixes_scaled_ae_and_msis():
+    ae, msis = np.array([0.5, 2.0]), np.array([3.0, 1.0])
+    # alpha = 0.2 at 80%: wis = (0.5 * ae + alpha / 2 * msis) / 1.5
+    np.testing.assert_allclose(wis_from_metrics(ae, {80: msis}, [80]), (0.5 * ae + 0.1 * msis) / 1.5)
 
 
 # --- Golden tests against the experiment notebook --------------------------------------

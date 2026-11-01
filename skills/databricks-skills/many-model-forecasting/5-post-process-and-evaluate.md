@@ -156,7 +156,11 @@ Check whether Skill 4 enabled prediction intervals (Step 1d): the table
 The interval metrics are **out of sample**: each backtest window is scored with intervals
 calibrated on the other windows. Compare `coverage_<L>` with the nominal level `L/100`;
 `msis_<L>` is the interval score scaled by the series' seasonal-naive error (lower is better
-at equal coverage). `native_*` rows are the uncorrected native bands, for comparison. Like Step 2, both queries
+at equal coverage). `wis` (no level suffix) is the weighted interval score over all levels and the point forecast,
+a quantile-based approximation of CRPS on the same scale (lower is better; compare models on it, not on one level).
+`miss_lo_<L>` and `miss_hi_<L>` are the shares of actuals below the lower and above the upper bound, so
+`coverage_<L> + miss_lo_<L> + miss_hi_<L>` = 1: when coverage falls short, the larger miss rate shows which tail misses.
+`native_*` rows are the uncorrected native bands, for comparison. Like Step 2, both queries
 read each model's latest run only: the interval tables are append-only. Under `separate_job`, run them again on
 `{use_case}_nf_evaluation_output_interval_metrics` and `{use_case}_nf_evaluation_output_calibration`.
 
@@ -176,7 +180,7 @@ WITH latest_run_per_model AS (
 SELECT m.model, m.metric_name, ROUND(AVG(m.metric_value), 3) AS value, COUNT(DISTINCT m.unique_id) AS series
 FROM {catalog}.{schema}.{use_case}_evaluation_output_interval_metrics AS m
 JOIN latest_run_per_model AS lr ON m.model = lr.model AND m.run_id = lr.run_id
-WHERE m.metric_name RLIKE '^(native_)?(coverage|msis)_'
+WHERE m.metric_name RLIKE '^(native_)?(coverage|msis|miss_lo|miss_hi)_|^(native_)?wis$'
 GROUP BY m.model, m.metric_name
 ORDER BY m.model, m.metric_name
 ```

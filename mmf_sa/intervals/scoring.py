@@ -3,6 +3,8 @@
 The rows are calibration_output and the interval metrics. Pure pandas: apply_calibration is the reference of
 apply_joined_corrections, which runs in mapInPandas at scoring time.
 """
+from typing import Optional
+
 import numpy as np
 import pandas as pd
 
@@ -11,8 +13,10 @@ from mmf_sa.intervals.conformal import MARGINAL_POOL, finalize_bounds, merge_sma
 from mmf_sa.intervals.quantiles import quantile_key
 
 
-def _metric_name(name: str, level: float, native: bool) -> str:
-    return f"{'native_' if native else ''}{name}_{level:g}"
+def _metric_name(name: str, level: Optional[float], native: bool) -> str:
+    """Metric name with its level suffix, e.g. coverage_80 or native_msis_95; level None gives a level-free name."""
+    suffix = "" if level is None else f"_{level:g}"
+    return f"{'native_' if native else ''}{name}{suffix}"
 
 
 def calibration_rows(model: str, series_col: str, ids, results: dict, features: pd.DataFrame, labels,
@@ -58,7 +62,9 @@ def calibration_rows(model: str, series_col: str, ids, results: dict, features: 
 def metric_rows(model: str, series_col: str, ids, dates, results: dict) -> pd.DataFrame:
     """
     Interval metric rows of one model for evaluation_output: one row per series, window and metric
-    (coverage_<L>, msis_<L>, width_<L>, computed leave-one-window-out, and native_* for the native band).
+    (coverage_<L>, miss_lo_<L>, miss_hi_<L>, msis_<L>, width_<L>, computed leave-one-window-out, and native_* for the
+    native band). The level-free metrics (scaled_ae, wis, native_wis) are the same for every level, so they are
+    written once, from the first level.
     """
     n, w = dates.shape
     frames = []
@@ -71,6 +77,13 @@ def metric_rows(model: str, series_col: str, ids, dates, results: dict) -> pd.Da
                     "metric_name": _metric_name(name, level, native),
                     "metric_value": values.ravel(),
                 }))
+    for name, values in (next(iter(results.values()))["level_free"].items() if results else []):
+        frames.append(pd.DataFrame({
+            series_col: np.repeat(np.asarray(ids, dtype=object), w),
+            "backtest_window_start_date": dates.ravel(),
+            "metric_name": name,
+            "metric_value": values.ravel(),
+        }))
     if not frames:
         return pd.DataFrame(columns=[series_col, "backtest_window_start_date", "metric_name", "metric_value"])
     out = pd.concat(frames, ignore_index=True)
