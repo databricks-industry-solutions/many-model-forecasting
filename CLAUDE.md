@@ -10,11 +10,16 @@ Read these files to learn the patterns before starting any forecasting task:
 - `databricks-skills/many-model-forecasting/3-provision-forecasting-resources.md` — cluster setup and provisioning
 - `databricks-skills/many-model-forecasting/4-execute-mmf-forecast.md` — running the forecasting pipeline
 - `databricks-skills/many-model-forecasting/5-post-process-and-evaluate.md` — post-processing and evaluation
+- `databricks-skills/many-model-forecasting/6-hierarchical-reconciliation.md` — hierarchical reconciliation (optional)
 - `databricks-skills/many-model-forecasting/mmf_local_notebook_template.ipynb` — local notebook template
+- `databricks-skills/many-model-forecasting/mmf_global_ml_notebook_template.ipynb` — global ML notebook template (MLForecast LightGBM, single-node CPU)
 - `databricks-skills/many-model-forecasting/mmf_gpu_run_notebook_template.ipynb` — GPU single-model runner (static, uses widgets)
 - `databricks-skills/many-model-forecasting/mmf_gpu_orchestrator_notebook_template.ipynb` — GPU orchestrator (loops models via dbutils.notebook.run)
+- `databricks-skills/many-model-forecasting/mmf_gpu_serverless_notebook_template.ipynb` — serverless GPU runner (one notebook per GPU class, loops models)
+- `databricks-skills/many-model-forecasting/serverless_gpu_ai_v6_environment.yml` — AI v6 environment spec for serverless GPU jobs (fallback base environment)
 - `databricks-skills/many-model-forecasting/mmf_profiling_notebook_template.ipynb` — profiling notebook template
 - `databricks-skills/many-model-forecasting/mmf_prep_notebook_template.ipynb` — data prep reproducibility notebook (generated after Skill 1)
 - `databricks-skills/many-model-forecasting/mmf_post_process_notebook_template.ipynb` — post-processing reproducibility notebook (generated after Skill 5)
+- `databricks-skills/many-model-forecasting/mmf_reconciliation_notebook_template.ipynb` — hierarchical reconciliation notebook (Skill 6)
 
 <!-- mmf-dev-kit:skills -->
