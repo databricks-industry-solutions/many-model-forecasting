@@ -554,6 +554,8 @@ Placeholders: the same as the orchestrator table above (without `{num_nodes}`), 
 | Foundation | `"mmf_sa[foundation] @ git+https://github.com/databricks-industry-solutions/many-model-forecasting.git@main"` |
 | Foundationforecast | `--extra-index-url https://download.pytorch.org/whl/cu128 "mmf_sa[foundationforecast] @ git+https://github.com/databricks-industry-solutions/many-model-forecasting.git@main" torch==2.11.0+cu128 torchvision==0.26.0+cu128 torchaudio==2.11.0+cu128` |
 
+The template's second `%pip` line (`antlr4-python3-runtime`, force-reinstalled) is required, not a leftover: on AI v6 the Spark workers lack it, and prediction intervals import `mmf_sa` on them. Keep it as is.
+
 Use the template from:
 - [mmf_gpu_serverless_notebook_template.ipynb](mmf_gpu_serverless_notebook_template.ipynb)
 
