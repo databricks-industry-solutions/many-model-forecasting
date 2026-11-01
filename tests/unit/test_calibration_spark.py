@@ -215,6 +215,13 @@ def test_spark_classes_match_pandas(spark):
         np.testing.assert_array_equal(got[c].to_numpy(), expected[c].to_numpy(), err_msg=c)
 
 
+@pytest.mark.parametrize("overrides", [{"method": "conformal"}, {"method": "conformal", "levels": [80]}])
+def test_spark_matches_numpy_with_many_windows(spark, overrides):
+    # 20 windows: auto pools the horizon for 95% (39 windows needed) but not for 80% alone (9).
+    ids, y, yhat, sigma, labels, native = _data(n=12, w=20, h=3, seed=9)
+    _compare(spark, ids, y, yhat, sigma, labels, None, _pi(**overrides))
+
+
 def test_spark_single_window_adaptive_cqr(spark):
     ids, y, yhat, sigma, labels, native = _data(n=12, w=1, h=4, seed=6)
     _compare(spark, ids, y, yhat, sigma, labels, native, _pi())

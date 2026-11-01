@@ -37,6 +37,19 @@ def conformal_rank(n: int, q: float, upper: bool):
     return min(max(k, 1), n), (k < 1 or k > n)
 
 
+def windows_for_finite_bounds(level: float) -> int:
+    """
+    Fewest scores for which both conformal ranks of a central level are finite: 9 at 80%, 39 at 95%.
+    With pool_horizon "auto", a series' horizon steps are pooled when it has fewer backtest windows than this
+    for the widest calibrated level, since each step alone has only W scores.
+    """
+    a = 1 - level / 100
+    n = 1
+    while conformal_rank(n, 1 - a / 2, True)[1] or conformal_rank(n, a / 2, False)[1]:
+        n += 1
+    return n
+
+
 def tail_quantiles(scores: np.ndarray, level: float):
     """
     Lower and upper conformal quantiles of signed scores for a central level, along axis 0.
@@ -117,6 +130,7 @@ def residual_quantiles(
         shrinkage_kappa: float = 10,
         min_scores_per_group: int = 100,
         pool_horizon="auto",
+        pool_windows: Optional[int] = None,
 ):
     """
     Conformal quantiles of signed backtest residual scores, for one model and one level.
@@ -130,7 +144,9 @@ def residual_quantiles(
         min_scores_per_group (int): Smaller groups are merged into one pool.
         pool_horizon: Series target only. True pools the H steps of a series and keeps the
             group's step profile; False estimates each step from the W windows; "auto" pools
-            when W < 19 (fewer windows than a finite 95% bound needs).
+            when W < pool_windows.
+        pool_windows (int): Windows below which "auto" pools: windows_for_finite_bounds of the widest calibrated
+            level (fit_plan). None uses that of a 95% interval (39), the widest default level.
     Returns: (q_lo, q_hi, infinite): q_lo and q_hi of shape (N, H), in score units; infinite (N,)
         flags series whose quantile rank had to be clipped.
     """
@@ -146,7 +162,9 @@ def residual_quantiles(
     labels = merge_small_groups(_labels_or_marginal(labels, n), w, min_scores_per_group)
     g_lo, g_hi, _ = group_tail_quantiles(scores, labels, level, 1)
     lam = w / (w + shrinkage_kappa)
-    pool = (w < 19) if pool_horizon == "auto" else bool(pool_horizon)
+    if pool_windows is None:
+        pool_windows = windows_for_finite_bounds(95)
+    pool = (w < pool_windows) if pool_horizon == "auto" else bool(pool_horizon)
     if pool:
         # Per series over its W*H scores; the group's step profile is applied as a ratio.
         s_lo, s_hi, s_inf = tail_quantiles(scores.reshape(n, -1).T, level)
@@ -340,6 +358,8 @@ def fit_plan(pi_conf, has_band: bool, model: Optional[str] = None) -> dict:
         "kind": kind, "score": score, "target": target,
         "kappa": cov["shrinkage_kappa"] if target == "series" else None,
         "tail_split": pi_conf["cqr_tail_split"], "pool_horizon": cov["pool_horizon"],
+        # pool_horizon "auto" pools a series' horizon steps when it has fewer windows than this.
+        "pool_windows": windows_for_finite_bounds(max(calibration_levels(pi_conf))),
         "min_scores_per_group": cov["min_scores_per_group"],
     }
 
@@ -489,7 +509,7 @@ def fit_from_statistics(plan: dict, level: float, cubes: dict, pools: np.ndarray
         if plan["target"] != "series":
             return g_lo, g_hi, inf_lo | inf_hi
         lam = w / (w + plan["kappa"])
-        pool = (w < 19) if plan["pool_horizon"] == "auto" else bool(plan["pool_horizon"])
+        pool = (w < plan["pool_windows"]) if plan["pool_horizon"] == "auto" else bool(plan["pool_horizon"])
         if pool:
             s_lo, s_hi, s_inf = tail_quantiles(e.reshape(n, -1).T, level)
             all_lo = _lookup_pooled(stats, pools, ("e", a / 2, False, True))

@@ -7,6 +7,7 @@ Tests cover:
 - backtest_cubes: window alignment, dropped series, native bands and their fallbacks
 - Group labels, scale fallback, and the calibration_output / metric row builders
 - Unsupported settings
+- pool_horizon "auto": pools a series' horizon steps below the windows the widest level needs (39 at 95%)
 """
 import pathlib
 
@@ -16,7 +17,8 @@ import pytest
 
 from mmf_sa.intervals.config import check_supported, resolve_prediction_intervals_conf
 from mmf_sa.intervals.conformal import (
-    calibrate_model, cqr_corrections, finalize_bounds, interval_metrics, residual_bounds, residual_quantiles,
+    calibrate_model, cqr_corrections, finalize_bounds, fit_plan, interval_metrics, residual_bounds, residual_quantiles,
+    windows_for_finite_bounds,
 )
 from mmf_sa.intervals.features import backtest_cubes, classify_series, group_columns, group_labels, positive_sigma
 from mmf_sa.intervals.scoring import calibration_rows, metric_rows
@@ -289,3 +291,41 @@ def test_output_rows(cubes):
     assert set(mrows["metric_name"]) == {f"{p}{m}_{lv}" for p in ("", "native_") for m in ("coverage", "msis", "width")
                                          for lv in (80, 95)}
     assert len(mrows) == 30 * 4 * 12
+
+
+# --- pool_horizon "auto" ------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("level, windows", [(80, 9), (90, 19), (95, 39), (99, 199)])
+def test_windows_for_finite_bounds(level, windows):
+    assert windows_for_finite_bounds(level) == windows
+
+
+def _many_windows(w, seed=4):
+    rng = np.random.default_rng(seed)
+    n, h = 12, 3
+    yhat = rng.gamma(2.0, 2.0, (n, w, h))
+    y = np.maximum(yhat + rng.normal(0, 2, (n, w, h)), 0)
+    return y, yhat, rng.uniform(0.5, 2.0, n), np.array(["A"] * 6 + ["B"] * 6, dtype=object)
+
+
+def test_auto_pools_the_horizon_below_the_windows_the_widest_level_needs():
+    # 20 windows are enough for 80% and 90% per step, not for 95%: auto pools, so the 95% bounds stay finite.
+    y, yhat, sigma, labels = _many_windows(20)
+    auto = calibrate_model(y, yhat, sigma, _pi(method="conformal"), labels=labels)
+    per_step = calibrate_model(y, yhat, sigma, _pi(method="conformal", coverage={"pool_horizon": False}), labels=labels)
+    pooled = calibrate_model(y, yhat, sigma, _pi(method="conformal", coverage={"pool_horizon": True}), labels=labels)
+    assert not auto[95]["infinite"].any() and per_step[95]["infinite"].all()
+    for lv in (80, 95):
+        np.testing.assert_array_equal(auto[lv]["q_hi"], pooled[lv]["q_hi"])
+
+
+def test_auto_follows_the_widest_calibrated_level():
+    assert fit_plan(_pi(method="conformal"), has_band=False)["pool_windows"] == 39
+    assert fit_plan(_pi(method="conformal", levels=[80]), has_band=False)["pool_windows"] == 9
+    # With only an 80% level, 12 windows are enough per step: auto does not pool.
+    y, yhat, sigma, labels = _many_windows(12)
+    auto = calibrate_model(y, yhat, sigma, _pi(method="conformal", levels=[80]), labels=labels)
+    per_step = calibrate_model(y, yhat, sigma, _pi(method="conformal", levels=[80], coverage={"pool_horizon": False}),
+                               labels=labels)
+    np.testing.assert_array_equal(auto[80]["q_hi"], per_step[80]["q_hi"])
