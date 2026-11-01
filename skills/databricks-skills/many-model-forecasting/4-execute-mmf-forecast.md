@@ -1314,7 +1314,14 @@ CREATE TABLE IF NOT EXISTS {catalog}.{schema}.{use_case}_evaluation_output_inter
   model STRING, run_id STRING, run_date TIMESTAMP, use_case STRING);
 ```
 
-If the first two tables already exist without the interval columns, add them: `ALTER TABLE … ADD COLUMNS (forecast_quantiles MAP<STRING, ARRAY<DOUBLE>>)` on `evaluation_output` and `ALTER TABLE … ADD COLUMNS ({target}_quantiles MAP<STRING, ARRAY<DOUBLE>>)` on `scoring_output`. With `"output_format": "lo_hi"` or `"both"`, also add one `ARRAY<DOUBLE>` column per bound to `scoring_output`, named `{target}_lo_<L>` and `{target}_hi_<L>` (e.g. `y_lo_80`; a level of 97.5 becomes `97_5`). These schemas follow `mmf_sa/intervals` (`IntervalCalibrator.write_calibration_output`, `write_interval_metrics` and `scoring.interval_column`); keep them in sync if those change.
+If the first two tables already exist without the interval columns, add them: `ALTER TABLE … ADD COLUMNS (forecast_quantiles MAP<STRING, ARRAY<DOUBLE>>)` on `evaluation_output` and `ALTER TABLE … ADD COLUMNS ({target}_quantiles MAP<STRING, ARRAY<DOUBLE>>)` on `scoring_output`. With `"output_format": "lo_hi"` or `"both"`, also add one `ARRAY<DOUBLE>` column per bound to `scoring_output`, named `{target}_lo_<L>` and `{target}_hi_<L>` (a level of 97.5 becomes `97_5`). For the default levels:
+
+```sql
+ALTER TABLE {catalog}.{schema}.{use_case}_scoring_output ADD COLUMNS (
+  {target}_lo_80 ARRAY<DOUBLE>, {target}_hi_80 ARRAY<DOUBLE>, {target}_lo_95 ARRAY<DOUBLE>, {target}_hi_95 ARRAY<DOUBLE>);
+```
+
+With `"output_format": "lo_hi"`, MMF writes these columns and not `{target}_quantiles`, which then stays null. These schemas follow `mmf_sa/intervals` (`IntervalCalibrator.write_calibration_output`, `write_interval_metrics` and `scoring.interval_column`); keep them in sync if those change.
 
 Then call `run_job` for **all jobs simultaneously**.
 

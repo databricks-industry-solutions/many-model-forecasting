@@ -397,6 +397,20 @@ Keep the intervals of the selected model for each series. The columns depend on 
 forecasts are in `{use_case}_nf_scoring_output` (Step 3a), so read both; with `include` every series is in the main
 tables, and with `fallback` the non-forecastable series have no intervals.
 
+With `include` or `fallback`, or if the non-forecastable jobs ran without intervals (`{use_case}_nf_scoring_output`
+then has no `y_quantiles`):
+
+```sql
+CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_best_models_intervals AS
+SELECT b.unique_id, b.model, b.run_id, s.ds, s.y, s.y_quantiles
+FROM {catalog}.{schema}.{use_case}_best_models AS b
+JOIN {catalog}.{schema}.{use_case}_scoring_output AS s
+  ON b.unique_id = s.unique_id AND b.model = s.model AND b.run_id = s.run_id
+WHERE b.forecast_source = 'main_pipeline'
+```
+
+With `separate_job` and intervals in the non-forecastable jobs, use this one instead (it reads both scoring tables):
+
 ```sql
 CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_best_models_intervals AS
 SELECT b.unique_id, b.model, b.run_id, s.ds, s.y, s.y_quantiles
@@ -405,16 +419,12 @@ JOIN {catalog}.{schema}.{use_case}_scoring_output AS s
   ON b.unique_id = s.unique_id AND b.model = s.model AND b.run_id = s.run_id
 WHERE b.forecast_source = 'main_pipeline'
 UNION ALL
--- separate_job only
 SELECT b.unique_id, b.model, b.run_id, s.ds, s.y, s.y_quantiles
 FROM {catalog}.{schema}.{use_case}_best_models AS b
 JOIN {catalog}.{schema}.{use_case}_nf_scoring_output AS s
   ON b.unique_id = s.unique_id AND b.model = s.model AND b.run_id = s.run_id
 WHERE b.forecast_source = 'non_forecastable_pipeline'
 ```
-
-Drop the second branch if the strategy is not `separate_job`, or if the non-forecastable jobs ran without intervals
-(`{use_case}_nf_scoring_output` then has no `y_quantiles`).
 
 ### Step 4: Model ranking (wins count)
 
