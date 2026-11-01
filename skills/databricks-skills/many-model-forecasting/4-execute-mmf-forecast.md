@@ -251,10 +251,10 @@ AskUserQuestion:
        → e.g. {"enabled": True, "levels": [90]} or {"enabled": True, "quantiles": [0.1, 0.5, 0.9]}"
 ```
 
-Explain in one or two sentences what the user gets: MMF calibrates the intervals on the backtest, so that they reach the requested coverage. Models with native intervals (statsforecast AutoETS, AutoArima, AutoCES, AutoTheta, AutoTbats, Naive, SeasonalNaive; the Chronos, TimesFM and Moirai models; SKTimeProphet; and the FoundationForecast FF* models) get their native bands corrected; all others get conformal intervals from their backtest errors. The intervals land in `scoring_output` as a `y_quantiles` map, and their out-of-sample coverage in `{use_case}_evaluation_output_interval_metrics` (`coverage_80`, `msis_80`, ...), which Skill 5 reports.
+Explain in one or two sentences what the user gets: MMF calibrates the intervals on the backtest, so that they reach the requested coverage. Models with native intervals (statsforecast AutoETS, AutoArima, AutoCES, AutoTheta, AutoTbats, Naive, SeasonalNaive; the Chronos and TimesFM models; SKTimeProphet; and the FoundationForecast FF* models) get their native bands corrected; all others get conformal intervals from their backtest errors. The intervals land in `scoring_output` as a `y_quantiles` map, and their out-of-sample coverage in `{use_case}_evaluation_output_interval_metrics` (`coverage_80`, `msis_80`, ...), which Skill 5 reports.
 
 - Option (a): set `{prediction_intervals}` to `None` in every notebook.
-- Options (b)/(c): set `{prediction_intervals}` to the Python dict literal in every notebook (local, global ML, and the GPU orchestrators). If the user wants bound columns for SQL or dashboards, add `"output_format": "both"` (adds `y_lo_80`, `y_hi_80`, ...).
+- Options (b)/(c): set `{prediction_intervals}` to the Python dict literal in every notebook (local, global ML, the GPU orchestrators and the serverless GPU notebooks; the Step 3e non-forecastable notebooks use the same value). If the user wants bound columns for SQL or dashboards, add `"output_format": "both"` (adds `y_lo_80`, `y_hi_80`, ...).
 - If the backtest has only 1 window (Step 1b option (a)), warn that the interval metrics need at least 2 windows, and recommend option (b) of Step 1b (3 windows).
 
 ### Step 1c: Validate and pre-create the MLflow experiment (MANDATORY — fail-fast)
@@ -1288,6 +1288,33 @@ CREATE TABLE IF NOT EXISTS {catalog}.{schema}.{use_case}_scoring_output (
   {group_id} STRING, {date_col} ARRAY<TIMESTAMP>, {target} ARRAY<DOUBLE>, model STRING, run_id STRING,
   run_date TIMESTAMP, use_case STRING, model_pickle BINARY, model_uri STRING);
 ```
+
+**If prediction intervals are enabled (Step 1d), run these instead.** Each job's first write then also adds the interval columns (`mergeSchema`) and creates `{use_case}_evaluation_output_calibration` and `{use_case}_evaluation_output_interval_metrics`, so jobs starting together can collide on those too (`TABLE_OR_VIEW_ALREADY_EXISTS` or a Delta `MetadataChangedException`, swallowed the same way). Run them once per `{use_case}` (and once for `{use_case}_nf` if `separate_job`):
+
+```sql
+CREATE TABLE IF NOT EXISTS {catalog}.{schema}.{use_case}_evaluation_output (
+  {group_id} STRING, backtest_window_start_date TIMESTAMP, metric_name STRING, metric_value DOUBLE,
+  forecast ARRAY<DOUBLE>, actual ARRAY<DOUBLE>, model_pickle BINARY,
+  forecast_quantiles MAP<STRING, ARRAY<DOUBLE>>,
+  run_id STRING, run_date TIMESTAMP, model STRING, use_case STRING, model_uri STRING);
+
+CREATE TABLE IF NOT EXISTS {catalog}.{schema}.{use_case}_scoring_output (
+  {group_id} STRING, {date_col} ARRAY<TIMESTAMP>, {target} ARRAY<DOUBLE>, model STRING, run_id STRING,
+  run_date TIMESTAMP, use_case STRING, model_pickle BINARY, model_uri STRING,
+  {target}_quantiles MAP<STRING, ARRAY<DOUBLE>>);
+
+CREATE TABLE IF NOT EXISTS {catalog}.{schema}.{use_case}_evaluation_output_calibration (
+  model STRING, method STRING, score STRING, coverage_target STRING, {group_id} STRING, pool_key STRING,
+  step INT, level DOUBLE, q_lo DOUBLE, q_hi DOUBLE, n_windows INT, shrinkage_weight DOUBLE,
+  infinite_bound BOOLEAN, clip_lower DOUBLE, sigma DOUBLE, abc_class STRING, xyz_class STRING,
+  sb_class STRING, run_id STRING, run_date TIMESTAMP, use_case STRING);
+
+CREATE TABLE IF NOT EXISTS {catalog}.{schema}.{use_case}_evaluation_output_interval_metrics (
+  {group_id} STRING, backtest_window_start_date TIMESTAMP, metric_name STRING, metric_value DOUBLE,
+  model STRING, run_id STRING, run_date TIMESTAMP, use_case STRING);
+```
+
+If the first two tables already exist without the interval columns, add them: `ALTER TABLE … ADD COLUMNS (forecast_quantiles MAP<STRING, ARRAY<DOUBLE>>)` on `evaluation_output` and `ALTER TABLE … ADD COLUMNS ({target}_quantiles MAP<STRING, ARRAY<DOUBLE>>)` on `scoring_output`. With `"output_format": "lo_hi"` or `"both"`, also add one `ARRAY<DOUBLE>` column per bound to `scoring_output`, named `{target}_lo_<L>` and `{target}_hi_<L>` (e.g. `y_lo_80`; a level of 97.5 becomes `97_5`). These schemas follow `mmf_sa/intervals` (`IntervalCalibrator.write_calibration_output`, `write_interval_metrics` and `scoring.interval_column`); keep them in sync if those change.
 
 Then call `run_job` for **all jobs simultaneously**.
 

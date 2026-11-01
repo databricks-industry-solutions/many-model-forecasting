@@ -156,26 +156,54 @@ Check whether Skill 4 enabled prediction intervals (Step 1d): the table
 The interval metrics are **out of sample**: each backtest window is scored with intervals
 calibrated on the other windows. Compare `coverage_<L>` with the nominal level `L/100`;
 `msis_<L>` is the interval score scaled by the series' seasonal-naive error (lower is better
-at equal coverage). `native_*` rows are the uncorrected native bands, for comparison.
+at equal coverage). `native_*` rows are the uncorrected native bands, for comparison. Like Step 2, both queries
+read each model's latest run only: the interval tables are append-only. Under `separate_job`, run them again on
+`{use_case}_nf_evaluation_output_interval_metrics` and `{use_case}_nf_evaluation_output_calibration`.
 
 ```sql
-SELECT model, metric_name, ROUND(AVG(metric_value), 3) AS value, COUNT(DISTINCT unique_id) AS series
-FROM {catalog}.{schema}.{use_case}_evaluation_output_interval_metrics
-WHERE metric_name RLIKE '^(native_)?(coverage|msis)_'
-GROUP BY model, metric_name
-ORDER BY model, metric_name
+WITH latest_run_per_model AS (
+  SELECT model, run_id
+  FROM (
+    SELECT model, run_id,
+           ROW_NUMBER() OVER (PARTITION BY model ORDER BY run_date DESC, run_id DESC) AS rn
+    FROM (
+      SELECT DISTINCT model, run_id, run_date
+      FROM {catalog}.{schema}.{use_case}_evaluation_output_interval_metrics
+    )
+  )
+  WHERE rn = 1
+)
+SELECT m.model, m.metric_name, ROUND(AVG(m.metric_value), 3) AS value, COUNT(DISTINCT m.unique_id) AS series
+FROM {catalog}.{schema}.{use_case}_evaluation_output_interval_metrics AS m
+JOIN latest_run_per_model AS lr ON m.model = lr.model AND m.run_id = lr.run_id
+WHERE m.metric_name RLIKE '^(native_)?(coverage|msis)_'
+GROUP BY m.model, m.metric_name
+ORDER BY m.model, m.metric_name
 ```
 
 Coverage per ABC x XYZ class (the classes MMF used to pool the calibration), for the latest run of each model:
 
 ```sql
-WITH cls AS (
+WITH latest_run_per_model AS (
+  SELECT model, run_id
+  FROM (
+    SELECT model, run_id,
+           ROW_NUMBER() OVER (PARTITION BY model ORDER BY run_date DESC, run_id DESC) AS rn
+    FROM (
+      SELECT DISTINCT model, run_id, run_date
+      FROM {catalog}.{schema}.{use_case}_evaluation_output_interval_metrics
+    )
+  )
+  WHERE rn = 1
+),
+cls AS (
   SELECT DISTINCT model, run_id, unique_id, abc_class, xyz_class
   FROM {catalog}.{schema}.{use_case}_evaluation_output_calibration
 )
 SELECT m.model, CONCAT(c.abc_class, c.xyz_class) AS abc_xyz, m.metric_name,
        ROUND(AVG(m.metric_value), 3) AS coverage, COUNT(DISTINCT m.unique_id) AS series
 FROM {catalog}.{schema}.{use_case}_evaluation_output_interval_metrics AS m
+JOIN latest_run_per_model AS lr ON m.model = lr.model AND m.run_id = lr.run_id
 JOIN cls AS c ON m.model = c.model AND m.run_id = c.run_id AND m.unique_id = c.unique_id
 WHERE m.metric_name LIKE 'coverage_%'
 GROUP BY m.model, abc_xyz, m.metric_name
@@ -364,8 +392,10 @@ GROUP BY forecast_source
 
 ### Step 3b: Keep the intervals of the best models (only if prediction intervals were enabled)
 
-Keep the intervals of the selected model for each series (non-forecastable fallback series have none). The columns depend on Skill 4's `output_format`:
-`y_quantiles` (default), and/or `y_lo_<L>` / `y_hi_<L>`.
+Keep the intervals of the selected model for each series. The columns depend on Skill 4's `output_format`:
+`y_quantiles` (default), and/or `y_lo_<L>` / `y_hi_<L>`. Under `separate_job`, the non-forecastable winners'
+forecasts are in `{use_case}_nf_scoring_output` (Step 3a), so read both; with `include` every series is in the main
+tables, and with `fallback` the non-forecastable series have no intervals.
 
 ```sql
 CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_best_models_intervals AS
@@ -373,7 +403,18 @@ SELECT b.unique_id, b.model, b.run_id, s.ds, s.y, s.y_quantiles
 FROM {catalog}.{schema}.{use_case}_best_models AS b
 JOIN {catalog}.{schema}.{use_case}_scoring_output AS s
   ON b.unique_id = s.unique_id AND b.model = s.model AND b.run_id = s.run_id
+WHERE b.forecast_source = 'main_pipeline'
+UNION ALL
+-- separate_job only
+SELECT b.unique_id, b.model, b.run_id, s.ds, s.y, s.y_quantiles
+FROM {catalog}.{schema}.{use_case}_best_models AS b
+JOIN {catalog}.{schema}.{use_case}_nf_scoring_output AS s
+  ON b.unique_id = s.unique_id AND b.model = s.model AND b.run_id = s.run_id
+WHERE b.forecast_source = 'non_forecastable_pipeline'
 ```
+
+Drop the second branch if the strategy is not `separate_job`, or if the non-forecastable jobs ran without intervals
+(`{use_case}_nf_scoring_output` then has no `y_quantiles`).
 
 ### Step 4: Model ranking (wins count)
 
@@ -540,6 +581,9 @@ Save the generated notebook to the **local project directory** at:
 - `notebooks/{use_case}/post_process.ipynb`
 
 Then upload it to the Databricks workspace at `{notebook_base_path}/post_process`.
+
+The notebook re-creates `{use_case}_best_models` and `{use_case}_evaluation_summary`; it does not rebuild
+`{use_case}_best_models_intervals`, which Step 3b creates interactively only.
 
 Use the template from:
 - [mmf_post_process_notebook_template.ipynb](mmf_post_process_notebook_template.ipynb)
