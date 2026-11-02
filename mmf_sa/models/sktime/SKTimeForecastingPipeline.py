@@ -94,7 +94,7 @@ class SKTimeForecastingPipeline(ForecastingRegressor):
         Adds one QUANTILE_COLUMN_PREFIX column per requested quantile, read from the central intervals of
         sktime's predict_interval: coverage c gives the bounds at the quantiles (1 - c) / 2 and (1 + c) / 2.
         The median is the point forecast, as for statsforecast. Quantiles are the model's raw band: unlike
-        the point forecast, they are not clipped here; calibration applies prediction_intervals.clip_lower.
+        the point forecast, they are not clipped, so lower bounds can be negative for a non-negative target.
         The model is fitted once by predict, so each coverage only costs a prediction.
         """
         levels = central_levels(quantiles)

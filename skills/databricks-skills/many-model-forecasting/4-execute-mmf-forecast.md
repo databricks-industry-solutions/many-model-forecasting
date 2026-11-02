@@ -244,19 +244,17 @@ AskUserQuestion:
 
    (a) No — point forecasts only (default)
 
-   (b) Yes, 80% and 95% intervals (recommended for safety stock and planning)
+   (b) Yes, 80% and 95% native intervals, for the models that have them
        → prediction_intervals = {"enabled": True, "levels": [80, 95]}
 
    (c) Yes, custom levels or quantiles
        → e.g. {"enabled": True, "levels": [90]} or {"enabled": True, "quantiles": [0.1, 0.5, 0.9]}"
 ```
 
-Explain in one or two sentences what the user gets: MMF calibrates the intervals on the backtest, so that they reach the requested coverage. Models with native intervals (statsforecast AutoETS, AutoArima, AutoCES, AutoTheta, AutoTbats, Naive, SeasonalNaive; the Chronos and TimesFM models; SKTimeProphet; and the FoundationForecast FF* models) get their native bands corrected; all others get conformal intervals from their backtest errors. The intervals land in `scoring_output` as a `y_quantiles` map, and their out-of-sample coverage in `{use_case}_evaluation_output_interval_metrics` (`coverage_80`, `msis_80`, ...), which Skill 5 reports.
+Tell the user clearly what they get: the models' **native** intervals, **uncalibrated**, and only for the models that have them: statsforecast AutoETS, AutoArima, AutoCES, AutoTheta, AutoTbats, Naive and SeasonalNaive; the Chronos and TimesFM models; SKTimeProphet; and the FoundationForecast FF* models. All other models (e.g. CrostonSBA, ADIDA, MLForecast, NeuralForecast) get NULL interval columns. The coverage of the native bands can be off nominal; Skill 5 measures it on the backtest. Some models only have quantiles from 10% to 90% (Chronos-Bolt, TimesFM, several FF* models): their 95% bounds are NULL. The intervals land in `scoring_output` as a `y_quantiles` map, and in `evaluation_output` as `forecast_quantiles` for each backtest window.
 
 - Option (a): set `{prediction_intervals}` to `None` in every notebook.
 - Options (b)/(c): set `{prediction_intervals}` to the Python dict literal in every notebook (local, global ML, the GPU orchestrators and the serverless GPU notebooks; the Step 3e non-forecastable notebooks use the same value). If the user wants bound columns for SQL or dashboards, add `"output_format": "both"` (adds `y_lo_80`, `y_hi_80`, ...).
-- If the backtest has only 1 window (Step 1b option (a)), warn that the interval metrics need at least 2 windows, and recommend option (b) of Step 1b (3 windows).
-- If the user wants a different level per class of series (e.g. 95% for A items, 80% for C), put every level they need in `levels` (e.g. `[80, 90, 95]`): Skill 5 Step 3b then keeps each series' level.
 
 ### Step 1c: Validate and pre-create the MLflow experiment (MANDATORY — fail-fast)
 
@@ -531,7 +529,7 @@ For each GPU model class on a classic GPU cluster (global, foundation and/or fou
 | `{dynamic_historical_numerical}` | Past-only signals for **global** models (lag/roll features), or `[]`. Safe to use. |
 | `{dynamic_historical_categorical}` | Same — often `[]`. Safe to use. |
 | `{scoring_table}` | `""` unless Skill 1 created `{use_case}_scoring_data`. If scoring table exists, set it as routed in Step 0a. |
-| `{prediction_intervals}` | Same as the local notebook (Step 1d). The orchestrator forwards it to each `run_gpu` call as JSON; each call calibrates its own model. |
+| `{prediction_intervals}` | Same as the local notebook (Step 1d). The orchestrator forwards it to each `run_gpu` call as JSON. |
 
 Use the template from:
 - [mmf_gpu_orchestrator_notebook_template.ipynb](mmf_gpu_orchestrator_notebook_template.ipynb)
@@ -554,8 +552,6 @@ Placeholders: the same as the orchestrator table above (without `{num_nodes}`), 
 | Global DL | `"mmf_sa[global] @ git+https://github.com/databricks-industry-solutions/many-model-forecasting.git@main"` |
 | Foundation | `"mmf_sa[foundation] @ git+https://github.com/databricks-industry-solutions/many-model-forecasting.git@main"` |
 | Foundationforecast | `--extra-index-url https://download.pytorch.org/whl/cu128 "mmf_sa[foundationforecast] @ git+https://github.com/databricks-industry-solutions/many-model-forecasting.git@main" torch==2.11.0+cu128 torchvision==0.26.0+cu128 torchaudio==2.11.0+cu128` |
-
-The template's second `%pip` line (`antlr4-python3-runtime`, force-reinstalled) is required, not a leftover: on AI v6 the Spark workers lack it, and prediction intervals import `mmf_sa` on them. Keep it as is.
 
 Use the template from:
 - [mmf_gpu_serverless_notebook_template.ipynb](mmf_gpu_serverless_notebook_template.ipynb)
@@ -1292,7 +1288,7 @@ CREATE TABLE IF NOT EXISTS {catalog}.{schema}.{use_case}_scoring_output (
   run_date TIMESTAMP, use_case STRING, model_pickle BINARY, model_uri STRING);
 ```
 
-**If prediction intervals are enabled (Step 1d), run these instead.** Each job's first write then also adds the interval columns (`mergeSchema`) and creates `{use_case}_evaluation_output_calibration` and `{use_case}_evaluation_output_interval_metrics`, so jobs starting together can collide on those too (`TABLE_OR_VIEW_ALREADY_EXISTS` or a Delta `MetadataChangedException`, swallowed the same way). Run them once per `{use_case}` (and once for `{use_case}_nf` if `separate_job`):
+**If prediction intervals are enabled (Step 1d), run these instead.** They add the interval columns, so that the jobs' first writes do not change the schema at the same time (`mergeSchema`), which can fail the same way. Run them once per `{use_case}` (and once for `{use_case}_nf` if `separate_job`):
 
 ```sql
 CREATE TABLE IF NOT EXISTS {catalog}.{schema}.{use_case}_evaluation_output (
@@ -1305,26 +1301,16 @@ CREATE TABLE IF NOT EXISTS {catalog}.{schema}.{use_case}_scoring_output (
   {group_id} STRING, {date_col} ARRAY<TIMESTAMP>, {target} ARRAY<DOUBLE>, model STRING, run_id STRING,
   run_date TIMESTAMP, use_case STRING, model_pickle BINARY, model_uri STRING,
   {target}_quantiles MAP<STRING, ARRAY<DOUBLE>>);
-
-CREATE TABLE IF NOT EXISTS {catalog}.{schema}.{use_case}_evaluation_output_calibration (
-  model STRING, method STRING, score STRING, coverage_target STRING, {group_id} STRING, pool_key STRING,
-  step INT, level DOUBLE, q_lo DOUBLE, q_hi DOUBLE, n_windows INT, shrinkage_weight DOUBLE,
-  infinite_bound BOOLEAN, clip_lower DOUBLE, sigma DOUBLE, abc_class STRING, xyz_class STRING,
-  sb_class STRING, run_id STRING, run_date TIMESTAMP, use_case STRING);
-
-CREATE TABLE IF NOT EXISTS {catalog}.{schema}.{use_case}_evaluation_output_interval_metrics (
-  {group_id} STRING, backtest_window_start_date TIMESTAMP, metric_name STRING, metric_value DOUBLE,
-  model STRING, run_id STRING, run_date TIMESTAMP, use_case STRING);
 ```
 
-If the first two tables already exist without the interval columns, add them: `ALTER TABLE … ADD COLUMNS (forecast_quantiles MAP<STRING, ARRAY<DOUBLE>>)` on `evaluation_output` and `ALTER TABLE … ADD COLUMNS ({target}_quantiles MAP<STRING, ARRAY<DOUBLE>>)` on `scoring_output`. With `"output_format": "lo_hi"` or `"both"`, also add one `ARRAY<DOUBLE>` column per bound to `scoring_output`, named `{target}_lo_<L>` and `{target}_hi_<L>` (a level of 97.5 becomes `97_5`). For the default levels:
+If the tables already exist without the interval columns, add them: `ALTER TABLE … ADD COLUMNS (forecast_quantiles MAP<STRING, ARRAY<DOUBLE>>)` on `evaluation_output` and `ALTER TABLE … ADD COLUMNS ({target}_quantiles MAP<STRING, ARRAY<DOUBLE>>)` on `scoring_output`. With `"output_format": "lo_hi"` or `"both"`, also add one `ARRAY<DOUBLE>` column per bound to `scoring_output`, named `{target}_lo_<L>` and `{target}_hi_<L>` (a level of 97.5 becomes `97_5`). For the default levels:
 
 ```sql
 ALTER TABLE {catalog}.{schema}.{use_case}_scoring_output ADD COLUMNS (
   {target}_lo_80 ARRAY<DOUBLE>, {target}_hi_80 ARRAY<DOUBLE>, {target}_lo_95 ARRAY<DOUBLE>, {target}_hi_95 ARRAY<DOUBLE>);
 ```
 
-With `"output_format": "lo_hi"`, MMF writes these columns and not `{target}_quantiles`, which then stays null. These schemas follow `mmf_sa/intervals` (`IntervalCalibrator.write_calibration_output`, `write_interval_metrics` and `scoring.interval_column`); keep them in sync if those change.
+With `"output_format": "lo_hi"`, MMF writes these columns and not `{target}_quantiles`, which then stays null. These schemas follow `mmf_sa/intervals/scoring.py` (`interval_columns`); keep them in sync if it changes.
 
 Then call `run_job` for **all jobs simultaneously**.
 

@@ -2,12 +2,11 @@
 
 Tests cover:
 - Defaults, and the identical block shipped in every forecasting_conf_*.yaml
-- Merging a partial user block, including nested coverage keys
-- `quantiles` replacing `levels`
-- `method_by_model`: per-model interval methods, and the model's method (model_method)
-- Rejection of unknown keys and invalid values
+- Merging a partial user block
+- `quantiles` replacing `levels`, and the interval levels of each
+- Rejection of unknown keys (including the calibration settings, which are not part of this block) and invalid values
 - The native_intervals capability flags in models_conf.yaml
-- Plumbing: run_forecast(prediction_intervals=...) and the Forecaster checks
+- Plumbing: run_forecast(prediction_intervals=...) and the Forecaster
 """
 import importlib.resources as pkg_resources
 
@@ -15,7 +14,7 @@ import pytest
 from omegaconf import OmegaConf
 
 import mmf_sa
-from mmf_sa.intervals.config import DEFAULT_PREDICTION_INTERVALS, model_method, resolve_prediction_intervals_conf
+from mmf_sa.intervals.config import DEFAULT_PREDICTION_INTERVALS, interval_levels, resolve_prediction_intervals_conf
 from mmf_sa.exceptions import ConfigurationError
 from mmf_sa.models import ModelRegistry
 
@@ -37,31 +36,8 @@ def test_shipped_yaml_block_matches_defaults(freq):
 
 
 def test_partial_override_keeps_other_defaults():
-    pi = _resolve({"enabled": True, "levels": [90], "coverage": {"shrinkage_kappa": 20}})
-    assert pi["enabled"] is True
-    assert pi["levels"] == [90]
-    assert pi["coverage"]["shrinkage_kappa"] == 20
-    assert pi["coverage"]["target"] == "series"
-    assert pi["coverage"]["group_col"] == "auto"
-    assert pi["cqr_pool"] == "group"
-
-
-def test_method_by_model_defaults_to_empty():
-    assert _resolve({"enabled": True})["method_by_model"] == {}
-    assert _resolve({"enabled": True, "method_by_model": None})["method_by_model"] == {}
-
-
-def test_method_by_model_accepts_every_method():
-    by_model = {"Chronos2": "conformal", "StatsForecastAutoETS": "native", "FFToto": "cqr", "Moirai": "auto"}
-    pi = _resolve({"method": "conformal", "method_by_model": by_model})
-    assert pi["method_by_model"] == by_model
-
-
-def test_model_method_uses_the_model_entry_else_the_method():
-    pi = resolve_prediction_intervals_conf({"method": "conformal", "method_by_model": {"Chronos2": "cqr"}})
-    assert model_method(pi, "Chronos2") == "cqr"
-    assert model_method(pi, "StatsForecastAutoETS") == "conformal"
-    assert model_method(pi) == "conformal"
+    pi = _resolve({"enabled": True, "levels": [90]})
+    assert pi == {**DEFAULT_PREDICTION_INTERVALS, "enabled": True, "levels": [90]}
 
 
 def test_quantiles_replace_levels():
@@ -70,16 +46,14 @@ def test_quantiles_replace_levels():
     assert pi["quantiles"] == [0.1, 0.5, 0.9]
 
 
-def test_accepts_dictconfig_and_valid_alternatives():
-    pi = _resolve(OmegaConf.create({
-        "method": "conformal",
-        "coverage": {"target": "group", "group_col": ["store", "category"]},
-        "clip_lower": 0,
-        "recency_decay": 0.9,
-        "output_format": "both",
-    }))
-    assert pi["coverage"]["group_col"] == ["store", "category"]
-    assert pi["clip_lower"] == 0
+def test_interval_levels():
+    assert interval_levels(resolve_prediction_intervals_conf({"levels": [95, 80]})) == [80, 95]
+    assert interval_levels(resolve_prediction_intervals_conf({"quantiles": [0.025, 0.5, 0.975, 0.1, 0.9]})) == [80, 95]
+
+
+def test_accepts_dictconfig():
+    pi = _resolve(OmegaConf.create({"enabled": True, "output_format": "both"}))
+    assert pi["output_format"] == "both"
 
 
 @pytest.mark.parametrize("conf, message", [
@@ -92,35 +66,16 @@ def test_accepts_dictconfig_and_valid_alternatives():
     ({"levels": None}, "levels"),
     ({"quantiles": [1.0]}, "quantiles"),
     ({"quantiles": [0.1, 0.5, 0.95]}, "central pairs"),
-    ({"method": "bootstrap"}, "method"),
-    ({"method_by_model": {"Chronos2": "bootstrap"}}, "method_by_model"),
-    ({"method_by_model": {"Chronos2": None}}, "method_by_model"),
-    ({"method_by_model": ["Chronos2"]}, "method_by_model"),
-    ({"cqr_score": "abs"}, "cqr_score"),
-    ({"cqr_tail_split": "upper"}, "cqr_tail_split"),
-    ({"cqr_pool": "store"}, "cqr_pool"),
-    ({"cqr_score": "scaled", "cqr_pool": "series"}, "scaled"),
-    ({"coverage": {"target": "store"}}, "coverage.target"),
-    ({"coverage": {"target": "group", "group_col": None}}, "group_col"),
-    ({"coverage": {"group_col": None}}, "group_col"),
-    ({"coverage": {"group_col": 3}}, "group_col"),
-    ({"coverage": {"min_scores_per_group": 0}}, "min_scores_per_group"),
-    ({"coverage": {"shrinkage_kappa": 0}}, "shrinkage_kappa"),
-    ({"coverage": {"pool_horizon": "yes"}}, "pool_horizon"),
-    ({"coverage": {"levels_by_group": {"A": [95]}}}, "Unknown key"),  # not an MMF setting: see Skill 5 Step 3b
-    ({"score": "abs"}, "score"),
-    ({"recency_decay": 0}, "recency_decay"),
-    ({"clip_lower": "zero"}, "clip_lower"),
+    # Calibration settings are not part of the block.
+    ({"method": "conformal"}, "Unknown key"),
+    ({"method_by_model": {"Chronos2": "native"}}, "Unknown key"),
+    ({"coverage": {"target": "group"}}, "Unknown key"),
+    ({"clip_lower": 0}, "Unknown key"),
     ({"output_format": "wide"}, "output_format"),
 ])
 def test_rejects_invalid_values(conf, message):
     with pytest.raises(ConfigurationError, match=message):
         resolve_prediction_intervals_conf(conf)
-
-
-def test_marginal_pools_do_not_need_group_col():
-    pi = _resolve({"cqr_pool": "marginal", "coverage": {"target": "marginal", "group_col": None}})
-    assert pi["coverage"]["group_col"] is None
 
 
 def test_native_interval_flags():
@@ -182,13 +137,11 @@ def test_run_forecast_keeps_disabled_block_by_default(monkeypatch):
 
 
 def test_run_forecast_argument_overrides_yaml(monkeypatch):
-    conf = _run_forecast(monkeypatch, prediction_intervals={"enabled": True, "levels": [90],
-                                                             "coverage": {"target": "group"}})
+    conf = _run_forecast(monkeypatch, prediction_intervals={"enabled": True, "levels": [90]})
     pi = _resolve(conf.prediction_intervals)
     assert pi["enabled"] is True
     assert pi["levels"] == [90]
-    assert pi["coverage"]["target"] == "group"
-    assert pi["coverage"]["shrinkage_kappa"] == 10
+    assert pi["output_format"] == "quantile_map"
 
 
 def _forecaster_conf(**pi):
@@ -196,48 +149,14 @@ def _forecaster_conf(**pi):
                              "prediction_intervals": pi})
 
 
-def test_forecaster_requires_evaluation_output_when_enabled():
-    with pytest.raises(ConfigurationError, match="evaluation_output"):
-        mmf_sa.Forecaster(conf=_forecaster_conf(enabled=True), data_conf={}, spark=None, experiment_id="e")
-
-
-@pytest.mark.parametrize("pi", [{"enabled": True, "recency_decay": 0.9}])
-def test_forecaster_rejects_unsupported_settings_before_the_backtest(pi):
-    conf = OmegaConf.create({"freq": "D", "backtest_length": 14, "active_models": [], "evaluation_output": "t",
-                             "prediction_intervals": pi})
-    with pytest.raises(ConfigurationError, match="not supported"):
-        mmf_sa.Forecaster(conf=conf, data_conf={}, spark=None, experiment_id="e")
+def test_forecaster_does_not_require_evaluation_output():
+    f = mmf_sa.Forecaster(conf=_forecaster_conf(enabled=True), data_conf={}, spark=None, experiment_id="e")
+    assert f.intervals_enabled
 
 
 def test_forecaster_resolves_block():
     f = mmf_sa.Forecaster(conf=_forecaster_conf(levels=[90]), data_conf={}, spark=None, experiment_id="e")
     assert f.conf.prediction_intervals.levels == [90]
     assert f.conf.prediction_intervals.enabled is False
-    with pytest.raises(ConfigurationError, match="method"):
-        mmf_sa.Forecaster(conf=_forecaster_conf(method="x"), data_conf={}, spark=None, experiment_id="e")
-
-
-def test_forecaster_warns_once_about_method_by_model_names_that_are_not_models(caplog):
-    # TimesFM_2_5_200m is a known model that is not active (as in the GPU orchestrator): no warning for it.
-    by_model = {"StatsForecastAutoETS": "native", "Chronos2": "cqr", "TimesFM_2_5_200m": "conformal",
-                "Nope": "cqr", "Other": "native"}
-    conf = OmegaConf.create({"freq": "D", "backtest_length": 14, "evaluation_output": "t",
-                             "active_models": ["StatsForecastAutoETS", "Chronos2"],
-                             "prediction_intervals": {"enabled": True, "method": "conformal",
-                                                      "method_by_model": by_model}})
-    with caplog.at_level("WARNING", logger="mmf_sa.Forecaster"):
-        f = mmf_sa.Forecaster(conf=conf, data_conf={}, spark=None, experiment_id="e")
-    warnings = [r.getMessage() for r in caplog.records if "method_by_model" in r.getMessage()]
-    assert len(warnings) == 1
-    assert "Nope, Other" in warnings[0] and "TimesFM" not in warnings[0]
-    assert f.conf.prediction_intervals.method_by_model["StatsForecastAutoETS"] == "native"
-
-
-def test_forecaster_does_not_warn_when_method_by_model_names_are_active(caplog):
-    conf = OmegaConf.create({"freq": "D", "backtest_length": 14, "evaluation_output": "t",
-                             "active_models": ["StatsForecastAutoETS"],
-                             "prediction_intervals": {"enabled": True,
-                                                      "method_by_model": {"StatsForecastAutoETS": "cqr"}}})
-    with caplog.at_level("WARNING", logger="mmf_sa.Forecaster"):
-        mmf_sa.Forecaster(conf=conf, data_conf={}, spark=None, experiment_id="e")
-    assert "method_by_model" not in caplog.text
+    with pytest.raises(ConfigurationError, match="output_format"):
+        mmf_sa.Forecaster(conf=_forecaster_conf(output_format="x"), data_conf={}, spark=None, experiment_id="e")

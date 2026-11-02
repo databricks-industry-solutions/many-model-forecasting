@@ -6,6 +6,7 @@ Tests cover:
 - calculate_metrics' 8th element: each series' quantile map, None without native quantiles
 - Adapters that cannot return quantiles, and library output that lacks some levels
 - Levels with more than 3 decimals, which foundationforecast rejects, are requested rounded outward
+- Levels outside the native range are left out (NULL intervals), not clamped
 - Warnings: levels outside the native range, unsupported adapters, missing levels, few sample paths; each logged once
 """
 import logging
@@ -109,7 +110,7 @@ def test_without_native_quantiles_the_library_is_called_as_before(quantile_libra
 
 def test_scoring_forecast_returns_native_quantile_columns(quantile_library):
     quantile_library()
-    pred, _ = make_native_model("FFTimesFM_2_5_200m").forecast(make_df(DATES))
+    pred, _ = make_native_model("FFChronos2").forecast(make_df(DATES))  # native range [0.01, 0.99]: every level
     assert quantile_columns(pred) == sorted(QUANTILE_COLUMN_PREFIX + k for k in KEYS)
 
 
@@ -171,17 +172,19 @@ def test_library_without_quantile_columns_keeps_the_point_forecast(caplog):
     assert len([r for r in caplog.records if "did not return the quantiles" in r.message]) == 1
 
 
-def test_levels_outside_the_native_range_warn_once(quantile_library, caplog):
+def test_levels_outside_the_native_range_are_left_out_with_one_warning(quantile_library, caplog):
     quantile_library()
     df = make_df(DATES)
     with caplog.at_level(logging.WARNING, logger=ffp.__name__):
         make_model("FFTimesFM_2_5_200m").predict(df)
         model = make_native_model("FFTimesFM_2_5_200m")
         model.predict(df)
-        model.predict(df)
+        forecast_df, _ = model.predict(df)
     messages = [r.message for r in caplog.records if "native range" in r.message]
     assert len(messages) == 1
-    assert "FFTimesFM_2_5_200m" in messages[0] and "[0.1, 0.9]" in messages[0] and "too narrow" in messages[0]
+    assert "FFTimesFM_2_5_200m" in messages[0] and "[0.1, 0.9]" in messages[0] and "NULL" in messages[0]
+    assert all(0.1 <= float(c[len(QUANTILE_COLUMN_PREFIX):]) <= 0.9 for c in quantile_columns(forecast_df))
+    assert f"{QUANTILE_COLUMN_PREFIX}0.5" in forecast_df.columns
 
 
 def test_levels_inside_the_native_range_do_not_warn(quantile_library, caplog):

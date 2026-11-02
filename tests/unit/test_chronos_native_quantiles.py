@@ -2,8 +2,8 @@
 
 The UDF functions run directly (udf.func) with a fake chronos library, as on a Spark worker.
 Tests cover:
-- Chronos-Bolt: packing of medians and quantiles across batches, the clamp warning with the model name, and the
-  plain path (no native_quantiles) unchanged
+- Chronos-Bolt: packing of medians and quantiles across batches, NaN for the levels outside the trained range with
+  one warning naming the model, and the plain path (no native_quantiles) unchanged
 - the round trip UDF output -> _predict_distributed, which decodes the quantile columns
 - Chronos-2, with and without known-future covariates
 The fake quantile value of series s at step h and level q is s + 100 q + h, so a wrong series, step or level shows.
@@ -113,7 +113,10 @@ def test_bolt_udf_packs_medians_and_quantiles_across_batches(chronos, caplog):
     for s in range(3):
         np.testing.assert_allclose(frame["y"].iloc[s], _expected(10 * s, 0.5))
         for q in levels:
-            np.testing.assert_allclose(frame[f"__q_{q}"].iloc[s], _expected(10 * s, q), rtol=1e-6)
+            if q in (0.025, 0.975):  # outside Chronos-Bolt's trained range [0.1, 0.9]
+                assert np.isnan(frame[f"__q_{q}"].iloc[s]).all()
+            else:
+                np.testing.assert_allclose(frame[f"__q_{q}"].iloc[s], _expected(10 * s, q), rtol=1e-6)
     messages = [r.getMessage() for r in caplog.records if "native range" in r.getMessage()]
     assert len(messages) == 1 and "ChronosBoltSmall" in messages[0] and "[0.1, 0.9]" in messages[0]
 
@@ -128,7 +131,7 @@ def test_bolt_udf_without_native_quantiles_returns_the_median_only(chronos):
         np.testing.assert_allclose(out[s], _expected(10 * s, 0.5), rtol=1e-6)
 
 
-def test_bolt_udf_output_round_trips_through_predict_distributed(chronos):
+def test_bolt_udf_output_round_trips_through_predict_distributed(chronos, caplog):
     chronos(_FakeBolt())
     model = _model(ChronosBoltSmall, QUANTILES)
     (packed,) = list(model.create_predict_udf(1).func(iter([_histories(n=2)])))
@@ -137,13 +140,21 @@ def test_bolt_udf_output_round_trips_through_predict_distributed(chronos):
     model.create_horizon_timestamps_udf = lambda: (lambda column: _FakeColumn())
     model.create_predict_udf = lambda device_count: (lambda column: _FakeColumn())
 
-    forecast_df, _ = model._predict_distributed(pd.DataFrame(), spark=object())
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        forecast_df, _ = model._predict_distributed(pd.DataFrame(), spark=object())
 
     assert list(forecast_df["uid"]) == ["a", "b"]
     for s in range(2):
         np.testing.assert_allclose(forecast_df["y"].iloc[s], _expected(10 * s, 0.5))
-        np.testing.assert_allclose(forecast_df["__q_0.025"].iloc[s], _expected(10 * s, 0.025), rtol=1e-6)
-        np.testing.assert_allclose(forecast_df["__q_0.975"].iloc[s], _expected(10 * s, 0.975), rtol=1e-6)
+        np.testing.assert_allclose(forecast_df["__q_0.1"].iloc[s], _expected(10 * s, 0.1), rtol=1e-6)
+        np.testing.assert_allclose(forecast_df["__q_0.9"].iloc[s], _expected(10 * s, 0.9), rtol=1e-6)
+        # Outside Chronos-Bolt's trained range: NaN, so the quantile maps leave them out.
+        assert np.isnan(forecast_df["__q_0.025"].iloc[s]).all() and np.isnan(forecast_df["__q_0.975"].iloc[s]).all()
+    # The UDF's warning is logged on the workers; the driver logs its own.
+    messages = [r.getMessage() for r in caplog.records if "trained range" in r.getMessage()]
+    assert messages == ["ChronosBoltSmall: quantiles ['0.025', '0.975'] are outside the trained range of the "
+                        "checkpoint, so the interval levels that need them are NULL."]
 
 
 @pytest.mark.parametrize("with_covariates", [False, True])

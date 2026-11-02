@@ -6,7 +6,8 @@ mean first and then the deciles 0.1-0.9. Index k of the fake holds 100 * series 
 are linear in k and interpolated values are easy to check.
 
 Tests cover:
-- quantile_forecasts: exact deciles, linear interpolation, clamping, mean excluded, warning logged once
+- quantile_forecasts: exact deciles, linear interpolation, mean excluded
+- native_levels: levels outside the deciles (the 95% band) are left out, with one warning
 - _predict_single: quantile columns, point forecast unchanged with and without quantiles, covariate path
 - create_predict_udf: packing of the point and quantiles, round trip through decode_quantile_forecasts
 - _predict_distributed: decoding of the packed UDF output on the driver
@@ -28,6 +29,7 @@ from mmf_sa.models.timesfmforecast import TimesFMPipeline as tfp
 from mmf_sa.models.timesfmforecast.TimesFMPipeline import TimesFMForecaster, quantile_forecasts
 
 QUANTILES = [0.025, 0.1, 0.5, 0.9, 0.975]
+KEPT = [0.1, 0.5, 0.9]  # the requested levels inside the deciles
 H = 4
 N_OUT = 1 + len(tfp.TIMESFM_QUANTILE_LEVELS)  # the mean and the nine deciles
 MEDIAN_COLUMN = QUANTILE_COLUMN_PREFIX + "0.5"
@@ -124,26 +126,20 @@ def test_quantile_forecasts_interpolates_between_deciles():
     np.testing.assert_allclose(out[2], q[:, 8] + 0.5 * (q[:, 9] - q[:, 8]))
 
 
-def test_quantile_forecasts_clamps_levels_outside_deciles():
-    q = _timesfm_output(1, H)[0]
-    out = quantile_forecasts(q, [0.025, 0.1, 0.9, 0.975])
-    np.testing.assert_array_equal(out, np.stack([q[:, 1], q[:, 1], q[:, 9], q[:, 9]]))
-
-
 def test_quantile_forecasts_ignores_the_mean():
     q = _timesfm_output(1, H)[0]
     q[:, 0] = 1e6  # the mean (index 0) is not a quantile
     assert quantile_forecasts(q, [0.1, 0.5, 0.9]).max() < 1e3
 
 
-def test_clamp_warning_logged_once(caplog):
+def test_levels_outside_the_deciles_are_left_out_with_one_warning(caplog):
     with caplog.at_level("WARNING"):
         for _ in range(3):
-            assert _forecaster(None, QUANTILES).native_levels() == QUANTILES
+            assert _forecaster(None, QUANTILES).native_levels() == KEPT
         _forecaster(None, [0.1, 0.5, 0.9]).native_levels()  # inside the deciles: no warning
-    warnings = [r.message for r in caplog.records if "clamped" in r.message]
+    warnings = [r.message for r in caplog.records if "native range" in r.message]
     assert len(warnings) == 1
-    assert "[0.1, 0.9]" in warnings[0] and "method 'auto'" in warnings[0]
+    assert "[0.025, 0.975] are outside the native range [0.1, 0.9]" in warnings[0] and "NULL" in warnings[0]
 
 
 def test_predict_single_point_forecast_unchanged_by_quantiles(fake_timesfm):
@@ -151,7 +147,7 @@ def test_predict_single_point_forecast_unchanged_by_quantiles(fake_timesfm):
     plain, _ = _forecaster(fake_timesfm).predict(hist)
     with_q, _ = _forecaster(fake_timesfm, QUANTILES).predict(hist)
     assert not [c for c in plain.columns if str(c).startswith(QUANTILE_COLUMN_PREFIX)]
-    assert list(with_q.columns) == list(plain.columns) + _quantile_columns(QUANTILES)
+    assert list(with_q.columns) == list(plain.columns) + _quantile_columns(KEPT)
     for series in range(2):
         # The point forecast is the 0.5 decile (index 5) of the fake output, as in TimesFM.
         np.testing.assert_array_equal(plain["y"].iloc[series], _expected(series, 5))
@@ -161,13 +157,12 @@ def test_predict_single_point_forecast_unchanged_by_quantiles(fake_timesfm):
 def test_predict_single_quantile_columns_have_the_right_values(fake_timesfm):
     forecast_df, _ = _forecaster(fake_timesfm, QUANTILES + [0.15]).predict(_history())
     assert MEDIAN_COLUMN in forecast_df.columns
+    assert "__q_0.025" not in forecast_df.columns and "__q_0.975" not in forecast_df.columns
     for series in range(2):
-        np.testing.assert_array_equal(forecast_df["__q_0.025"].iloc[series], _expected(series, 1))  # clamped to 0.1
         np.testing.assert_array_equal(forecast_df["__q_0.1"].iloc[series], _expected(series, 1))
         np.testing.assert_array_equal(forecast_df["__q_0.15"].iloc[series], _expected(series, 1.5))
         np.testing.assert_array_equal(forecast_df["__q_0.5"].iloc[series], _expected(series, 5))
         np.testing.assert_array_equal(forecast_df["__q_0.9"].iloc[series], _expected(series, 9))
-        np.testing.assert_array_equal(forecast_df["__q_0.975"].iloc[series], _expected(series, 9))  # clamped to 0.9
         assert forecast_df["__q_0.9"].iloc[series].shape == (H,)
 
 
@@ -179,7 +174,7 @@ def test_predict_single_covariate_path_returns_quantiles(fake_timesfm):
     plain, _ = _forecaster(fake_timesfm, covariates=["x"]).predict(hist, future)
     with_q, _ = _forecaster(fake_timesfm, QUANTILES, covariates=["x"]).predict(hist, future)
     assert "forecast_with_covariates" in fake_timesfm.calls
-    assert list(with_q.columns) == list(plain.columns) + _quantile_columns(QUANTILES)
+    assert list(with_q.columns) == list(plain.columns) + _quantile_columns(KEPT)
     for series in range(2):
         np.testing.assert_array_equal(with_q["y"].iloc[series], plain["y"].iloc[series])
         np.testing.assert_array_equal(with_q["__q_0.9"].iloc[series], _expected(series, 9))
@@ -200,11 +195,11 @@ def test_udf_packs_point_and_quantiles_round_trip(fake_timesfm, monkeypatch, wit
     batch = (y, pd.Series([np.arange(20 + H, dtype=float)] * 3)) if with_covariates else y
     (packed,) = list(udf.func(iter([batch])))
 
-    assert len(packed[0]) == (1 + len(forecast_levels(QUANTILES))) * H
-    frame = decode_quantile_forecasts(pd.DataFrame({"y": list(packed)}), "y", forecast_levels(QUANTILES), H)
+    assert len(packed[0]) == (1 + len(KEPT)) * H
+    frame = decode_quantile_forecasts(pd.DataFrame({"y": list(packed)}), "y", KEPT, H)
     for series in range(3):
         np.testing.assert_array_equal(frame["y"].iloc[series], _expected(series, 5))
-        np.testing.assert_array_equal(frame["__q_0.025"].iloc[series], _expected(series, 1))
+        np.testing.assert_array_equal(frame["__q_0.1"].iloc[series], _expected(series, 1))
         np.testing.assert_array_equal(frame["__q_0.9"].iloc[series], _expected(series, 9))
     np.testing.assert_array_equal(np.stack(list(frame[MEDIAN_COLUMN])), np.stack(list(frame["y"])))
 
@@ -250,7 +245,7 @@ def test_predict_distributed_decodes_packed_quantiles(fake_timesfm):
     packed = pd.DataFrame({
         "unique_id": ["a", "b"],
         "ds": [np.array([0] * H), np.array([0] * H)],
-        "y": _packed(forecast_levels(QUANTILES), n=2),
+        "y": _packed(KEPT, n=2),
     })
     forecaster.prepare_data_for_spark = lambda hist_df, spark, val_df=None: _FakeSpark(packed)
     forecaster.create_horizon_timestamps_udf = lambda: lambda column: _FakeColumn()
@@ -261,8 +256,9 @@ def test_predict_distributed_decodes_packed_quantiles(fake_timesfm):
     assert list(forecast_df["uid"]) == ["a", "b"]
     for series in range(2):
         np.testing.assert_array_equal(forecast_df["y"].iloc[series], _expected(series, 5))
-        np.testing.assert_array_equal(forecast_df["__q_0.025"].iloc[series], _expected(series, 1))
-        np.testing.assert_array_equal(forecast_df["__q_0.975"].iloc[series], _expected(series, 9))
+        np.testing.assert_array_equal(forecast_df["__q_0.1"].iloc[series], _expected(series, 1))
+        np.testing.assert_array_equal(forecast_df["__q_0.9"].iloc[series], _expected(series, 9))
+    assert "__q_0.025" not in forecast_df.columns
 
 
 def test_calculate_metrics_carries_quantile_map(fake_timesfm):
@@ -274,7 +270,7 @@ def test_calculate_metrics_carries_quantile_map(fake_timesfm):
     for series, metric in enumerate(metrics):
         assert len(metric) == 8
         quantile_map = metric[7]
-        assert set(quantile_map) == {quantile_key(q) for q in forecast_levels(QUANTILES)}
+        assert set(quantile_map) == {quantile_key(q) for q in KEPT}
         np.testing.assert_array_equal(quantile_map["0.9"], _expected(series, 9))
         np.testing.assert_array_equal(quantile_map["0.5"], metric[4])
 

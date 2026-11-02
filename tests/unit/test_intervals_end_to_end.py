@@ -1,30 +1,42 @@
-"""End-to-end prediction intervals through run_forecast, on a local Spark session.
+"""End-to-end native prediction intervals through run_forecast, on a local Spark session.
 
-Tests cover, with StatsForecastAutoETS (native bands, CQR) and StatsForecastCrostonSBA (conformal):
-- evaluation_output: native quantiles only for the model that has them
-- calibration_output: the method of each model, one row per series, step and level
-- interval_metrics_output: coverage, MSIS and width, plus native_* only for native bands
-- scoring_output: filled, clipped, uncrossed and nested interval columns that agree with the quantile map
-- a scoring-only run reuses the calibration of its run_id, and writes null intervals without one
-- a model whose calibration fails gets null intervals while the others are calibrated; method_by_model
+Tests cover, with StatsForecastAutoETS (native intervals) and StatsForecastCrostonSBA (none):
+- evaluation_output: sorted native quantiles only for the model that has them
+- scoring_output: interval columns that agree with the quantile map, are nested and never cross for the native
+  model, and are NULL for the other one, with one warning
+- no calibration tables are written
+- with intervals disabled, the tables have no interval columns
 
 These tests need Spark Python workers (PySpark >= 3.5 on Python <= 3.11 locally); they are skipped otherwise.
 """
-import importlib.resources
+import contextlib
 import logging
 
 import mlflow
 import numpy as np
 import pandas as pd
 import pytest
-from omegaconf import OmegaConf
 from pyspark.sql import functions as F
 
-from mmf_sa import Forecaster, run_forecast
-from mmf_sa.intervals import spark as calibration_spark
+from mmf_sa import run_forecast
 
 H, LEVELS = 7, (80, 95)
-NATIVE, CONFORMAL = "StatsForecastAutoETS", "StatsForecastCrostonSBA"
+NATIVE, NO_NATIVE = "StatsForecastAutoETS", "StatsForecastCrostonSBA"
+QUANTILE_KEYS = ["0.025", "0.1", "0.5", "0.9", "0.975"]
+
+
+@contextlib.contextmanager
+def _capture_warnings():
+    """Warning records of the models and the Forecaster (pytest's caplog is function-scoped)."""
+    records = []
+    handler = logging.Handler(logging.WARNING)
+    handler.emit = records.append
+    root = logging.getLogger()
+    root.addHandler(handler)
+    try:
+        yield records
+    finally:
+        root.removeHandler(handler)
 
 
 @pytest.fixture(scope="module")
@@ -54,7 +66,7 @@ def _kwargs(tmp, prefix, **intervals):
     return dict(
         train_data="pi_e2e_train", scoring_data="pi_e2e_train", scoring_output=f"default.{prefix}_scoring",
         evaluation_output=f"default.{prefix}_eval", group_id="unique_id", date_col="ds", target="y", freq="D",
-        prediction_length=H, backtest_length=21, stride=7, train_predict_ratio=1, active_models=[NATIVE, CONFORMAL],
+        prediction_length=H, backtest_length=21, stride=7, train_predict_ratio=1, active_models=[NATIVE, NO_NATIVE],
         experiment_path=f"{tmp}/{prefix}", use_case_name=prefix,
         prediction_intervals={"enabled": True, "output_format": "both", **intervals},
     )
@@ -71,106 +83,65 @@ def tmp(tmp_path_factory, spark):
 @pytest.fixture(scope="module")
 def run(spark, tmp):
     kwargs = _kwargs(tmp, "pi_e2e")
-    return kwargs, run_forecast(spark=spark, **kwargs)
+    with _capture_warnings() as records:
+        run_id = run_forecast(spark=spark, **kwargs)
+    return kwargs, run_id, records
 
 
 def _rows(spark, table, run_id):
     return spark.table(table).filter(F.col("run_id") == run_id).toPandas()
 
 
-def test_backtest_rows_carry_native_quantiles_only_for_native_bands(spark, run):
-    kwargs, run_id = run
+def test_backtest_rows_carry_sorted_native_quantiles_only_for_native_models(spark, run):
+    kwargs, run_id, _ = run
     ev = _rows(spark, kwargs["evaluation_output"], run_id)
     native = ev[ev["model"] == NATIVE]
     assert len(native) and native["forecast_quantiles"].notna().all()
-    assert sorted(dict(native["forecast_quantiles"].iloc[0]), key=float) == ["0.025", "0.1", "0.5", "0.9", "0.975"]
-    assert ev.loc[ev["model"] == CONFORMAL, "forecast_quantiles"].isna().all()
+    for qmap in native["forecast_quantiles"]:
+        qmap = dict(qmap)
+        assert sorted(qmap, key=float) == QUANTILE_KEYS
+        cube = np.stack([qmap[k] for k in QUANTILE_KEYS])
+        assert cube.shape == (5, H) and (np.diff(cube, axis=0) >= 0).all()
+    assert ev.loc[ev["model"] == NO_NATIVE, "forecast_quantiles"].isna().all()
 
 
-def test_calibration_output_has_the_method_of_each_model(spark, run):
-    kwargs, run_id = run
-    cal = _rows(spark, kwargs["evaluation_output"] + "_calibration", run_id)
-    methods = cal.groupby("model")[["method", "score", "coverage_target"]].first()
-    assert tuple(methods.loc[NATIVE]) == ("cqr", "asymmetric", "group")
-    assert tuple(methods.loc[CONFORMAL]) == ("conformal", "signed_normalized", "series")
-    for model in (NATIVE, CONFORMAL):
-        m = cal[cal["model"] == model]
-        assert len(m) == 10 * H * len(LEVELS) and m["sigma"].gt(0).all()
-        assert not m.duplicated(["unique_id", "step", "level"]).any()
-
-
-def test_interval_metrics_are_named_per_level_and_native_only_with_bands(spark, run):
-    kwargs, run_id = run
-    metrics = _rows(spark, kwargs["evaluation_output"] + "_interval_metrics", run_id)
-    names = metrics.groupby("model")["metric_name"].unique().map(set)
-    plain = {f"{m}_{lv}" for m in ("coverage", "miss_lo", "miss_hi", "msis", "width") for lv in LEVELS}
-    level_free = {"scaled_ae", "wis"}
-    assert names[CONFORMAL] == plain | level_free
-    assert names[NATIVE] == plain | level_free | {f"native_{n}" for n in plain} | {"native_wis"}
-    coverage = metrics[metrics["metric_name"].str.contains("coverage")]["metric_value"]
-    assert coverage.between(0, 1).all()
-
-
-def test_scoring_output_intervals_are_filled_clipped_and_nested(spark, run):
-    kwargs, run_id = run
+def test_scoring_output_native_intervals_match_the_map_and_are_nested(spark, run):
+    kwargs, run_id, _ = run
     score = _rows(spark, kwargs["scoring_output"], run_id)
-    assert set(score["model"]) == {NATIVE, CONFORMAL} and len(score) == 2 * 10
-    for _, r in score.iterrows():
+    assert set(score["model"]) == {NATIVE, NO_NATIVE} and len(score) == 2 * 10
+    assert "forecast_quantiles" not in score.columns
+    for _, r in score[score["model"] == NATIVE].iterrows():
         lo80, hi80, lo95, hi95 = (np.asarray(r[c]) for c in ("y_lo_80", "y_hi_80", "y_lo_95", "y_hi_95"))
         assert all(len(a) == H for a in (lo80, hi80, lo95, hi95))
-        assert (lo80 >= 0).all() and (lo80 <= hi80).all()  # clip_lower auto: the target is never negative
-        assert (lo95 <= lo80 + 1e-9).all() and (hi95 >= hi80 - 1e-9).all()
+        assert (lo95 <= lo80).all() and (lo80 <= hi80).all() and (hi80 <= hi95).all()
         q = dict(r["y_quantiles"])
-        np.testing.assert_allclose(q["0.1"], lo80)
-        np.testing.assert_allclose(q["0.975"], hi95)
-        # The native median is kept for models with native bands; conformal intervals have none.
-        assert ("0.5" in q) == (r["model"] == NATIVE)
+        assert sorted(q, key=float) == QUANTILE_KEYS
+        np.testing.assert_array_equal(q["0.1"], lo80)
+        np.testing.assert_array_equal(q["0.975"], hi95)
 
 
-def _scoring_only(spark, kwargs, run_id):
-    base = OmegaConf.create(importlib.resources.files("mmf_sa").joinpath("forecasting_conf_daily.yaml").read_text())
-    conf = OmegaConf.merge(base, OmegaConf.create({**kwargs, "run_id": run_id, "metric": "smape", "resample": False}))
-    Forecaster(conf=conf, data_conf={}, spark=spark, run_id=run_id).evaluate_score(evaluate=False)
+def test_models_without_native_intervals_get_null_columns_and_one_warning(spark, run):
+    kwargs, run_id, records = run
+    score = _rows(spark, kwargs["scoring_output"], run_id)
+    other = score[score["model"] == NO_NATIVE]
+    assert other["y"].notna().all()
+    for c in ("y_quantiles", "y_lo_80", "y_hi_80", "y_lo_95", "y_hi_95"):
+        assert other[c].isna().all()
+    warnings = [r.getMessage() for r in records if "has no native prediction intervals" in r.getMessage()]
+    assert warnings == [f"{NO_NATIVE} has no native prediction intervals; its interval columns are NULL."]
 
 
-def test_scoring_only_reuses_the_calibration_of_its_run_id(spark, run):
-    kwargs, run_id = run
-    first = _rows(spark, kwargs["scoring_output"], run_id)
-    _scoring_only(spark, kwargs, run_id)
-    both = _rows(spark, kwargs["scoring_output"], run_id)
-    assert len(both) == 2 * len(first)
-    second = both.sort_values("run_date").groupby(["model", "unique_id"]).last()
-    first = first.set_index(["model", "unique_id"]).loc[second.index]
-    for col in ("y_lo_80", "y_hi_95"):
-        np.testing.assert_allclose(np.stack(second[col]), np.stack(first[col]))
+def test_no_calibration_tables_are_written(spark, run):
+    kwargs, _, _ = run
+    for suffix in ("_calibration", "_interval_metrics"):
+        assert not spark.catalog.tableExists(kwargs["evaluation_output"] + suffix)
 
 
-def test_scoring_only_without_calibration_writes_null_intervals(spark, run):
-    kwargs, _ = run
-    kwargs = dict(kwargs, scoring_output="default.pi_e2e_uncalibrated_scoring")
-    _scoring_only(spark, kwargs, "no-calibration-for-this-run")
-    score = _rows(spark, kwargs["scoring_output"], "no-calibration-for-this-run")
+def test_disabled_intervals_add_no_columns(spark, tmp):
+    kwargs = _kwargs(tmp, "pi_e2e_off")
+    kwargs["prediction_intervals"] = {"enabled": False}
+    run_id = run_forecast(spark=spark, **kwargs)
+    assert "forecast_quantiles" not in spark.table(kwargs["evaluation_output"]).columns
+    score = _rows(spark, kwargs["scoring_output"], run_id)
     assert len(score) == 2 * 10
-    assert score["y"].notna().all() and score["y_lo_80"].isna().all() and score["y_quantiles"].isna().all()
-
-
-def test_failed_calibration_is_isolated_and_method_by_model_applies(spark, tmp, monkeypatch, caplog):
-    real = calibration_spark.calibrate_model_spark
-
-    def failing(spark_, eval_sdf, features, series_col, model, *args, **kw):
-        if model == CONFORMAL:
-            raise RuntimeError("calibration exploded")
-        return real(spark_, eval_sdf, features, series_col, model, *args, **kw)
-
-    monkeypatch.setattr(calibration_spark, "calibrate_model_spark", failing)
-    kwargs = _kwargs(tmp, "pi_e2e_fail", method_by_model={NATIVE: "conformal"})
-    with caplog.at_level(logging.ERROR):
-        run_id = run_forecast(spark=spark, **kwargs)
-    assert any("Calibration failed for StatsForecastCrostonSBA" in r.getMessage() for r in caplog.records)
-    ev = _rows(spark, kwargs["evaluation_output"], run_id)
-    assert ev.loc[ev["model"] == NATIVE, "forecast_quantiles"].isna().all()  # conformal: no native quantiles
-    cal = _rows(spark, kwargs["evaluation_output"] + "_calibration", run_id)
-    assert set(cal["model"]) == {NATIVE} and set(cal["method"]) == {"conformal"}
-    score = _rows(spark, kwargs["scoring_output"], run_id).set_index("model")
-    assert score.loc[NATIVE, "y_lo_80"].notna().all()
-    assert score.loc[CONFORMAL, "y_lo_80"].isna().all() and score.loc[CONFORMAL, "y"].notna().all()
+    assert not [c for c in score.columns if c.startswith("y_") or c == "forecast_quantiles"]

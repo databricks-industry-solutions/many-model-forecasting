@@ -19,7 +19,9 @@ from sktime.performance_metrics.forecasting import (
 from typing import Iterator, Tuple
 from pyspark.sql.functions import pandas_udf
 from pyspark.sql import DataFrame
-from mmf_sa.models.abstract_model import ForecastingRegressor, MODEL_PIP_REQUIREMENTS, collect_sorted, warn_if_clamped
+from mmf_sa.models.abstract_model import (
+    ForecastingRegressor, MODEL_PIP_REQUIREMENTS, collect_sorted, in_native_range, warn_once, warn_if_outside_range,
+)
 from mmf_sa.exceptions import (
     MissingFeatureError,
     UnsupportedMetricError,
@@ -27,8 +29,8 @@ from mmf_sa.exceptions import (
     DataPreparationError,
 )
 from mmf_sa.intervals.quantiles import (
-    QUANTILE_COLUMN_PREFIX, decode_quantile_forecasts, encode_quantile_forecasts, forecast_levels, quantile_key,
-    quantile_maps,
+    QUANTILE_COLUMN_PREFIX, decode_quantile_forecasts, encode_quantile_forecasts, forecast_levels, quantile_columns,
+    quantile_key, quantile_maps,
 )
 
 _logger = logging.getLogger(__name__)
@@ -43,23 +45,41 @@ def quantile_forecasts(pipeline, inputs, prediction_length: int, quantiles, mode
         prediction_length (int): Forecast horizon.
         quantiles: Requested quantile levels; the median is added if missing.
         model (str): Model name, for the warning.
-    Returns: (np.ndarray, np.ndarray, list): medians (n, H), quantiles (n, Q, H) and the Q levels.
+    Returns: (np.ndarray, np.ndarray, list): medians (n, H), quantiles (n, Q, H) and the Q levels. Levels outside
+        the checkpoint's trained range are NaN: Chronos would clamp them (0.1-0.9 for Chronos-Bolt), so e.g. a
+        "95%" band would really be the 80% band.
     """
     levels = forecast_levels(quantiles)
     trained = getattr(pipeline, "quantiles", None)
+    outside = []
     if trained:
-        # Chronos clamps quantiles outside its trained range (0.1-0.9 for Chronos-Bolt), so e.g. a
-        # "95%" band is really the widest trained band. CQR corrects this (method: auto).
-        warn_if_clamped(model, levels, (min(trained), max(trained)))
+        native_range = (min(trained), max(trained))
+        warn_if_outside_range(model, levels, native_range)
+        outside = [i for i, q in enumerate(levels) if q not in in_native_range(levels, native_range)]
     q, _ = pipeline.predict_quantiles(inputs, prediction_length=prediction_length, quantile_levels=levels)
     if isinstance(q, list):  # Chronos-2: one (n_variates, H, Q) tensor per series
         q = torch.stack([x[0] for x in q])
-    q = q.to(torch.float32).cpu().numpy().transpose(0, 2, 1)  # (n, Q, H)
-    return q[:, levels.index(0.5), :].astype(np.float64), q.astype(np.float64), levels
+    q = q.to(torch.float32).cpu().numpy().transpose(0, 2, 1).astype(np.float64)  # (n, Q, H)
+    q[:, outside, :] = np.nan
+    return q[:, levels.index(0.5), :], q, levels
+
+
+def warn_unavailable_levels(forecast_df: pd.DataFrame, model: str) -> None:
+    """
+    Warns once, on the driver, about the quantile columns that a distributed predict left NaN (levels outside the
+    checkpoint's trained range): the warning of quantile_forecasts is only logged on the workers.
+    """
+    missing = [key for key, c in quantile_columns(forecast_df).items()
+               if len(forecast_df) and not any(np.isfinite(np.asarray(v, dtype=float)).any() for v in forecast_df[c])]
+    if missing:
+        warn_once(f"native_quantiles_unavailable:{model}:{tuple(missing)}",
+                  f"{model}: quantiles {sorted(missing, key=float)} are outside the trained range of the checkpoint, "
+                  "so the interval levels that need them are NULL.")
 
 
 class ChronosForecaster(ForecastingRegressor):
-    # The native range is read from the loaded checkpoint (pipeline.quantiles), in quantile_forecasts.
+    # The native range is read from the loaded checkpoint (pipeline.quantiles), in quantile_forecasts; levels outside
+    # it are NaN, and left out of the quantile maps.
     native_quantiles_supported = True
 
     def __init__(self, params):
@@ -138,6 +158,7 @@ class ChronosForecaster(ForecastingRegressor):
         if self.params.get("native_quantiles"):
             forecast_df = decode_quantile_forecasts(
                 forecast_df, "y", forecast_levels(self.params["native_quantiles"]), self.params["prediction_length"])
+            warn_unavailable_levels(forecast_df, self.model_name())
         forecast_df = forecast_df.reset_index(drop=False).rename(
             columns={
                 "unique_id": self.params.group_id,
@@ -479,6 +500,7 @@ class Chronos2Forecaster(ChronosForecaster):
         if self.params.get("native_quantiles"):
             forecast_df = decode_quantile_forecasts(
                 forecast_df, "y", forecast_levels(self.params["native_quantiles"]), self.params["prediction_length"])
+            warn_unavailable_levels(forecast_df, self.model_name())
 
         forecast_df = forecast_df.reset_index(drop=False).rename(
             columns={

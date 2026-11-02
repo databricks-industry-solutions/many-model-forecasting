@@ -25,15 +25,15 @@ from pyspark.sql.types import (
     BinaryType,
     ArrayType,
     IntegerType,
-    BooleanType,
+    LongType,
 )
 from pyspark.sql.functions import lit, col, posexplode, to_date, countDistinct
-from mmf_sa.models.abstract_model import ForecastingRegressor, collect_sorted
+from mmf_sa.models.abstract_model import ForecastingRegressor, collect_sorted, warn_once
 from mmf_sa.models import ModelRegistry
 from mmf_sa.data_quality_checks import DataQualityChecks
-from mmf_sa.intervals.calibrator import IntervalCalibrator
-from mmf_sa.intervals.config import check_supported, resolve_prediction_intervals_conf
+from mmf_sa.intervals.config import interval_levels, requested_quantiles, resolve_prediction_intervals_conf
 from mmf_sa.intervals.quantiles import quantile_columns, quantile_maps
+from mmf_sa.intervals.scoring import QUANTILE_MAP_TYPE, QUANTILES_FIELD, add_interval_columns
 from mmf_sa.exceptions import (
     ConfigurationError,
     ExperimentError,
@@ -97,14 +97,6 @@ class Forecaster:
         self.data_conf = data_conf
         self.conf["prediction_intervals"] = resolve_prediction_intervals_conf(
             self.conf.get("prediction_intervals"))
-        if self.intervals_enabled:
-            # Fail before the backtest for settings that are validated but not implemented yet.
-            check_supported(self.conf.prediction_intervals)
-        if self.intervals_enabled and not self.conf.get("evaluation_output"):
-            raise ConfigurationError(
-                "prediction_intervals.enabled requires evaluation_output: intervals are "
-                "calibrated on the backtest results stored there."
-            )
         self.model_registry = ModelRegistry(self.conf)
         self.spark = spark
         self.serverless = bool(self.conf.get("serverless", False))
@@ -127,7 +119,6 @@ class Forecaster:
         else:
             self.backtest_offset =  None
         self.run_date = datetime.now()
-        self.calibrator = IntervalCalibrator(self)
 
     def set_mlflow_experiment(self):
         """
@@ -243,9 +234,6 @@ class Forecaster:
         failed_models = set()
         if evaluate:
             failed_models = self.evaluate_models()
-        if evaluate and self.intervals_enabled:
-            # Without evaluation, scoring reuses the latest calibration stored for this run_id.
-            self.run_calibration()
         if score:
             self.score_models(failed_models)
         print("Finished evaluate_score")
@@ -256,20 +244,34 @@ class Forecaster:
         return bool(self.conf.prediction_intervals.enabled)
 
     def native_quantiles(self, model_conf) -> list:
-        """Delegates to IntervalCalibrator.native_quantiles."""
-        return self.calibrator.native_quantiles(model_conf)
+        """
+        Quantile levels a model must return (native intervals), or None when intervals are disabled or the model
+        has none; such a model gets NULL interval columns, which is logged once.
+        """
+        if not self.intervals_enabled:
+            return None
+        if not model_conf.get("native_intervals", False):
+            warn_once(f"no_native_intervals:{model_conf['name']}",
+                      f"{model_conf['name']} has no native prediction intervals; its interval columns are NULL.")
+            return None
+        return requested_quantiles(self.conf.prediction_intervals)
 
     def get_model_with_native_quantiles(self, model_conf) -> ForecastingRegressor:
-        """Delegates to IntervalCalibrator.get_model_with_native_quantiles."""
-        return self.calibrator.get_model_with_native_quantiles(model_conf)
+        """Instantiates a model for evaluation or scoring, passing it native_quantiles when it must return them."""
+        quantiles = self.native_quantiles(model_conf)
+        override = OmegaConf.create({"native_quantiles": quantiles}) if quantiles else None
+        return self.model_registry.get_model(model_conf["name"], override_conf=override)
+
+    def evaluation_quantile_fields(self) -> list:
+        """The forecast_quantiles field of evaluation rows, present only when intervals are enabled."""
+        return [StructField(QUANTILES_FIELD, QUANTILE_MAP_TYPE)] if self.intervals_enabled else []
 
     def evaluation_writer(self, sdf: DataFrame):
-        """Delegates to IntervalCalibrator.evaluation_writer."""
-        return self.calibrator.evaluation_writer(sdf)
-
-    def run_calibration(self):
-        """Delegates to IntervalCalibrator.run_calibration."""
-        self.calibrator.run_calibration()
+        """Append writer for evaluation_output. With intervals enabled, existing tables gain forecast_quantiles."""
+        writer = sdf.write.mode("append")
+        if self.intervals_enabled:
+            writer = writer.option("mergeSchema", "true")
+        return writer
 
     def evaluate_models(self) -> set:
         """
@@ -335,7 +337,7 @@ class Forecaster:
                     StructField("actual", ArrayType(DoubleType())),
                     StructField("model_pickle", BinaryType()),
                 ]
-                + self.calibrator.evaluation_quantile_fields()
+                + self.evaluation_quantile_fields()
             )
 
             model = self.get_model_with_native_quantiles(model_conf)
@@ -521,7 +523,7 @@ class Forecaster:
                 StructField("actual", ArrayType(DoubleType())),
                 StructField("model_pickle", BinaryType()),
             ]
-            + self.calibrator.evaluation_quantile_fields()
+            + self.evaluation_quantile_fields()
         )
         # Covert to Python-native types before converting to pyspark dataframe
         res_pdf['forecast'] = res_pdf['forecast'].apply(lambda x: [float(i) for i in x])
@@ -575,7 +577,6 @@ class Forecaster:
                 "or run Moirai on a classic GPU cluster."
             )
         with mlflow.start_run(experiment_id=self.experiment_id) as run:
-            model_name = model_conf["name"]
             model = self.get_model_with_native_quantiles(model_conf)
             hist_df, removed = self.prepare_data_for_global_model("evaluating")  # Reuse the same as global
             train_df, val_df = self.split_df_train_val(hist_df)
@@ -655,7 +656,7 @@ class Forecaster:
                 StructField(self.conf["target"], ArrayType(DoubleType())),
                 StructField("model_pickle", BinaryType()),
             ]
-            + self.calibrator.evaluation_quantile_fields()
+            + self.evaluation_quantile_fields()
         )
         model = self.get_model_with_native_quantiles(model_conf)
 
@@ -674,8 +675,7 @@ class Forecaster:
             .withColumn("run_date", lit(self.run_date))
             .withColumn("use_case", lit(self.conf["use_case_name"]))
             .withColumn("model", lit(model_conf["name"]))
-            .withColumn("model_uri", lit("")),
-            model_conf["name"],
+            .withColumn("model_uri", lit(""))
         )
 
     @staticmethod
@@ -754,8 +754,7 @@ class Forecaster:
             .withColumn("run_date", lit(self.run_date))
             .withColumn("use_case", lit(self.conf["use_case_name"]))
             .withColumn("model_pickle", lit(b""))
-            .withColumn("model_uri", lit(model_uri)),
-            model_conf["name"],
+            .withColumn("model_uri", lit(model_uri))
         )
 
     def score_foundation_model(self, model_conf):
@@ -772,7 +771,6 @@ class Forecaster:
                 "or run Moirai on a classic GPU cluster."
             )
         print(f"Running scoring for {model_conf['name']}...")
-        model_name = model_conf["name"]
         _, model_uri = self.get_model_for_scoring(model_conf)
         model = self.get_model_with_native_quantiles(model_conf)
         score_df, removed = self.prepare_data_for_global_model("scoring")
@@ -799,7 +797,7 @@ class Forecaster:
                 )
         sdf = self.spark.createDataFrame(
             prediction_df,
-            schema=self.calibrator.foundation_scoring_schema(prediction_df) if self.intervals_enabled else None,
+            schema=self.foundation_scoring_schema(prediction_df) if self.intervals_enabled else None,
         ).drop('index')
         # Normalize the date column to TIMESTAMP (LTZ) so the schema matches the
         # table created by score_local_model (which uses ArrayType(TimestampType())).
@@ -814,37 +812,39 @@ class Forecaster:
             .withColumn("run_date", lit(self.run_date))
             .withColumn("use_case", lit(self.conf["use_case_name"]))
             .withColumn("model_pickle", lit(b""))
-            .withColumn("model_uri", lit(model_uri)),
-            model_conf["name"],
+            .withColumn("model_uri", lit(model_uri))
         )
 
-    def write_scoring_output(self, sdf: DataFrame, model_name: str):
+    def write_scoring_output(self, sdf: DataFrame):
         """
-        Appends one model's forecasts to scoring_output. With prediction intervals enabled, the calibration
-        of this run is applied first and the interval columns are added (output_format).
+        Appends one model's forecasts to scoring_output. With prediction intervals enabled, the model's native
+        quantile map (forecast_quantiles, if any) is replaced by the interval columns of output_format.
         """
         if not self.intervals_enabled:
             sdf.write.mode("append").saveAsTable(self.conf["scoring_output"])
             return
-        # The forecasts are used twice (missing-calibration count, then the write): compute them once.
-        materializer = self.calibrator.materializer()
-        sdf = materializer.cache(sdf)
-        try:
-            (
-                self.calibrator.add_prediction_intervals(sdf, model_name)
-                .write.mode("append").option("mergeSchema", "true")
-                .saveAsTable(self.conf["scoring_output"])
-            )
-        finally:
-            materializer.close()
+        pi = self.conf.prediction_intervals
+        (
+            add_interval_columns(sdf, self.conf["target"], interval_levels(pi), pi.output_format)
+            .write.mode("append").option("mergeSchema", "true")
+            .saveAsTable(self.conf["scoring_output"])
+        )
 
-    def calibration_rows_for(self, model_name: str):
-        """Delegates to IntervalCalibrator.calibration_rows_for."""
-        return self.calibrator.calibration_rows_for(model_name)
-
-    def wide_corrections(self, cal: DataFrame, levels: list) -> DataFrame:
-        """Delegates to IntervalCalibrator.wide_corrections."""
-        return self.calibrator.wide_corrections(cal, levels)
+    def foundation_scoring_schema(self, prediction_df: pd.DataFrame) -> StructType:
+        """Explicit schema of a foundation model's predictions with forecast_quantiles (map inference is unreliable)."""
+        fields = []
+        for c in prediction_df.columns:
+            if c == QUANTILES_FIELD:
+                fields.append(StructField(c, QUANTILE_MAP_TYPE))
+            elif c == self.conf["date_col"]:
+                fields.append(StructField(c, ArrayType(TimestampType())))
+            elif c == self.conf["target"]:
+                fields.append(StructField(c, ArrayType(DoubleType())))
+            elif c == "index":
+                fields.append(StructField(c, LongType()))
+            else:
+                fields.append(StructField(c, StringType()))
+        return StructType(fields)
 
     def get_model_for_scoring(self, model_conf):
         """

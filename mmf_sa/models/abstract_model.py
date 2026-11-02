@@ -14,7 +14,9 @@ from sktime.performance_metrics.forecasting import (
 )
 import mlflow
 from mmf_sa.exceptions import DataPreparationError, ModelPredictionError, UnsupportedMetricError
-from mmf_sa.intervals.quantiles import MIN_SAMPLES_FOR_QUANTILES, forecast_levels, quantile_columns, quantile_maps
+from mmf_sa.intervals.quantiles import (
+    MIN_SAMPLES_FOR_QUANTILES, forecast_levels, quantile_columns, quantile_maps, sorted_quantiles,
+)
 mlflow.set_registry_uri("databricks-uc")
 
 _logger = logging.getLogger(__name__)
@@ -28,15 +30,24 @@ def warn_once(key: str, message: str) -> None:
         _logger.warning(message)
 
 
-def warn_if_clamped(model: str, levels, native_range) -> None:
-    """Warns once when quantile levels fall outside the range a model predicts, which clamps them to its edges."""
+def in_native_range(levels, native_range) -> list:
+    """The quantile levels inside a model's native range (inclusive), in their order."""
     q_min, q_max = native_range
-    if levels and (min(levels) < q_min or max(levels) > q_max):
+    return [q for q in levels if q_min - 1e-9 <= q <= q_max + 1e-9]
+
+
+def warn_if_outside_range(model: str, levels, native_range) -> None:
+    """
+    Warns once when quantile levels fall outside the range a model predicts. Such levels are left out (their interval
+    columns are NULL) rather than clamped to the edges, which would label e.g. an 80% band as a 95% band.
+    """
+    outside = sorted(set(levels) - set(in_native_range(levels, native_range)))
+    if outside:
+        q_min, q_max = native_range
         warn_once(
-            f"native_quantiles_clamped:{model}:{tuple(levels)}:{tuple(native_range)}",
-            f"{model}: requested quantiles {list(levels)} exceed the native range [{q_min}, {q_max}] of this model; "
-            "they are clamped to it, so the native band is too narrow. "
-            "Use prediction_intervals.method 'auto' or 'cqr' to calibrate it.",
+            f"native_quantiles_outside_range:{model}:{tuple(outside)}:{tuple(native_range)}",
+            f"{model}: quantiles {outside} are outside the native range [{q_min}, {q_max}] of this model, so the "
+            "interval levels that need them are NULL.",
         )
 
 
@@ -47,7 +58,7 @@ def warn_if_few_samples(model: str, num_samples, hparam: str = "num_samples") ->
             f"native_quantiles_samples:{model}",
             f"{model}: native quantiles are estimated from {num_samples} sample paths, so the tails "
             f"(e.g. 2.5% and 97.5%) are poorly estimated. Set {hparam} to at least "
-            f"{MIN_SAMPLES_FOR_QUANTILES} for calibrated prediction intervals.",
+            f"{MIN_SAMPLES_FOR_QUANTILES} for reliable prediction intervals.",
         )
 
 # Backtest metrics, by the name used in the `metric` parameter.
@@ -156,8 +167,8 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
     # Native quantiles (prediction intervals). Models that return their own quantiles when params.native_quantiles
     # is set declare it here; models_conf.yaml flags them native_intervals, and a test checks that both agree.
     native_quantiles_supported: bool = False
-    # (min, max) quantile levels the model predicts; levels outside are clamped to the edges. None when any level
-    # works, or when the range is only known once the model is loaded (Chronos reads it from the checkpoint).
+    # (min, max) quantile levels the model predicts; levels outside are left out (NULL intervals). None when any
+    # level works, or when the range is only known once the model is loaded (Chronos reads it from the checkpoint).
     native_quantile_range: Optional[Tuple[float, float]] = None
     # Hyperparameter holding the number of sample paths, for models whose quantiles come from samples.
     samples_hparam: Optional[str] = None
@@ -186,8 +197,9 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
     def native_levels(self) -> list:
         """
         Quantile levels the model must return for native intervals: params.native_quantiles sorted, with the
-        median (forecast_levels), or [] when none are requested or the model cannot return them.
-        Logs, once per process, that the levels exceed native_quantile_range or come from few sample paths.
+        median (forecast_levels), without the levels outside native_quantile_range, or [] when none are requested
+        or the model cannot return them.
+        Logs, once per process, the levels left out and that the levels come from few sample paths.
         """
         requested = self.params.get("native_quantiles")
         if not requested:
@@ -195,12 +207,13 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
         name = self.model_name()
         if not self.native_quantiles_supported:
             warn_once(f"native_quantiles_unsupported:{name}",
-                      f"{name} cannot return quantiles, so its intervals cannot use native bands; "
-                      "native_quantiles is ignored.")
+                      f"{name} cannot return quantiles; native_quantiles is ignored and its interval columns "
+                      "are NULL.")
             return []
         levels = forecast_levels(requested)
         if self.native_quantile_range is not None:
-            warn_if_clamped(name, levels, self.native_quantile_range)
+            warn_if_outside_range(name, levels, self.native_quantile_range)
+            levels = in_native_range(levels, self.native_quantile_range)
         if self.samples_hparam:
             warn_if_few_samples(name, self.params.get(self.samples_hparam), self.samples_hparam)
         return levels
@@ -363,10 +376,10 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
     @staticmethod
     def forecast_quantiles(pred_df: pd.DataFrame):
         """
-        Native quantiles of a one-series forecast frame, from its QUANTILE_COLUMN_PREFIX columns.
-        Returns: dict of quantile key -> array of length prediction_length, or None without such columns.
+        Native quantiles of a one-series forecast frame, from its QUANTILE_COLUMN_PREFIX columns (sorted_quantiles).
+        Returns: dict of quantile key -> array of length prediction_length, or None without usable quantiles.
         """
         cols = quantile_columns(pred_df)
         if not cols:
             return None
-        return {key: [float(x) for x in pred_df[c]] for key, c in cols.items()}
+        return sorted_quantiles({key: pred_df[c].to_numpy() for key, c in cols.items()})

@@ -148,77 +148,47 @@ GROUP BY e.unique_id, e.model
 
 Step 5 uses the same WAPE formula for the summary table.
 
-### Step 2b: Prediction-interval report (only if prediction intervals were enabled)
+### Step 2b: Coverage of the native intervals (only if prediction intervals were enabled)
 
-Check whether Skill 4 enabled prediction intervals (Step 1d): the table
-`{use_case}_evaluation_output_interval_metrics` exists. If it does not, skip to Step 3.
+Check whether Skill 4 enabled prediction intervals (Step 1d): `{use_case}_evaluation_output` has a
+`forecast_quantiles` column. If it does not, skip to Step 3.
 
-The interval metrics are **out of sample**: each backtest window is scored with intervals
-calibrated on the other windows. Compare `coverage_<L>` with the nominal level `L/100`;
-`msis_<L>` is the interval score scaled by the series' seasonal-naive error (lower is better
-at equal coverage). `wis` (no level suffix) is the weighted interval score over all levels and the point forecast,
-a quantile-based approximation of CRPS on the same scale (lower is better; compare models on it, not on one level).
-`miss_lo_<L>` and `miss_hi_<L>` are the shares of actuals below the lower and above the upper bound, so
-`coverage_<L> + miss_lo_<L> + miss_hi_<L>` = 1: when coverage falls short, the larger miss rate shows which tail misses.
-`native_*` rows are the uncorrected native bands, for comparison. Like Step 2, both queries
-read each model's latest run only: the interval tables are append-only. Under `separate_job`, run them again on
-`{use_case}_nf_evaluation_output_interval_metrics` and `{use_case}_nf_evaluation_output_calibration`.
+The intervals are the models' native bands, **not calibrated**. Measure their coverage on the backtest, which is out
+of sample (each window is forecast from the history before it): the share of backtest actuals inside each band,
+against the nominal level. Like Step 2, read each model's latest run only. The query below is for the default levels
+80 and 95, whose quantile keys are `"0.1"`/`"0.9"` and `"0.025"`/`"0.975"`; for another level `L`, the keys are
+`(100 - L) / 200` and `1 - (100 - L) / 200` (e.g. `"0.05"`/`"0.95"` for 90). Models without native intervals have
+NULL `forecast_quantiles` and are left out; a level the model has no quantiles for (e.g. 95% for Chronos-Bolt or
+TimesFM) shows NULL coverage. Under `separate_job`, run it again on `{use_case}_nf_evaluation_output`.
 
 ```sql
-WITH latest_run_per_model AS (
-  SELECT model, run_id
-  FROM (
-    SELECT model, run_id,
-           ROW_NUMBER() OVER (PARTITION BY model ORDER BY run_date DESC, run_id DESC) AS rn
-    FROM (
-      SELECT DISTINCT model, run_id, run_date
-      FROM {catalog}.{schema}.{use_case}_evaluation_output_interval_metrics
-    )
-  )
-  WHERE rn = 1
-)
-SELECT m.model, m.metric_name, ROUND(AVG(m.metric_value), 3) AS value, COUNT(DISTINCT m.unique_id) AS series
-FROM {catalog}.{schema}.{use_case}_evaluation_output_interval_metrics AS m
-JOIN latest_run_per_model AS lr ON m.model = lr.model AND m.run_id = lr.run_id
-WHERE m.metric_name RLIKE '^(native_)?(coverage|msis|miss_lo|miss_hi)_|^(native_)?wis$'
-GROUP BY m.model, m.metric_name
-ORDER BY m.model, m.metric_name
+WITH latest AS (
+  SELECT model, run_id FROM (
+    SELECT model, run_id, ROW_NUMBER() OVER (PARTITION BY model ORDER BY run_date DESC, run_id DESC) AS rn
+    FROM (SELECT DISTINCT model, run_id, run_date FROM {catalog}.{schema}.{use_case}_evaluation_output))
+  WHERE rn = 1),
+points AS (
+  SELECT e.model, a,
+         try_element_at(e.forecast_quantiles, '0.1')[k] AS lo_80, try_element_at(e.forecast_quantiles, '0.9')[k] AS hi_80,
+         try_element_at(e.forecast_quantiles, '0.025')[k] AS lo_95, try_element_at(e.forecast_quantiles, '0.975')[k] AS hi_95
+  FROM {catalog}.{schema}.{use_case}_evaluation_output e
+  JOIN latest l ON e.model = l.model AND e.run_id = l.run_id
+  LATERAL VIEW posexplode(e.actual) p AS k, a
+  WHERE e.forecast_quantiles IS NOT NULL AND e.metric_name = '{metric}')
+SELECT model,
+       ROUND(AVG(CASE WHEN lo_80 IS NULL OR hi_80 IS NULL THEN NULL
+                      WHEN a BETWEEN lo_80 AND hi_80 THEN 1.0 ELSE 0.0 END), 3) AS coverage_80,
+       ROUND(AVG(CASE WHEN lo_95 IS NULL OR hi_95 IS NULL THEN NULL
+                      WHEN a BETWEEN lo_95 AND hi_95 THEN 1.0 ELSE 0.0 END), 3) AS coverage_95,
+       COUNT(*) AS points
+FROM points
+GROUP BY model
+ORDER BY model
 ```
 
-Coverage per ABC x XYZ class (the classes MMF used to pool the calibration), for the latest run of each model:
-
-```sql
-WITH latest_run_per_model AS (
-  SELECT model, run_id
-  FROM (
-    SELECT model, run_id,
-           ROW_NUMBER() OVER (PARTITION BY model ORDER BY run_date DESC, run_id DESC) AS rn
-    FROM (
-      SELECT DISTINCT model, run_id, run_date
-      FROM {catalog}.{schema}.{use_case}_evaluation_output_interval_metrics
-    )
-  )
-  WHERE rn = 1
-),
-cls AS (
-  SELECT DISTINCT model, run_id, unique_id, abc_class, xyz_class
-  FROM {catalog}.{schema}.{use_case}_evaluation_output_calibration
-)
-SELECT m.model, CONCAT(c.abc_class, c.xyz_class) AS abc_xyz, m.metric_name,
-       ROUND(AVG(m.metric_value), 3) AS coverage, COUNT(DISTINCT m.unique_id) AS series
-FROM {catalog}.{schema}.{use_case}_evaluation_output_interval_metrics AS m
-JOIN latest_run_per_model AS lr ON m.model = lr.model AND m.run_id = lr.run_id
-JOIN cls AS c ON m.model = c.model AND m.run_id = c.run_id AND m.unique_id = c.unique_id
-WHERE m.metric_name LIKE 'coverage_%'
-GROUP BY m.model, abc_xyz, m.metric_name
-ORDER BY m.model, m.metric_name, abc_xyz
-```
-
-Report to the user, per model and level: the overall coverage against nominal, the classes more than
-5 points below nominal (under-covered, e.g. lumpy C-Z items), and, for models with native bands, how
-much the calibration changed coverage versus `native_coverage_<L>`. Coverage a few points off nominal
-on small classes is expected noise; a whole model 5+ points below nominal usually means too few
-backtest windows (suggest Step 1b option (b) or (c) of Skill 4).
+Report to the user, per model and level, the coverage against nominal. Tell them the bands are uncalibrated, so a gap
+from nominal is expected: bands that cover more than nominal are too wide, bands that cover less are too narrow.
+With few backtest windows, the coverage itself is noisy.
 
 ### Step 3: Best model selection per series (forecastable)
 
@@ -430,27 +400,8 @@ JOIN {catalog}.{schema}.{use_case}_nf_scoring_output AS s
 WHERE b.forecast_source = 'non_forecastable_pipeline'
 ```
 
-**A level per class of series (optional).** If the user wants e.g. 95% intervals for A items, 90% for B and 80% for
-C, Skill 4 calibrated every level (Step 1d). Keep each series' level by its ABC class, which MMF stored in
-`{use_case}_evaluation_output_calibration`. The quantile keys are `"0.1"`/`"0.9"` for 80%, `"0.05"`/`"0.95"` for 90%
-and `"0.025"`/`"0.975"` for 95%:
-
-```sql
-CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_best_models_service_level AS
-WITH cls AS (
-  SELECT DISTINCT model, run_id, unique_id, abc_class
-  FROM {catalog}.{schema}.{use_case}_evaluation_output_calibration
-)
-SELECT i.unique_id, i.model, i.ds, i.y, c.abc_class,
-       CASE c.abc_class WHEN 'A' THEN 95 WHEN 'B' THEN 90 ELSE 80 END AS level,
-       element_at(i.y_quantiles, CASE c.abc_class WHEN 'A' THEN '0.025' WHEN 'B' THEN '0.05' ELSE '0.1' END) AS y_lo,
-       element_at(i.y_quantiles, CASE c.abc_class WHEN 'A' THEN '0.975' WHEN 'B' THEN '0.95' ELSE '0.9' END) AS y_hi
-FROM {catalog}.{schema}.{use_case}_best_models_intervals AS i
-JOIN cls AS c ON i.model = c.model AND i.run_id = c.run_id AND i.unique_id = c.unique_id
-```
-
-Each level is calibrated on all series, so the coverage reported in Step 2b per ABC x XYZ class is the one to check
-for each class's level.
+The intervals are those of the best model by the point metric: when it has no native intervals (e.g. CrostonSBA), the
+series' `y_quantiles` is NULL. Report how many of the best models' series have NULL intervals.
 
 ### Step 4: Model ranking (wins count)
 

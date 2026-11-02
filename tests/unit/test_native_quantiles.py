@@ -4,8 +4,9 @@ Tests cover:
 - Quantile keys, requested quantiles and their central levels
 - statsforecast: native quantiles in the backtest, unchanged point forecasts
 - The forecast_quantiles column of the local evaluation UDF, with intervals on and off
-- Which models receive native_quantiles (Forecaster.native_quantiles), per model with method_by_model
-- Chronos UDF packing of medians and quantiles, and per-series quantile maps
+- Which models receive native_quantiles (Forecaster.native_quantiles), and the warning for the others
+- Chronos UDF packing of medians and quantiles, per-series quantile maps, and levels outside the trained range
+- native_levels: sorted levels, levels outside the native range left out, few-sample warnings
 - The Spark schema of evaluation rows written by backtest_global_model
 """
 import mlflow
@@ -85,47 +86,21 @@ def _forecaster(active=(), **pi):
     return Forecaster(conf=conf, data_conf={}, spark=None, experiment_id="e")
 
 
-def test_native_quantiles_per_model():
+def test_native_quantiles_per_model(caplog):
     native = OmegaConf.create({"name": "m", "native_intervals": True})
-    plain = OmegaConf.create({"name": "m"})
+    plain = OmegaConf.create({"name": "p"})
     assert _forecaster(enabled=True).native_quantiles(native) == QUANTILES
-    assert _forecaster(enabled=True).native_quantiles(plain) is None
-    assert _forecaster(enabled=True, method="conformal").native_quantiles(native) is None
     assert _forecaster(enabled=False).native_quantiles(native) is None
+    assert _forecaster(enabled=False).native_quantiles(plain) is None
+    with caplog.at_level("WARNING"):
+        f = _forecaster(enabled=True)
+        assert f.native_quantiles(plain) is None and f.native_quantiles(plain) is None
+    assert [r.message for r in caplog.records] == ["p has no native prediction intervals; its interval columns are NULL."]
 
 
-NATIVE_ETS = OmegaConf.create({"name": "StatsForecastAutoETS", "native_intervals": True})
-NATIVE_CHRONOS = OmegaConf.create({"name": "Chronos2", "native_intervals": True})
-PLAIN = OmegaConf.create({"name": "StatsForecastTSB"})  # no native bands
-
-
-@pytest.mark.parametrize("method, method_by_model, expected", [
-    ("auto", {}, QUANTILES),
-    ("conformal", {}, None),                                    # global conformal: no quantiles
-    ("conformal", {"StatsForecastAutoETS": "cqr"}, QUANTILES),  # the override asks for them
-    ("conformal", {"StatsForecastAutoETS": "native"}, QUANTILES),
-    ("auto", {"StatsForecastAutoETS": "conformal"}, None),      # the override turns them off
-    ("cqr", {"StatsForecastAutoETS": "conformal"}, None),
-    ("native", {"Chronos2": "conformal"}, QUANTILES),           # other models keep the global method
-])
-def test_native_quantiles_follow_the_model_method(method, method_by_model, expected):
-    f = _forecaster(active=["StatsForecastAutoETS", "Chronos2"], enabled=True, method=method,
-                    method_by_model=method_by_model)
-    assert f.native_quantiles(NATIVE_ETS) == expected
-
-
-def test_method_by_model_does_not_change_other_models():
-    f = _forecaster(active=["StatsForecastAutoETS", "Chronos2", "StatsForecastTSB"], enabled=True,
-                    method="conformal", method_by_model={"StatsForecastAutoETS": "cqr"})
-    assert f.native_quantiles(NATIVE_CHRONOS) is None
-
-
-def test_method_by_model_never_asks_models_without_native_bands_for_quantiles():
-    f = _forecaster(active=["StatsForecastTSB"], enabled=True, method="conformal",
-                    method_by_model={"StatsForecastTSB": "native"})
-    assert f.native_quantiles(PLAIN) is None
-    assert _forecaster(enabled=False, method_by_model={"StatsForecastAutoETS": "cqr"}).native_quantiles(
-        NATIVE_ETS) is None
+def test_native_quantiles_of_the_quantiles_setting():
+    f = _forecaster(enabled=True, quantiles=[0.05, 0.95])
+    assert f.native_quantiles(OmegaConf.create({"name": "m", "native_intervals": True})) == [0.05, 0.5, 0.95]
 
 
 def test_chronos_udf_packing_round_trip():
@@ -210,7 +185,7 @@ class _FakePipeline:
         return q.reshape(n, prediction_length, len(quantile_levels)), None
 
 
-def test_clamp_warning_logged_once(caplog):
+def test_levels_outside_the_trained_range_are_nan_with_one_warning(caplog):
     import torch
     from mmf_sa.models.chronosforecast import ChronosPipeline as cp
     with caplog.at_level("WARNING"):
@@ -218,9 +193,21 @@ def test_clamp_warning_logged_once(caplog):
             medians, qs, levels = cp.quantile_forecasts(
                 _FakePipeline(), [torch.zeros(5)] * 2, 4, QUANTILES, "ChronosBoltSmall")
     messages = [r.message for r in caplog.records if "native range" in r.message]
-    assert len(messages) == 1 and "ChronosBoltSmall" in messages[0]
+    assert len(messages) == 1 and "ChronosBoltSmall" in messages[0] and "[0.025, 0.975]" in messages[0]
     assert medians.shape == (2, 4) and qs.shape == (2, 5, 4) and levels == QUANTILES
     np.testing.assert_array_equal(medians, qs[:, 2, :])
+    assert np.isnan(qs[:, [0, 4], :]).all() and np.isfinite(qs[:, 1:4, :]).all()
+
+
+def test_distributed_chronos_warns_on_the_driver_about_unavailable_levels(caplog):
+    from mmf_sa.models.chronosforecast import ChronosPipeline as cp
+    frame = pd.DataFrame({"y": [[1.0]], f"{QUANTILE_COLUMN_PREFIX}0.025": [[np.nan]],
+                          f"{QUANTILE_COLUMN_PREFIX}0.1": [[0.5]]})
+    with caplog.at_level("WARNING"):
+        cp.warn_unavailable_levels(frame, "ChronosBoltSmall")
+        cp.warn_unavailable_levels(frame.iloc[:, :1].assign(**{f"{QUANTILE_COLUMN_PREFIX}0.1": [[0.5]]}), "Other")
+    messages = [r.message for r in caplog.records]
+    assert len(messages) == 1 and "ChronosBoltSmall: quantiles ['0.025']" in messages[0]
 
 
 # --- The native-quantile contract of ForecastingRegressor (native_levels) -----------------------------------
@@ -256,13 +243,15 @@ def test_unsupported_models_ignore_native_quantiles_with_one_warning(caplog):
     assert len(messages) == 1 and "M cannot return quantiles" in messages[0]
 
 
-def test_levels_outside_the_native_range_warn_once(caplog):
+def test_levels_outside_the_native_range_are_left_out_with_one_warning(caplog):
     with caplog.at_level("WARNING"):
         for _ in range(2):
-            assert _contract_model(native_range=(0.1, 0.9), native_quantiles=QUANTILES).native_levels() == QUANTILES
-        _contract_model(native_range=(0.01, 0.99), native_quantiles=QUANTILES).native_levels()
+            assert _contract_model(native_range=(0.1, 0.9), native_quantiles=QUANTILES).native_levels() == [
+                0.1, 0.5, 0.9]
+        assert _contract_model(native_range=(0.01, 0.99), native_quantiles=QUANTILES).native_levels() == QUANTILES
     messages = [r.message for r in caplog.records]
-    assert len(messages) == 1 and "native range [0.1, 0.9]" in messages[0] and "too narrow" in messages[0]
+    assert len(messages) == 1 and "[0.025, 0.975] are outside the native range [0.1, 0.9]" in messages[0]
+    assert "NULL" in messages[0]
 
 
 @pytest.mark.parametrize("num_samples, warned", [(10, True), (99, True), (100, False), (None, False)])

@@ -423,8 +423,8 @@ class FoundationForecastForecaster(ForecastingRegressor):
             _warn_once(
                 f"native_quantiles_missing:{self._name()}",
                 f"{self._name()}: foundationforecast did not return the quantiles "
-                f"{sorted(set(levels) - set(returned))}; their columns are left out, so intervals at those levels "
-                "are not calibrated from native bands.",
+                f"{sorted(set(levels) - set(returned))}; their columns are left out, so the interval levels that "
+                "need them are NULL.",
             )
         for level in returned:
             data[QUANTILE_COLUMN_PREFIX + quantile_key(level)] = [qs[levels[level]] for _, _, qs in series.values()]
@@ -437,7 +437,7 @@ class FoundationForecastForecaster(ForecastingRegressor):
         for each, or {} when none are needed.
         """
         # foundationforecast accepts levels with at most 3 decimals and raises otherwise (e.g. 0.0125 for a 97.5%
-        # interval): such levels are rounded outward, so the band is a little wider, and CQR calibrates it.
+        # interval): such levels are rounded outward, so the band is a little wider than its label.
         levels = {level: ff_level(level) for level in self.native_levels()}
         rounded = [level for level, ff in levels.items() if ff != level]
         if rounded:

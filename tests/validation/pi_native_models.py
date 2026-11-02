@@ -5,13 +5,13 @@
 # MAGIC Runs MMF with prediction intervals on an M5 sample for each model of the `models` widget, with the model's
 # MAGIC real library and weights, one model at a time, and checks for each:
 # MAGIC
-# MAGIC * the backtest: every row has native quantiles, with the expected keys, finite, non-crossing, and a median
-# MAGIC   near the point forecast; how often bands are degenerate (zero width) and the 95% / 80% width ratio, which
-# MAGIC   is about 1 when the model clamps the 95% levels to its native range;
+# MAGIC * the backtest: which rows have native quantiles, with which keys (levels outside the model's native range are
+# MAGIC   left out), finite, non-crossing, and a median near the point forecast; how often bands are degenerate (zero
+# MAGIC   width); and the raw out-of-sample coverage of each band on the backtest;
 # MAGIC * the point forecast: the same as in a run without prediction intervals;
-# MAGIC * calibration: CQR is used, and the leave-one-window-out coverage before and after it;
-# MAGIC * scoring: interval columns are filled and their quantiles do not cross, with the held-out coverage of the
-# MAGIC   28 days after the training data;
+# MAGIC * scoring: interval columns filled where the model has the quantiles and NULL otherwise, quantiles that do not
+# MAGIC   cross, and the held-out coverage of the 28 days after the training data;
+# MAGIC * that no calibration tables are written;
 # MAGIC * the warnings MMF logs on the driver about native quantiles.
 # MAGIC
 # MAGIC `modes` lists the predict paths: `distributed` (`serverless=False`: Pandas UDFs where the model has them) and
@@ -134,6 +134,13 @@ def run(model, mode, intervals):
     return p, run_id, round(time.time() - t0, 1)
 
 
+def coverage(actuals, maps, lo, hi):
+    """Share of actuals inside the [lo, hi] quantiles of their maps, or None when no map has both keys."""
+    inside = [np.mean((np.asarray(y) >= np.asarray(m[lo])) & (np.asarray(y) <= np.asarray(m[hi])))
+              for y, m in zip(actuals, maps) if y is not None and m is not None and lo in m and hi in m]
+    return round(float(np.mean(inside)), 3) if inside else None
+
+
 def backtest_checks(ev):
     """Checks of the native quantiles in one model's backtest rows (pandas, one row per series and window)."""
     out = {"rows": len(ev), "rows_with_quantiles": int(ev["forecast_quantiles"].notna().sum())}
@@ -146,20 +153,16 @@ def backtest_checks(ev):
     cube = np.stack([np.stack([np.asarray(m[k], dtype=float) for k in keys]) for m in maps])  # rows, keys, H
     point = np.stack([np.asarray(f, dtype=float) for f in q["forecast"]])
     out["finite_share"] = round(float(np.isfinite(cube).mean()), 4)
-    out["non_crossing_share"] = round(float((np.diff(cube, axis=1) >= -1e-6).all(axis=1).mean()), 4)
+    out["non_crossing_share"] = round(float((np.diff(cube, axis=1) >= -1e-9).all(axis=1).mean()), 4)
     scale = np.abs(point).mean() + 1e-9
     if "0.5" in keys:
         out["median_minus_point_rel"] = round(float(np.abs(cube[:, keys.index("0.5")] - point).mean() / scale), 4)
-    widths = {}
     for lo, hi in (("0.1", "0.9"), ("0.025", "0.975")):
         if lo in keys and hi in keys:
             w = cube[:, keys.index(hi)] - cube[:, keys.index(lo)]
-            widths[hi] = w
             out[f"degenerate_share_{lo}_{hi}"] = round(float((w <= 1e-9).mean()), 4)
-            out[f"point_outside_{lo}_{hi}_share"] = round(float(
-                ((point < cube[:, keys.index(lo)] - 1e-6) | (point > cube[:, keys.index(hi)] + 1e-6)).mean()), 4)
-    if len(widths) == 2:
-        out["width_ratio_95_80"] = round(float(widths["0.975"].mean() / (widths["0.9"].mean() + 1e-12)), 3)
+    out["backtest_coverage"] = {f"coverage_{lv}": coverage(q["actual"], maps, lo, hi)
+                                for lv, lo, hi in ((80, "0.1", "0.9"), (95, "0.025", "0.975"))}
     return out
 
 
@@ -186,36 +189,23 @@ def crossing_share(maps):
 
 
 def interval_checks(p, run_id, model):
-    cal_rows = spark.table(f"{p}_evaluation_output_calibration").filter(
-        (F.col("run_id") == run_id) & (F.col("model") == model))
-    out = {"methods": sorted(f"{r['method']}/{r['score']}/{r['coverage_target']}" for r in
-                             cal_rows.select("method", "score", "coverage_target").distinct().collect())}
-    sigma = {r["unique_id"]: r["sigma"] for r in cal_rows.select("unique_id", "sigma").distinct().collect()}
-    out["lowo_coverage"] = {r["metric_name"]: round(r["v"], 3) for r in
-                            spark.table(f"{p}_evaluation_output_interval_metrics").filter(
-                                (F.col("run_id") == run_id) & (F.col("model") == model)
-                                & F.col("metric_name").rlike("^(native_)?coverage_"))
-                            .groupBy("metric_name").agg(F.avg("metric_value").alias("v")).collect()}
+    out = {"calibration_tables": [t for t in ("evaluation_output_calibration", "evaluation_output_interval_metrics")
+                                  if spark.catalog.tableExists(f"{p}_{t}")]}
     score = spark.table(f"{p}_scoring_output").filter((F.col("run_id") == run_id) & (F.col("model") == model)).toPandas()
     out["scoring_rows"] = len(score)
     out["scoring_quantile_keys"] = sorted({k for m in score["y_quantiles"] if m is not None for k in dict(m)}, key=float)
     out["scoring_crossing_share"] = crossing_share(score["y_quantiles"])
     for level in (80, 95):
-        a = 1 - level / 100
-        cov, msis, nulls = [], [], 0
+        cov, nulls = [], 0
         for _, r in score.iterrows():
             y, lo, hi = actual.get(r["unique_id"]), r[f"y_lo_{level}"], r[f"y_hi_{level}"]
             if lo is None or hi is None:
                 nulls += 1
                 continue
-            if y is None or len(y) != H or r["unique_id"] not in sigma:
+            if y is None or len(y) != H:
                 continue
-            lo, hi = np.asarray(lo), np.asarray(hi)
-            cov.append(np.mean((y >= lo) & (y <= hi)))
-            msis.append(np.mean((hi - lo) + (2 / a) * (lo - y) * (y < lo) + (2 / a) * (y - hi) * (y > hi))
-                        / sigma[r["unique_id"]])
+            cov.append(np.mean((y >= np.asarray(lo)) & (y <= np.asarray(hi))))
         out[f"heldout_{level}"] = {"coverage": round(float(np.mean(cov)), 3) if cov else None,
-                                   "msis": round(float(np.mean(msis)), 2) if msis else None,
                                    "series": len(cov), "null": nulls}
     return out
 
@@ -246,7 +236,7 @@ for model in MODELS:
             res["run_id"] = run_id
             ev = spark.table(f"{p}_evaluation_output").filter(
                 (F.col("run_id") == run_id) & (F.col("model") == model) & (F.col("metric_name") == "smape")
-            ).select("unique_id", "backtest_window_start_date", "forecast", "forecast_quantiles").toPandas()
+            ).select("unique_id", "backtest_window_start_date", "forecast", "actual", "forecast_quantiles").toPandas()
             res["backtest"] = backtest_checks(ev)
             res["intervals"] = interval_checks(p, run_id, model)
             res["warnings"] = sorted(set(collector.messages))

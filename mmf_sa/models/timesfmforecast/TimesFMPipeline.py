@@ -12,7 +12,7 @@ from utilsforecast.processing import make_future_dataframe
 from mmf_sa.models.abstract_model import ForecastingRegressor, MODEL_PIP_REQUIREMENTS, collect_sorted
 from mmf_sa.exceptions import MissingFeatureError
 from mmf_sa.intervals.quantiles import (
-    QUANTILE_COLUMN_PREFIX, decode_quantile_forecasts, encode_quantile_forecasts, forecast_levels, quantile_key,
+    QUANTILE_COLUMN_PREFIX, decode_quantile_forecasts, encode_quantile_forecasts, quantile_key,
 )
 
 _logger = logging.getLogger(__name__)
@@ -27,9 +27,9 @@ def quantile_forecasts(quantile_output, levels):
     Native quantiles of one series from a TimesFM 2.5 quantile forecast.
     Parameters:
         quantile_output: Quantile forecast of one series, (H, 1 + len(TIMESFM_QUANTILE_LEVELS)), mean first.
-        levels: Requested quantile levels, sorted (see forecast_levels).
+        levels: Requested quantile levels, sorted (see native_levels).
     Returns: np.ndarray: quantiles (len(levels), H). Levels between two deciles are interpolated linearly,
-        levels outside [0.1, 0.9] are clamped to the nearest decile (native_levels warns about it).
+        native_levels leaves out the levels outside [0.1, 0.9].
     """
     deciles = np.asarray(TIMESFM_QUANTILE_LEVELS)
     # Weights of each requested level on the deciles (np.interp clamps to the outer deciles).
@@ -44,7 +44,7 @@ def quantile_forecasts(quantile_output, levels):
 
 
 class TimesFMForecaster(ForecastingRegressor):
-    # TimesFM only provides the deciles, so e.g. a "95%" band is really the 80% band; CQR corrects it.
+    # TimesFM only provides the deciles: levels outside them (e.g. the 95% band) are left out, not clamped.
     native_quantiles_supported = True
     native_quantile_range = (TIMESFM_QUANTILE_LEVELS[0], TIMESFM_QUANTILE_LEVELS[-1])
 
@@ -398,8 +398,9 @@ class TimesFMForecaster(ForecastingRegressor):
         ).toPandas()
 
         if self.params.get("native_quantiles"):
+            # The UDF packs the levels of native_levels (inside the deciles), not every requested one.
             forecast_df = decode_quantile_forecasts(
-                forecast_df, "y", forecast_levels(self.params["native_quantiles"]), self.params["prediction_length"])
+                forecast_df, "y", self.native_levels(), self.params["prediction_length"])
         forecast_df = forecast_df.reset_index(drop=False).rename(
             columns={
                 "unique_id": self.params.group_id,
