@@ -456,6 +456,22 @@ class IntervalCalibrator:
             (col("model") == model) & (col("calibration_date") == lit(self.calibration_date))).count()
 
 
+def _argument_or_setting(name: str, value, default, block: dict):
+    """
+    The value of a calibrate_intervals argument that is also a key of `settings` (block). An argument left at its
+    default takes the value in settings; an argument set to another value than settings' is a conflict.
+    """
+    given = block.get(name)
+    if not given:
+        return value
+    if value == default:
+        return given
+    if value != given:
+        raise ConfigurationError(f"calibrate_intervals: {name} is set both as an argument ({value!r}) and in settings "
+                                 f"({given!r}); set it in one place")
+    return value
+
+
 def calibrate_intervals(
     spark: SparkSession,
     train_data: Union[str, DataFrame, Any],
@@ -507,7 +523,9 @@ def calibrate_intervals(
             and to the CQR corrections only with cqr_pool "series".
         output_format (str): quantile_map, lo_hi or both, for scoring_output_intervals.
         settings (Dict[str, Any]): Other calibration settings (cqr_score, cqr_tail_split, cqr_pool, coverage,
-            score, clip_lower), see calibration_config.
+            score, clip_lower), see calibration_config. The settings that are also arguments (method, method_by_model,
+            output_format, levels, quantiles, cqr_pool for pool, and coverage's group_col and shrinkage_kappa) take the
+            argument when it is not the default, and the settings' value otherwise; different values for both raise.
     Returns: Dict with the output table names ("tables") and a summary per model ("models").
     Writes, appending, with run_id, run_date (of the forecast run) and calibration_date:
         <output_prefix>_evaluation_output_calibration: the corrections per model, series, step and level;
@@ -521,11 +539,18 @@ def calibrate_intervals(
         raise ConfigurationError("calibrate_intervals: pool='group' needs group_col, and group_col needs pool='group'")
     block = dict(settings or {})
     coverage = dict(block.pop("coverage", None) or {})
-    coverage.setdefault("group_col", group_col)
-    coverage.setdefault("shrinkage_kappa", shrinkage_kappa)
-    block.setdefault("cqr_pool", pool)
-    block.update({"enabled": True, "method": method, "method_by_model": method_by_model or {},
-                  "output_format": output_format, "coverage": coverage})
+    block["cqr_pool"] = _argument_or_setting("cqr_pool", pool, "marginal", block)
+    coverage["group_col"] = _argument_or_setting("group_col", group_col, None, coverage)
+    coverage["shrinkage_kappa"] = _argument_or_setting("shrinkage_kappa", shrinkage_kappa, 10, coverage)
+    block["enabled"] = True
+    block["method"] = _argument_or_setting("method", method, "auto", block)
+    block["method_by_model"] = _argument_or_setting("method_by_model", method_by_model, None, block) or {}
+    block["output_format"] = _argument_or_setting("output_format", output_format, "quantile_map", block)
+    block["coverage"] = coverage
+    levels = _argument_or_setting("levels", levels, None, block)
+    quantiles = _argument_or_setting("quantiles", quantiles, None, block)
+    if levels is not None and quantiles is not None:
+        raise ConfigurationError("calibrate_intervals: give levels or quantiles, not both")
     if quantiles is not None:
         block["quantiles"] = quantiles
     if levels is not None:
