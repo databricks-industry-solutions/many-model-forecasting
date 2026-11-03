@@ -6,13 +6,13 @@
 # MAGIC 1M series and does not test the prediction-interval code. This notebook writes **synthetic backtest rows**
 # MAGIC for `n_series` series directly to `evaluation_output` (3 windows, h = 7), for one model with native 80/95%
 # MAGIC bands (labelled `StatsForecastAutoETS`, so CQR) and one without (labelled `StatsForecastCrostonSBA`, so
-# MAGIC residual conformal). It then times `Forecaster.run_calibration` and the scoring step
-# MAGIC (`write_scoring_output`) on synthetic forecasts, and checks the output row counts. Everything is
-# MAGIC generated in Spark, so the driver only holds what MMF itself collects.
+# MAGIC residual conformal), and synthetic forecasts to `scoring_output`, as `run_forecast` writes them with native
+# MAGIC intervals. It then times `calibrate_intervals` (calibration, and the calibrated scoring intervals) and checks the
+# MAGIC output row counts. Everything is generated in Spark, so the driver only holds what MMF itself collects.
 
 # COMMAND ----------
 
-# MAGIC %pip install "mmf_sa[local] @ git+https://github.com/lbruand-db/many-model-forecasting.git@feat/pi-p0-config" --quiet
+# MAGIC %pip install "mmf_sa[local] @ git+https://github.com/lbruand-db/many-model-forecasting.git@feat/pi-calibration2" --quiet
 
 # COMMAND ----------
 
@@ -25,11 +25,10 @@ import math
 import time
 from datetime import datetime
 
-from omegaconf import OmegaConf
 from pyspark.sql import functions as F
 from pyspark.sql.types import ArrayType, BinaryType, DoubleType, MapType, StringType
 
-from mmf_sa import Forecaster
+from mmf_sa import calibrate_intervals
 
 dbutils.widgets.text("n_series", "1000000")
 dbutils.widgets.text("catalog", "main")
@@ -102,7 +101,7 @@ residual_rows = base.withColumn("forecast_quantiles",
                                 F.lit(None).cast(MapType(StringType(), ArrayType(DoubleType())))) \
     .withColumn("model", F.lit(RESIDUAL))
 for t in ("evaluation_output", "evaluation_output_calibration", "evaluation_output_interval_metrics",
-          "scoring_output"):
+          "scoring_output", "scoring_output_intervals"):
     spark.sql(f"DROP TABLE IF EXISTS {PREFIX}_{t}")
 native_rows.select(*cols, "model_uri").unionByName(residual_rows.select(*cols, "model_uri")) \
     .write.mode("overwrite").saveAsTable(f"{PREFIX}_evaluation_output")
@@ -111,52 +110,45 @@ print(timings)
 
 # COMMAND ----------
 
-# MAGIC %md ## Calibration
+# MAGIC %md ## Forecasts, as run_forecast writes them with native intervals
 
 # COMMAND ----------
 
-conf = OmegaConf.create({
-    "group_id": "unique_id", "date_col": "ds", "target": "y", "freq": "D", "prediction_length": H,
-    "backtest_length": W * H, "stride": H, "metric": "smape", "use_case_name": "scale",
-    "train_data": f"{PREFIX}_train", "evaluation_output": f"{PREFIX}_evaluation_output",
-    "scoring_output": f"{PREFIX}_scoring_output", "active_models": [NATIVE, RESIDUAL],
-    "prediction_intervals": {"enabled": True, "output_format": "both"},
-})
-f = Forecaster(conf=conf, data_conf={}, spark=spark, experiment_id="scale-test", run_id=RUN_ID)
-f.run_date = run_date
 t0 = time.time()
-f.run_calibration()
-timings["calibration"] = round(time.time() - t0, 1)
-print(timings)
-
-# COMMAND ----------
-
-# MAGIC %md ## Scoring (applying the calibration to synthetic forecasts)
-
-# COMMAND ----------
-
 future = (daily.select("unique_id", "lam").distinct().crossJoin(
     spark.range(HISTORY + W * H, DAYS).select(F.col("id").cast("int").alias("t")))
     .withColumn("yhat", F.col("lam") * (1 + 0.5 * F.sin(2 * math.pi * F.col("t") / 7)))
     .withColumn("ds", F.to_timestamp(F.date_add(F.lit("2023-01-01"), F.col("t")))))
 fc = future.groupBy("unique_id", "lam").agg(F.array_sort(F.collect_list(F.struct("t", "ds", "yhat"))).alias("_r")) \
     .select("unique_id", "lam", F.col("_r.ds").alias("ds"), F.col("_r.yhat").alias("y"))
+scoring = None
 for model, with_q in ((NATIVE, True), (RESIDUAL, False)):
-    sdf = fc.withColumn("forecast_quantiles", quantile_map(F.col("y"), F.col("lam")) if with_q else
+    sdf = fc.withColumn("y_quantiles", quantile_map(F.col("y"), F.col("lam")) if with_q else
                         F.lit(None).cast(MapType(StringType(), ArrayType(DoubleType())))) \
         .drop("lam").withColumn("model_pickle", F.lit(None).cast(BinaryType())) \
         .withColumn("run_id", F.lit(RUN_ID)).withColumn("run_date", F.lit(run_date)) \
         .withColumn("use_case", F.lit("scale")).withColumn("model", F.lit(model)).withColumn("model_uri", F.lit(""))
-    t0 = time.time()
-    f.write_scoring_output(sdf, model)
-    timings[f"scoring_{model}"] = round(time.time() - t0, 1)
-print(timings)
+    scoring = sdf if scoring is None else scoring.unionByName(sdf)
+scoring.write.mode("overwrite").saveAsTable(f"{PREFIX}_scoring_output")
+timings["generate_scoring"] = round(time.time() - t0, 1)
+
+# COMMAND ----------
+
+# MAGIC %md ## Calibration and calibrated scoring intervals
+
+# COMMAND ----------
+
+t0 = time.time()
+summary = calibrate_intervals(spark, train_data=f"{PREFIX}_train", evaluation_output=f"{PREFIX}_evaluation_output",
+                              scoring_output=f"{PREFIX}_scoring_output", freq="D", output_format="both")
+timings["calibrate_intervals"] = round(time.time() - t0, 1)
+print(timings, json.dumps(summary, default=str))
 
 # COMMAND ----------
 
 cal = spark.table(f"{PREFIX}_evaluation_output_calibration").filter(F.col("run_id") == RUN_ID)
 met = spark.table(f"{PREFIX}_evaluation_output_interval_metrics").filter(F.col("run_id") == RUN_ID)
-score = spark.table(f"{PREFIX}_scoring_output").filter(F.col("run_id") == RUN_ID)
+score = spark.table(f"{PREFIX}_scoring_output_intervals").filter(F.col("run_id") == RUN_ID)
 checks = {
     "calibration_rows": {r["model"]: r["count"] for r in cal.groupBy("model").count().collect()},
     "calibration_rows_expected_per_model": N * H * 2,
