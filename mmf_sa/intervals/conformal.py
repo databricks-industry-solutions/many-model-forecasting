@@ -22,6 +22,12 @@ OTHER_GROUP = "__other__"
 
 MARGINAL_POOL = "__all__"
 
+# Coverage target that shrinks a scale estimate of each series toward its pool (the default), see series_scale_factors.
+SERIES_SCALE = "series_scale"
+
+# Pool statistic of the series_scale target: the mean absolute residual score of the pool.
+MEAN_ABS_REQUEST = ("e", "mean_abs", None, True)
+
 
 def conformal_rank(n: int, q: float, upper: bool):
     """
@@ -209,6 +215,59 @@ def pooled_upper_quantile(scores: np.ndarray, labels, q: float, shrinkage_kappa:
     return lam * (q_series[:, None] + out - q_all[:, None]) + (1 - lam) * out, inf
 
 
+def pool_mean_abs(e: np.ndarray, pools: np.ndarray) -> dict:
+    """Mean absolute residual score of each pool, over its series' scores (N, W, H)."""
+    return {p: float(np.abs(e[pools == p]).mean()) for p in pd.unique(pools)}
+
+
+def series_scale_factors(e: np.ndarray, pools: np.ndarray, mean_abs: dict, kappa: float) -> np.ndarray:
+    """
+    Scale factor of each series for the series_scale target: its mean absolute residual score d_i, shrunk toward
+    its pool's d_pool with weight n_i / (n_i + kappa), relative to d_pool:
+    c_i = (n_i d_i + kappa d_pool) / ((n_i + kappa) d_pool), where n_i is the series' number of scores (W x H).
+    A mean is estimated well from a few windows where a tail quantile (e.g. 97.5%) is not: the tail comes from the
+    pool, the width from the series. c_i is 1 when the pool's d_pool is 0.
+    Parameters:
+        e (np.ndarray): Residual scores (N, W, H).
+        pools (np.ndarray): Pool of each series (N,).
+        mean_abs (dict): d_pool of each pool (pool_mean_abs).
+    Returns: np.ndarray (N,).
+    """
+    n = e.shape[0]
+    a = np.abs(e.reshape(n, -1))
+    n_i = a.shape[1]
+    d_i = a.mean(axis=1)
+    d_pool = np.array([mean_abs[p] for p in pools], dtype=float)
+    out = np.ones(n)
+    ok = d_pool > 0
+    out[ok] = (n_i * d_i[ok] + kappa * d_pool[ok]) / ((n_i + kappa) * d_pool[ok])
+    return out
+
+
+def shrinkage_weight(plan: dict, w: int, h: int):
+    """Weight of a series' own estimate in its shrinkage: W / (W + kappa) for the series target (tail quantiles),
+    W H / (W H + kappa) for series_scale (mean absolute score), None otherwise."""
+    if not plan.get("kappa"):
+        return None
+    if plan["target"] == SERIES_SCALE:
+        return (w * h) / (w * h + plan["kappa"])
+    return w / (w + plan["kappa"])
+
+
+def series_scale_inputs(plan: dict, cubes: dict, pools: np.ndarray):
+    """
+    The scaled scores es = e / c_i of the series_scale target, added to the cubes, and the pool statistics of the
+    pools' mean absolute score ({(pool, 0, MEAN_ABS_REQUEST): (value, False)}). The Spark path computes the same in
+    SQL. Returns (cubes, {}) unchanged for other plans.
+    """
+    if plan["kind"] != "conformal" or plan["target"] != SERIES_SCALE:
+        return cubes, {}
+    mean_abs = pool_mean_abs(cubes["e"], pools)
+    c = series_scale_factors(cubes["e"], pools, mean_abs, plan["kappa"])
+    return {**cubes, "es": cubes["e"] / c[:, None, None]}, {(p, 0, MEAN_ABS_REQUEST): (v, False)
+                                                             for p, v in mean_abs.items()}
+
+
 def native_half_width(lo: np.ndarray, hi: np.ndarray, sigma: np.ndarray) -> np.ndarray:
     """Half-width of a native band, floored at 1e-3 * sigma so that a zero-width band cannot blow up a score."""
     return np.maximum((hi - lo) / 2, 1e-3 * sigma[:, None, None])
@@ -387,11 +446,13 @@ def fit_plan(pi_conf, has_band: bool, model: Optional[str] = None) -> dict:
         score, target = pi_conf["score"], cov["target"]
     return {
         "kind": kind, "score": score, "target": target,
-        "kappa": cov["shrinkage_kappa"] if target == "series" else None,
+        "kappa": cov["shrinkage_kappa"] if target in ("series", SERIES_SCALE) else None,
         "tail_split": pi_conf["cqr_tail_split"], "pool_horizon": cov["pool_horizon"],
         # pool_horizon "auto" pools a series' horizon steps when it has fewer windows than this.
         "pool_windows": windows_for_finite_bounds(max(calibration_levels(pi_conf))),
         "min_scores_per_group": cov["min_scores_per_group"],
+        # Without group_col there are no groups, whatever labels are passed (as the Spark path's label_column).
+        "grouped": cov["group_col"] is not None,
     }
 
 
@@ -416,7 +477,7 @@ def score_cubes(plan: dict, y, yhat, sigma, band=None) -> dict:
 
 def pools_for(plan: dict, labels, n_series: int, n_windows: int) -> np.ndarray:
     """Pool of each series for a plan: one marginal pool, or its group label merged for n_windows windows."""
-    if plan["target"] in ("marginal", "native") or labels is None:
+    if plan["target"] in ("marginal", "native") or labels is None or not plan.get("grouped", True):
         return np.full(n_series, MARGINAL_POOL, dtype=object)
     return merge_small_groups(labels, n_windows, plan["min_scores_per_group"])
 
@@ -429,6 +490,10 @@ def stat_requests(plan: dict, level: float, phase: str = "main", m_lo: float = N
     """
     a = 1 - level / 100
     series = plan["target"] == "series"
+    if plan["kind"] == "conformal" and plan["target"] == SERIES_SCALE:
+        # Per step, and over all steps for pools too small for a finite per-step rank.
+        return [("es", a / 2, False, False), ("es", 1 - a / 2, True, False),
+                ("es", a / 2, False, True), ("es", 1 - a / 2, True, True)]
     if plan["kind"] == "conformal":
         reqs = [("e", a / 2, False, False), ("e", 1 - a / 2, True, False)]
         if series:
@@ -496,9 +561,16 @@ def _lookup(stats: dict, pools: np.ndarray, req: tuple, h: int):
 
 
 def _lookup_pooled(stats: dict, pools: np.ndarray, req: tuple) -> np.ndarray:
+    return _lookup_pooled_inf(stats, pools, req)[0]
+
+
+def _lookup_pooled_inf(stats: dict, pools: np.ndarray, req: tuple):
+    """Per-series values (N,) and infinite flags (N,) of a steps-pooled request."""
     uniq, inv = np.unique(np.asarray(pools, dtype=object).astype(str), return_inverse=True)
     by_pool = {str(p): p for p in pools}
-    return np.array([stats[(by_pool[u], 0, req)][0] for u in uniq], dtype=float)[inv]
+    values = np.array([stats[(by_pool[u], 0, req)][0] for u in uniq], dtype=float)
+    inf = np.array([stats[(by_pool[u], 0, req)][1] for u in uniq], dtype=bool)
+    return values[inv], inf[inv]
 
 
 def _pooled_upper(stats, pools, cubes, score, q, kappa, w, h):
@@ -532,6 +604,20 @@ def fit_from_statistics(plan: dict, level: float, cubes: dict, pools: np.ndarray
     if plan["kind"] == "native":
         return np.zeros((n, horizon)), np.zeros((n, horizon)), np.zeros(n, dtype=bool)
     a = 1 - level / 100
+    if plan["kind"] == "conformal" and plan["target"] == SERIES_SCALE:
+        e = cubes["e"]
+        _, w, h = e.shape
+        mean_abs = {p: stats[(p, 0, MEAN_ABS_REQUEST)][0] for p in pd.unique(pools)}
+        c = series_scale_factors(e, pools, mean_abs, plan["kappa"])
+        g_lo, inf_lo = _lookup(stats, pools, ("es", a / 2, False, False), h)
+        g_hi, inf_hi = _lookup(stats, pools, ("es", 1 - a / 2, True, False), h)
+        p_lo, pinf_lo = _lookup_pooled_inf(stats, pools, ("es", a / 2, False, True))
+        p_hi, pinf_hi = _lookup_pooled_inf(stats, pools, ("es", 1 - a / 2, True, True))
+        # A pool too small for a finite per-step rank uses its quantiles over all steps.
+        step_inf = (inf_lo | inf_hi)[:, None]
+        q_lo = np.where(step_inf, p_lo[:, None], g_lo) * c[:, None]
+        q_hi = np.where(step_inf, p_hi[:, None], g_hi) * c[:, None]
+        return q_lo, q_hi, (inf_lo | inf_hi) & (pinf_lo | pinf_hi)
     if plan["kind"] == "conformal":
         e = cubes["e"]
         _, w, h = e.shape
@@ -616,6 +702,7 @@ def calibrate_model(y, yhat, sigma, pi_conf, labels=None, native=None, clip_lowe
         def fit(idx):
             sub = {k: v[:, idx] for k, v in cubes.items()}
             pools = pools_for(plan, labels, n, len(idx))
+            sub, scale_stats = series_scale_inputs(plan, sub, pools)
             m_lo = None
             if plan["kind"] == "cqr" and plan["score"] == "asymmetric" and plan["tail_split"] == "adaptive":
                 stats = numpy_pool_statistics(sub, pools, stat_requests(plan, level, "lower"))
@@ -623,6 +710,7 @@ def calibrate_model(y, yhat, sigma, pi_conf, labels=None, native=None, clip_lowe
                 # Realised lower miss rate of the corrected band; it is close to 0 once lo is clipped.
                 m_lo = float(np.mean(sub["slo"] > q_lo[:, None, :]))
             stats = numpy_pool_statistics(sub, pools, stat_requests(plan, level, "main", m_lo))
+            stats.update(scale_stats)
             return fit_from_statistics(plan, level, sub, pools, stats, m_lo, horizon=h)
 
         def bounds(q_lo, q_hi, j):
@@ -646,7 +734,7 @@ def calibrate_model(y, yhat, sigma, pi_conf, labels=None, native=None, clip_lowe
         results[level] = {
             "method": plan["kind"], "score": plan["score"], "target": plan["target"], "q_lo": q_lo, "q_hi": q_hi,
             "infinite": np.asarray(infinite, dtype=bool),
-            "shrinkage_weight": (w / (w + plan["kappa"])) if plan["kappa"] else None,
+            "shrinkage_weight": shrinkage_weight(plan, w, h),
             "metrics": metrics, "native_metrics": native_metrics,
         }
     level_free = _level_free_metrics(y, yhat, sigma, results, calibration_levels(pi_conf), native is not None)

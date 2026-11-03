@@ -12,6 +12,7 @@ collected to the driver: only window/horizon counts, group-label counts, pool or
 """
 import logging
 import uuid
+from typing import Tuple
 
 import numpy as np
 import pandas as pd
@@ -24,8 +25,9 @@ from pyspark.sql.window import Window
 
 from mmf_sa.intervals.calibration_config import calibration_levels, level_quantiles
 from mmf_sa.intervals.conformal import (
-    MARGINAL_POOL, OTHER_GROUP, conformal_rank, cqr_lower_from_statistics, finalize_bounds, fit_from_statistics,
-    fit_plan, interval_metrics, score_cubes, scaled_absolute_error, stat_requests, window_bounds, wis_from_metrics,
+    MARGINAL_POOL, MEAN_ABS_REQUEST, OTHER_GROUP, SERIES_SCALE, conformal_rank, cqr_lower_from_statistics,
+    finalize_bounds, fit_from_statistics, fit_plan, interval_metrics, score_cubes, scaled_absolute_error,
+    shrinkage_weight, stat_requests, window_bounds, wis_from_metrics,
 )
 from mmf_sa.intervals.features import ABC_SHARES, SB_ADI, SB_CV2
 from mmf_sa.intervals.quantiles import quantile_key
@@ -287,6 +289,27 @@ def folded(long: DataFrame, w: int) -> DataFrame:
             .withColumn("pool", F.when(F.col("fold") == w, F.col("pool_full")).otherwise(F.col("pool_lowo"))))
 
 
+def series_scale_scores(folded_rows: DataFrame, series_col: str, plan: dict, e) -> Tuple[DataFrame, DataFrame]:
+    """
+    The scaled scores es = e / c_i of the series_scale target per fold, as intervals.conformal.series_scale_inputs:
+    c_i = (n_i d_i + kappa d_pool) / ((n_i + kappa) d_pool), with d_i the mean |e| of the series in the fold and
+    d_pool that of its pool (1 when d_pool is 0).
+    Returns: (rows with fold, pool, step, e and es; the small table fold, pool, _d_pool).
+    """
+    kappa = float(plan["kappa"])
+    rows = folded_rows.select("fold", "pool", "step", series_col, e.alias("e"))
+    means = rows.groupBy("fold", "pool").agg(F.avg(F.abs(F.col("e"))).alias("_d_pool"))
+    by_series = Window.partitionBy("fold", series_col)
+    n_i, d_i, d_pool = F.col("_n_i"), F.col("_d_i"), F.col("_d_pool")
+    c = F.when(d_pool > 0, (n_i * d_i + F.lit(kappa) * d_pool) / ((n_i + F.lit(kappa)) * d_pool)).otherwise(F.lit(1.0))
+    scored = (rows.withColumn("_d_i", F.avg(F.abs(F.col("e"))).over(by_series))
+              .withColumn("_n_i", F.count(F.lit(1)).over(by_series).cast(DoubleType()))
+              .join(F.broadcast(means), on=["fold", "pool"], how="inner")
+              .withColumn("es", F.col("e") / c)
+              .select("fold", "pool", "step", "e", "es"))
+    return scored, means
+
+
 def pool_statistics(spark: SparkSession, scored: DataFrame, requests: dict) -> dict:
     """
     Exact pool order statistics of every fold, as intervals.conformal.numpy_pool_statistics.
@@ -411,7 +434,7 @@ def batch_udf_final(pdf, *, plan, levels, has_band, w, h, clip_lower, stats, m_l
             series_col: np.repeat(ids, h), "pool_key": np.repeat(pool_key, h),
             "step": np.tile(np.arange(1, h + 1), n), "level": float(lv),
             "q_lo": q_lo.ravel(), "q_hi": q_hi.ravel(), "n_windows": w,
-            "shrinkage_weight": (w / (w + plan["kappa"])) if plan["kappa"] else None,
+            "shrinkage_weight": shrinkage_weight(plan, w, h),
             "infinite_bound": np.repeat(np.asarray(inf, dtype=bool), h), "clip_lower": clip_lower,
             "sigma": np.repeat(sigma, h),
             "abc_class": np.repeat(firsts["abc_class"].to_numpy(dtype=object), h),
@@ -521,11 +544,20 @@ def calibrate_model_spark(spark: SparkSession, eval_sdf: DataFrame, features: Da
         if plan["kind"] == "conformal":
             # Residual scores do not depend on the level: fold, sort and query them once for all levels.
             cols = score_columns(plan, 0, clip_lower)
-            scored = materializer.cache(
-                folded(long, w).select("fold", "pool", "step", *[c.alias(n) for n, c in cols.items()]))
+            means = None
+            if plan["target"] == SERIES_SCALE:
+                scored, means = series_scale_scores(folded(long, w), series_col, plan, cols["e"])
+                scored = materializer.cache(scored)
+            else:
+                scored = materializer.cache(
+                    folded(long, w).select("fold", "pool", "step", *[c.alias(n) for n, c in cols.items()]))
             try:
                 shared = pool_statistics(spark, scored, {
                     f: [r for lv in levels for r in stat_requests(plan, lv, "main")] for f in folds})
+                if means is not None:
+                    for rec in means.toPandas().to_dict("records"):
+                        shared.setdefault(int(rec["fold"]), {})[(rec["pool"], 0, MEAN_ABS_REQUEST)] = (
+                            float(rec["_d_pool"]), False)
             finally:
                 materializer.uncache(scored)
             stats = {lv: shared for lv in levels}

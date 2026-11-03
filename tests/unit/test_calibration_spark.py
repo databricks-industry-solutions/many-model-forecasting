@@ -118,22 +118,30 @@ def _compare(spark, ids, y, yhat, sigma, labels, native, pi, clip_lower=0.0, ext
     return summary
 
 
+# The settings of the calibration before marginal pooling became the default: ABC x XYZ groups, tail quantiles shrunk.
+ABC_XYZ = {"group_col": "auto"}
+FORMER = {"cqr_pool": "group", "coverage": {"target": "series", "group_col": "auto"}}
+
+
 @pytest.mark.parametrize("overrides", [
-    {},                                                                    # CQR asymmetric adaptive, group pool
+    {},                                                                    # CQR asymmetric adaptive, marginal pool
+    {"cqr_pool": "group", "coverage": ABC_XYZ},
     {"cqr_tail_split": "equal"},
     {"cqr_pool": "series"},
-    {"cqr_pool": "marginal"},
     {"cqr_score": "symmetric"},
     {"cqr_score": "scaled"},
-    {"cqr_score": "scaled", "cqr_pool": "marginal"},
+    {"cqr_score": "scaled", "cqr_pool": "group", "coverage": ABC_XYZ},
     {"method": "native"},
-    {"method": "conformal"},                                               # series target, pooled horizon
-    {"method": "conformal", "coverage": {"pool_horizon": False}},
-    {"method": "conformal", "coverage": {"target": "group"}},
+    {"method": "conformal"},                                               # series_scale, one pool
+    {"method": "conformal", "coverage": ABC_XYZ},                          # series_scale per group (small: steps pooled)
+    {"method": "conformal", "coverage": {"group_col": "auto", "min_scores_per_group": 30}},  # small groups merged
+    {"method": "conformal", "coverage": {"target": "series", "group_col": "auto"}},  # former default, pooled horizon
+    {"method": "conformal", "coverage": {"target": "series", "group_col": "auto", "pool_horizon": False}},
+    {"method": "conformal", "coverage": {"target": "group", "group_col": "auto"}},
     {"method": "conformal", "coverage": {"target": "marginal"}},
     {"method": "conformal", "score": "signed"},
-    {"method": "conformal", "coverage": {"min_scores_per_group": 30}},      # small groups merged
-    {"coverage": {"min_scores_per_group": 30}},
+    {"coverage": {"group_col": "auto", "min_scores_per_group": 30}, "cqr_pool": "group"},
+    FORMER,
     {"quantiles": [0.05, 0.5, 0.95]},
 ])
 def test_spark_matches_numpy(spark, overrides):
@@ -173,6 +181,7 @@ def test_spark_matches_numpy_with_few_windows_and_infinite_ranks(spark):
     ids, y, yhat, sigma, labels, native = _data(n=6, w=2, h=3, seed=3)
     _compare(spark, ids, y, yhat, sigma, labels, native, _pi(cqr_pool="series"))
     _compare(spark, ids, y, yhat, sigma, labels, native, _pi(method="conformal"))
+    _compare(spark, ids, y, yhat, sigma, labels, native, _pi(method="conformal", coverage=ABC_XYZ))
 
 
 def test_spark_drops_incomplete_series(spark):
@@ -199,6 +208,7 @@ def test_spark_golden_default_settings(spark):
         native[lv] = (np.where(np.isfinite(lo), lo, yhat), np.where(np.isfinite(hi), hi, yhat))
     ids = np.array([f"s{i:03d}" for i in range(len(sigma))], dtype=object)
     _compare(spark, ids, g["Y_cal"], yhat, sigma, labels, native, _pi())
+    _compare(spark, ids, g["Y_cal"], yhat, sigma, labels, native, _pi(**FORMER))
 
 
 def test_spark_classes_match_pandas(spark):
@@ -219,7 +229,11 @@ def test_spark_classes_match_pandas(spark):
         np.testing.assert_array_equal(got[c].to_numpy(), expected[c].to_numpy(), err_msg=c)
 
 
-@pytest.mark.parametrize("overrides", [{"method": "conformal"}, {"method": "conformal", "levels": [80]}])
+@pytest.mark.parametrize("overrides", [
+    {"method": "conformal"},
+    {"method": "conformal", "coverage": {"target": "series", "group_col": "auto"}},
+    {"method": "conformal", "coverage": {"target": "series", "group_col": "auto"}, "levels": [80]},
+])
 def test_spark_matches_numpy_with_many_windows(spark, overrides):
     # 20 windows: auto pools the horizon for 95% (39 windows needed) but not for 80% alone (9).
     ids, y, yhat, sigma, labels, native = _data(n=12, w=20, h=3, seed=9)
@@ -245,7 +259,7 @@ def test_spark_dataframes_with_the_same_plan_are_not_separate_scoring_data(spark
     assert other.has_separate_scoring_data()
 
 
-@pytest.mark.parametrize("overrides", [{}, {"method": "conformal"}, {"cqr_pool": "series"}])
+@pytest.mark.parametrize("overrides", [{}, {"method": "conformal"}, {"cqr_pool": "series"}, FORMER])
 def test_spark_matches_numpy_across_many_buckets(spark, monkeypatch, overrides):
     monkeypatch.setattr(cs, "SERIES_PER_BUCKET", 5)  # 24 series -> 5 buckets
     ids, y, yhat, sigma, labels, native = _data(seed=7)
