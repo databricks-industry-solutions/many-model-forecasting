@@ -517,6 +517,7 @@ W - 1 windows, so the metrics are out of sample (they need W >= 2).
 | `group_col` | `None` | With `pool="group"`: a column of train_data, a list of columns, or `"auto"` for MMF's ABC x XYZ classes |
 | `shrinkage_kappa` | `10` | Strength of the per-series shrinkage toward the pool (conformal tails; CQR corrections with `cqr_pool: series`) |
 | `output_format` | `quantile_map` | Columns of `_scoring_output_intervals`: `quantile_map`, `lo_hi` or `both` |
+| `use_case` | `None` | Calibrate only the rows of one use case, when the forecast tables are shared by several (the output tables have no use_case column: give each use case its own `output_prefix`) |
 | `settings` | `{}` | Advanced keys of `calibration_config`: `cqr_score`, `cqr_tail_split`, `cqr_pool`, `coverage` (`target`, `pool_horizon`, `min_scores_per_group`), `score`, `clip_lower` |
 
 **Why these defaults.** On 2,000 series of M5 and of M4 monthly with 3 backtest windows and the last horizon held out

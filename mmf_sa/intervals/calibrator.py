@@ -50,8 +50,8 @@ class IntervalCalibrator:
     Parameters:
         spark (SparkSession): The Spark session.
         settings (DictConfig): train_data (table name or DataFrame), evaluation_output, scoring_output,
-            output_prefix, group_id, date_col, target, freq, models (or None), run_ids ({model: run_id} or None)
-            and prediction_intervals (the calibration block, see calibration_config).
+            output_prefix, group_id, date_col, target, freq, models (or None), run_ids ({model: run_id} or None),
+            use_case (or None) and prediction_intervals (the calibration block, see calibration_config).
     """
 
     def __init__(self, spark: SparkSession, settings: DictConfig, train_data=None):
@@ -81,14 +81,25 @@ class IntervalCalibrator:
 
     # --- Run selection -------------------------------------------------------------------------------------
 
+    def use_case_rows(self, sdf: DataFrame) -> DataFrame:
+        """The rows of settings.use_case (the use_case column that run_forecast writes), or all rows when it is None."""
+        use_case = self.settings.get("use_case")
+        if not use_case:
+            return sdf
+        if "use_case" not in sdf.columns:
+            raise ConfigurationError(f"calibrate_intervals: use_case={use_case!r} is given, but the forecast tables "
+                                     "have no use_case column (written by an older run_forecast)")
+        return sdf.filter(col("use_case") == use_case)
+
     def latest_runs(self) -> Dict[str, Dict[str, Any]]:
         """
         The run to calibrate for each model: run_ids[model] if given, else the model's latest run in
         evaluation_output, by run_date. Within a run, the latest run_date (a re-run with the same run_id appends)
-        and one metric_name (the backtest rows repeat per metric). Models not in `models` are left out.
+        and one metric_name (the backtest rows repeat per metric). Models not in `models` are left out, and so are
+        the rows of other use cases than settings.use_case.
         Returns: {model: {"run_id", "run_date", "metric_name"}}.
         """
-        ev = self.spark.table(self.settings.evaluation_output)
+        ev = self.use_case_rows(self.spark.table(self.settings.evaluation_output))
         models, run_ids = self.settings.models, self.settings.run_ids or {}
         if models:
             ev = ev.filter(col("model").isin(list(models)))
@@ -110,7 +121,7 @@ class IntervalCalibrator:
     def backtest_rows(self, model: str, run: dict) -> DataFrame:
         """The model's backtest rows of its run: series (string), window, forecast, actual and native quantiles."""
         gid = self.settings.group_id
-        ev = self.spark.table(self.settings.evaluation_output).filter(
+        ev = self.use_case_rows(self.spark.table(self.settings.evaluation_output)).filter(
             (col("model") == model) & (col("run_id") == run["run_id"]) & (col("run_date") == lit(run["run_date"]))
             & (col("metric_name") == run["metric_name"]))
         cols = [col(gid).cast(StringType()).alias(gid), "backtest_window_start_date", "forecast", "actual"]
@@ -373,7 +384,7 @@ class IntervalCalibrator:
     def scoring_rows(self, model: str, run: dict) -> DataFrame:
         """The model's forecasts of its run in scoring_output, with the native quantile map as NATIVE_FIELD."""
         gid, date_col, target = self.settings.group_id, self.settings.date_col, self.settings.target
-        sc = self.spark.table(self.settings.scoring_output).filter(
+        sc = self.use_case_rows(self.spark.table(self.settings.scoring_output)).filter(
             (col("model") == model) & (col("run_id") == run["run_id"]))
         latest = sc.agg(max("run_date")).collect()[0][0]
         sc = sc.filter(col("run_date") == lit(latest))
@@ -493,6 +504,7 @@ def calibrate_intervals(
     shrinkage_kappa: float = 10,
     output_format: str = "quantile_map",
     settings: Optional[Dict[str, Any]] = None,
+    use_case: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Calibrates the prediction intervals of the latest run of each model, from the tables that run_forecast wrote.
@@ -527,6 +539,9 @@ def calibrate_intervals(
             score, clip_lower), see calibration_config. The settings that are also arguments (method, method_by_model,
             output_format, levels, quantiles, cqr_pool for pool, and coverage's group_col and shrinkage_kappa) take the
             argument when it is not the default, and the settings' value otherwise; different values for both raise.
+        use_case (str): Calibrate only the rows of this use case (the use_case column that run_forecast writes), when
+            evaluation_output and scoring_output are shared by several use cases. Default: all rows. The output tables
+            have no use_case column, so give each use case its own output_prefix.
     Returns: Dict with the output table names ("tables") and a summary per model ("models").
     Writes, appending, with run_id, run_date (of the forecast run) and calibration_date:
         <output_prefix>_evaluation_output_calibration: the corrections per model, series, step and level;
@@ -562,6 +577,7 @@ def calibrate_intervals(
         "output_prefix": output_prefix or default_output_prefix(evaluation_output),
         "group_id": group_id, "date_col": date_col, "target": target, "freq": freq,
         "models": list(models) if models else None, "run_ids": dict(run_ids) if run_ids else None,
+        "use_case": use_case,
     })
     conf["prediction_intervals"] = resolve_prediction_intervals_conf(block)
     return IntervalCalibrator(spark, conf, train_data=train_data).run()
