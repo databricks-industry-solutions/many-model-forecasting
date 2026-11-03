@@ -1,8 +1,8 @@
 """Unit tests for one model's calibration and its output rows (prediction intervals).
 
 Tests cover:
-- calibrate_model: the default series_scale target (one pool, each series' scale shrunk toward it; per group, steps
-  pooled for small pools), the former series target, method resolution (conformal, CQR, native, fallbacks), per-model methods
+- calibrate_model: the default series target over one pool, the series_scale option (each series' scale shrunk
+  toward the pool; per group, steps pooled for small pools), the former settings, method resolution (conformal, CQR, native, fallbacks), per-model methods
   (method_by_model), agreement with the lower-level functions, clipping, and leave-one-window-out metrics
 - calibrate_model on the golden M5 sample with the former default settings (the research notebook's)
 - backtest_cubes: window alignment, dropped series, native bands and their fallbacks
@@ -56,9 +56,24 @@ def cubes():
     return y, yhat, sigma, labels, native
 
 
-def test_default_conformal_shrinks_each_series_scale_toward_one_pool(cubes):
+def test_default_conformal_shrinks_each_series_tails_toward_one_pool(cubes):
     y, yhat, sigma, labels, _ = cubes
     res = calibrate_model(y, yhat, sigma, _pi(), labels=labels, clip_lower=0.0)
+    r = res[80]
+    assert (r["method"], r["score"], r["target"]) == ("conformal", "signed_normalized", "series")
+    q_lo, q_hi, _ = residual_quantiles((y - yhat) / sigma[:, None, None], 80, "series", None, shrinkage_kappa=10,
+                                       min_scores_per_group=1)
+    np.testing.assert_array_equal(r["q_lo"], q_lo)
+    np.testing.assert_array_equal(r["q_hi"], q_hi)
+    assert r["shrinkage_weight"] == pytest.approx(4 / 14)
+    # The labels are not used without group_col: one pool.
+    np.testing.assert_array_equal(calibrate_model(y, yhat, sigma, _pi(), labels=None, clip_lower=0.0)[80]["q_hi"],
+                                  r["q_hi"])
+
+
+def test_series_scale_shrinks_each_series_scale_toward_one_pool(cubes):
+    y, yhat, sigma, labels, _ = cubes
+    res = calibrate_model(y, yhat, sigma, _pi(coverage={"target": "series_scale"}), labels=labels, clip_lower=0.0)
     r = res[80]
     assert (r["method"], r["score"], r["target"]) == ("conformal", "signed_normalized", "series_scale")
     # By hand: c_i = (n d_i + kappa d) / ((n + kappa) d), n = W H = 20; quantiles of e / c_i per step over all series.
@@ -69,14 +84,12 @@ def test_default_conformal_shrinks_each_series_scale_toward_one_pool(cubes):
     np.testing.assert_allclose(r["q_lo"], q_lo * c[:, None], rtol=1e-12)
     np.testing.assert_allclose(r["q_hi"], q_hi * c[:, None], rtol=1e-12)
     assert r["shrinkage_weight"] == pytest.approx(20 / 30)
-    # The labels are not used without group_col: one pool.
-    np.testing.assert_array_equal(calibrate_model(y, yhat, sigma, _pi(), labels=None, clip_lower=0.0)[80]["q_hi"],
-                                  r["q_hi"])
 
 
 def test_series_scale_per_group_and_steps_pooled_when_a_pool_is_too_small(cubes):
     y, yhat, sigma, labels, _ = cubes
-    res = calibrate_model(y, yhat, sigma, _pi(coverage={"group_col": "auto"}), labels=labels, clip_lower=0.0)
+    scale = {"target": "series_scale", "group_col": "auto"}
+    res = calibrate_model(y, yhat, sigma, _pi(coverage=scale), labels=labels, clip_lower=0.0)
     e = (y - yhat) / sigma[:, None, None]
     for g, rows in (("A", slice(0, 10)), ("B", slice(10, 30))):
         sub = e[rows]
@@ -87,8 +100,8 @@ def test_series_scale_per_group_and_steps_pooled_when_a_pool_is_too_small(cubes)
         q_lo, q_hi, _ = residual_quantiles(scaled, 95, "marginal")
         np.testing.assert_allclose(res[95]["q_hi"][rows], q_hi * c[:, None], rtol=1e-12, err_msg=g)
     # With 3 windows, A has 30 scores per step: too few at 95%, so it uses its quantiles over all 5 steps.
-    res3 = calibrate_model(y[:, :3], yhat[:, :3], sigma, _pi(coverage={"group_col": "auto"}, levels=[95]),
-                           labels=labels, clip_lower=0.0)
+    res3 = calibrate_model(y[:, :3], yhat[:, :3], sigma, _pi(coverage=scale, levels=[95]), labels=labels,
+                           clip_lower=0.0)
     q = res3[95]["q_hi"][:10]
     assert np.isfinite(q).all() and np.allclose(q / q[:, :1], 1.0)  # no step profile: the same quantile per step
 

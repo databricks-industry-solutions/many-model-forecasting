@@ -132,9 +132,11 @@ FORMER = {"cqr_pool": "group", "coverage": {"target": "series", "group_col": "au
     {"cqr_score": "scaled"},
     {"cqr_score": "scaled", "cqr_pool": "group", "coverage": ABC_XYZ},
     {"method": "native"},
-    {"method": "conformal"},                                               # series_scale, one pool
-    {"method": "conformal", "coverage": ABC_XYZ},                          # series_scale per group (small: steps pooled)
-    {"method": "conformal", "coverage": {"group_col": "auto", "min_scores_per_group": 30}},  # small groups merged
+    {"method": "conformal"},                                               # series target, one pool
+    {"method": "conformal", "coverage": ABC_XYZ},                          # series target per group
+    {"method": "conformal", "coverage": {"target": "series_scale"}},       # series_scale, one pool
+    {"method": "conformal", "coverage": {"target": "series_scale", "group_col": "auto"}},  # small pools: steps pooled
+    {"method": "conformal", "coverage": {"target": "series_scale", "group_col": "auto", "min_scores_per_group": 30}},
     {"method": "conformal", "coverage": {"target": "series", "group_col": "auto"}},  # former default, pooled horizon
     {"method": "conformal", "coverage": {"target": "series", "group_col": "auto", "pool_horizon": False}},
     {"method": "conformal", "coverage": {"target": "group", "group_col": "auto"}},
@@ -231,6 +233,7 @@ def test_spark_classes_match_pandas(spark):
 
 @pytest.mark.parametrize("overrides", [
     {"method": "conformal"},
+    {"method": "conformal", "coverage": {"target": "series_scale"}},
     {"method": "conformal", "coverage": {"target": "series", "group_col": "auto"}},
     {"method": "conformal", "coverage": {"target": "series", "group_col": "auto"}, "levels": [80]},
 ])
@@ -259,7 +262,8 @@ def test_spark_dataframes_with_the_same_plan_are_not_separate_scoring_data(spark
     assert other.has_separate_scoring_data()
 
 
-@pytest.mark.parametrize("overrides", [{}, {"method": "conformal"}, {"cqr_pool": "series"}, FORMER])
+@pytest.mark.parametrize("overrides", [{}, {"method": "conformal"}, {"cqr_pool": "series"}, FORMER,
+                                       {"method": "conformal", "coverage": {"target": "series_scale"}}])
 def test_spark_matches_numpy_across_many_buckets(spark, monkeypatch, overrides):
     monkeypatch.setattr(cs, "SERIES_PER_BUCKET", 5)  # 24 series -> 5 buckets
     ids, y, yhat, sigma, labels, native = _data(seed=7)
