@@ -298,3 +298,46 @@ def test_levels_and_quantiles_together_raise(configured):
         configured(levels=[80], quantiles=[0.1, 0.5, 0.9])
     with pytest.raises(ConfigurationError, match="levels or quantiles, not both"):
         configured(quantiles=[0.1, 0.5, 0.9], settings={"levels": [80]})
+
+
+def test_use_case_calibrates_only_the_rows_of_that_use_case(spark_session, monkeypatch):
+    """Two use cases in one evaluation_output and scoring_output: use_case picks the rows (and the run) of one."""
+    uid = uuid.uuid4().hex[:8]
+    ev_view, sc_view = f"pi_uc_ev_{uid}", f"pi_uc_sc_{uid}"
+    ev_schema = ("model string, run_id string, run_date timestamp, metric_name string, unique_id string, "
+                 "backtest_window_start_date timestamp, forecast array<double>, actual array<double>, use_case string")
+    ds = datetime(2024, 1, 1)
+    ev = [("M", "run-a", datetime(2024, 1, 2), "rmse", f"s{i}", ds, [1.0], [1.0], "A") for i in range(2)]
+    ev += [("M", "run-b", datetime(2024, 2, 2), "rmse", f"s{i}", ds, [1.0], [1.0], "B") for i in range(3)]
+    sc_schema = "unique_id string, ds timestamp, y double, model string, run_id string, run_date timestamp, use_case string"
+    sc = [("s0", ds, 1.0, "M", "run-a", datetime(2024, 1, 2), "A") for _ in range(2)]
+    sc += [("s0", ds, 1.0, "M", "run-b", datetime(2024, 2, 2), "B") for _ in range(3)]
+    spark_session.createDataFrame(ev, ev_schema).createOrReplaceTempView(ev_view)
+    spark_session.createDataFrame(sc, sc_schema).createOrReplaceTempView(sc_view)
+    seen = []
+
+    def record(self, model, run, backtest, features, clip_lower, materializer):
+        seen.append((model, run["run_id"], backtest.count()))
+        return {"run_id": run["run_id"], "methods": {}}
+
+    monkeypatch.setattr(IntervalCalibrator, "calibration_features", lambda self, first_window, materializer: (None, 0.0))
+    monkeypatch.setattr(IntervalCalibrator, "calibrate_one", record)
+    kwargs = dict(train_data=pd.DataFrame(), evaluation_output=ev_view, scoring_output=sc_view,
+                  output_prefix=f"default.pi_uc_{uid}")
+    try:
+        calibrate_intervals(spark_session, use_case="A", **kwargs)
+        assert seen == [("M", "run-a", 2)]
+        seen.clear()
+        calibrate_intervals(spark_session, **kwargs)  # no use_case: the latest run of the table, of either use case
+        assert seen == [("M", "run-b", 3)]
+
+        conf = OmegaConf.create({"evaluation_output": ev_view, "scoring_output": sc_view, "group_id": "unique_id",
+                                 "date_col": "ds", "target": "y", "use_case": "A",
+                                 "prediction_intervals": resolve_prediction_intervals_conf({"enabled": True})})
+        run_a = {"run_id": "run-a", "run_date": datetime(2024, 1, 2)}
+        assert IntervalCalibrator(spark_session, conf, train_data=pd.DataFrame()).scoring_rows("M", run_a).count() == 2
+        conf.use_case = "B"
+        assert IntervalCalibrator(spark_session, conf, train_data=pd.DataFrame()).scoring_rows("M", run_a).count() == 0
+    finally:
+        spark_session.catalog.dropTempView(ev_view)
+        spark_session.catalog.dropTempView(sc_view)
