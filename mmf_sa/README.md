@@ -359,7 +359,12 @@ def resolve_source(self, key: str) -> DataFrame:
 
 ## Prediction Intervals
 
-Prediction intervals are optional (`prediction_intervals.enabled`, off by default). They are the native, uncalibrated intervals of the models that have them. The user-facing description is in the [main README](../README.md#prediction-intervals). This section describes the code.
+MMF produces prediction intervals in two optional steps:
+
+1. **Native intervals, from `run_forecast`.** With `prediction_intervals={"enabled": True}` (off by default), the models that can return quantiles (statsforecast, Chronos, TimesFM, Moirai, `SKTimeProphet` and the `FF*` models) return them in every backtest window and at scoring. MMF writes them as the models return them, without calibration: `forecast_quantiles` in `evaluation_output`, and the interval columns in `scoring_output`. The other models get NULL intervals. The subsections below, up to [Calibrated intervals](#calibrated-intervals-calibrate_intervals), describe this step.
+2. **Calibrated intervals, from `calibrate_intervals`.** A separate function, run after the forecasts on CPU, reads those tables, corrects the native intervals so that they reach the requested coverage, and builds intervals for the models that have none. It writes its own tables and never modifies the forecast tables. See [Calibrated intervals](#calibrated-intervals-calibrate_intervals).
+
+This section describes the code. The user-facing description is in the [main README](../README.md#prediction-intervals).
 
 ### Modules
 
