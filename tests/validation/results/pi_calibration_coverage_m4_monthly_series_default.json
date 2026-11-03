@@ -1,0 +1,1434 @@
+{
+    "dataset": "m4_monthly",
+    "series": 2000,
+    "h": 18,
+    "windows": 3,
+    "run_id": "08eec583-3f87-4cbc-88bf-5ec4ecf8f691",
+    "timings": {
+        "run_forecast": 285.7,
+        "calibrate_default": 264.7,
+        "calibrate_abc_xyz": 235.6,
+        "calibrate_series_scale": 209.5
+    },
+    "calibration": {
+        "default": {
+            "StatsForecastAutoETS": {
+                "methods": {
+                    "80": "cqr/asymmetric/marginal",
+                    "95": "cqr/asymmetric/marginal"
+                },
+                "coverage": {
+                    "coverage_80": 0.8003,
+                    "coverage_95": 0.9499,
+                    "native_coverage_80": 0.7697,
+                    "native_coverage_95": 0.8996
+                },
+                "error": null
+            },
+            "StatsForecastBaselineSeasonalNaive": {
+                "methods": {
+                    "80": "cqr/asymmetric/marginal",
+                    "95": "cqr/asymmetric/marginal"
+                },
+                "coverage": {
+                    "coverage_80": 0.7999,
+                    "coverage_95": 0.9499,
+                    "native_coverage_80": 0.8134,
+                    "native_coverage_95": 0.9343
+                },
+                "error": null
+            },
+            "StatsForecastBaselineWindowAverage": {
+                "methods": {
+                    "80": "conformal/signed_normalized/series",
+                    "95": "conformal/signed_normalized/series"
+                },
+                "coverage": {
+                    "coverage_80": 0.8202,
+                    "coverage_95": 0.9566
+                },
+                "error": null
+            }
+        },
+        "abc_xyz": {
+            "StatsForecastAutoETS": {
+                "methods": {
+                    "80": "cqr/asymmetric/group",
+                    "95": "cqr/asymmetric/group"
+                },
+                "coverage": {
+                    "coverage_80": 0.7994,
+                    "coverage_95": 0.9492,
+                    "native_coverage_80": 0.7697,
+                    "native_coverage_95": 0.8996
+                },
+                "error": null
+            },
+            "StatsForecastBaselineSeasonalNaive": {
+                "methods": {
+                    "80": "cqr/asymmetric/group",
+                    "95": "cqr/asymmetric/group"
+                },
+                "coverage": {
+                    "coverage_80": 0.7995,
+                    "coverage_95": 0.9491,
+                    "native_coverage_80": 0.8134,
+                    "native_coverage_95": 0.9343
+                },
+                "error": null
+            },
+            "StatsForecastBaselineWindowAverage": {
+                "methods": {
+                    "80": "conformal/signed_normalized/series",
+                    "95": "conformal/signed_normalized/series"
+                },
+                "coverage": {
+                    "coverage_80": 0.8229,
+                    "coverage_95": 0.9599
+                },
+                "error": null
+            }
+        },
+        "series_scale": {
+            "StatsForecastAutoETS": {
+                "methods": {
+                    "80": "cqr/asymmetric/marginal",
+                    "95": "cqr/asymmetric/marginal"
+                },
+                "coverage": {
+                    "coverage_80": 0.8003,
+                    "coverage_95": 0.9499,
+                    "native_coverage_80": 0.7697,
+                    "native_coverage_95": 0.8996
+                },
+                "error": null
+            },
+            "StatsForecastBaselineSeasonalNaive": {
+                "methods": {
+                    "80": "cqr/asymmetric/marginal",
+                    "95": "cqr/asymmetric/marginal"
+                },
+                "coverage": {
+                    "coverage_80": 0.7999,
+                    "coverage_95": 0.9499,
+                    "native_coverage_80": 0.8134,
+                    "native_coverage_95": 0.9343
+                },
+                "error": null
+            },
+            "StatsForecastBaselineWindowAverage": {
+                "methods": {
+                    "80": "conformal/signed_normalized/series_scale",
+                    "95": "conformal/signed_normalized/series_scale"
+                },
+                "coverage": {
+                    "coverage_80": 0.7778,
+                    "coverage_95": 0.9289
+                },
+                "error": null
+            }
+        }
+    },
+    "heldout": {
+        "native": {
+            "80": {
+                "StatsForecastAutoETS": {
+                    "series": 2000,
+                    "overall": {
+                        "coverage": 0.7484,
+                        "msis": 7.2806,
+                        "width": 4.0006
+                    },
+                    "coverage_by_sigma_decile": {
+                        "1": 0.72,
+                        "2": 0.7,
+                        "3": 0.793,
+                        "4": 0.721,
+                        "5": 0.776,
+                        "6": 0.76,
+                        "7": 0.745,
+                        "8": 0.748,
+                        "9": 0.741,
+                        "10": 0.779
+                    },
+                    "coverage_by_abc_xyz": {
+                        "AX": [
+                            0.716,
+                            344
+                        ],
+                        "AY": [
+                            0.744,
+                            356
+                        ],
+                        "AZ": [
+                            0.771,
+                            336
+                        ],
+                        "BX": [
+                            0.71,
+                            187
+                        ],
+                        "BY": [
+                            0.759,
+                            191
+                        ],
+                        "BZ": [
+                            0.775,
+                            193
+                        ],
+                        "CX": [
+                            0.718,
+                            136
+                        ],
+                        "CY": [
+                            0.764,
+                            119
+                        ],
+                        "CZ": [
+                            0.801,
+                            138
+                        ]
+                    }
+                },
+                "StatsForecastBaselineSeasonalNaive": {
+                    "series": 2000,
+                    "overall": {
+                        "coverage": 0.7906,
+                        "msis": 9.114,
+                        "width": 5.7666
+                    },
+                    "coverage_by_sigma_decile": {
+                        "1": 0.741,
+                        "2": 0.77,
+                        "3": 0.843,
+                        "4": 0.772,
+                        "5": 0.806,
+                        "6": 0.771,
+                        "7": 0.787,
+                        "8": 0.799,
+                        "9": 0.794,
+                        "10": 0.823
+                    },
+                    "coverage_by_abc_xyz": {
+                        "AX": [
+                            0.77,
+                            344
+                        ],
+                        "AY": [
+                            0.797,
+                            356
+                        ],
+                        "AZ": [
+                            0.816,
+                            336
+                        ],
+                        "BX": [
+                            0.767,
+                            187
+                        ],
+                        "BY": [
+                            0.783,
+                            191
+                        ],
+                        "BZ": [
+                            0.786,
+                            193
+                        ],
+                        "CX": [
+                            0.7,
+                            136
+                        ],
+                        "CY": [
+                            0.851,
+                            119
+                        ],
+                        "CZ": [
+                            0.851,
+                            138
+                        ]
+                    }
+                }
+            },
+            "95": {
+                "StatsForecastAutoETS": {
+                    "series": 2000,
+                    "overall": {
+                        "coverage": 0.8833,
+                        "msis": 13.2016,
+                        "width": 6.1184
+                    },
+                    "coverage_by_sigma_decile": {
+                        "1": 0.855,
+                        "2": 0.853,
+                        "3": 0.918,
+                        "4": 0.88,
+                        "5": 0.909,
+                        "6": 0.889,
+                        "7": 0.879,
+                        "8": 0.885,
+                        "9": 0.874,
+                        "10": 0.891
+                    },
+                    "coverage_by_abc_xyz": {
+                        "AX": [
+                            0.883,
+                            344
+                        ],
+                        "AY": [
+                            0.891,
+                            356
+                        ],
+                        "AZ": [
+                            0.897,
+                            336
+                        ],
+                        "BX": [
+                            0.864,
+                            187
+                        ],
+                        "BY": [
+                            0.885,
+                            191
+                        ],
+                        "BZ": [
+                            0.873,
+                            193
+                        ],
+                        "CX": [
+                            0.835,
+                            136
+                        ],
+                        "CY": [
+                            0.903,
+                            119
+                        ],
+                        "CZ": [
+                            0.901,
+                            138
+                        ]
+                    }
+                },
+                "StatsForecastBaselineSeasonalNaive": {
+                    "series": 2000,
+                    "overall": {
+                        "coverage": 0.9234,
+                        "msis": 14.7712,
+                        "width": 8.8193
+                    },
+                    "coverage_by_sigma_decile": {
+                        "1": 0.893,
+                        "2": 0.919,
+                        "3": 0.957,
+                        "4": 0.925,
+                        "5": 0.94,
+                        "6": 0.899,
+                        "7": 0.919,
+                        "8": 0.925,
+                        "9": 0.922,
+                        "10": 0.936
+                    },
+                    "coverage_by_abc_xyz": {
+                        "AX": [
+                            0.933,
+                            344
+                        ],
+                        "AY": [
+                            0.931,
+                            356
+                        ],
+                        "AZ": [
+                            0.928,
+                            336
+                        ],
+                        "BX": [
+                            0.926,
+                            187
+                        ],
+                        "BY": [
+                            0.914,
+                            191
+                        ],
+                        "BZ": [
+                            0.907,
+                            193
+                        ],
+                        "CX": [
+                            0.866,
+                            136
+                        ],
+                        "CY": [
+                            0.942,
+                            119
+                        ],
+                        "CZ": [
+                            0.944,
+                            138
+                        ]
+                    }
+                }
+            }
+        },
+        "default": {
+            "80": {
+                "StatsForecastAutoETS": {
+                    "series": 2000,
+                    "overall": {
+                        "coverage": 0.7731,
+                        "msis": 7.0611,
+                        "width": 4.1689
+                    },
+                    "coverage_by_sigma_decile": {
+                        "1": 0.746,
+                        "2": 0.746,
+                        "3": 0.828,
+                        "4": 0.754,
+                        "5": 0.794,
+                        "6": 0.779,
+                        "7": 0.777,
+                        "8": 0.757,
+                        "9": 0.766,
+                        "10": 0.784
+                    },
+                    "coverage_by_abc_xyz": {
+                        "AX": [
+                            0.779,
+                            344
+                        ],
+                        "AY": [
+                            0.779,
+                            356
+                        ],
+                        "AZ": [
+                            0.777,
+                            336
+                        ],
+                        "BX": [
+                            0.762,
+                            187
+                        ],
+                        "BY": [
+                            0.766,
+                            191
+                        ],
+                        "BZ": [
+                            0.78,
+                            193
+                        ],
+                        "CX": [
+                            0.741,
+                            136
+                        ],
+                        "CY": [
+                            0.753,
+                            119
+                        ],
+                        "CZ": [
+                            0.795,
+                            138
+                        ]
+                    }
+                },
+                "StatsForecastBaselineSeasonalNaive": {
+                    "series": 2000,
+                    "overall": {
+                        "coverage": 0.7753,
+                        "msis": 8.7938,
+                        "width": 5.434
+                    },
+                    "coverage_by_sigma_decile": {
+                        "1": 0.754,
+                        "2": 0.794,
+                        "3": 0.848,
+                        "4": 0.776,
+                        "5": 0.789,
+                        "6": 0.752,
+                        "7": 0.766,
+                        "8": 0.754,
+                        "9": 0.768,
+                        "10": 0.752
+                    },
+                    "coverage_by_abc_xyz": {
+                        "AX": [
+                            0.79,
+                            344
+                        ],
+                        "AY": [
+                            0.761,
+                            356
+                        ],
+                        "AZ": [
+                            0.766,
+                            336
+                        ],
+                        "BX": [
+                            0.789,
+                            187
+                        ],
+                        "BY": [
+                            0.765,
+                            191
+                        ],
+                        "BZ": [
+                            0.762,
+                            193
+                        ],
+                        "CX": [
+                            0.717,
+                            136
+                        ],
+                        "CY": [
+                            0.831,
+                            119
+                        ],
+                        "CZ": [
+                            0.822,
+                            138
+                        ]
+                    }
+                },
+                "StatsForecastBaselineWindowAverage": {
+                    "series": 2000,
+                    "overall": {
+                        "coverage": 0.7634,
+                        "msis": 9.3688,
+                        "width": 4.2916
+                    },
+                    "coverage_by_sigma_decile": {
+                        "1": 0.592,
+                        "2": 0.686,
+                        "3": 0.763,
+                        "4": 0.709,
+                        "5": 0.751,
+                        "6": 0.789,
+                        "7": 0.803,
+                        "8": 0.804,
+                        "9": 0.845,
+                        "10": 0.892
+                    },
+                    "coverage_by_abc_xyz": {
+                        "AX": [
+                            0.723,
+                            344
+                        ],
+                        "AY": [
+                            0.773,
+                            356
+                        ],
+                        "AZ": [
+                            0.816,
+                            336
+                        ],
+                        "BX": [
+                            0.693,
+                            187
+                        ],
+                        "BY": [
+                            0.738,
+                            191
+                        ],
+                        "BZ": [
+                            0.805,
+                            193
+                        ],
+                        "CX": [
+                            0.702,
+                            136
+                        ],
+                        "CY": [
+                            0.806,
+                            119
+                        ],
+                        "CZ": [
+                            0.808,
+                            138
+                        ]
+                    }
+                }
+            },
+            "95": {
+                "StatsForecastAutoETS": {
+                    "series": 2000,
+                    "overall": {
+                        "coverage": 0.9351,
+                        "msis": 11.9611,
+                        "width": 7.0173
+                    },
+                    "coverage_by_sigma_decile": {
+                        "1": 0.912,
+                        "2": 0.928,
+                        "3": 0.964,
+                        "4": 0.931,
+                        "5": 0.951,
+                        "6": 0.926,
+                        "7": 0.934,
+                        "8": 0.936,
+                        "9": 0.933,
+                        "10": 0.936
+                    },
+                    "coverage_by_abc_xyz": {
+                        "AX": [
+                            0.948,
+                            344
+                        ],
+                        "AY": [
+                            0.939,
+                            356
+                        ],
+                        "AZ": [
+                            0.937,
+                            336
+                        ],
+                        "BX": [
+                            0.936,
+                            187
+                        ],
+                        "BY": [
+                            0.932,
+                            191
+                        ],
+                        "BZ": [
+                            0.918,
+                            193
+                        ],
+                        "CX": [
+                            0.901,
+                            136
+                        ],
+                        "CY": [
+                            0.952,
+                            119
+                        ],
+                        "CZ": [
+                            0.937,
+                            138
+                        ]
+                    }
+                },
+                "StatsForecastBaselineSeasonalNaive": {
+                    "series": 2000,
+                    "overall": {
+                        "coverage": 0.9385,
+                        "msis": 14.0414,
+                        "width": 8.9991
+                    },
+                    "coverage_by_sigma_decile": {
+                        "1": 0.921,
+                        "2": 0.949,
+                        "3": 0.971,
+                        "4": 0.932,
+                        "5": 0.947,
+                        "6": 0.917,
+                        "7": 0.935,
+                        "8": 0.937,
+                        "9": 0.937,
+                        "10": 0.939
+                    },
+                    "coverage_by_abc_xyz": {
+                        "AX": [
+                            0.95,
+                            344
+                        ],
+                        "AY": [
+                            0.942,
+                            356
+                        ],
+                        "AZ": [
+                            0.943,
+                            336
+                        ],
+                        "BX": [
+                            0.95,
+                            187
+                        ],
+                        "BY": [
+                            0.932,
+                            191
+                        ],
+                        "BZ": [
+                            0.912,
+                            193
+                        ],
+                        "CX": [
+                            0.904,
+                            136
+                        ],
+                        "CY": [
+                            0.947,
+                            119
+                        ],
+                        "CZ": [
+                            0.946,
+                            138
+                        ]
+                    }
+                },
+                "StatsForecastBaselineWindowAverage": {
+                    "series": 2000,
+                    "overall": {
+                        "coverage": 0.9351,
+                        "msis": 16.7044,
+                        "width": 8.6411
+                    },
+                    "coverage_by_sigma_decile": {
+                        "1": 0.839,
+                        "2": 0.908,
+                        "3": 0.941,
+                        "4": 0.916,
+                        "5": 0.932,
+                        "6": 0.938,
+                        "7": 0.956,
+                        "8": 0.959,
+                        "9": 0.976,
+                        "10": 0.986
+                    },
+                    "coverage_by_abc_xyz": {
+                        "AX": [
+                            0.914,
+                            344
+                        ],
+                        "AY": [
+                            0.94,
+                            356
+                        ],
+                        "AZ": [
+                            0.959,
+                            336
+                        ],
+                        "BX": [
+                            0.915,
+                            187
+                        ],
+                        "BY": [
+                            0.937,
+                            191
+                        ],
+                        "BZ": [
+                            0.95,
+                            193
+                        ],
+                        "CX": [
+                            0.895,
+                            136
+                        ],
+                        "CY": [
+                            0.932,
+                            119
+                        ],
+                        "CZ": [
+                            0.965,
+                            138
+                        ]
+                    }
+                }
+            }
+        },
+        "abc_xyz": {
+            "80": {
+                "StatsForecastAutoETS": {
+                    "series": 2000,
+                    "overall": {
+                        "coverage": 0.776,
+                        "msis": 7.0304,
+                        "width": 4.1489
+                    },
+                    "coverage_by_sigma_decile": {
+                        "1": 0.761,
+                        "2": 0.748,
+                        "3": 0.821,
+                        "4": 0.756,
+                        "5": 0.798,
+                        "6": 0.783,
+                        "7": 0.773,
+                        "8": 0.75,
+                        "9": 0.77,
+                        "10": 0.799
+                    },
+                    "coverage_by_abc_xyz": {
+                        "AX": [
+                            0.771,
+                            344
+                        ],
+                        "AY": [
+                            0.771,
+                            356
+                        ],
+                        "AZ": [
+                            0.791,
+                            336
+                        ],
+                        "BX": [
+                            0.738,
+                            187
+                        ],
+                        "BY": [
+                            0.777,
+                            191
+                        ],
+                        "BZ": [
+                            0.787,
+                            193
+                        ],
+                        "CX": [
+                            0.777,
+                            136
+                        ],
+                        "CY": [
+                            0.79,
+                            119
+                        ],
+                        "CZ": [
+                            0.788,
+                            138
+                        ]
+                    }
+                },
+                "StatsForecastBaselineSeasonalNaive": {
+                    "series": 2000,
+                    "overall": {
+                        "coverage": 0.771,
+                        "msis": 8.7829,
+                        "width": 5.3834
+                    },
+                    "coverage_by_sigma_decile": {
+                        "1": 0.739,
+                        "2": 0.764,
+                        "3": 0.815,
+                        "4": 0.743,
+                        "5": 0.778,
+                        "6": 0.74,
+                        "7": 0.767,
+                        "8": 0.771,
+                        "9": 0.777,
+                        "10": 0.815
+                    },
+                    "coverage_by_abc_xyz": {
+                        "AX": [
+                            0.746,
+                            344
+                        ],
+                        "AY": [
+                            0.748,
+                            356
+                        ],
+                        "AZ": [
+                            0.824,
+                            336
+                        ],
+                        "BX": [
+                            0.728,
+                            187
+                        ],
+                        "BY": [
+                            0.768,
+                            191
+                        ],
+                        "BZ": [
+                            0.796,
+                            193
+                        ],
+                        "CX": [
+                            0.724,
+                            136
+                        ],
+                        "CY": [
+                            0.793,
+                            119
+                        ],
+                        "CZ": [
+                            0.82,
+                            138
+                        ]
+                    }
+                },
+                "StatsForecastBaselineWindowAverage": {
+                    "series": 2000,
+                    "overall": {
+                        "coverage": 0.7689,
+                        "msis": 9.3239,
+                        "width": 4.3778
+                    },
+                    "coverage_by_sigma_decile": {
+                        "1": 0.637,
+                        "2": 0.727,
+                        "3": 0.774,
+                        "4": 0.731,
+                        "5": 0.759,
+                        "6": 0.789,
+                        "7": 0.791,
+                        "8": 0.788,
+                        "9": 0.827,
+                        "10": 0.865
+                    },
+                    "coverage_by_abc_xyz": {
+                        "AX": [
+                            0.752,
+                            344
+                        ],
+                        "AY": [
+                            0.765,
+                            356
+                        ],
+                        "AZ": [
+                            0.797,
+                            336
+                        ],
+                        "BX": [
+                            0.714,
+                            187
+                        ],
+                        "BY": [
+                            0.786,
+                            191
+                        ],
+                        "BZ": [
+                            0.766,
+                            193
+                        ],
+                        "CX": [
+                            0.768,
+                            136
+                        ],
+                        "CY": [
+                            0.816,
+                            119
+                        ],
+                        "CZ": [
+                            0.767,
+                            138
+                        ]
+                    }
+                }
+            },
+            "95": {
+                "StatsForecastAutoETS": {
+                    "series": 2000,
+                    "overall": {
+                        "coverage": 0.9331,
+                        "msis": 11.9747,
+                        "width": 7.0426
+                    },
+                    "coverage_by_sigma_decile": {
+                        "1": 0.917,
+                        "2": 0.926,
+                        "3": 0.96,
+                        "4": 0.935,
+                        "5": 0.948,
+                        "6": 0.921,
+                        "7": 0.932,
+                        "8": 0.927,
+                        "9": 0.931,
+                        "10": 0.934
+                    },
+                    "coverage_by_abc_xyz": {
+                        "AX": [
+                            0.935,
+                            344
+                        ],
+                        "AY": [
+                            0.928,
+                            356
+                        ],
+                        "AZ": [
+                            0.936,
+                            336
+                        ],
+                        "BX": [
+                            0.924,
+                            187
+                        ],
+                        "BY": [
+                            0.946,
+                            191
+                        ],
+                        "BZ": [
+                            0.931,
+                            193
+                        ],
+                        "CX": [
+                            0.917,
+                            136
+                        ],
+                        "CY": [
+                            0.953,
+                            119
+                        ],
+                        "CZ": [
+                            0.928,
+                            138
+                        ]
+                    }
+                },
+                "StatsForecastBaselineSeasonalNaive": {
+                    "series": 2000,
+                    "overall": {
+                        "coverage": 0.9351,
+                        "msis": 14.0813,
+                        "width": 8.9122
+                    },
+                    "coverage_by_sigma_decile": {
+                        "1": 0.918,
+                        "2": 0.932,
+                        "3": 0.958,
+                        "4": 0.92,
+                        "5": 0.942,
+                        "6": 0.906,
+                        "7": 0.936,
+                        "8": 0.939,
+                        "9": 0.942,
+                        "10": 0.958
+                    },
+                    "coverage_by_abc_xyz": {
+                        "AX": [
+                            0.925,
+                            344
+                        ],
+                        "AY": [
+                            0.936,
+                            356
+                        ],
+                        "AZ": [
+                            0.958,
+                            336
+                        ],
+                        "BX": [
+                            0.928,
+                            187
+                        ],
+                        "BY": [
+                            0.929,
+                            191
+                        ],
+                        "BZ": [
+                            0.932,
+                            193
+                        ],
+                        "CX": [
+                            0.905,
+                            136
+                        ],
+                        "CY": [
+                            0.946,
+                            119
+                        ],
+                        "CZ": [
+                            0.945,
+                            138
+                        ]
+                    }
+                },
+                "StatsForecastBaselineWindowAverage": {
+                    "series": 2000,
+                    "overall": {
+                        "coverage": 0.9335,
+                        "msis": 16.6294,
+                        "width": 8.7954
+                    },
+                    "coverage_by_sigma_decile": {
+                        "1": 0.858,
+                        "2": 0.911,
+                        "3": 0.939,
+                        "4": 0.916,
+                        "5": 0.929,
+                        "6": 0.937,
+                        "7": 0.947,
+                        "8": 0.952,
+                        "9": 0.969,
+                        "10": 0.977
+                    },
+                    "coverage_by_abc_xyz": {
+                        "AX": [
+                            0.925,
+                            344
+                        ],
+                        "AY": [
+                            0.929,
+                            356
+                        ],
+                        "AZ": [
+                            0.951,
+                            336
+                        ],
+                        "BX": [
+                            0.917,
+                            187
+                        ],
+                        "BY": [
+                            0.942,
+                            191
+                        ],
+                        "BZ": [
+                            0.939,
+                            193
+                        ],
+                        "CX": [
+                            0.916,
+                            136
+                        ],
+                        "CY": [
+                            0.936,
+                            119
+                        ],
+                        "CZ": [
+                            0.943,
+                            138
+                        ]
+                    }
+                }
+            }
+        },
+        "series_scale": {
+            "80": {
+                "StatsForecastAutoETS": {
+                    "series": 2000,
+                    "overall": {
+                        "coverage": 0.7731,
+                        "msis": 7.0611,
+                        "width": 4.1689
+                    },
+                    "coverage_by_sigma_decile": {
+                        "1": 0.746,
+                        "2": 0.746,
+                        "3": 0.828,
+                        "4": 0.754,
+                        "5": 0.794,
+                        "6": 0.779,
+                        "7": 0.777,
+                        "8": 0.757,
+                        "9": 0.766,
+                        "10": 0.784
+                    },
+                    "coverage_by_abc_xyz": {
+                        "AX": [
+                            0.779,
+                            344
+                        ],
+                        "AY": [
+                            0.779,
+                            356
+                        ],
+                        "AZ": [
+                            0.777,
+                            336
+                        ],
+                        "BX": [
+                            0.762,
+                            187
+                        ],
+                        "BY": [
+                            0.766,
+                            191
+                        ],
+                        "BZ": [
+                            0.78,
+                            193
+                        ],
+                        "CX": [
+                            0.741,
+                            136
+                        ],
+                        "CY": [
+                            0.753,
+                            119
+                        ],
+                        "CZ": [
+                            0.795,
+                            138
+                        ]
+                    }
+                },
+                "StatsForecastBaselineSeasonalNaive": {
+                    "series": 2000,
+                    "overall": {
+                        "coverage": 0.7753,
+                        "msis": 8.7938,
+                        "width": 5.434
+                    },
+                    "coverage_by_sigma_decile": {
+                        "1": 0.754,
+                        "2": 0.794,
+                        "3": 0.848,
+                        "4": 0.776,
+                        "5": 0.789,
+                        "6": 0.752,
+                        "7": 0.766,
+                        "8": 0.754,
+                        "9": 0.768,
+                        "10": 0.752
+                    },
+                    "coverage_by_abc_xyz": {
+                        "AX": [
+                            0.79,
+                            344
+                        ],
+                        "AY": [
+                            0.761,
+                            356
+                        ],
+                        "AZ": [
+                            0.766,
+                            336
+                        ],
+                        "BX": [
+                            0.789,
+                            187
+                        ],
+                        "BY": [
+                            0.765,
+                            191
+                        ],
+                        "BZ": [
+                            0.762,
+                            193
+                        ],
+                        "CX": [
+                            0.717,
+                            136
+                        ],
+                        "CY": [
+                            0.831,
+                            119
+                        ],
+                        "CZ": [
+                            0.822,
+                            138
+                        ]
+                    }
+                },
+                "StatsForecastBaselineWindowAverage": {
+                    "series": 2000,
+                    "overall": {
+                        "coverage": 0.7066,
+                        "msis": 9.1801,
+                        "width": 4.2582
+                    },
+                    "coverage_by_sigma_decile": {
+                        "1": 0.619,
+                        "2": 0.657,
+                        "3": 0.734,
+                        "4": 0.667,
+                        "5": 0.715,
+                        "6": 0.708,
+                        "7": 0.719,
+                        "8": 0.703,
+                        "9": 0.772,
+                        "10": 0.771
+                    },
+                    "coverage_by_abc_xyz": {
+                        "AX": [
+                            0.676,
+                            344
+                        ],
+                        "AY": [
+                            0.691,
+                            356
+                        ],
+                        "AZ": [
+                            0.763,
+                            336
+                        ],
+                        "BX": [
+                            0.65,
+                            187
+                        ],
+                        "BY": [
+                            0.687,
+                            191
+                        ],
+                        "BZ": [
+                            0.745,
+                            193
+                        ],
+                        "CX": [
+                            0.658,
+                            136
+                        ],
+                        "CY": [
+                            0.745,
+                            119
+                        ],
+                        "CZ": [
+                            0.75,
+                            138
+                        ]
+                    }
+                }
+            },
+            "95": {
+                "StatsForecastAutoETS": {
+                    "series": 2000,
+                    "overall": {
+                        "coverage": 0.9351,
+                        "msis": 11.9611,
+                        "width": 7.0173
+                    },
+                    "coverage_by_sigma_decile": {
+                        "1": 0.912,
+                        "2": 0.928,
+                        "3": 0.964,
+                        "4": 0.931,
+                        "5": 0.951,
+                        "6": 0.926,
+                        "7": 0.934,
+                        "8": 0.936,
+                        "9": 0.933,
+                        "10": 0.936
+                    },
+                    "coverage_by_abc_xyz": {
+                        "AX": [
+                            0.948,
+                            344
+                        ],
+                        "AY": [
+                            0.939,
+                            356
+                        ],
+                        "AZ": [
+                            0.937,
+                            336
+                        ],
+                        "BX": [
+                            0.936,
+                            187
+                        ],
+                        "BY": [
+                            0.932,
+                            191
+                        ],
+                        "BZ": [
+                            0.918,
+                            193
+                        ],
+                        "CX": [
+                            0.901,
+                            136
+                        ],
+                        "CY": [
+                            0.952,
+                            119
+                        ],
+                        "CZ": [
+                            0.937,
+                            138
+                        ]
+                    }
+                },
+                "StatsForecastBaselineSeasonalNaive": {
+                    "series": 2000,
+                    "overall": {
+                        "coverage": 0.9385,
+                        "msis": 14.0414,
+                        "width": 8.9991
+                    },
+                    "coverage_by_sigma_decile": {
+                        "1": 0.921,
+                        "2": 0.949,
+                        "3": 0.971,
+                        "4": 0.932,
+                        "5": 0.947,
+                        "6": 0.917,
+                        "7": 0.935,
+                        "8": 0.937,
+                        "9": 0.937,
+                        "10": 0.939
+                    },
+                    "coverage_by_abc_xyz": {
+                        "AX": [
+                            0.95,
+                            344
+                        ],
+                        "AY": [
+                            0.942,
+                            356
+                        ],
+                        "AZ": [
+                            0.943,
+                            336
+                        ],
+                        "BX": [
+                            0.95,
+                            187
+                        ],
+                        "BY": [
+                            0.932,
+                            191
+                        ],
+                        "BZ": [
+                            0.912,
+                            193
+                        ],
+                        "CX": [
+                            0.904,
+                            136
+                        ],
+                        "CY": [
+                            0.947,
+                            119
+                        ],
+                        "CZ": [
+                            0.946,
+                            138
+                        ]
+                    }
+                },
+                "StatsForecastBaselineWindowAverage": {
+                    "series": 2000,
+                    "overall": {
+                        "coverage": 0.8499,
+                        "msis": 17.9125,
+                        "width": 6.3312
+                    },
+                    "coverage_by_sigma_decile": {
+                        "1": 0.78,
+                        "2": 0.814,
+                        "3": 0.864,
+                        "4": 0.821,
+                        "5": 0.861,
+                        "6": 0.857,
+                        "7": 0.863,
+                        "8": 0.852,
+                        "9": 0.891,
+                        "10": 0.897
+                    },
+                    "coverage_by_abc_xyz": {
+                        "AX": [
+                            0.828,
+                            344
+                        ],
+                        "AY": [
+                            0.845,
+                            356
+                        ],
+                        "AZ": [
+                            0.893,
+                            336
+                        ],
+                        "BX": [
+                            0.799,
+                            187
+                        ],
+                        "BY": [
+                            0.847,
+                            191
+                        ],
+                        "BZ": [
+                            0.87,
+                            193
+                        ],
+                        "CX": [
+                            0.805,
+                            136
+                        ],
+                        "CY": [
+                            0.859,
+                            119
+                        ],
+                        "CZ": [
+                            0.896,
+                            138
+                        ]
+                    }
+                }
+            }
+        }
+    }
+}
