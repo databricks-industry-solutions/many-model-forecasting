@@ -84,7 +84,7 @@ def calibrated(spark, forecast):
 def test_methods_per_model_and_level(calibrated):
     out, _ = calibrated
     methods = {m: s["methods"] for m, s in out["models"].items()}
-    cqr, conformal = "cqr/asymmetric/marginal", "conformal/signed_normalized/series_scale"
+    cqr, conformal = "cqr/asymmetric/marginal", "conformal/signed_normalized/series"
     assert methods[NATIVE] == {"80": cqr, "95": cqr}
     assert methods[NO_NATIVE] == {"80": conformal, "95": conformal}
     assert methods[NARROW] == {"80": cqr, "95": conformal}
@@ -157,7 +157,7 @@ def test_pool_group_pools_per_abc_xyz_class(spark, forecast):
                               scoring_output=f"{PREFIX}_scoring_output", output_prefix="default.pi_cal_grouped",
                               models=[NATIVE, NO_NATIVE], pool="group", group_col="auto")
     assert out["models"][NATIVE]["methods"]["80"] == "cqr/asymmetric/group"
-    assert out["models"][NO_NATIVE]["methods"]["80"] == "conformal/signed_normalized/series_scale"
+    assert out["models"][NO_NATIVE]["methods"]["80"] == "conformal/signed_normalized/series"
     pools = spark.table("default.pi_cal_grouped_evaluation_output_calibration").select("pool_key").distinct().count()
     assert pools >= 1
 

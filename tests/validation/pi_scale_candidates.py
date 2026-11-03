@@ -10,6 +10,9 @@
 # MAGIC
 # MAGIC * statistic d: `mean` |e|, `rms` (root mean square of e), `q80` (80% quantile of |e|);
 # MAGIC * weight n_i: `scores` (W x H) or `windows` (W);
+# MAGIC * a larger kappa (stronger shrinkage toward the pool) for `rms` and `mean` with the W x H weight;
+# MAGIC * `series_marginal`: the former target (per-series tail quantiles shrunk toward the pool) over one pool, without
+# MAGIC   ABC x XYZ, to separate the effect of the per-series tails from that of the groups;
 # MAGIC * references: `none` (c_i = 1: one pool, no per-series scale) and `former` (tail quantiles shrunk, ABC x XYZ).
 # MAGIC
 # MAGIC Results are returned with `dbutils.notebook.exit(json)`.
@@ -195,7 +198,11 @@ for dataset in DATASETS:
         decile = pd.qcut(pd.Series(sigma).rank(method="first"), 10, labels=False).to_numpy() + 1
         out = {}
         runs = {name: (conf(), cand) for name, cand in CANDIDATES.items()}
+        for how in ("mean", "rms"):
+            for kappa in (30, 100):
+                runs[f"{how}_scores_k{kappa}"] = (conf(shrinkage_kappa=kappa), (how, "scores"))
         runs["none"] = (conf(target="marginal"), None)
+        runs["series_marginal"] = (conf(target="series"), None)
         runs["former"] = (conf(target="series", group_col="auto"), None)
         for name, (pi, cand) in runs.items():
             if cand is not None:

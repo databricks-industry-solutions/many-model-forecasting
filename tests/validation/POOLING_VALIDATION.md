@@ -3,7 +3,7 @@
 ## Question
 
 `calibrate_intervals` pools the conformal scores over all series by default (`pool="marginal"`), with each series'
-scale shrunk toward the pool. `pool="group", group_col="auto"` pools per ABC x XYZ class instead: ABC ranks series by
+tail quantiles shrunk toward the pool's. `pool="group", group_col="auto"` pools per ABC x XYZ class instead: ABC ranks series by
 volume (A = top 80% of the total), XYZ by volatility (terciles of the coefficient of variation). On M5 the grouping
 looked useful, but M5 is one retail dataset, and ABC x XYZ is a planning convention, not a property of forecast
 errors. Before recommending it, or making it a default for some kinds of data, we need evidence on other datasets.
@@ -27,11 +27,11 @@ All on the same forecasts (one `run_forecast` per dataset, native intervals on),
 | Name | Call | Notes |
 |---|---|---|
 | `native` | none (raw bands of `scoring_output`) | Reference for the native models |
-| `default` | `pool="marginal"` | One pool per step, series scale shrunk toward it |
+| `default` | `pool="marginal"` | One pool per step, series tail quantiles shrunk toward it |
 | `abc_xyz` | `pool="group", group_col="auto"` | ABC x XYZ classes computed by MMF |
 | `sb_class` | `pool="group", group_col="sb_class"` | Syntetos-Boylan: smooth, erratic, intermittent, lumpy |
 | `keys` | `pool="group", group_col=[natural keys]` | Only for datasets with keys (table below) |
-| `former` | `pool="group", group_col="auto", settings={"coverage": {"target": "series"}}` | Before marginal pooling became the default |
+| `series_scale` | `settings={"coverage": {"target": "series_scale"}}` | One pool, each series' scale shrunk instead of its tails |
 
 `min_scores_per_group` stays at its default (100), so small groups are merged into one "other" pool; report how many
 series end up there.

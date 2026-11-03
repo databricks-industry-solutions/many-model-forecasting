@@ -26,8 +26,10 @@ DEFAULT_PREDICTION_INTERVALS: Dict[str, Any] = {
     "cqr_tail_split": "adaptive",
     "cqr_pool": "marginal",
     "coverage": {
-        # series_scale: one pool (per group_col if set) per horizon step, each series' scale shrunk toward it.
-        "target": "series_scale",
+        # series: each series' tail quantiles (over its horizon steps when it has few windows, pool_horizon) shrunk
+        # toward its pool's with weight W / (W + shrinkage_kappa); one pool, or one per group_col if set.
+        # series_scale (an option) shrinks a scale estimate of each series instead.
+        "target": "series",
         # None: no groups. "auto" pools by ABC x XYZ class (validated on M5 retail demand only), or user columns.
         "group_col": None,
         "min_scores_per_group": 100,

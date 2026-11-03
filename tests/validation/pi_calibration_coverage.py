@@ -6,9 +6,10 @@
 # MAGIC the rest, calibrates the intervals with `calibrate_intervals` in three configurations, and scores every
 # MAGIC configuration on the held-out horizon:
 # MAGIC
-# MAGIC * `default`: one marginal pool per horizon step, each series' scale shrunk toward it (CQR pooled over all series);
+# MAGIC * `default`: one marginal pool per horizon step, each series' tail quantiles shrunk toward it (CQR pooled over
+# MAGIC   all series);
 # MAGIC * `abc_xyz`: the same, pooled per ABC x XYZ class (`pool="group", group_col="auto"`);
-# MAGIC * `former`: the settings before marginal pooling became the default (ABC x XYZ pools, tail quantiles shrunk).
+# MAGIC * `series_scale`: one pool, each series' scale (mean |e|) shrunk toward it instead of its tail quantiles.
 # MAGIC
 # MAGIC For each model and level: held-out coverage, MSIS (scaled by each series' seasonal-naive error) and width, overall,
 # MAGIC by decile of the series' scale (sigma) and by ABC x XYZ class, next to the raw native bands. `dataset` is `m5`
@@ -130,7 +131,7 @@ timings = {"run_forecast": round(time.time() - t0, 1)}
 CONFIGS = {
     "default": {},
     "abc_xyz": {"pool": "group", "group_col": "auto"},
-    "former": {"pool": "group", "group_col": "auto", "settings": {"coverage": {"target": "series"}}},
+    "series_scale": {"settings": {"coverage": {"target": "series_scale"}}},
 }
 calibration = {}
 for name, kwargs in CONFIGS.items():

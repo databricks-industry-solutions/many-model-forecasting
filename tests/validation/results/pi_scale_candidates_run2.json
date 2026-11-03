@@ -1,0 +1,2046 @@
+{
+    "m5": {
+        "StatsForecastAutoETS": {
+            "mean_scores": {
+                "80": {
+                    "coverage": 0.7767,
+                    "msis": 7.292,
+                    "worst_class": [
+                        "AX",
+                        0.737
+                    ],
+                    "decile_1": 0.794,
+                    "decile_10": 0.758,
+                    "decile_spread": 0.094,
+                    "backtest_coverage": 0.7914
+                },
+                "95": {
+                    "coverage": 0.9299,
+                    "msis": 14.424,
+                    "worst_class": [
+                        "CZ",
+                        0.905
+                    ],
+                    "decile_1": 0.873,
+                    "decile_10": 0.922,
+                    "decile_spread": 0.071,
+                    "backtest_coverage": 0.9377
+                }
+            },
+            "mean_windows": {
+                "80": {
+                    "coverage": 0.7711,
+                    "msis": 8.221,
+                    "worst_class": [
+                        "BZ",
+                        0.706
+                    ],
+                    "decile_1": 0.718,
+                    "decile_10": 0.812,
+                    "decile_spread": 0.094,
+                    "backtest_coverage": 0.7981
+                },
+                "95": {
+                    "coverage": 0.9358,
+                    "msis": 18.942,
+                    "worst_class": [
+                        "CZ",
+                        0.884
+                    ],
+                    "decile_1": 0.816,
+                    "decile_10": 0.954,
+                    "decile_spread": 0.156,
+                    "backtest_coverage": 0.9486
+                }
+            },
+            "rms_scores": {
+                "80": {
+                    "coverage": 0.7831,
+                    "msis": 7.293,
+                    "worst_class": [
+                        "BZ",
+                        0.743
+                    ],
+                    "decile_1": 0.814,
+                    "decile_10": 0.79,
+                    "decile_spread": 0.056,
+                    "backtest_coverage": 0.8019
+                },
+                "95": {
+                    "coverage": 0.9409,
+                    "msis": 13.894,
+                    "worst_class": [
+                        "BZ",
+                        0.924
+                    ],
+                    "decile_1": 0.889,
+                    "decile_10": 0.938,
+                    "decile_spread": 0.064,
+                    "backtest_coverage": 0.9466
+                }
+            },
+            "rms_windows": {
+                "80": {
+                    "coverage": 0.773,
+                    "msis": 8.512,
+                    "worst_class": [
+                        "BZ",
+                        0.696
+                    ],
+                    "decile_1": 0.698,
+                    "decile_10": 0.827,
+                    "decile_spread": 0.129,
+                    "backtest_coverage": 0.7992
+                },
+                "95": {
+                    "coverage": 0.9373,
+                    "msis": 20.985,
+                    "worst_class": [
+                        "CZ",
+                        0.877
+                    ],
+                    "decile_1": 0.798,
+                    "decile_10": 0.962,
+                    "decile_spread": 0.18,
+                    "backtest_coverage": 0.9499
+                }
+            },
+            "q80_scores": {
+                "80": {
+                    "coverage": 0.7731,
+                    "msis": 7.353,
+                    "worst_class": [
+                        "CZ",
+                        0.716
+                    ],
+                    "decile_1": 0.633,
+                    "decile_10": 0.83,
+                    "decile_spread": 0.197,
+                    "backtest_coverage": 0.7805
+                },
+                "95": {
+                    "coverage": 0.9101,
+                    "msis": 15.945,
+                    "worst_class": [
+                        "CZ",
+                        0.842
+                    ],
+                    "decile_1": 0.764,
+                    "decile_10": 0.936,
+                    "decile_spread": 0.179,
+                    "backtest_coverage": 0.9179
+                }
+            },
+            "q80_windows": {
+                "80": {
+                    "coverage": 0.7724,
+                    "msis": 8.176,
+                    "worst_class": [
+                        "BZ",
+                        0.708
+                    ],
+                    "decile_1": 0.694,
+                    "decile_10": 0.828,
+                    "decile_spread": 0.134,
+                    "backtest_coverage": 0.7983
+                },
+                "95": {
+                    "coverage": 0.9333,
+                    "msis": 18.852,
+                    "worst_class": [
+                        "CZ",
+                        0.874
+                    ],
+                    "decile_1": 0.794,
+                    "decile_10": 0.955,
+                    "decile_spread": 0.179,
+                    "backtest_coverage": 0.9475
+                }
+            },
+            "mean_scores_k30": {
+                "80": {
+                    "coverage": 0.7753,
+                    "msis": 7.439,
+                    "worst_class": [
+                        "BZ",
+                        0.742
+                    ],
+                    "decile_1": 0.789,
+                    "decile_10": 0.771,
+                    "decile_spread": 0.061,
+                    "backtest_coverage": 0.7935
+                },
+                "95": {
+                    "coverage": 0.9318,
+                    "msis": 15.011,
+                    "worst_class": [
+                        "CZ",
+                        0.902
+                    ],
+                    "decile_1": 0.864,
+                    "decile_10": 0.929,
+                    "decile_spread": 0.085,
+                    "backtest_coverage": 0.9408
+                }
+            },
+            "mean_scores_k100": {
+                "80": {
+                    "coverage": 0.7735,
+                    "msis": 7.851,
+                    "worst_class": [
+                        "BZ",
+                        0.718
+                    ],
+                    "decile_1": 0.758,
+                    "decile_10": 0.795,
+                    "decile_spread": 0.045,
+                    "backtest_coverage": 0.7968
+                },
+                "95": {
+                    "coverage": 0.9348,
+                    "msis": 16.731,
+                    "worst_class": [
+                        "CZ",
+                        0.895
+                    ],
+                    "decile_1": 0.84,
+                    "decile_10": 0.943,
+                    "decile_spread": 0.119,
+                    "backtest_coverage": 0.9456
+                }
+            },
+            "rms_scores_k30": {
+                "80": {
+                    "coverage": 0.776,
+                    "msis": 7.827,
+                    "worst_class": [
+                        "BZ",
+                        0.716
+                    ],
+                    "decile_1": 0.759,
+                    "decile_10": 0.806,
+                    "decile_spread": 0.067,
+                    "backtest_coverage": 0.8006
+                },
+                "95": {
+                    "coverage": 0.9393,
+                    "msis": 16.346,
+                    "worst_class": [
+                        "BZ",
+                        0.902
+                    ],
+                    "decile_1": 0.85,
+                    "decile_10": 0.95,
+                    "decile_spread": 0.117,
+                    "backtest_coverage": 0.9491
+                }
+            },
+            "rms_scores_k100": {
+                "80": {
+                    "coverage": 0.7738,
+                    "msis": 8.315,
+                    "worst_class": [
+                        "BZ",
+                        0.699
+                    ],
+                    "decile_1": 0.718,
+                    "decile_10": 0.823,
+                    "decile_spread": 0.105,
+                    "backtest_coverage": 0.7997
+                },
+                "95": {
+                    "coverage": 0.9379,
+                    "msis": 19.457,
+                    "worst_class": [
+                        "CZ",
+                        0.884
+                    ],
+                    "decile_1": 0.815,
+                    "decile_10": 0.958,
+                    "decile_spread": 0.159,
+                    "backtest_coverage": 0.9501
+                }
+            },
+            "none": {
+                "80": {
+                    "coverage": 0.7726,
+                    "msis": 8.649,
+                    "worst_class": [
+                        "BZ",
+                        0.689
+                    ],
+                    "decile_1": 0.685,
+                    "decile_10": 0.83,
+                    "decile_spread": 0.146,
+                    "backtest_coverage": 0.7991
+                },
+                "95": {
+                    "coverage": 0.9367,
+                    "msis": 22.111,
+                    "worst_class": [
+                        "CZ",
+                        0.871
+                    ],
+                    "decile_1": 0.784,
+                    "decile_10": 0.964,
+                    "decile_spread": 0.196,
+                    "backtest_coverage": 0.9503
+                }
+            },
+            "series_marginal": {
+                "80": {
+                    "coverage": 0.779,
+                    "msis": 8.069,
+                    "worst_class": [
+                        "CZ",
+                        0.723
+                    ],
+                    "decile_1": 0.702,
+                    "decile_10": 0.831,
+                    "decile_spread": 0.129,
+                    "backtest_coverage": 0.805
+                },
+                "95": {
+                    "coverage": 0.9413,
+                    "msis": 17.696,
+                    "worst_class": [
+                        "CZ",
+                        0.886
+                    ],
+                    "decile_1": 0.807,
+                    "decile_10": 0.965,
+                    "decile_spread": 0.172,
+                    "backtest_coverage": 0.9549
+                }
+            },
+            "former": {
+                "80": {
+                    "coverage": 0.7778,
+                    "msis": 8.012,
+                    "worst_class": [
+                        "CZ",
+                        0.741
+                    ],
+                    "decile_1": 0.695,
+                    "decile_10": 0.815,
+                    "decile_spread": 0.121,
+                    "backtest_coverage": 0.8068
+                },
+                "95": {
+                    "coverage": 0.9442,
+                    "msis": 16.887,
+                    "worst_class": [
+                        "CZ",
+                        0.934
+                    ],
+                    "decile_1": 0.882,
+                    "decile_10": 0.949,
+                    "decile_spread": 0.08,
+                    "backtest_coverage": 0.9549
+                }
+            }
+        },
+        "StatsForecastBaselineSeasonalNaive": {
+            "mean_scores": {
+                "80": {
+                    "coverage": 0.7732,
+                    "msis": 9.953,
+                    "worst_class": [
+                        "CY",
+                        0.731
+                    ],
+                    "decile_1": 0.792,
+                    "decile_10": 0.832,
+                    "decile_spread": 0.115,
+                    "backtest_coverage": 0.7909
+                },
+                "95": {
+                    "coverage": 0.925,
+                    "msis": 19.535,
+                    "worst_class": [
+                        "CZ",
+                        0.867
+                    ],
+                    "decile_1": 0.845,
+                    "decile_10": 0.972,
+                    "decile_spread": 0.127,
+                    "backtest_coverage": 0.9345
+                }
+            },
+            "mean_windows": {
+                "80": {
+                    "coverage": 0.7803,
+                    "msis": 10.856,
+                    "worst_class": [
+                        "CY",
+                        0.701
+                    ],
+                    "decile_1": 0.772,
+                    "decile_10": 0.869,
+                    "decile_spread": 0.215,
+                    "backtest_coverage": 0.7977
+                },
+                "95": {
+                    "coverage": 0.9382,
+                    "msis": 24.815,
+                    "worst_class": [
+                        "CZ",
+                        0.87
+                    ],
+                    "decile_1": 0.791,
+                    "decile_10": 0.984,
+                    "decile_spread": 0.193,
+                    "backtest_coverage": 0.9479
+                }
+            },
+            "rms_scores": {
+                "80": {
+                    "coverage": 0.7815,
+                    "msis": 9.79,
+                    "worst_class": [
+                        "BZ",
+                        0.744
+                    ],
+                    "decile_1": 0.781,
+                    "decile_10": 0.835,
+                    "decile_spread": 0.121,
+                    "backtest_coverage": 0.7964
+                },
+                "95": {
+                    "coverage": 0.9343,
+                    "msis": 18.302,
+                    "worst_class": [
+                        "CZ",
+                        0.891
+                    ],
+                    "decile_1": 0.843,
+                    "decile_10": 0.971,
+                    "decile_spread": 0.128,
+                    "backtest_coverage": 0.9427
+                }
+            },
+            "rms_windows": {
+                "80": {
+                    "coverage": 0.7829,
+                    "msis": 11.138,
+                    "worst_class": [
+                        "CY",
+                        0.703
+                    ],
+                    "decile_1": 0.77,
+                    "decile_10": 0.875,
+                    "decile_spread": 0.231,
+                    "backtest_coverage": 0.7995
+                },
+                "95": {
+                    "coverage": 0.9403,
+                    "msis": 26.938,
+                    "worst_class": [
+                        "CZ",
+                        0.869
+                    ],
+                    "decile_1": 0.778,
+                    "decile_10": 0.985,
+                    "decile_spread": 0.207,
+                    "backtest_coverage": 0.9496
+                }
+            },
+            "q80_scores": {
+                "80": {
+                    "coverage": 0.7756,
+                    "msis": 9.707,
+                    "worst_class": [
+                        "BZ",
+                        0.734
+                    ],
+                    "decile_1": 0.784,
+                    "decile_10": 0.811,
+                    "decile_spread": 0.132,
+                    "backtest_coverage": 0.7927
+                },
+                "95": {
+                    "coverage": 0.9239,
+                    "msis": 21.489,
+                    "worst_class": [
+                        "CZ",
+                        0.884
+                    ],
+                    "decile_1": 0.861,
+                    "decile_10": 0.965,
+                    "decile_spread": 0.104,
+                    "backtest_coverage": 0.9331
+                }
+            },
+            "q80_windows": {
+                "80": {
+                    "coverage": 0.7807,
+                    "msis": 10.765,
+                    "worst_class": [
+                        "CY",
+                        0.712
+                    ],
+                    "decile_1": 0.772,
+                    "decile_10": 0.866,
+                    "decile_spread": 0.209,
+                    "backtest_coverage": 0.7978
+                },
+                "95": {
+                    "coverage": 0.9367,
+                    "msis": 24.73,
+                    "worst_class": [
+                        "CZ",
+                        0.874
+                    ],
+                    "decile_1": 0.811,
+                    "decile_10": 0.982,
+                    "decile_spread": 0.171,
+                    "backtest_coverage": 0.9472
+                }
+            },
+            "mean_scores_k30": {
+                "80": {
+                    "coverage": 0.7752,
+                    "msis": 10.11,
+                    "worst_class": [
+                        "CY",
+                        0.722
+                    ],
+                    "decile_1": 0.786,
+                    "decile_10": 0.843,
+                    "decile_spread": 0.141,
+                    "backtest_coverage": 0.7928
+                },
+                "95": {
+                    "coverage": 0.9287,
+                    "msis": 20.257,
+                    "worst_class": [
+                        "CZ",
+                        0.867
+                    ],
+                    "decile_1": 0.831,
+                    "decile_10": 0.975,
+                    "decile_spread": 0.144,
+                    "backtest_coverage": 0.9391
+                }
+            },
+            "mean_scores_k100": {
+                "80": {
+                    "coverage": 0.7789,
+                    "msis": 10.477,
+                    "worst_class": [
+                        "CY",
+                        0.711
+                    ],
+                    "decile_1": 0.779,
+                    "decile_10": 0.86,
+                    "decile_spread": 0.184,
+                    "backtest_coverage": 0.7959
+                },
+                "95": {
+                    "coverage": 0.9353,
+                    "msis": 22.415,
+                    "worst_class": [
+                        "CZ",
+                        0.869
+                    ],
+                    "decile_1": 0.81,
+                    "decile_10": 0.982,
+                    "decile_spread": 0.172,
+                    "backtest_coverage": 0.9451
+                }
+            },
+            "rms_scores_k30": {
+                "80": {
+                    "coverage": 0.7819,
+                    "msis": 10.368,
+                    "worst_class": [
+                        "CY",
+                        0.724
+                    ],
+                    "decile_1": 0.774,
+                    "decile_10": 0.858,
+                    "decile_spread": 0.18,
+                    "backtest_coverage": 0.7975
+                },
+                "95": {
+                    "coverage": 0.9381,
+                    "msis": 21.578,
+                    "worst_class": [
+                        "CZ",
+                        0.883
+                    ],
+                    "decile_1": 0.814,
+                    "decile_10": 0.979,
+                    "decile_spread": 0.165,
+                    "backtest_coverage": 0.9467
+                }
+            },
+            "rms_scores_k100": {
+                "80": {
+                    "coverage": 0.7826,
+                    "msis": 10.91,
+                    "worst_class": [
+                        "CY",
+                        0.708
+                    ],
+                    "decile_1": 0.77,
+                    "decile_10": 0.869,
+                    "decile_spread": 0.217,
+                    "backtest_coverage": 0.7989
+                },
+                "95": {
+                    "coverage": 0.9397,
+                    "msis": 25.116,
+                    "worst_class": [
+                        "CZ",
+                        0.873
+                    ],
+                    "decile_1": 0.786,
+                    "decile_10": 0.984,
+                    "decile_spread": 0.198,
+                    "backtest_coverage": 0.9491
+                }
+            },
+            "none": {
+                "80": {
+                    "coverage": 0.7836,
+                    "msis": 11.283,
+                    "worst_class": [
+                        "BZ",
+                        0.702
+                    ],
+                    "decile_1": 0.77,
+                    "decile_10": 0.877,
+                    "decile_spread": 0.237,
+                    "backtest_coverage": 0.8
+                },
+                "95": {
+                    "coverage": 0.9412,
+                    "msis": 28.192,
+                    "worst_class": [
+                        "CZ",
+                        0.869
+                    ],
+                    "decile_1": 0.776,
+                    "decile_10": 0.987,
+                    "decile_spread": 0.211,
+                    "backtest_coverage": 0.9501
+                }
+            },
+            "series_marginal": {
+                "80": {
+                    "coverage": 0.7862,
+                    "msis": 10.735,
+                    "worst_class": [
+                        "BZ",
+                        0.726
+                    ],
+                    "decile_1": 0.773,
+                    "decile_10": 0.868,
+                    "decile_spread": 0.188,
+                    "backtest_coverage": 0.8034
+                },
+                "95": {
+                    "coverage": 0.9449,
+                    "msis": 23.269,
+                    "worst_class": [
+                        "CZ",
+                        0.885
+                    ],
+                    "decile_1": 0.807,
+                    "decile_10": 0.985,
+                    "decile_spread": 0.178,
+                    "backtest_coverage": 0.9536
+                }
+            },
+            "former": {
+                "80": {
+                    "coverage": 0.7867,
+                    "msis": 10.517,
+                    "worst_class": [
+                        "CZ",
+                        0.765
+                    ],
+                    "decile_1": 0.773,
+                    "decile_10": 0.825,
+                    "decile_spread": 0.096,
+                    "backtest_coverage": 0.806
+                },
+                "95": {
+                    "coverage": 0.9462,
+                    "msis": 21.97,
+                    "worst_class": [
+                        "CZ",
+                        0.937
+                    ],
+                    "decile_1": 0.877,
+                    "decile_10": 0.956,
+                    "decile_spread": 0.085,
+                    "backtest_coverage": 0.9541
+                }
+            }
+        },
+        "StatsForecastCrostonSBA": {
+            "mean_scores": {
+                "80": {
+                    "coverage": 0.8018,
+                    "msis": 7.498,
+                    "worst_class": [
+                        "AX",
+                        0.738
+                    ],
+                    "decile_1": 0.866,
+                    "decile_10": 0.76,
+                    "decile_spread": 0.127,
+                    "backtest_coverage": 0.7946
+                },
+                "95": {
+                    "coverage": 0.9407,
+                    "msis": 13.324,
+                    "worst_class": [
+                        "AX",
+                        0.92
+                    ],
+                    "decile_1": 0.909,
+                    "decile_10": 0.914,
+                    "decile_spread": 0.058,
+                    "backtest_coverage": 0.9423
+                }
+            },
+            "mean_windows": {
+                "80": {
+                    "coverage": 0.7928,
+                    "msis": 8.676,
+                    "worst_class": [
+                        "BZ",
+                        0.719
+                    ],
+                    "decile_1": 0.8,
+                    "decile_10": 0.818,
+                    "decile_spread": 0.055,
+                    "backtest_coverage": 0.8
+                },
+                "95": {
+                    "coverage": 0.9492,
+                    "msis": 20.419,
+                    "worst_class": [
+                        "BZ",
+                        0.897
+                    ],
+                    "decile_1": 0.853,
+                    "decile_10": 0.961,
+                    "decile_spread": 0.128,
+                    "backtest_coverage": 0.9496
+                }
+            },
+            "rms_scores": {
+                "80": {
+                    "coverage": 0.8038,
+                    "msis": 7.624,
+                    "worst_class": [
+                        "BZ",
+                        0.774
+                    ],
+                    "decile_1": 0.835,
+                    "decile_10": 0.798,
+                    "decile_spread": 0.065,
+                    "backtest_coverage": 0.8019
+                },
+                "95": {
+                    "coverage": 0.949,
+                    "msis": 13.538,
+                    "worst_class": [
+                        "BZ",
+                        0.92
+                    ],
+                    "decile_1": 0.898,
+                    "decile_10": 0.945,
+                    "decile_spread": 0.069,
+                    "backtest_coverage": 0.9486
+                }
+            },
+            "rms_windows": {
+                "80": {
+                    "coverage": 0.7918,
+                    "msis": 9.032,
+                    "worst_class": [
+                        "BZ",
+                        0.7
+                    ],
+                    "decile_1": 0.764,
+                    "decile_10": 0.83,
+                    "decile_spread": 0.084,
+                    "backtest_coverage": 0.8005
+                },
+                "95": {
+                    "coverage": 0.9493,
+                    "msis": 22.996,
+                    "worst_class": [
+                        "BZ",
+                        0.885
+                    ],
+                    "decile_1": 0.837,
+                    "decile_10": 0.969,
+                    "decile_spread": 0.149,
+                    "backtest_coverage": 0.9504
+                }
+            },
+            "q80_scores": {
+                "80": {
+                    "coverage": 0.789,
+                    "msis": 7.345,
+                    "worst_class": [
+                        "BZ",
+                        0.733
+                    ],
+                    "decile_1": 0.682,
+                    "decile_10": 0.848,
+                    "decile_spread": 0.166,
+                    "backtest_coverage": 0.7829
+                },
+                "95": {
+                    "coverage": 0.9143,
+                    "msis": 13.371,
+                    "worst_class": [
+                        "CZ",
+                        0.856
+                    ],
+                    "decile_1": 0.776,
+                    "decile_10": 0.942,
+                    "decile_spread": 0.176,
+                    "backtest_coverage": 0.9172
+                }
+            },
+            "q80_windows": {
+                "80": {
+                    "coverage": 0.7948,
+                    "msis": 8.511,
+                    "worst_class": [
+                        "BZ",
+                        0.722
+                    ],
+                    "decile_1": 0.774,
+                    "decile_10": 0.833,
+                    "decile_spread": 0.061,
+                    "backtest_coverage": 0.8006
+                },
+                "95": {
+                    "coverage": 0.9497,
+                    "msis": 18.961,
+                    "worst_class": [
+                        "BZ",
+                        0.892
+                    ],
+                    "decile_1": 0.852,
+                    "decile_10": 0.967,
+                    "decile_spread": 0.13,
+                    "backtest_coverage": 0.9495
+                }
+            },
+            "mean_scores_k30": {
+                "80": {
+                    "coverage": 0.8013,
+                    "msis": 7.725,
+                    "worst_class": [
+                        "AX",
+                        0.757
+                    ],
+                    "decile_1": 0.861,
+                    "decile_10": 0.781,
+                    "decile_spread": 0.107,
+                    "backtest_coverage": 0.797
+                },
+                "95": {
+                    "coverage": 0.9428,
+                    "msis": 14.585,
+                    "worst_class": [
+                        "BZ",
+                        0.913
+                    ],
+                    "decile_1": 0.897,
+                    "decile_10": 0.924,
+                    "decile_spread": 0.066,
+                    "backtest_coverage": 0.9452
+                }
+            },
+            "mean_scores_k100": {
+                "80": {
+                    "coverage": 0.7958,
+                    "msis": 8.233,
+                    "worst_class": [
+                        "BZ",
+                        0.74
+                    ],
+                    "decile_1": 0.826,
+                    "decile_10": 0.799,
+                    "decile_spread": 0.051,
+                    "backtest_coverage": 0.7991
+                },
+                "95": {
+                    "coverage": 0.9478,
+                    "msis": 17.407,
+                    "worst_class": [
+                        "BZ",
+                        0.904
+                    ],
+                    "decile_1": 0.875,
+                    "decile_10": 0.946,
+                    "decile_spread": 0.098,
+                    "backtest_coverage": 0.9489
+                }
+            },
+            "rms_scores_k30": {
+                "80": {
+                    "coverage": 0.7979,
+                    "msis": 8.277,
+                    "worst_class": [
+                        "BZ",
+                        0.736
+                    ],
+                    "decile_1": 0.82,
+                    "decile_10": 0.815,
+                    "decile_spread": 0.039,
+                    "backtest_coverage": 0.8019
+                },
+                "95": {
+                    "coverage": 0.9499,
+                    "msis": 17.161,
+                    "worst_class": [
+                        "BZ",
+                        0.907
+                    ],
+                    "decile_1": 0.872,
+                    "decile_10": 0.959,
+                    "decile_spread": 0.105,
+                    "backtest_coverage": 0.9502
+                }
+            },
+            "rms_scores_k100": {
+                "80": {
+                    "coverage": 0.7937,
+                    "msis": 8.813,
+                    "worst_class": [
+                        "BZ",
+                        0.704
+                    ],
+                    "decile_1": 0.795,
+                    "decile_10": 0.825,
+                    "decile_spread": 0.073,
+                    "backtest_coverage": 0.8013
+                },
+                "95": {
+                    "coverage": 0.9498,
+                    "msis": 21.199,
+                    "worst_class": [
+                        "BZ",
+                        0.888
+                    ],
+                    "decile_1": 0.849,
+                    "decile_10": 0.966,
+                    "decile_spread": 0.135,
+                    "backtest_coverage": 0.9506
+                }
+            },
+            "none": {
+                "80": {
+                    "coverage": 0.7913,
+                    "msis": 9.181,
+                    "worst_class": [
+                        "BZ",
+                        0.695
+                    ],
+                    "decile_1": 0.746,
+                    "decile_10": 0.835,
+                    "decile_spread": 0.094,
+                    "backtest_coverage": 0.8
+                },
+                "95": {
+                    "coverage": 0.9497,
+                    "msis": 24.298,
+                    "worst_class": [
+                        "BZ",
+                        0.885
+                    ],
+                    "decile_1": 0.829,
+                    "decile_10": 0.971,
+                    "decile_spread": 0.158,
+                    "backtest_coverage": 0.9504
+                }
+            },
+            "series_marginal": {
+                "80": {
+                    "coverage": 0.7966,
+                    "msis": 8.454,
+                    "worst_class": [
+                        "BZ",
+                        0.732
+                    ],
+                    "decile_1": 0.753,
+                    "decile_10": 0.838,
+                    "decile_spread": 0.087,
+                    "backtest_coverage": 0.8046
+                },
+                "95": {
+                    "coverage": 0.9522,
+                    "msis": 18.38,
+                    "worst_class": [
+                        "BZ",
+                        0.892
+                    ],
+                    "decile_1": 0.853,
+                    "decile_10": 0.974,
+                    "decile_spread": 0.133,
+                    "backtest_coverage": 0.9543
+                }
+            },
+            "former": {
+                "80": {
+                    "coverage": 0.7944,
+                    "msis": 8.378,
+                    "worst_class": [
+                        "CZ",
+                        0.768
+                    ],
+                    "decile_1": 0.735,
+                    "decile_10": 0.826,
+                    "decile_spread": 0.093,
+                    "backtest_coverage": 0.8064
+                },
+                "95": {
+                    "coverage": 0.9528,
+                    "msis": 17.366,
+                    "worst_class": [
+                        "BY",
+                        0.945
+                    ],
+                    "decile_1": 0.904,
+                    "decile_10": 0.959,
+                    "decile_spread": 0.074,
+                    "backtest_coverage": 0.9557
+                }
+            }
+        }
+    },
+    "m4_monthly": {
+        "StatsForecastAutoETS": {
+            "mean_scores": {
+                "80": {
+                    "coverage": 0.729,
+                    "msis": 7.257,
+                    "worst_class": [
+                        "BX",
+                        0.689
+                    ],
+                    "decile_1": 0.679,
+                    "decile_10": 0.766,
+                    "decile_spread": 0.088,
+                    "backtest_coverage": 0.7715
+                },
+                "95": {
+                    "coverage": 0.8636,
+                    "msis": 14.393,
+                    "worst_class": [
+                        "CX",
+                        0.826
+                    ],
+                    "decile_1": 0.812,
+                    "decile_10": 0.894,
+                    "decile_spread": 0.082,
+                    "backtest_coverage": 0.9161
+                }
+            },
+            "mean_windows": {
+                "80": {
+                    "coverage": 0.7636,
+                    "msis": 7.471,
+                    "worst_class": [
+                        "BX",
+                        0.709
+                    ],
+                    "decile_1": 0.629,
+                    "decile_10": 0.841,
+                    "decile_spread": 0.212,
+                    "backtest_coverage": 0.7976
+                },
+                "95": {
+                    "coverage": 0.9212,
+                    "msis": 13.809,
+                    "worst_class": [
+                        "CX",
+                        0.878
+                    ],
+                    "decile_1": 0.832,
+                    "decile_10": 0.963,
+                    "decile_spread": 0.131,
+                    "backtest_coverage": 0.9465
+                }
+            },
+            "rms_scores": {
+                "80": {
+                    "coverage": 0.7405,
+                    "msis": 7.181,
+                    "worst_class": [
+                        "BX",
+                        0.699
+                    ],
+                    "decile_1": 0.676,
+                    "decile_10": 0.787,
+                    "decile_spread": 0.111,
+                    "backtest_coverage": 0.7819
+                },
+                "95": {
+                    "coverage": 0.8724,
+                    "msis": 14.072,
+                    "worst_class": [
+                        "CX",
+                        0.83
+                    ],
+                    "decile_1": 0.811,
+                    "decile_10": 0.908,
+                    "decile_spread": 0.098,
+                    "backtest_coverage": 0.9239
+                }
+            },
+            "rms_windows": {
+                "80": {
+                    "coverage": 0.7661,
+                    "msis": 7.558,
+                    "worst_class": [
+                        "BX",
+                        0.709
+                    ],
+                    "decile_1": 0.623,
+                    "decile_10": 0.853,
+                    "decile_spread": 0.229,
+                    "backtest_coverage": 0.7988
+                },
+                "95": {
+                    "coverage": 0.9289,
+                    "msis": 13.807,
+                    "worst_class": [
+                        "CX",
+                        0.884
+                    ],
+                    "decile_1": 0.842,
+                    "decile_10": 0.968,
+                    "decile_spread": 0.126,
+                    "backtest_coverage": 0.9482
+                }
+            },
+            "q80_scores": {
+                "80": {
+                    "coverage": 0.7276,
+                    "msis": 7.298,
+                    "worst_class": [
+                        "BX",
+                        0.695
+                    ],
+                    "decile_1": 0.675,
+                    "decile_10": 0.766,
+                    "decile_spread": 0.092,
+                    "backtest_coverage": 0.7758
+                },
+                "95": {
+                    "coverage": 0.8575,
+                    "msis": 14.685,
+                    "worst_class": [
+                        "CX",
+                        0.818
+                    ],
+                    "decile_1": 0.806,
+                    "decile_10": 0.887,
+                    "decile_spread": 0.08,
+                    "backtest_coverage": 0.9144
+                }
+            },
+            "q80_windows": {
+                "80": {
+                    "coverage": 0.763,
+                    "msis": 7.455,
+                    "worst_class": [
+                        "BX",
+                        0.709
+                    ],
+                    "decile_1": 0.631,
+                    "decile_10": 0.839,
+                    "decile_spread": 0.208,
+                    "backtest_coverage": 0.7979
+                },
+                "95": {
+                    "coverage": 0.9197,
+                    "msis": 13.805,
+                    "worst_class": [
+                        "CX",
+                        0.877
+                    ],
+                    "decile_1": 0.832,
+                    "decile_10": 0.961,
+                    "decile_spread": 0.128,
+                    "backtest_coverage": 0.9467
+                }
+            },
+            "mean_scores_k30": {
+                "80": {
+                    "coverage": 0.7424,
+                    "msis": 7.231,
+                    "worst_class": [
+                        "BX",
+                        0.696
+                    ],
+                    "decile_1": 0.657,
+                    "decile_10": 0.801,
+                    "decile_spread": 0.144,
+                    "backtest_coverage": 0.7855
+                },
+                "95": {
+                    "coverage": 0.8827,
+                    "msis": 14.107,
+                    "worst_class": [
+                        "CX",
+                        0.845
+                    ],
+                    "decile_1": 0.814,
+                    "decile_10": 0.922,
+                    "decile_spread": 0.109,
+                    "backtest_coverage": 0.931
+                }
+            },
+            "mean_scores_k100": {
+                "80": {
+                    "coverage": 0.7583,
+                    "msis": 7.358,
+                    "worst_class": [
+                        "BX",
+                        0.706
+                    ],
+                    "decile_1": 0.637,
+                    "decile_10": 0.828,
+                    "decile_spread": 0.191,
+                    "backtest_coverage": 0.7954
+                },
+                "95": {
+                    "coverage": 0.9106,
+                    "msis": 13.802,
+                    "worst_class": [
+                        "CX",
+                        0.872
+                    ],
+                    "decile_1": 0.826,
+                    "decile_10": 0.949,
+                    "decile_spread": 0.123,
+                    "backtest_coverage": 0.9431
+                }
+            },
+            "rms_scores_k30": {
+                "80": {
+                    "coverage": 0.7539,
+                    "msis": 7.222,
+                    "worst_class": [
+                        "BX",
+                        0.704
+                    ],
+                    "decile_1": 0.654,
+                    "decile_10": 0.816,
+                    "decile_spread": 0.163,
+                    "backtest_coverage": 0.7921
+                },
+                "95": {
+                    "coverage": 0.8966,
+                    "msis": 13.713,
+                    "worst_class": [
+                        "CX",
+                        0.858
+                    ],
+                    "decile_1": 0.82,
+                    "decile_10": 0.936,
+                    "decile_spread": 0.115,
+                    "backtest_coverage": 0.9388
+                }
+            },
+            "rms_scores_k100": {
+                "80": {
+                    "coverage": 0.7638,
+                    "msis": 7.44,
+                    "worst_class": [
+                        "BX",
+                        0.71
+                    ],
+                    "decile_1": 0.631,
+                    "decile_10": 0.842,
+                    "decile_spread": 0.21,
+                    "backtest_coverage": 0.7977
+                },
+                "95": {
+                    "coverage": 0.921,
+                    "msis": 13.652,
+                    "worst_class": [
+                        "CX",
+                        0.877
+                    ],
+                    "decile_1": 0.834,
+                    "decile_10": 0.962,
+                    "decile_spread": 0.129,
+                    "backtest_coverage": 0.9467
+                }
+            },
+            "none": {
+                "80": {
+                    "coverage": 0.7691,
+                    "msis": 7.819,
+                    "worst_class": [
+                        "BX",
+                        0.709
+                    ],
+                    "decile_1": 0.605,
+                    "decile_10": 0.864,
+                    "decile_spread": 0.259,
+                    "backtest_coverage": 0.8003
+                },
+                "95": {
+                    "coverage": 0.9389,
+                    "msis": 14.588,
+                    "worst_class": [
+                        "CX",
+                        0.894
+                    ],
+                    "decile_1": 0.849,
+                    "decile_10": 0.978,
+                    "decile_spread": 0.13,
+                    "backtest_coverage": 0.9501
+                }
+            },
+            "series_marginal": {
+                "80": {
+                    "coverage": 0.7745,
+                    "msis": 7.41,
+                    "worst_class": [
+                        "BX",
+                        0.726
+                    ],
+                    "decile_1": 0.645,
+                    "decile_10": 0.856,
+                    "decile_spread": 0.211,
+                    "backtest_coverage": 0.8175
+                },
+                "95": {
+                    "coverage": 0.938,
+                    "msis": 13.644,
+                    "worst_class": [
+                        "CX",
+                        0.904
+                    ],
+                    "decile_1": 0.868,
+                    "decile_10": 0.974,
+                    "decile_spread": 0.106,
+                    "backtest_coverage": 0.9557
+                }
+            },
+            "former": {
+                "80": {
+                    "coverage": 0.7786,
+                    "msis": 7.377,
+                    "worst_class": [
+                        "BX",
+                        0.751
+                    ],
+                    "decile_1": 0.691,
+                    "decile_10": 0.836,
+                    "decile_spread": 0.145,
+                    "backtest_coverage": 0.8209
+                },
+                "95": {
+                    "coverage": 0.9369,
+                    "msis": 13.535,
+                    "worst_class": [
+                        "BZ",
+                        0.925
+                    ],
+                    "decile_1": 0.897,
+                    "decile_10": 0.964,
+                    "decile_spread": 0.066,
+                    "backtest_coverage": 0.9579
+                }
+            }
+        },
+        "StatsForecastBaselineSeasonalNaive": {
+            "mean_scores": {
+                "80": {
+                    "coverage": 0.7043,
+                    "msis": 9.301,
+                    "worst_class": [
+                        "CX",
+                        0.64
+                    ],
+                    "decile_1": 0.609,
+                    "decile_10": 0.767,
+                    "decile_spread": 0.158,
+                    "backtest_coverage": 0.7796
+                },
+                "95": {
+                    "coverage": 0.8426,
+                    "msis": 18.551,
+                    "worst_class": [
+                        "CX",
+                        0.794
+                    ],
+                    "decile_1": 0.765,
+                    "decile_10": 0.893,
+                    "decile_spread": 0.128,
+                    "backtest_coverage": 0.9295
+                }
+            },
+            "mean_windows": {
+                "80": {
+                    "coverage": 0.7531,
+                    "msis": 9.478,
+                    "worst_class": [
+                        "CX",
+                        0.665
+                    ],
+                    "decile_1": 0.576,
+                    "decile_10": 0.854,
+                    "decile_spread": 0.278,
+                    "backtest_coverage": 0.7987
+                },
+                "95": {
+                    "coverage": 0.9051,
+                    "msis": 17.764,
+                    "worst_class": [
+                        "CX",
+                        0.844
+                    ],
+                    "decile_1": 0.792,
+                    "decile_10": 0.966,
+                    "decile_spread": 0.174,
+                    "backtest_coverage": 0.9472
+                }
+            },
+            "rms_scores": {
+                "80": {
+                    "coverage": 0.7191,
+                    "msis": 9.138,
+                    "worst_class": [
+                        "BX",
+                        0.644
+                    ],
+                    "decile_1": 0.612,
+                    "decile_10": 0.798,
+                    "decile_spread": 0.186,
+                    "backtest_coverage": 0.7857
+                },
+                "95": {
+                    "coverage": 0.8489,
+                    "msis": 18.128,
+                    "worst_class": [
+                        "CX",
+                        0.792
+                    ],
+                    "decile_1": 0.76,
+                    "decile_10": 0.904,
+                    "decile_spread": 0.143,
+                    "backtest_coverage": 0.9326
+                }
+            },
+            "rms_windows": {
+                "80": {
+                    "coverage": 0.7571,
+                    "msis": 9.561,
+                    "worst_class": [
+                        "CX",
+                        0.664
+                    ],
+                    "decile_1": 0.573,
+                    "decile_10": 0.864,
+                    "decile_spread": 0.291,
+                    "backtest_coverage": 0.7994
+                },
+                "95": {
+                    "coverage": 0.9142,
+                    "msis": 17.596,
+                    "worst_class": [
+                        "CX",
+                        0.851
+                    ],
+                    "decile_1": 0.801,
+                    "decile_10": 0.97,
+                    "decile_spread": 0.169,
+                    "backtest_coverage": 0.9482
+                }
+            },
+            "q80_scores": {
+                "80": {
+                    "coverage": 0.7117,
+                    "msis": 9.251,
+                    "worst_class": [
+                        "BX",
+                        0.643
+                    ],
+                    "decile_1": 0.617,
+                    "decile_10": 0.776,
+                    "decile_spread": 0.159,
+                    "backtest_coverage": 0.7828
+                },
+                "95": {
+                    "coverage": 0.8356,
+                    "msis": 18.851,
+                    "worst_class": [
+                        "CX",
+                        0.785
+                    ],
+                    "decile_1": 0.762,
+                    "decile_10": 0.881,
+                    "decile_spread": 0.12,
+                    "backtest_coverage": 0.9295
+                }
+            },
+            "q80_windows": {
+                "80": {
+                    "coverage": 0.7547,
+                    "msis": 9.449,
+                    "worst_class": [
+                        "CX",
+                        0.666
+                    ],
+                    "decile_1": 0.578,
+                    "decile_10": 0.856,
+                    "decile_spread": 0.277,
+                    "backtest_coverage": 0.7992
+                },
+                "95": {
+                    "coverage": 0.9057,
+                    "msis": 17.724,
+                    "worst_class": [
+                        "CX",
+                        0.84
+                    ],
+                    "decile_1": 0.794,
+                    "decile_10": 0.967,
+                    "decile_spread": 0.174,
+                    "backtest_coverage": 0.9475
+                }
+            },
+            "mean_scores_k30": {
+                "80": {
+                    "coverage": 0.7249,
+                    "msis": 9.241,
+                    "worst_class": [
+                        "CX",
+                        0.649
+                    ],
+                    "decile_1": 0.599,
+                    "decile_10": 0.802,
+                    "decile_spread": 0.203,
+                    "backtest_coverage": 0.7898
+                },
+                "95": {
+                    "coverage": 0.8622,
+                    "msis": 18.381,
+                    "worst_class": [
+                        "CX",
+                        0.81
+                    ],
+                    "decile_1": 0.768,
+                    "decile_10": 0.916,
+                    "decile_spread": 0.148,
+                    "backtest_coverage": 0.9373
+                }
+            },
+            "mean_scores_k100": {
+                "80": {
+                    "coverage": 0.7463,
+                    "msis": 9.347,
+                    "worst_class": [
+                        "CX",
+                        0.657
+                    ],
+                    "decile_1": 0.578,
+                    "decile_10": 0.84,
+                    "decile_spread": 0.262,
+                    "backtest_coverage": 0.7973
+                },
+                "95": {
+                    "coverage": 0.8917,
+                    "msis": 17.92,
+                    "worst_class": [
+                        "CX",
+                        0.829
+                    ],
+                    "decile_1": 0.78,
+                    "decile_10": 0.954,
+                    "decile_spread": 0.174,
+                    "backtest_coverage": 0.9449
+                }
+            },
+            "rms_scores_k30": {
+                "80": {
+                    "coverage": 0.737,
+                    "msis": 9.169,
+                    "worst_class": [
+                        "CX",
+                        0.651
+                    ],
+                    "decile_1": 0.591,
+                    "decile_10": 0.825,
+                    "decile_spread": 0.234,
+                    "backtest_coverage": 0.7946
+                },
+                "95": {
+                    "coverage": 0.8742,
+                    "msis": 17.836,
+                    "worst_class": [
+                        "CX",
+                        0.811
+                    ],
+                    "decile_1": 0.766,
+                    "decile_10": 0.934,
+                    "decile_spread": 0.167,
+                    "backtest_coverage": 0.9414
+                }
+            },
+            "rms_scores_k100": {
+                "80": {
+                    "coverage": 0.7536,
+                    "msis": 9.411,
+                    "worst_class": [
+                        "CX",
+                        0.664
+                    ],
+                    "decile_1": 0.578,
+                    "decile_10": 0.855,
+                    "decile_spread": 0.277,
+                    "backtest_coverage": 0.7987
+                },
+                "95": {
+                    "coverage": 0.905,
+                    "msis": 17.525,
+                    "worst_class": [
+                        "CX",
+                        0.842
+                    ],
+                    "decile_1": 0.794,
+                    "decile_10": 0.966,
+                    "decile_spread": 0.172,
+                    "backtest_coverage": 0.9471
+                }
+            },
+            "none": {
+                "80": {
+                    "coverage": 0.7619,
+                    "msis": 9.903,
+                    "worst_class": [
+                        "CX",
+                        0.661
+                    ],
+                    "decile_1": 0.561,
+                    "decile_10": 0.876,
+                    "decile_spread": 0.315,
+                    "backtest_coverage": 0.8
+                },
+                "95": {
+                    "coverage": 0.9284,
+                    "msis": 18.301,
+                    "worst_class": [
+                        "CX",
+                        0.865
+                    ],
+                    "decile_1": 0.822,
+                    "decile_10": 0.982,
+                    "decile_spread": 0.16,
+                    "backtest_coverage": 0.9494
+                }
+            },
+            "series_marginal": {
+                "80": {
+                    "coverage": 0.7633,
+                    "msis": 9.241,
+                    "worst_class": [
+                        "CX",
+                        0.681
+                    ],
+                    "decile_1": 0.586,
+                    "decile_10": 0.866,
+                    "decile_spread": 0.28,
+                    "backtest_coverage": 0.8231
+                },
+                "95": {
+                    "coverage": 0.9265,
+                    "msis": 16.651,
+                    "worst_class": [
+                        "CX",
+                        0.869
+                    ],
+                    "decile_1": 0.829,
+                    "decile_10": 0.977,
+                    "decile_spread": 0.148,
+                    "backtest_coverage": 0.9574
+                }
+            },
+            "former": {
+                "80": {
+                    "coverage": 0.7691,
+                    "msis": 9.141,
+                    "worst_class": [
+                        "BX",
+                        0.704
+                    ],
+                    "decile_1": 0.649,
+                    "decile_10": 0.844,
+                    "decile_spread": 0.194,
+                    "backtest_coverage": 0.8267
+                },
+                "95": {
+                    "coverage": 0.9276,
+                    "msis": 16.35,
+                    "worst_class": [
+                        "BX",
+                        0.91
+                    ],
+                    "decile_1": 0.867,
+                    "decile_10": 0.961,
+                    "decile_spread": 0.094,
+                    "backtest_coverage": 0.9604
+                }
+            }
+        },
+        "StatsForecastBaselineWindowAverage": {
+            "mean_scores": {
+                "80": {
+                    "coverage": 0.7066,
+                    "msis": 9.18,
+                    "worst_class": [
+                        "BX",
+                        0.65
+                    ],
+                    "decile_1": 0.619,
+                    "decile_10": 0.771,
+                    "decile_spread": 0.153,
+                    "backtest_coverage": 0.7778
+                },
+                "95": {
+                    "coverage": 0.8499,
+                    "msis": 17.912,
+                    "worst_class": [
+                        "BX",
+                        0.799
+                    ],
+                    "decile_1": 0.78,
+                    "decile_10": 0.897,
+                    "decile_spread": 0.117,
+                    "backtest_coverage": 0.9289
+                }
+            },
+            "mean_windows": {
+                "80": {
+                    "coverage": 0.7507,
+                    "msis": 9.608,
+                    "worst_class": [
+                        "BX",
+                        0.676
+                    ],
+                    "decile_1": 0.569,
+                    "decile_10": 0.879,
+                    "decile_spread": 0.31,
+                    "backtest_coverage": 0.7979
+                },
+                "95": {
+                    "coverage": 0.9154,
+                    "msis": 17.57,
+                    "worst_class": [
+                        "BX",
+                        0.872
+                    ],
+                    "decile_1": 0.804,
+                    "decile_10": 0.977,
+                    "decile_spread": 0.173,
+                    "backtest_coverage": 0.9476
+                }
+            },
+            "rms_scores": {
+                "80": {
+                    "coverage": 0.7196,
+                    "msis": 9.052,
+                    "worst_class": [
+                        "CX",
+                        0.654
+                    ],
+                    "decile_1": 0.614,
+                    "decile_10": 0.803,
+                    "decile_spread": 0.189,
+                    "backtest_coverage": 0.7851
+                },
+                "95": {
+                    "coverage": 0.8592,
+                    "msis": 17.525,
+                    "worst_class": [
+                        "BX",
+                        0.808
+                    ],
+                    "decile_1": 0.774,
+                    "decile_10": 0.913,
+                    "decile_spread": 0.139,
+                    "backtest_coverage": 0.9324
+                }
+            },
+            "rms_windows": {
+                "80": {
+                    "coverage": 0.7549,
+                    "msis": 9.72,
+                    "worst_class": [
+                        "BX",
+                        0.681
+                    ],
+                    "decile_1": 0.564,
+                    "decile_10": 0.888,
+                    "decile_spread": 0.324,
+                    "backtest_coverage": 0.7986
+                },
+                "95": {
+                    "coverage": 0.9233,
+                    "msis": 17.579,
+                    "worst_class": [
+                        "CX",
+                        0.879
+                    ],
+                    "decile_1": 0.812,
+                    "decile_10": 0.982,
+                    "decile_spread": 0.17,
+                    "backtest_coverage": 0.9483
+                }
+            },
+            "q80_scores": {
+                "80": {
+                    "coverage": 0.7088,
+                    "msis": 9.171,
+                    "worst_class": [
+                        "BX",
+                        0.652
+                    ],
+                    "decile_1": 0.622,
+                    "decile_10": 0.777,
+                    "decile_spread": 0.156,
+                    "backtest_coverage": 0.7806
+                },
+                "95": {
+                    "coverage": 0.8395,
+                    "msis": 18.397,
+                    "worst_class": [
+                        "BX",
+                        0.793
+                    ],
+                    "decile_1": 0.774,
+                    "decile_10": 0.891,
+                    "decile_spread": 0.118,
+                    "backtest_coverage": 0.9263
+                }
+            },
+            "q80_windows": {
+                "80": {
+                    "coverage": 0.7519,
+                    "msis": 9.569,
+                    "worst_class": [
+                        "BX",
+                        0.681
+                    ],
+                    "decile_1": 0.573,
+                    "decile_10": 0.878,
+                    "decile_spread": 0.306,
+                    "backtest_coverage": 0.7984
+                },
+                "95": {
+                    "coverage": 0.916,
+                    "msis": 17.517,
+                    "worst_class": [
+                        "BX",
+                        0.87
+                    ],
+                    "decile_1": 0.807,
+                    "decile_10": 0.978,
+                    "decile_spread": 0.171,
+                    "backtest_coverage": 0.9477
+                }
+            },
+            "mean_scores_k30": {
+                "80": {
+                    "coverage": 0.7236,
+                    "msis": 9.189,
+                    "worst_class": [
+                        "BX",
+                        0.653
+                    ],
+                    "decile_1": 0.596,
+                    "decile_10": 0.815,
+                    "decile_spread": 0.22,
+                    "backtest_coverage": 0.7884
+                },
+                "95": {
+                    "coverage": 0.8716,
+                    "msis": 17.714,
+                    "worst_class": [
+                        "BX",
+                        0.815
+                    ],
+                    "decile_1": 0.776,
+                    "decile_10": 0.929,
+                    "decile_spread": 0.154,
+                    "backtest_coverage": 0.9379
+                }
+            },
+            "mean_scores_k100": {
+                "80": {
+                    "coverage": 0.7432,
+                    "msis": 9.426,
+                    "worst_class": [
+                        "BX",
+                        0.668
+                    ],
+                    "decile_1": 0.577,
+                    "decile_10": 0.863,
+                    "decile_spread": 0.286,
+                    "backtest_coverage": 0.7963
+                },
+                "95": {
+                    "coverage": 0.9034,
+                    "msis": 17.515,
+                    "worst_class": [
+                        "BX",
+                        0.855
+                    ],
+                    "decile_1": 0.793,
+                    "decile_10": 0.968,
+                    "decile_spread": 0.174,
+                    "backtest_coverage": 0.9456
+                }
+            },
+            "rms_scores_k30": {
+                "80": {
+                    "coverage": 0.7358,
+                    "msis": 9.165,
+                    "worst_class": [
+                        "CX",
+                        0.662
+                    ],
+                    "decile_1": 0.585,
+                    "decile_10": 0.845,
+                    "decile_spread": 0.259,
+                    "backtest_coverage": 0.7936
+                },
+                "95": {
+                    "coverage": 0.8856,
+                    "msis": 17.25,
+                    "worst_class": [
+                        "BX",
+                        0.832
+                    ],
+                    "decile_1": 0.78,
+                    "decile_10": 0.951,
+                    "decile_spread": 0.171,
+                    "backtest_coverage": 0.9417
+                }
+            },
+            "rms_scores_k100": {
+                "80": {
+                    "coverage": 0.7512,
+                    "msis": 9.529,
+                    "worst_class": [
+                        "BX",
+                        0.677
+                    ],
+                    "decile_1": 0.571,
+                    "decile_10": 0.877,
+                    "decile_spread": 0.307,
+                    "backtest_coverage": 0.7986
+                },
+                "95": {
+                    "coverage": 0.9148,
+                    "msis": 17.302,
+                    "worst_class": [
+                        "BX",
+                        0.869
+                    ],
+                    "decile_1": 0.802,
+                    "decile_10": 0.976,
+                    "decile_spread": 0.174,
+                    "backtest_coverage": 0.9473
+                }
+            },
+            "none": {
+                "80": {
+                    "coverage": 0.7591,
+                    "msis": 10.14,
+                    "worst_class": [
+                        "BX",
+                        0.685
+                    ],
+                    "decile_1": 0.557,
+                    "decile_10": 0.901,
+                    "decile_spread": 0.344,
+                    "backtest_coverage": 0.7997
+                },
+                "95": {
+                    "coverage": 0.9356,
+                    "msis": 18.744,
+                    "worst_class": [
+                        "CX",
+                        0.889
+                    ],
+                    "decile_1": 0.827,
+                    "decile_10": 0.992,
+                    "decile_spread": 0.165,
+                    "backtest_coverage": 0.9497
+                }
+            },
+            "series_marginal": {
+                "80": {
+                    "coverage": 0.7634,
+                    "msis": 9.369,
+                    "worst_class": [
+                        "BX",
+                        0.693
+                    ],
+                    "decile_1": 0.592,
+                    "decile_10": 0.892,
+                    "decile_spread": 0.299,
+                    "backtest_coverage": 0.8202
+                },
+                "95": {
+                    "coverage": 0.9351,
+                    "msis": 16.704,
+                    "worst_class": [
+                        "CX",
+                        0.895
+                    ],
+                    "decile_1": 0.839,
+                    "decile_10": 0.986,
+                    "decile_spread": 0.147,
+                    "backtest_coverage": 0.9566
+                }
+            },
+            "former": {
+                "80": {
+                    "coverage": 0.7689,
+                    "msis": 9.324,
+                    "worst_class": [
+                        "BX",
+                        0.714
+                    ],
+                    "decile_1": 0.637,
+                    "decile_10": 0.865,
+                    "decile_spread": 0.228,
+                    "backtest_coverage": 0.8229
+                },
+                "95": {
+                    "coverage": 0.9335,
+                    "msis": 16.629,
+                    "worst_class": [
+                        "CX",
+                        0.916
+                    ],
+                    "decile_1": 0.858,
+                    "decile_10": 0.977,
+                    "decile_spread": 0.119,
+                    "backtest_coverage": 0.9599
+                }
+            }
+        }
+    }
+}

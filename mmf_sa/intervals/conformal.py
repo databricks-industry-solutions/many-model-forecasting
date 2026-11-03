@@ -22,7 +22,7 @@ OTHER_GROUP = "__other__"
 
 MARGINAL_POOL = "__all__"
 
-# Coverage target that shrinks a scale estimate of each series toward its pool (the default), see series_scale_factors.
+# Coverage target that shrinks a scale estimate of each series toward its pool (an option), see series_scale_factors.
 SERIES_SCALE = "series_scale"
 
 # Pool statistic of the series_scale target: the mean absolute residual score of the pool.
