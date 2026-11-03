@@ -185,5 +185,11 @@ exact and no interval is NULL. The synthetic CrostonSBA backtest coverage is 0.7
 another sign that the default conformal target runs narrow.
 
 **Implications for the plan.** Fix the default conformal target first and re-run these two datasets; then run the
-other datasets. Add the series-scale decile and the AX class to the conditional-coverage report, since that is where
+other datasets.
+
+**Done:** `pi_scale_candidates.py` compared scale statistics and weights on the same backtests, and the per-series
+tail shrinkage over one pool (`coverage.target: series`) won; it is now the default. The rerun with it
+(`results/pi_calibration_coverage_*_series_default.json`) gives, held-out at 80% / 95%: M4 monthly WindowAverage
+0.763 / 0.935 (was 0.707 / 0.850), CrostonSBA on M5 0.797 / 0.952, and the CQR models unchanged. ABC x XYZ is now the
+same method pooled per class, so the pooling study compares `default` and `abc_xyz` directly. Add the series-scale decile and the AX class to the conditional-coverage report, since that is where
 the default and ABC x XYZ differ on M5.
