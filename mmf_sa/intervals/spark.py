@@ -117,7 +117,7 @@ def _all_finite(arr):
     return F.forall(arr, lambda x: _finite(x))
 
 
-def long_backtest(eval_sdf: DataFrame, series_col: str, levels, has_quantiles: bool):
+def long_backtest(eval_sdf: DataFrame, series_col: str, levels, has_quantiles: bool, require_native: bool = False):
     """
     One model's backtest rows aligned as intervals.features.backtest_cubes does, exploded to one row per
     series, window and step.
@@ -126,6 +126,8 @@ def long_backtest(eval_sdf: DataFrame, series_col: str, levels, has_quantiles: b
             backtest_window_start_date, forecast, actual, optionally forecast_quantiles).
         levels: Central levels whose native bands to extract.
         has_quantiles (bool): Whether native quantiles are read (else no lo/hi columns).
+        require_native (bool): Whether every window needs its native quantiles; a series with a window without
+            them is dropped, as an incomplete one, rather than given a zero-width band.
     Returns: (DataFrame, int, int, int, int): Rows (series, window, window_date, step, y, yhat, lo_<i>, hi_<i>),
         W, H, the number of series dropped, and the number kept.
     """
@@ -139,6 +141,8 @@ def long_backtest(eval_sdf: DataFrame, series_col: str, levels, has_quantiles: b
         & (F.size("forecast") == h) & (F.size("actual") == h)
         & _all_finite(F.col("forecast")) & _all_finite(F.col("actual"))
     )
+    if has_quantiles and require_native:
+        valid = valid & F.col("forecast_quantiles").isNotNull()
     good = (kept.groupBy(series_col)
             .agg(F.count(F.lit(1)).alias("_n"), F.min(F.when(valid, 1).otherwise(0)).alias("_ok"))
             .filter((F.col("_n") == w) & (F.col("_ok") == 1)).select(series_col))
@@ -528,7 +532,9 @@ def calibrate_model_spark(spark: SparkSession, eval_sdf: DataFrame, features: Da
     eval_sdf = eval_sdf.join(features.select(series_col), on=series_col, how="left_semi")
     if eval_sdf.limit(1).count() == 0:
         return None, {"dropped": 0}
-    long, w, h, dropped, n_kept = long_backtest(eval_sdf, series_col, levels, has_quantiles)
+    # CQR scores come from the native bands: a window without them must not score a zero-width band.
+    long, w, h, dropped, n_kept = long_backtest(eval_sdf, series_col, levels, has_quantiles,
+                                                require_native=plan["kind"] == "cqr")
 
     label = label_column(pi_conf)
     feats = features.withColumn("_label", label if label is not None else F.lit(MARGINAL_POOL))

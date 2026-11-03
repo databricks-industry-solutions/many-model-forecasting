@@ -200,6 +200,30 @@ def test_spark_drops_incomplete_series(spark):
     result.unpersist()
 
 
+def test_spark_drops_series_with_a_window_without_native_quantiles(spark):
+    """A CQR window without native quantiles is no zero-width band: its series leaves the calibration."""
+    ids, y, yhat, sigma, labels, native = _data(seed=5)
+    eval_sdf, feats = _frames(spark, ids, y, yhat, sigma, labels, native)
+    first = (F.col("uid") == ids[0]) & (F.col("backtest_window_start_date") == F.lit("2024-01-01").cast("timestamp"))
+    eval_sdf = eval_sdf.withColumn("forecast_quantiles", F.when(first, F.lit(None).cast(
+        "map<string,array<double>>")).otherwise(F.col("forecast_quantiles")))
+    result, summary = cs.calibrate_model_spark(spark, eval_sdf, feats, "uid", "m", _pi(), 0.0,
+                                               cs.Materializer(spark, "default.pi_tmp"))
+    assert summary["dropped"] == 1
+    out = result.toPandas()
+    result.unpersist()
+    assert ids[0] not in set(out["uid"])
+    # The other series are calibrated as if the dropped one were not in the data.
+    rest = slice(1, None)
+    ref = calibrate_model(y[rest], yhat[rest], sigma[rest], _pi(),
+                          native={lv: (lo[rest], hi[rest]) for lv, (lo, hi) in native.items()}, clip_lower=0.0)
+    rows = out[out["kind"] == "calibration"]
+    for lv, r in ref.items():
+        got = rows[rows["level"] == float(lv)].sort_values(["uid", "step"])
+        np.testing.assert_allclose(got["q_lo"].to_numpy().reshape(len(ids) - 1, -1), r["q_lo"], rtol=0, atol=TOL)
+        np.testing.assert_allclose(got["q_hi"].to_numpy().reshape(len(ids) - 1, -1), r["q_hi"], rtol=0, atol=TOL)
+
+
 def test_spark_golden_default_settings(spark):
     g = np.load(GOLDEN)
     sigma, labels = g["sigma"], g["abc_xyz"].astype(object)

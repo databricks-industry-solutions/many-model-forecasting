@@ -296,6 +296,15 @@ def test_backtest_cubes_without_quantiles():
     assert out["native"] is None
 
 
+def test_backtest_cubes_drops_a_series_without_native_quantiles_when_required():
+    frame = _eval_rows()
+    frame.at[0, "forecast_quantiles"] = None  # first window of "a"
+    out = backtest_cubes(frame, "uid", levels=(80,), require_native=True)
+    assert list(out["ids"]) == ["b"] and out["dropped"] == 2  # "a" and "c"
+    out = backtest_cubes(frame, "uid", levels=(80,))  # without require_native: the forecast stands in
+    assert list(out["ids"]) == ["a", "b"]
+
+
 def test_backtest_cubes_drops_non_finite_and_short_arrays():
     frame = _eval_rows()
     frame.at[0, "actual"] = np.array([np.nan, 1.0])

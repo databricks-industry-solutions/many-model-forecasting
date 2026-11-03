@@ -116,7 +116,7 @@ def positive_sigma(sigma: np.ndarray):
     return np.where(bad, np.median(sigma[~bad]), sigma), int(bad.sum())
 
 
-def backtest_cubes(frame: pd.DataFrame, series_col: str, levels=()):
+def backtest_cubes(frame: pd.DataFrame, series_col: str, levels=(), require_native: bool = False):
     """
     Cubes of one model's backtest rows from evaluation_output.
     Parameters:
@@ -124,9 +124,11 @@ def backtest_cubes(frame: pd.DataFrame, series_col: str, levels=()):
             arrays, and optionally forecast_quantiles maps.
         series_col (str): Series id column.
         levels: Central levels whose native bands to extract from forecast_quantiles.
+        require_native (bool): Whether every window needs its native quantiles (CQR); a series with a window
+            without them is dropped, as in intervals.spark.long_backtest.
     Every series keeps its last W windows, W being the most common window count. Series with
     fewer windows, or with arrays of the wrong length or non-finite values, are dropped.
-    Missing native quantiles fall back to the point forecast.
+    Missing native quantiles fall back to the point forecast (or drop the series, with require_native).
     Returns: dict with ids (N,), dates (N, W), y and yhat (N, W, H), native {level: (lo, hi)} or None,
         and dropped (number of series dropped).
     """
@@ -141,6 +143,9 @@ def backtest_cubes(frame: pd.DataFrame, series_col: str, levels=()):
     for sid, g in frame.groupby(series_col, sort=True):
         g = g.iloc[-w:]
         if len(g) < w:
+            dropped += 1
+            continue
+        if require_native and has_q and g["forecast_quantiles"].isna().any():
             dropped += 1
             continue
         try:
