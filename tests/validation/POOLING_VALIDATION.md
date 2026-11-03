@@ -244,3 +244,43 @@ the wins are mostly for conformal models on intermittent data. It loses clearly 
 default. Provisional conclusion: keep `pool="marginal"` as the default; document ABC x XYZ as an opt-in for intermittent
 volume data (mainly for models without native intervals), never for rates or prices. To confirm with seeds 11 and 23,
 6 windows where series allow, and with the series-scale decile gap as the primary conditional metric.
+
+## Second pass (seeds 11 and 23 at 3 windows, seed 7 at 6 windows) and decision
+
+Run 973983404032747 on commit 6e56c66 (with the calibration fixes) and the notebook of 521696e, which adds the paired
+bootstrap of the series-scale decile gap; results in `results/pi_pooling_<dataset>_s<seed>_w<windows>.json`. 32 of 35
+tasks ran; FRED-MD still returns HTTP 403 from Databricks and is dropped. Car Parts (51 months) has no 6-window run.
+Hospital, Electricity, Tourism, Traffic and EPF have fewer series than the sample size, so their seeds use the same
+series and give the same numbers: the seed replication concerns M5, Car Parts, Web Traffic, London, Online Retail and
+M4 monthly.
+
+**ABC x XYZ against the default, per dataset** (paired differences, mean over the 3- and 6-window runs; "gap" is the
+worst group's shortfall below nominal, on ABC x XYZ classes and on series-scale deciles):
+
+| Dataset | Volume | Verdict | Evidence |
+|---|---|---|---|
+| M5 | yes | **helps** (every run) | CrostonSBA 95%: decile gap -4.6 to -8.2 points, class gap -3.8 to -8.7, WIS -1.0 to -2.0%; CQR models: class gaps -1 to -3, coverage +0.2 to +0.8 |
+| Car Parts | yes | **helps** (every run) | CrostonSBA 80%: decile gap -25 to -27 points, WIS -4.9 to -6.3% (coverage +2.2 to +2.8, from 0.84 toward over-coverage); AutoETS, SeasonalNaive WIS -1 to -2% |
+| Online Retail | yes | **helps** (every run) | CrostonSBA: decile gap -10.5 to -13.2 points, WIS -2.0 to -6.7%; SeasonalNaive 80%: decile gap -3.1 to -3.9 |
+| Web Traffic | yes | mixed | WIS -0.3 to -5.1%, AutoETS 80% decile gap -9.5 to -13.6, but SeasonalNaive 80% loses 1.9 to 2.7 points of coverage |
+| Hospital, London, Tourism | yes | neutral | All differences within 1 point and 1% |
+| Electricity | yes | slightly worse | SeasonalNaive WIS +1.3 to +4.1%, decile gap +1.6 to +3.3 |
+| M4 monthly | no | neutral | WindowAverage 80% class gap -3, otherwise within 1 point |
+| Traffic | no | **hurts** | Coverage -3 to -10 points at 3 windows (SeasonalNaive 80%: -9.5), -0.5 to -5 at 6 windows; WIS +0.4 to +5.6% |
+| EPF prices | no | **hurts** | Coverage -1 to -4 points; SeasonalNaive WIS +1.2 to +6.9% |
+
+- **H1** holds: the default is within 2-3 points of nominal everywhere except Electricity and Traffic SeasonalNaive,
+  where the native bands miss too (the held-out horizon is harder than the backtest windows).
+- **H2** holds for intermittent demand, not for volumes in general: the gains are on M5, Car Parts and Online Retail,
+  in every run and under both gap definitions, and mostly for the models without native intervals (CrostonSBA).
+  Smooth volumes (Hospital, London, Tourism, Electricity) gain nothing.
+- **H3** holds: on rates and prices ABC x XYZ loses coverage, less with 6 windows (larger pools per class).
+- **H4**: `sb_class` is close to the default (most series fall in one class); it helps on Online Retail (WIS -1.8 to
+  -6.0%) and slightly on Traffic. `keys` is neutral on M5 (store x category) and Tourism (purpose); EPF by market only
+  has pools large enough at 6 windows, and loses 4 points of coverage there. Neither replaces ABC x XYZ.
+
+**Decision.** The rule's first branch is met: on 3 volume datasets (M5, Car Parts, Online Retail) ABC x XYZ lowers the
+worst-group gap by 3 points or more beyond the bootstrap noise, with marginal coverage within 1 point (Car Parts
+CrostonSBA aside, where it rises toward over-coverage) and WIS lower. It is not met on all volume datasets and loses on
+Traffic and EPF, so it does not become a default. The docs and Skill 4 Step 3f now recommend `pool="group",
+group_col="auto"` for intermittent demand data, and never for targets that are not volumes; one pool stays the default.

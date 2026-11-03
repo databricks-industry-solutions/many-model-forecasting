@@ -1,0 +1,7237 @@
+{
+ "dataset": "m5",
+ "volume": true,
+ "keys": [
+  "store_id",
+  "cat_id"
+ ],
+ "series": 1993,
+ "h": 28,
+ "windows": 6,
+ "seed": 7,
+ "run_id": "19ca00f8-c558-456b-83ad-bddcb95f23a6",
+ "timings": {
+  "run_forecast": 373.1,
+  "calibrate_default": 295.7,
+  "calibrate_abc_xyz": 271.0,
+  "calibrate_sb_class": 252.7,
+  "calibrate_keys": 276.9
+ },
+ "calibration": {
+  "default": {
+   "StatsForecastAutoETS": {
+    "methods": {
+     "80": "cqr/asymmetric/marginal",
+     "95": "cqr/asymmetric/marginal"
+    },
+    "coverage": {
+     "coverage_80": 0.8028,
+     "coverage_95": 0.9501,
+     "native_coverage_80": 0.8673,
+     "native_coverage_95": 0.9401
+    },
+    "error": null
+   },
+   "StatsForecastBaselineSeasonalNaive": {
+    "methods": {
+     "80": "cqr/asymmetric/marginal",
+     "95": "cqr/asymmetric/marginal"
+    },
+    "coverage": {
+     "coverage_80": 0.8028,
+     "coverage_95": 0.9524,
+     "native_coverage_80": 0.9093,
+     "native_coverage_95": 0.9679
+    },
+    "error": null
+   },
+   "StatsForecastCrostonSBA": {
+    "methods": {
+     "80": "conformal/signed_normalized/series",
+     "95": "conformal/signed_normalized/series"
+    },
+    "coverage": {
+     "coverage_80": 0.8064,
+     "coverage_95": 0.9558
+    },
+    "error": null
+   }
+  },
+  "abc_xyz": {
+   "StatsForecastAutoETS": {
+    "methods": {
+     "80": "cqr/asymmetric/group",
+     "95": "cqr/asymmetric/group"
+    },
+    "coverage": {
+     "coverage_80": 0.8082,
+     "coverage_95": 0.9501,
+     "native_coverage_80": 0.8673,
+     "native_coverage_95": 0.9401
+    },
+    "error": null
+   },
+   "StatsForecastBaselineSeasonalNaive": {
+    "methods": {
+     "80": "cqr/asymmetric/group",
+     "95": "cqr/asymmetric/group"
+    },
+    "coverage": {
+     "coverage_80": 0.8093,
+     "coverage_95": 0.9523,
+     "native_coverage_80": 0.9093,
+     "native_coverage_95": 0.9679
+    },
+    "error": null
+   },
+   "StatsForecastCrostonSBA": {
+    "methods": {
+     "80": "conformal/signed_normalized/series",
+     "95": "conformal/signed_normalized/series"
+    },
+    "coverage": {
+     "coverage_80": 0.8076,
+     "coverage_95": 0.9551
+    },
+    "error": null
+   }
+  },
+  "sb_class": {
+   "StatsForecastAutoETS": {
+    "methods": {
+     "80": "cqr/asymmetric/group",
+     "95": "cqr/asymmetric/group"
+    },
+    "coverage": {
+     "coverage_80": 0.8029,
+     "coverage_95": 0.9498,
+     "native_coverage_80": 0.8673,
+     "native_coverage_95": 0.9401
+    },
+    "error": null
+   },
+   "StatsForecastBaselineSeasonalNaive": {
+    "methods": {
+     "80": "cqr/asymmetric/group",
+     "95": "cqr/asymmetric/group"
+    },
+    "coverage": {
+     "coverage_80": 0.803,
+     "coverage_95": 0.9524,
+     "native_coverage_80": 0.9093,
+     "native_coverage_95": 0.9679
+    },
+    "error": null
+   },
+   "StatsForecastCrostonSBA": {
+    "methods": {
+     "80": "conformal/signed_normalized/series",
+     "95": "conformal/signed_normalized/series"
+    },
+    "coverage": {
+     "coverage_80": 0.8064,
+     "coverage_95": 0.9556
+    },
+    "error": null
+   }
+  },
+  "keys": {
+   "StatsForecastAutoETS": {
+    "methods": {
+     "80": "cqr/asymmetric/group",
+     "95": "cqr/asymmetric/group"
+    },
+    "coverage": {
+     "coverage_80": 0.804,
+     "coverage_95": 0.9514,
+     "native_coverage_80": 0.8673,
+     "native_coverage_95": 0.9401
+    },
+    "error": null
+   },
+   "StatsForecastBaselineSeasonalNaive": {
+    "methods": {
+     "80": "cqr/asymmetric/group",
+     "95": "cqr/asymmetric/group"
+    },
+    "coverage": {
+     "coverage_80": 0.8048,
+     "coverage_95": 0.9524,
+     "native_coverage_80": 0.9093,
+     "native_coverage_95": 0.9679
+    },
+    "error": null
+   },
+   "StatsForecastCrostonSBA": {
+    "methods": {
+     "80": "conformal/signed_normalized/series",
+     "95": "conformal/signed_normalized/series"
+    },
+    "coverage": {
+     "coverage_80": 0.8101,
+     "coverage_95": 0.9613
+    },
+    "error": null
+   }
+  }
+ },
+ "merged_into_other": {
+  "default": {
+   "StatsForecastAutoETS": 0.0,
+   "StatsForecastBaselineSeasonalNaive": 0.0,
+   "StatsForecastCrostonSBA": 0.0
+  },
+  "abc_xyz": {
+   "StatsForecastAutoETS": 0.005,
+   "StatsForecastBaselineSeasonalNaive": 0.005,
+   "StatsForecastCrostonSBA": 0.005
+  },
+  "sb_class": {
+   "StatsForecastAutoETS": 0.0,
+   "StatsForecastBaselineSeasonalNaive": 0.0,
+   "StatsForecastCrostonSBA": 0.0
+  },
+  "keys": {
+   "StatsForecastAutoETS": 0.0,
+   "StatsForecastBaselineSeasonalNaive": 0.0,
+   "StatsForecastCrostonSBA": 0.0
+  }
+ },
+ "heldout": {
+  "native": {
+   "StatsForecastAutoETS": {
+    "series": 1993,
+    "wis": 0.7387,
+    "80": {
+     "coverage": 0.856,
+     "msis": 7.7521,
+     "width": 4.1213,
+     "share_below_nominal_by_10": 0.0913,
+     "worst_gap": {
+      "abc_xyz": 0.0,
+      "sigma_decile": 0.0,
+      "sb_class": 0.0,
+      "keys": 0.008
+     },
+     "by_group": {
+      "abc_xyz": {
+       "AX": [
+        0.848,
+        521
+       ],
+       "AY": [
+        0.878,
+        65
+       ],
+       "AZ": [
+        0.902,
+        8
+       ],
+       "BX": [
+        0.864,
+        142
+       ],
+       "BY": [
+        0.867,
+        467
+       ],
+       "BZ": [
+        0.854,
+        62
+       ],
+       "CX": [
+        0.804,
+        2
+       ],
+       "CY": [
+        0.871,
+        132
+       ],
+       "CZ": [
+        0.847,
+        594
+       ]
+      },
+      "sigma_decile": {
+       "1": [
+        0.865,
+        200
+       ],
+       "10": [
+        0.88,
+        200
+       ],
+       "2": [
+        0.832,
+        199
+       ],
+       "3": [
+        0.857,
+        199
+       ],
+       "4": [
+        0.86,
+        199
+       ],
+       "5": [
+        0.864,
+        200
+       ],
+       "6": [
+        0.849,
+        199
+       ],
+       "7": [
+        0.855,
+        199
+       ],
+       "8": [
+        0.857,
+        199
+       ],
+       "9": [
+        0.841,
+        199
+       ]
+      },
+      "sb_class": {
+       "erratic": [
+        0.864,
+        42
+       ],
+       "intermittent": [
+        0.851,
+        1539
+       ],
+       "lumpy": [
+        0.889,
+        236
+       ],
+       "smooth": [
+        0.852,
+        176
+       ]
+      },
+      "keys": {
+       "CA_1|FOODS": [
+        0.868,
+        91
+       ],
+       "CA_1|HOBBIES": [
+        0.873,
+        35
+       ],
+       "CA_1|HOUSEHOLD": [
+        0.872,
+        72
+       ],
+       "CA_2|FOODS": [
+        0.792,
+        79
+       ],
+       "CA_2|HOBBIES": [
+        0.866,
+        27
+       ],
+       "CA_2|HOUSEHOLD": [
+        0.819,
+        62
+       ],
+       "CA_3|FOODS": [
+        0.849,
+        87
+       ],
+       "CA_3|HOBBIES": [
+        0.847,
+        47
+       ],
+       "CA_3|HOUSEHOLD": [
+        0.835,
+        83
+       ],
+       "CA_4|FOODS": [
+        0.825,
+        91
+       ],
+       "CA_4|HOBBIES": [
+        0.888,
+        37
+       ],
+       "CA_4|HOUSEHOLD": [
+        0.869,
+        68
+       ],
+       "TX_1|FOODS": [
+        0.865,
+        82
+       ],
+       "TX_1|HOBBIES": [
+        0.887,
+        36
+       ],
+       "TX_1|HOUSEHOLD": [
+        0.869,
+        68
+       ],
+       "TX_2|FOODS": [
+        0.874,
+        97
+       ],
+       "TX_2|HOBBIES": [
+        0.851,
+        52
+       ],
+       "TX_2|HOUSEHOLD": [
+        0.892,
+        74
+       ],
+       "TX_3|FOODS": [
+        0.862,
+        104
+       ],
+       "TX_3|HOBBIES": [
+        0.855,
+        38
+       ],
+       "TX_3|HOUSEHOLD": [
+        0.87,
+        63
+       ],
+       "WI_1|FOODS": [
+        0.851,
+        88
+       ],
+       "WI_1|HOBBIES": [
+        0.861,
+        31
+       ],
+       "WI_1|HOUSEHOLD": [
+        0.852,
+        80
+       ],
+       "WI_2|FOODS": [
+        0.866,
+        89
+       ],
+       "WI_2|HOBBIES": [
+        0.854,
+        30
+       ],
+       "WI_2|HOUSEHOLD": [
+        0.861,
+        65
+       ],
+       "WI_3|FOODS": [
+        0.833,
+        96
+       ],
+       "WI_3|HOBBIES": [
+        0.877,
+        44
+       ],
+       "WI_3|HOUSEHOLD": [
+        0.86,
+        77
+       ]
+      }
+     }
+    },
+    "95": {
+     "coverage": 0.9342,
+     "msis": 15.2141,
+     "width": 6.3029,
+     "share_below_nominal_by_10": 0.0818,
+     "worst_gap": {
+      "abc_xyz": 0.0354,
+      "sigma_decile": 0.0577,
+      "sb_class": 0.0214,
+      "keys": 0.0418
+     },
+     "by_group": {
+      "abc_xyz": {
+       "AX": [
+        0.951,
+        521
+       ],
+       "AY": [
+        0.949,
+        65
+       ],
+       "AZ": [
+        0.946,
+        8
+       ],
+       "BX": [
+        0.949,
+        142
+       ],
+       "BY": [
+        0.932,
+        467
+       ],
+       "BZ": [
+        0.919,
+        62
+       ],
+       "CX": [
+        0.964,
+        2
+       ],
+       "CY": [
+        0.944,
+        132
+       ],
+       "CZ": [
+        0.915,
+        594
+       ]
+      },
+      "sigma_decile": {
+       "1": [
+        0.892,
+        200
+       ],
+       "10": [
+        0.964,
+        200
+       ],
+       "2": [
+        0.923,
+        199
+       ],
+       "3": [
+        0.945,
+        199
+       ],
+       "4": [
+        0.923,
+        199
+       ],
+       "5": [
+        0.927,
+        200
+       ],
+       "6": [
+        0.934,
+        199
+       ],
+       "7": [
+        0.94,
+        199
+       ],
+       "8": [
+        0.948,
+        199
+       ],
+       "9": [
+        0.946,
+        199
+       ]
+      },
+      "sb_class": {
+       "erratic": [
+        0.957,
+        42
+       ],
+       "intermittent": [
+        0.929,
+        1539
+       ],
+       "lumpy": [
+        0.952,
+        236
+       ],
+       "smooth": [
+        0.953,
+        176
+       ]
+      },
+      "keys": {
+       "CA_1|FOODS": [
+        0.942,
+        91
+       ],
+       "CA_1|HOBBIES": [
+        0.932,
+        35
+       ],
+       "CA_1|HOUSEHOLD": [
+        0.953,
+        72
+       ],
+       "CA_2|FOODS": [
+        0.908,
+        79
+       ],
+       "CA_2|HOBBIES": [
+        0.911,
+        27
+       ],
+       "CA_2|HOUSEHOLD": [
+        0.922,
+        62
+       ],
+       "CA_3|FOODS": [
+        0.946,
+        87
+       ],
+       "CA_3|HOBBIES": [
+        0.913,
+        47
+       ],
+       "CA_3|HOUSEHOLD": [
+        0.948,
+        83
+       ],
+       "CA_4|FOODS": [
+        0.92,
+        91
+       ],
+       "CA_4|HOBBIES": [
+        0.946,
+        37
+       ],
+       "CA_4|HOUSEHOLD": [
+        0.932,
+        68
+       ],
+       "TX_1|FOODS": [
+        0.939,
+        82
+       ],
+       "TX_1|HOBBIES": [
+        0.926,
+        36
+       ],
+       "TX_1|HOUSEHOLD": [
+        0.944,
+        68
+       ],
+       "TX_2|FOODS": [
+        0.944,
+        97
+       ],
+       "TX_2|HOBBIES": [
+        0.931,
+        52
+       ],
+       "TX_2|HOUSEHOLD": [
+        0.951,
+        74
+       ],
+       "TX_3|FOODS": [
+        0.939,
+        104
+       ],
+       "TX_3|HOBBIES": [
+        0.929,
+        38
+       ],
+       "TX_3|HOUSEHOLD": [
+        0.938,
+        63
+       ],
+       "WI_1|FOODS": [
+        0.925,
+        88
+       ],
+       "WI_1|HOBBIES": [
+        0.934,
+        31
+       ],
+       "WI_1|HOUSEHOLD": [
+        0.938,
+        80
+       ],
+       "WI_2|FOODS": [
+        0.949,
+        89
+       ],
+       "WI_2|HOBBIES": [
+        0.91,
+        30
+       ],
+       "WI_2|HOUSEHOLD": [
+        0.942,
+        65
+       ],
+       "WI_3|FOODS": [
+        0.922,
+        96
+       ],
+       "WI_3|HOBBIES": [
+        0.928,
+        44
+       ],
+       "WI_3|HOUSEHOLD": [
+        0.919,
+        77
+       ]
+      }
+     }
+    }
+   },
+   "StatsForecastBaselineSeasonalNaive": {
+    "series": 1993,
+    "wis": 1.0129,
+    "80": {
+     "coverage": 0.9033,
+     "msis": 11.9408,
+     "width": 8.3154,
+     "share_below_nominal_by_10": 0.0276,
+     "worst_gap": {
+      "abc_xyz": 0.0,
+      "sigma_decile": 0.0,
+      "sb_class": 0.0,
+      "keys": 0.0
+     },
+     "by_group": {
+      "abc_xyz": {
+       "AX": [
+        0.924,
+        521
+       ],
+       "AY": [
+        0.924,
+        65
+       ],
+       "AZ": [
+        0.951,
+        8
+       ],
+       "BX": [
+        0.912,
+        142
+       ],
+       "BY": [
+        0.907,
+        467
+       ],
+       "BZ": [
+        0.901,
+        62
+       ],
+       "CX": [
+        0.857,
+        2
+       ],
+       "CY": [
+        0.907,
+        132
+       ],
+       "CZ": [
+        0.876,
+        594
+       ]
+      },
+      "sigma_decile": {
+       "1": [
+        0.863,
+        200
+       ],
+       "10": [
+        0.933,
+        200
+       ],
+       "2": [
+        0.886,
+        199
+       ],
+       "3": [
+        0.892,
+        199
+       ],
+       "4": [
+        0.905,
+        199
+       ],
+       "5": [
+        0.903,
+        200
+       ],
+       "6": [
+        0.901,
+        199
+       ],
+       "7": [
+        0.906,
+        199
+       ],
+       "8": [
+        0.928,
+        199
+       ],
+       "9": [
+        0.917,
+        199
+       ]
+      },
+      "sb_class": {
+       "erratic": [
+        0.931,
+        42
+       ],
+       "intermittent": [
+        0.896,
+        1539
+       ],
+       "lumpy": [
+        0.922,
+        236
+       ],
+       "smooth": [
+        0.936,
+        176
+       ]
+      },
+      "keys": {
+       "CA_1|FOODS": [
+        0.92,
+        91
+       ],
+       "CA_1|HOBBIES": [
+        0.924,
+        35
+       ],
+       "CA_1|HOUSEHOLD": [
+        0.921,
+        72
+       ],
+       "CA_2|FOODS": [
+        0.87,
+        79
+       ],
+       "CA_2|HOBBIES": [
+        0.909,
+        27
+       ],
+       "CA_2|HOUSEHOLD": [
+        0.9,
+        62
+       ],
+       "CA_3|FOODS": [
+        0.924,
+        87
+       ],
+       "CA_3|HOBBIES": [
+        0.88,
+        47
+       ],
+       "CA_3|HOUSEHOLD": [
+        0.907,
+        83
+       ],
+       "CA_4|FOODS": [
+        0.882,
+        91
+       ],
+       "CA_4|HOBBIES": [
+        0.931,
+        37
+       ],
+       "CA_4|HOUSEHOLD": [
+        0.897,
+        68
+       ],
+       "TX_1|FOODS": [
+        0.895,
+        82
+       ],
+       "TX_1|HOBBIES": [
+        0.913,
+        36
+       ],
+       "TX_1|HOUSEHOLD": [
+        0.92,
+        68
+       ],
+       "TX_2|FOODS": [
+        0.909,
+        97
+       ],
+       "TX_2|HOBBIES": [
+        0.907,
+        52
+       ],
+       "TX_2|HOUSEHOLD": [
+        0.931,
+        74
+       ],
+       "TX_3|FOODS": [
+        0.919,
+        104
+       ],
+       "TX_3|HOBBIES": [
+        0.863,
+        38
+       ],
+       "TX_3|HOUSEHOLD": [
+        0.895,
+        63
+       ],
+       "WI_1|FOODS": [
+        0.899,
+        88
+       ],
+       "WI_1|HOBBIES": [
+        0.903,
+        31
+       ],
+       "WI_1|HOUSEHOLD": [
+        0.911,
+        80
+       ],
+       "WI_2|FOODS": [
+        0.913,
+        89
+       ],
+       "WI_2|HOBBIES": [
+        0.886,
+        30
+       ],
+       "WI_2|HOUSEHOLD": [
+        0.9,
+        65
+       ],
+       "WI_3|FOODS": [
+        0.891,
+        96
+       ],
+       "WI_3|HOBBIES": [
+        0.885,
+        44
+       ],
+       "WI_3|HOUSEHOLD": [
+        0.878,
+        77
+       ]
+      }
+     }
+    },
+    "95": {
+     "coverage": 0.9662,
+     "msis": 20.5093,
+     "width": 12.7173,
+     "share_below_nominal_by_10": 0.0281,
+     "worst_gap": {
+      "abc_xyz": 0.0,
+      "sigma_decile": 0.0134,
+      "sb_class": 0.0,
+      "keys": 0.0167
+     },
+     "by_group": {
+      "abc_xyz": {
+       "AX": [
+        0.978,
+        521
+       ],
+       "AY": [
+        0.972,
+        65
+       ],
+       "AZ": [
+        0.982,
+        8
+       ],
+       "BX": [
+        0.977,
+        142
+       ],
+       "BY": [
+        0.968,
+        467
+       ],
+       "BZ": [
+        0.956,
+        62
+       ],
+       "CX": [
+        0.982,
+        2
+       ],
+       "CY": [
+        0.969,
+        132
+       ],
+       "CZ": [
+        0.951,
+        594
+       ]
+      },
+      "sigma_decile": {
+       "1": [
+        0.937,
+        200
+       ],
+       "10": [
+        0.981,
+        200
+       ],
+       "2": [
+        0.967,
+        199
+       ],
+       "3": [
+        0.962,
+        199
+       ],
+       "4": [
+        0.962,
+        199
+       ],
+       "5": [
+        0.961,
+        200
+       ],
+       "6": [
+        0.966,
+        199
+       ],
+       "7": [
+        0.972,
+        199
+       ],
+       "8": [
+        0.98,
+        199
+       ],
+       "9": [
+        0.976,
+        199
+       ]
+      },
+      "sb_class": {
+       "erratic": [
+        0.983,
+        42
+       ],
+       "intermittent": [
+        0.963,
+        1539
+       ],
+       "lumpy": [
+        0.974,
+        236
+       ],
+       "smooth": [
+        0.983,
+        176
+       ]
+      },
+      "keys": {
+       "CA_1|FOODS": [
+        0.976,
+        91
+       ],
+       "CA_1|HOBBIES": [
+        0.978,
+        35
+       ],
+       "CA_1|HOUSEHOLD": [
+        0.974,
+        72
+       ],
+       "CA_2|FOODS": [
+        0.954,
+        79
+       ],
+       "CA_2|HOBBIES": [
+        0.975,
+        27
+       ],
+       "CA_2|HOUSEHOLD": [
+        0.967,
+        62
+       ],
+       "CA_3|FOODS": [
+        0.975,
+        87
+       ],
+       "CA_3|HOBBIES": [
+        0.945,
+        47
+       ],
+       "CA_3|HOUSEHOLD": [
+        0.97,
+        83
+       ],
+       "CA_4|FOODS": [
+        0.954,
+        91
+       ],
+       "CA_4|HOBBIES": [
+        0.978,
+        37
+       ],
+       "CA_4|HOUSEHOLD": [
+        0.966,
+        68
+       ],
+       "TX_1|FOODS": [
+        0.967,
+        82
+       ],
+       "TX_1|HOBBIES": [
+        0.966,
+        36
+       ],
+       "TX_1|HOUSEHOLD": [
+        0.973,
+        68
+       ],
+       "TX_2|FOODS": [
+        0.961,
+        97
+       ],
+       "TX_2|HOBBIES": [
+        0.975,
+        52
+       ],
+       "TX_2|HOUSEHOLD": [
+        0.973,
+        74
+       ],
+       "TX_3|FOODS": [
+        0.973,
+        104
+       ],
+       "TX_3|HOBBIES": [
+        0.954,
+        38
+       ],
+       "TX_3|HOUSEHOLD": [
+        0.968,
+        63
+       ],
+       "WI_1|FOODS": [
+        0.964,
+        88
+       ],
+       "WI_1|HOBBIES": [
+        0.968,
+        31
+       ],
+       "WI_1|HOUSEHOLD": [
+        0.973,
+        80
+       ],
+       "WI_2|FOODS": [
+        0.972,
+        89
+       ],
+       "WI_2|HOBBIES": [
+        0.933,
+        30
+       ],
+       "WI_2|HOUSEHOLD": [
+        0.96,
+        65
+       ],
+       "WI_3|FOODS": [
+        0.961,
+        96
+       ],
+       "WI_3|HOBBIES": [
+        0.951,
+        44
+       ],
+       "WI_3|HOUSEHOLD": [
+        0.962,
+        77
+       ]
+      }
+     }
+    }
+   }
+  },
+  "default": {
+   "StatsForecastAutoETS": {
+    "series": 1993,
+    "wis": 0.6887,
+    "80": {
+     "coverage": 0.7884,
+     "msis": 7.0801,
+     "width": 2.5481,
+     "share_below_nominal_by_10": 0.2042,
+     "worst_gap": {
+      "abc_xyz": 0.0538,
+      "sigma_decile": 0.0561,
+      "sb_class": 0.075,
+      "keys": 0.0817
+     },
+     "by_group": {
+      "abc_xyz": {
+       "AX": [
+        0.746,
+        521
+       ],
+       "AY": [
+        0.837,
+        65
+       ],
+       "AZ": [
+        0.871,
+        8
+       ],
+       "BX": [
+        0.769,
+        142
+       ],
+       "BY": [
+        0.783,
+        467
+       ],
+       "BZ": [
+        0.815,
+        62
+       ],
+       "CX": [
+        0.714,
+        2
+       ],
+       "CY": [
+        0.779,
+        132
+       ],
+       "CZ": [
+        0.827,
+        594
+       ]
+      },
+      "sigma_decile": {
+       "1": [
+        0.862,
+        200
+       ],
+       "10": [
+        0.786,
+        200
+       ],
+       "2": [
+        0.817,
+        199
+       ],
+       "3": [
+        0.819,
+        199
+       ],
+       "4": [
+        0.756,
+        199
+       ],
+       "5": [
+        0.779,
+        200
+       ],
+       "6": [
+        0.784,
+        199
+       ],
+       "7": [
+        0.768,
+        199
+       ],
+       "8": [
+        0.768,
+        199
+       ],
+       "9": [
+        0.744,
+        199
+       ]
+      },
+      "sb_class": {
+       "erratic": [
+        0.793,
+        42
+       ],
+       "intermittent": [
+        0.788,
+        1539
+       ],
+       "lumpy": [
+        0.838,
+        236
+       ],
+       "smooth": [
+        0.725,
+        176
+       ]
+      },
+      "keys": {
+       "CA_1|FOODS": [
+        0.799,
+        91
+       ],
+       "CA_1|HOBBIES": [
+        0.833,
+        35
+       ],
+       "CA_1|HOUSEHOLD": [
+        0.795,
+        72
+       ],
+       "CA_2|FOODS": [
+        0.719,
+        79
+       ],
+       "CA_2|HOBBIES": [
+        0.81,
+        27
+       ],
+       "CA_2|HOUSEHOLD": [
+        0.718,
+        62
+       ],
+       "CA_3|FOODS": [
+        0.778,
+        87
+       ],
+       "CA_3|HOBBIES": [
+        0.77,
+        47
+       ],
+       "CA_3|HOUSEHOLD": [
+        0.774,
+        83
+       ],
+       "CA_4|FOODS": [
+        0.755,
+        91
+       ],
+       "CA_4|HOBBIES": [
+        0.84,
+        37
+       ],
+       "CA_4|HOUSEHOLD": [
+        0.81,
+        68
+       ],
+       "TX_1|FOODS": [
+        0.782,
+        82
+       ],
+       "TX_1|HOBBIES": [
+        0.814,
+        36
+       ],
+       "TX_1|HOUSEHOLD": [
+        0.801,
+        68
+       ],
+       "TX_2|FOODS": [
+        0.795,
+        97
+       ],
+       "TX_2|HOBBIES": [
+        0.791,
+        52
+       ],
+       "TX_2|HOUSEHOLD": [
+        0.837,
+        74
+       ],
+       "TX_3|FOODS": [
+        0.789,
+        104
+       ],
+       "TX_3|HOBBIES": [
+        0.807,
+        38
+       ],
+       "TX_3|HOUSEHOLD": [
+        0.804,
+        63
+       ],
+       "WI_1|FOODS": [
+        0.762,
+        88
+       ],
+       "WI_1|HOBBIES": [
+        0.819,
+        31
+       ],
+       "WI_1|HOUSEHOLD": [
+        0.792,
+        80
+       ],
+       "WI_2|FOODS": [
+        0.784,
+        89
+       ],
+       "WI_2|HOBBIES": [
+        0.83,
+        30
+       ],
+       "WI_2|HOUSEHOLD": [
+        0.805,
+        65
+       ],
+       "WI_3|FOODS": [
+        0.764,
+        96
+       ],
+       "WI_3|HOBBIES": [
+        0.827,
+        44
+       ],
+       "WI_3|HOUSEHOLD": [
+        0.805,
+        77
+       ]
+      }
+     }
+    },
+    "95": {
+     "coverage": 0.9445,
+     "msis": 12.8991,
+     "width": 4.6629,
+     "share_below_nominal_by_10": 0.0577,
+     "worst_gap": {
+      "abc_xyz": 0.0266,
+      "sigma_decile": 0.0523,
+      "sb_class": 0.0103,
+      "keys": 0.0393
+     },
+     "by_group": {
+      "abc_xyz": {
+       "AX": [
+        0.962,
+        521
+       ],
+       "AY": [
+        0.957,
+        65
+       ],
+       "AZ": [
+        0.951,
+        8
+       ],
+       "BX": [
+        0.964,
+        142
+       ],
+       "BY": [
+        0.945,
+        467
+       ],
+       "BZ": [
+        0.927,
+        62
+       ],
+       "CX": [
+        0.964,
+        2
+       ],
+       "CY": [
+        0.95,
+        132
+       ],
+       "CZ": [
+        0.923,
+        594
+       ]
+      },
+      "sigma_decile": {
+       "1": [
+        0.898,
+        200
+       ],
+       "10": [
+        0.972,
+        200
+       ],
+       "2": [
+        0.938,
+        199
+       ],
+       "3": [
+        0.951,
+        199
+       ],
+       "4": [
+        0.932,
+        199
+       ],
+       "5": [
+        0.94,
+        200
+       ],
+       "6": [
+        0.947,
+        199
+       ],
+       "7": [
+        0.952,
+        199
+       ],
+       "8": [
+        0.96,
+        199
+       ],
+       "9": [
+        0.956,
+        199
+       ]
+      },
+      "sb_class": {
+       "erratic": [
+        0.966,
+        42
+       ],
+       "intermittent": [
+        0.94,
+        1539
+       ],
+       "lumpy": [
+        0.958,
+        236
+       ],
+       "smooth": [
+        0.964,
+        176
+       ]
+      },
+      "keys": {
+       "CA_1|FOODS": [
+        0.952,
+        91
+       ],
+       "CA_1|HOBBIES": [
+        0.948,
+        35
+       ],
+       "CA_1|HOUSEHOLD": [
+        0.965,
+        72
+       ],
+       "CA_2|FOODS": [
+        0.923,
+        79
+       ],
+       "CA_2|HOBBIES": [
+        0.929,
+        27
+       ],
+       "CA_2|HOUSEHOLD": [
+        0.94,
+        62
+       ],
+       "CA_3|FOODS": [
+        0.956,
+        87
+       ],
+       "CA_3|HOBBIES": [
+        0.928,
+        47
+       ],
+       "CA_3|HOUSEHOLD": [
+        0.953,
+        83
+       ],
+       "CA_4|FOODS": [
+        0.935,
+        91
+       ],
+       "CA_4|HOBBIES": [
+        0.952,
+        37
+       ],
+       "CA_4|HOUSEHOLD": [
+        0.941,
+        68
+       ],
+       "TX_1|FOODS": [
+        0.948,
+        82
+       ],
+       "TX_1|HOBBIES": [
+        0.94,
+        36
+       ],
+       "TX_1|HOUSEHOLD": [
+        0.951,
+        68
+       ],
+       "TX_2|FOODS": [
+        0.951,
+        97
+       ],
+       "TX_2|HOBBIES": [
+        0.944,
+        52
+       ],
+       "TX_2|HOUSEHOLD": [
+        0.962,
+        74
+       ],
+       "TX_3|FOODS": [
+        0.951,
+        104
+       ],
+       "TX_3|HOBBIES": [
+        0.939,
+        38
+       ],
+       "TX_3|HOUSEHOLD": [
+        0.951,
+        63
+       ],
+       "WI_1|FOODS": [
+        0.938,
+        88
+       ],
+       "WI_1|HOBBIES": [
+        0.942,
+        31
+       ],
+       "WI_1|HOUSEHOLD": [
+        0.95,
+        80
+       ],
+       "WI_2|FOODS": [
+        0.956,
+        89
+       ],
+       "WI_2|HOBBIES": [
+        0.911,
+        30
+       ],
+       "WI_2|HOUSEHOLD": [
+        0.945,
+        65
+       ],
+       "WI_3|FOODS": [
+        0.93,
+        96
+       ],
+       "WI_3|HOBBIES": [
+        0.934,
+        44
+       ],
+       "WI_3|HOUSEHOLD": [
+        0.927,
+        77
+       ]
+      }
+     }
+    }
+   },
+   "StatsForecastBaselineSeasonalNaive": {
+    "series": 1993,
+    "wis": 0.8218,
+    "80": {
+     "coverage": 0.7873,
+     "msis": 8.5777,
+     "width": 3.5,
+     "share_below_nominal_by_10": 0.2188,
+     "worst_gap": {
+      "abc_xyz": 0.0536,
+      "sigma_decile": 0.0534,
+      "sb_class": 0.0776,
+      "keys": 0.054
+     },
+     "by_group": {
+      "abc_xyz": {
+       "AX": [
+        0.746,
+        521
+       ],
+       "AY": [
+        0.846,
+        65
+       ],
+       "AZ": [
+        0.915,
+        8
+       ],
+       "BX": [
+        0.761,
+        142
+       ],
+       "BY": [
+        0.784,
+        467
+       ],
+       "BZ": [
+        0.846,
+        62
+       ],
+       "CX": [
+        0.679,
+        2
+       ],
+       "CY": [
+        0.778,
+        132
+       ],
+       "CZ": [
+        0.82,
+        594
+       ]
+      },
+      "sigma_decile": {
+       "1": [
+        0.836,
+        200
+       ],
+       "10": [
+        0.76,
+        200
+       ],
+       "2": [
+        0.82,
+        199
+       ],
+       "3": [
+        0.807,
+        199
+       ],
+       "4": [
+        0.777,
+        199
+       ],
+       "5": [
+        0.787,
+        200
+       ],
+       "6": [
+        0.774,
+        199
+       ],
+       "7": [
+        0.777,
+        199
+       ],
+       "8": [
+        0.788,
+        199
+       ],
+       "9": [
+        0.747,
+        199
+       ]
+      },
+      "sb_class": {
+       "erratic": [
+        0.78,
+        42
+       ],
+       "intermittent": [
+        0.786,
+        1539
+       ],
+       "lumpy": [
+        0.842,
+        236
+       ],
+       "smooth": [
+        0.722,
+        176
+       ]
+      },
+      "keys": {
+       "CA_1|FOODS": [
+        0.8,
+        91
+       ],
+       "CA_1|HOBBIES": [
+        0.824,
+        35
+       ],
+       "CA_1|HOUSEHOLD": [
+        0.794,
+        72
+       ],
+       "CA_2|FOODS": [
+        0.754,
+        79
+       ],
+       "CA_2|HOBBIES": [
+        0.794,
+        27
+       ],
+       "CA_2|HOUSEHOLD": [
+        0.746,
+        62
+       ],
+       "CA_3|FOODS": [
+        0.793,
+        87
+       ],
+       "CA_3|HOBBIES": [
+        0.764,
+        47
+       ],
+       "CA_3|HOUSEHOLD": [
+        0.803,
+        83
+       ],
+       "CA_4|FOODS": [
+        0.779,
+        91
+       ],
+       "CA_4|HOBBIES": [
+        0.821,
+        37
+       ],
+       "CA_4|HOUSEHOLD": [
+        0.786,
+        68
+       ],
+       "TX_1|FOODS": [
+        0.774,
+        82
+       ],
+       "TX_1|HOBBIES": [
+        0.823,
+        36
+       ],
+       "TX_1|HOUSEHOLD": [
+        0.799,
+        68
+       ],
+       "TX_2|FOODS": [
+        0.794,
+        97
+       ],
+       "TX_2|HOBBIES": [
+        0.79,
+        52
+       ],
+       "TX_2|HOUSEHOLD": [
+        0.819,
+        74
+       ],
+       "TX_3|FOODS": [
+        0.787,
+        104
+       ],
+       "TX_3|HOBBIES": [
+        0.77,
+        38
+       ],
+       "TX_3|HOUSEHOLD": [
+        0.774,
+        63
+       ],
+       "WI_1|FOODS": [
+        0.768,
+        88
+       ],
+       "WI_1|HOBBIES": [
+        0.84,
+        31
+       ],
+       "WI_1|HOUSEHOLD": [
+        0.792,
+        80
+       ],
+       "WI_2|FOODS": [
+        0.773,
+        89
+       ],
+       "WI_2|HOBBIES": [
+        0.814,
+        30
+       ],
+       "WI_2|HOUSEHOLD": [
+        0.799,
+        65
+       ],
+       "WI_3|FOODS": [
+        0.765,
+        96
+       ],
+       "WI_3|HOBBIES": [
+        0.793,
+        44
+       ],
+       "WI_3|HOUSEHOLD": [
+        0.782,
+        77
+       ]
+      }
+     }
+    },
+    "95": {
+     "coverage": 0.9475,
+     "msis": 14.8595,
+     "width": 6.0156,
+     "share_below_nominal_by_10": 0.0562,
+     "worst_gap": {
+      "abc_xyz": 0.0096,
+      "sigma_decile": 0.0218,
+      "sb_class": 0.0051,
+      "keys": 0.0267
+     },
+     "by_group": {
+      "abc_xyz": {
+       "AX": [
+        0.951,
+        521
+       ],
+       "AY": [
+        0.958,
+        65
+       ],
+       "AZ": [
+        0.982,
+        8
+       ],
+       "BX": [
+        0.953,
+        142
+       ],
+       "BY": [
+        0.949,
+        467
+       ],
+       "BZ": [
+        0.944,
+        62
+       ],
+       "CX": [
+        0.964,
+        2
+       ],
+       "CY": [
+        0.95,
+        132
+       ],
+       "CZ": [
+        0.94,
+        594
+       ]
+      },
+      "sigma_decile": {
+       "1": [
+        0.928,
+        200
+       ],
+       "10": [
+        0.959,
+        200
+       ],
+       "2": [
+        0.959,
+        199
+       ],
+       "3": [
+        0.948,
+        199
+       ],
+       "4": [
+        0.943,
+        199
+       ],
+       "5": [
+        0.943,
+        200
+       ],
+       "6": [
+        0.944,
+        199
+       ],
+       "7": [
+        0.948,
+        199
+       ],
+       "8": [
+        0.954,
+        199
+       ],
+       "9": [
+        0.949,
+        199
+       ]
+      },
+      "sb_class": {
+       "erratic": [
+        0.957,
+        42
+       ],
+       "intermittent": [
+        0.945,
+        1539
+       ],
+       "lumpy": [
+        0.957,
+        236
+       ],
+       "smooth": [
+        0.955,
+        176
+       ]
+      },
+      "keys": {
+       "CA_1|FOODS": [
+        0.958,
+        91
+       ],
+       "CA_1|HOBBIES": [
+        0.96,
+        35
+       ],
+       "CA_1|HOUSEHOLD": [
+        0.957,
+        72
+       ],
+       "CA_2|FOODS": [
+        0.925,
+        79
+       ],
+       "CA_2|HOBBIES": [
+        0.952,
+        27
+       ],
+       "CA_2|HOUSEHOLD": [
+        0.948,
+        62
+       ],
+       "CA_3|FOODS": [
+        0.957,
+        87
+       ],
+       "CA_3|HOBBIES": [
+        0.923,
+        47
+       ],
+       "CA_3|HOUSEHOLD": [
+        0.953,
+        83
+       ],
+       "CA_4|FOODS": [
+        0.941,
+        91
+       ],
+       "CA_4|HOBBIES": [
+        0.964,
+        37
+       ],
+       "CA_4|HOUSEHOLD": [
+        0.949,
+        68
+       ],
+       "TX_1|FOODS": [
+        0.948,
+        82
+       ],
+       "TX_1|HOBBIES": [
+        0.95,
+        36
+       ],
+       "TX_1|HOUSEHOLD": [
+        0.959,
+        68
+       ],
+       "TX_2|FOODS": [
+        0.947,
+        97
+       ],
+       "TX_2|HOBBIES": [
+        0.947,
+        52
+       ],
+       "TX_2|HOUSEHOLD": [
+        0.962,
+        74
+       ],
+       "TX_3|FOODS": [
+        0.952,
+        104
+       ],
+       "TX_3|HOBBIES": [
+        0.938,
+        38
+       ],
+       "TX_3|HOUSEHOLD": [
+        0.951,
+        63
+       ],
+       "WI_1|FOODS": [
+        0.938,
+        88
+       ],
+       "WI_1|HOBBIES": [
+        0.957,
+        31
+       ],
+       "WI_1|HOUSEHOLD": [
+        0.96,
+        80
+       ],
+       "WI_2|FOODS": [
+        0.947,
+        89
+       ],
+       "WI_2|HOBBIES": [
+        0.925,
+        30
+       ],
+       "WI_2|HOUSEHOLD": [
+        0.95,
+        65
+       ],
+       "WI_3|FOODS": [
+        0.929,
+        96
+       ],
+       "WI_3|HOBBIES": [
+        0.942,
+        44
+       ],
+       "WI_3|HOUSEHOLD": [
+        0.938,
+        77
+       ]
+      }
+     }
+    }
+   },
+   "StatsForecastCrostonSBA": {
+    "series": 1993,
+    "wis": 0.8025,
+    "80": {
+     "coverage": 0.7971,
+     "msis": 8.249,
+     "width": 2.8108,
+     "share_below_nominal_by_10": 0.2012,
+     "worst_gap": {
+      "abc_xyz": 0.0673,
+      "sigma_decile": 0.0559,
+      "sb_class": 0.0141,
+      "keys": 0.0961
+     },
+     "by_group": {
+      "abc_xyz": {
+       "AX": [
+        0.836,
+        521
+       ],
+       "AY": [
+        0.767,
+        65
+       ],
+       "AZ": [
+        0.871,
+        8
+       ],
+       "BX": [
+        0.856,
+        142
+       ],
+       "BY": [
+        0.799,
+        467
+       ],
+       "BZ": [
+        0.733,
+        62
+       ],
+       "CX": [
+        0.821,
+        2
+       ],
+       "CY": [
+        0.822,
+        132
+       ],
+       "CZ": [
+        0.75,
+        594
+       ]
+      },
+      "sigma_decile": {
+       "1": [
+        0.744,
+        200
+       ],
+       "10": [
+        0.851,
+        200
+       ],
+       "2": [
+        0.75,
+        199
+       ],
+       "3": [
+        0.764,
+        199
+       ],
+       "4": [
+        0.775,
+        199
+       ],
+       "5": [
+        0.807,
+        200
+       ],
+       "6": [
+        0.792,
+        199
+       ],
+       "7": [
+        0.814,
+        199
+       ],
+       "8": [
+        0.85,
+        199
+       ],
+       "9": [
+        0.823,
+        199
+       ]
+      },
+      "sb_class": {
+       "erratic": [
+        0.868,
+        42
+       ],
+       "intermittent": [
+        0.786,
+        1539
+       ],
+       "lumpy": [
+        0.811,
+        236
+       ],
+       "smooth": [
+        0.859,
+        176
+       ]
+      },
+      "keys": {
+       "CA_1|FOODS": [
+        0.79,
+        91
+       ],
+       "CA_1|HOBBIES": [
+        0.863,
+        35
+       ],
+       "CA_1|HOUSEHOLD": [
+        0.829,
+        72
+       ],
+       "CA_2|FOODS": [
+        0.704,
+        79
+       ],
+       "CA_2|HOBBIES": [
+        0.766,
+        27
+       ],
+       "CA_2|HOUSEHOLD": [
+        0.811,
+        62
+       ],
+       "CA_3|FOODS": [
+        0.806,
+        87
+       ],
+       "CA_3|HOBBIES": [
+        0.811,
+        47
+       ],
+       "CA_3|HOUSEHOLD": [
+        0.814,
+        83
+       ],
+       "CA_4|FOODS": [
+        0.756,
+        91
+       ],
+       "CA_4|HOBBIES": [
+        0.819,
+        37
+       ],
+       "CA_4|HOUSEHOLD": [
+        0.789,
+        68
+       ],
+       "TX_1|FOODS": [
+        0.782,
+        82
+       ],
+       "TX_1|HOBBIES": [
+        0.84,
+        36
+       ],
+       "TX_1|HOUSEHOLD": [
+        0.821,
+        68
+       ],
+       "TX_2|FOODS": [
+        0.814,
+        97
+       ],
+       "TX_2|HOBBIES": [
+        0.823,
+        52
+       ],
+       "TX_2|HOUSEHOLD": [
+        0.841,
+        74
+       ],
+       "TX_3|FOODS": [
+        0.779,
+        104
+       ],
+       "TX_3|HOBBIES": [
+        0.822,
+        38
+       ],
+       "TX_3|HOUSEHOLD": [
+        0.839,
+        63
+       ],
+       "WI_1|FOODS": [
+        0.771,
+        88
+       ],
+       "WI_1|HOBBIES": [
+        0.821,
+        31
+       ],
+       "WI_1|HOUSEHOLD": [
+        0.827,
+        80
+       ],
+       "WI_2|FOODS": [
+        0.789,
+        89
+       ],
+       "WI_2|HOBBIES": [
+        0.815,
+        30
+       ],
+       "WI_2|HOUSEHOLD": [
+        0.779,
+        65
+       ],
+       "WI_3|FOODS": [
+        0.765,
+        96
+       ],
+       "WI_3|HOBBIES": [
+        0.786,
+        44
+       ],
+       "WI_3|HOUSEHOLD": [
+        0.773,
+        77
+       ]
+      }
+     }
+    },
+    "95": {
+     "coverage": 0.95,
+     "msis": 17.647,
+     "width": 5.5182,
+     "share_below_nominal_by_10": 0.0652,
+     "worst_gap": {
+      "abc_xyz": 0.0571,
+      "sigma_decile": 0.097,
+      "sb_class": 0.0059,
+      "keys": 0.0451
+     },
+     "by_group": {
+      "abc_xyz": {
+       "AX": [
+        0.981,
+        521
+       ],
+       "AY": [
+        0.953,
+        65
+       ],
+       "AZ": [
+        0.933,
+        8
+       ],
+       "BX": [
+        0.993,
+        142
+       ],
+       "BY": [
+        0.955,
+        467
+       ],
+       "BZ": [
+        0.893,
+        62
+       ],
+       "CX": [
+        1.0,
+        2
+       ],
+       "CY": [
+        0.974,
+        132
+       ],
+       "CZ": [
+        0.908,
+        594
+       ]
+      },
+      "sigma_decile": {
+       "1": [
+        0.853,
+        200
+       ],
+       "10": [
+        0.986,
+        200
+       ],
+       "2": [
+        0.924,
+        199
+       ],
+       "3": [
+        0.951,
+        199
+       ],
+       "4": [
+        0.943,
+        199
+       ],
+       "5": [
+        0.957,
+        200
+       ],
+       "6": [
+        0.958,
+        199
+       ],
+       "7": [
+        0.976,
+        199
+       ],
+       "8": [
+        0.98,
+        199
+       ],
+       "9": [
+        0.973,
+        199
+       ]
+      },
+      "sb_class": {
+       "erratic": [
+        0.987,
+        42
+       ],
+       "intermittent": [
+        0.944,
+        1539
+       ],
+       "lumpy": [
+        0.953,
+        236
+       ],
+       "smooth": [
+        0.989,
+        176
+       ]
+      },
+      "keys": {
+       "CA_1|FOODS": [
+        0.94,
+        91
+       ],
+       "CA_1|HOBBIES": [
+        0.953,
+        35
+       ],
+       "CA_1|HOUSEHOLD": [
+        0.962,
+        72
+       ],
+       "CA_2|FOODS": [
+        0.929,
+        79
+       ],
+       "CA_2|HOBBIES": [
+        0.939,
+        27
+       ],
+       "CA_2|HOUSEHOLD": [
+        0.95,
+        62
+       ],
+       "CA_3|FOODS": [
+        0.954,
+        87
+       ],
+       "CA_3|HOBBIES": [
+        0.964,
+        47
+       ],
+       "CA_3|HOUSEHOLD": [
+        0.941,
+        83
+       ],
+       "CA_4|FOODS": [
+        0.93,
+        91
+       ],
+       "CA_4|HOBBIES": [
+        0.97,
+        37
+       ],
+       "CA_4|HOUSEHOLD": [
+        0.938,
+        68
+       ],
+       "TX_1|FOODS": [
+        0.949,
+        82
+       ],
+       "TX_1|HOBBIES": [
+        0.964,
+        36
+       ],
+       "TX_1|HOUSEHOLD": [
+        0.969,
+        68
+       ],
+       "TX_2|FOODS": [
+        0.958,
+        97
+       ],
+       "TX_2|HOBBIES": [
+        0.965,
+        52
+       ],
+       "TX_2|HOUSEHOLD": [
+        0.962,
+        74
+       ],
+       "TX_3|FOODS": [
+        0.952,
+        104
+       ],
+       "TX_3|HOBBIES": [
+        0.952,
+        38
+       ],
+       "TX_3|HOUSEHOLD": [
+        0.973,
+        63
+       ],
+       "WI_1|FOODS": [
+        0.952,
+        88
+       ],
+       "WI_1|HOBBIES": [
+        0.94,
+        31
+       ],
+       "WI_1|HOUSEHOLD": [
+        0.958,
+        80
+       ],
+       "WI_2|FOODS": [
+        0.951,
+        89
+       ],
+       "WI_2|HOBBIES": [
+        0.952,
+        30
+       ],
+       "WI_2|HOUSEHOLD": [
+        0.958,
+        65
+       ],
+       "WI_3|FOODS": [
+        0.947,
+        96
+       ],
+       "WI_3|HOBBIES": [
+        0.955,
+        44
+       ],
+       "WI_3|HOUSEHOLD": [
+        0.905,
+        77
+       ]
+      }
+     }
+    }
+   }
+  },
+  "abc_xyz": {
+   "StatsForecastAutoETS": {
+    "series": 1993,
+    "wis": 0.6914,
+    "80": {
+     "coverage": 0.792,
+     "msis": 7.2048,
+     "width": 2.3062,
+     "share_below_nominal_by_10": 0.1962,
+     "worst_gap": {
+      "abc_xyz": 0.0477,
+      "sigma_decile": 0.0421,
+      "sb_class": 0.0413,
+      "keys": 0.0825
+     },
+     "by_group": {
+      "abc_xyz": {
+       "AX": [
+        0.773,
+        521
+       ],
+       "AY": [
+        0.784,
+        65
+       ],
+       "AZ": [
+        0.844,
+        8
+       ],
+       "BX": [
+        0.793,
+        142
+       ],
+       "BY": [
+        0.79,
+        467
+       ],
+       "BZ": [
+        0.752,
+        62
+       ],
+       "CX": [
+        0.589,
+        2
+       ],
+       "CY": [
+        0.818,
+        132
+       ],
+       "CZ": [
+        0.809,
+        594
+       ]
+      },
+      "sigma_decile": {
+       "1": [
+        0.859,
+        200
+       ],
+       "10": [
+        0.806,
+        200
+       ],
+       "2": [
+        0.804,
+        199
+       ],
+       "3": [
+        0.798,
+        199
+       ],
+       "4": [
+        0.76,
+        199
+       ],
+       "5": [
+        0.781,
+        200
+       ],
+       "6": [
+        0.79,
+        199
+       ],
+       "7": [
+        0.779,
+        199
+       ],
+       "8": [
+        0.784,
+        199
+       ],
+       "9": [
+        0.758,
+        199
+       ]
+      },
+      "sb_class": {
+       "erratic": [
+        0.81,
+        42
+       ],
+       "intermittent": [
+        0.791,
+        1539
+       ],
+       "lumpy": [
+        0.82,
+        236
+       ],
+       "smooth": [
+        0.759,
+        176
+       ]
+      },
+      "keys": {
+       "CA_1|FOODS": [
+        0.796,
+        91
+       ],
+       "CA_1|HOBBIES": [
+        0.834,
+        35
+       ],
+       "CA_1|HOUSEHOLD": [
+        0.807,
+        72
+       ],
+       "CA_2|FOODS": [
+        0.717,
+        79
+       ],
+       "CA_2|HOBBIES": [
+        0.79,
+        27
+       ],
+       "CA_2|HOUSEHOLD": [
+        0.727,
+        62
+       ],
+       "CA_3|FOODS": [
+        0.79,
+        87
+       ],
+       "CA_3|HOBBIES": [
+        0.774,
+        47
+       ],
+       "CA_3|HOUSEHOLD": [
+        0.787,
+        83
+       ],
+       "CA_4|FOODS": [
+        0.757,
+        91
+       ],
+       "CA_4|HOBBIES": [
+        0.839,
+        37
+       ],
+       "CA_4|HOUSEHOLD": [
+        0.812,
+        68
+       ],
+       "TX_1|FOODS": [
+        0.782,
+        82
+       ],
+       "TX_1|HOBBIES": [
+        0.827,
+        36
+       ],
+       "TX_1|HOUSEHOLD": [
+        0.807,
+        68
+       ],
+       "TX_2|FOODS": [
+        0.799,
+        97
+       ],
+       "TX_2|HOBBIES": [
+        0.793,
+        52
+       ],
+       "TX_2|HOUSEHOLD": [
+        0.834,
+        74
+       ],
+       "TX_3|FOODS": [
+        0.79,
+        104
+       ],
+       "TX_3|HOBBIES": [
+        0.811,
+        38
+       ],
+       "TX_3|HOUSEHOLD": [
+        0.81,
+        63
+       ],
+       "WI_1|FOODS": [
+        0.778,
+        88
+       ],
+       "WI_1|HOBBIES": [
+        0.811,
+        31
+       ],
+       "WI_1|HOUSEHOLD": [
+        0.798,
+        80
+       ],
+       "WI_2|FOODS": [
+        0.785,
+        89
+       ],
+       "WI_2|HOBBIES": [
+        0.824,
+        30
+       ],
+       "WI_2|HOUSEHOLD": [
+        0.814,
+        65
+       ],
+       "WI_3|FOODS": [
+        0.764,
+        96
+       ],
+       "WI_3|HOBBIES": [
+        0.83,
+        44
+       ],
+       "WI_3|HOUSEHOLD": [
+        0.802,
+        77
+       ]
+      }
+     }
+    },
+    "95": {
+     "coverage": 0.9447,
+     "msis": 12.666,
+     "width": 4.7602,
+     "share_below_nominal_by_10": 0.0497,
+     "worst_gap": {
+      "abc_xyz": 0.0266,
+      "sigma_decile": 0.0398,
+      "sb_class": 0.0076,
+      "keys": 0.0269
+     },
+     "by_group": {
+      "abc_xyz": {
+       "AX": [
+        0.948,
+        521
+       ],
+       "AY": [
+        0.946,
+        65
+       ],
+       "AZ": [
+        0.982,
+        8
+       ],
+       "BX": [
+        0.955,
+        142
+       ],
+       "BY": [
+        0.945,
+        467
+       ],
+       "BZ": [
+        0.923,
+        62
+       ],
+       "CX": [
+        1.0,
+        2
+       ],
+       "CY": [
+        0.952,
+        132
+       ],
+       "CZ": [
+        0.939,
+        594
+       ]
+      },
+      "sigma_decile": {
+       "1": [
+        0.91,
+        200
+       ],
+       "10": [
+        0.961,
+        200
+       ],
+       "2": [
+        0.96,
+        199
+       ],
+       "3": [
+        0.956,
+        199
+       ],
+       "4": [
+        0.938,
+        199
+       ],
+       "5": [
+        0.94,
+        200
+       ],
+       "6": [
+        0.947,
+        199
+       ],
+       "7": [
+        0.945,
+        199
+       ],
+       "8": [
+        0.948,
+        199
+       ],
+       "9": [
+        0.943,
+        199
+       ]
+      },
+      "sb_class": {
+       "erratic": [
+        0.954,
+        42
+       ],
+       "intermittent": [
+        0.942,
+        1539
+       ],
+       "lumpy": [
+        0.954,
+        236
+       ],
+       "smooth": [
+        0.95,
+        176
+       ]
+      },
+      "keys": {
+       "CA_1|FOODS": [
+        0.944,
+        91
+       ],
+       "CA_1|HOBBIES": [
+        0.947,
+        35
+       ],
+       "CA_1|HOUSEHOLD": [
+        0.961,
+        72
+       ],
+       "CA_2|FOODS": [
+        0.923,
+        79
+       ],
+       "CA_2|HOBBIES": [
+        0.934,
+        27
+       ],
+       "CA_2|HOUSEHOLD": [
+        0.944,
+        62
+       ],
+       "CA_3|FOODS": [
+        0.951,
+        87
+       ],
+       "CA_3|HOBBIES": [
+        0.923,
+        47
+       ],
+       "CA_3|HOUSEHOLD": [
+        0.953,
+        83
+       ],
+       "CA_4|FOODS": [
+        0.932,
+        91
+       ],
+       "CA_4|HOBBIES": [
+        0.953,
+        37
+       ],
+       "CA_4|HOUSEHOLD": [
+        0.951,
+        68
+       ],
+       "TX_1|FOODS": [
+        0.949,
+        82
+       ],
+       "TX_1|HOBBIES": [
+        0.949,
+        36
+       ],
+       "TX_1|HOUSEHOLD": [
+        0.95,
+        68
+       ],
+       "TX_2|FOODS": [
+        0.949,
+        97
+       ],
+       "TX_2|HOBBIES": [
+        0.948,
+        52
+       ],
+       "TX_2|HOUSEHOLD": [
+        0.962,
+        74
+       ],
+       "TX_3|FOODS": [
+        0.951,
+        104
+       ],
+       "TX_3|HOBBIES": [
+        0.943,
+        38
+       ],
+       "TX_3|HOUSEHOLD": [
+        0.951,
+        63
+       ],
+       "WI_1|FOODS": [
+        0.931,
+        88
+       ],
+       "WI_1|HOBBIES": [
+        0.949,
+        31
+       ],
+       "WI_1|HOUSEHOLD": [
+        0.958,
+        80
+       ],
+       "WI_2|FOODS": [
+        0.95,
+        89
+       ],
+       "WI_2|HOBBIES": [
+        0.924,
+        30
+       ],
+       "WI_2|HOUSEHOLD": [
+        0.948,
+        65
+       ],
+       "WI_3|FOODS": [
+        0.93,
+        96
+       ],
+       "WI_3|HOBBIES": [
+        0.943,
+        44
+       ],
+       "WI_3|HOUSEHOLD": [
+        0.926,
+        77
+       ]
+      }
+     }
+    }
+   },
+   "StatsForecastBaselineSeasonalNaive": {
+    "series": 1993,
+    "wis": 0.8251,
+    "80": {
+     "coverage": 0.7926,
+     "msis": 8.6797,
+     "width": 3.0698,
+     "share_below_nominal_by_10": 0.1997,
+     "worst_gap": {
+      "abc_xyz": 0.0235,
+      "sigma_decile": 0.0382,
+      "sb_class": 0.0135,
+      "keys": 0.0559
+     },
+     "by_group": {
+      "abc_xyz": {
+       "AX": [
+        0.8,
+        521
+       ],
+       "AY": [
+        0.79,
+        65
+       ],
+       "AZ": [
+        0.888,
+        8
+       ],
+       "BX": [
+        0.799,
+        142
+       ],
+       "BY": [
+        0.781,
+        467
+       ],
+       "BZ": [
+        0.776,
+        62
+       ],
+       "CX": [
+        0.589,
+        2
+       ],
+       "CY": [
+        0.794,
+        132
+       ],
+       "CZ": [
+        0.795,
+        594
+       ]
+      },
+      "sigma_decile": {
+       "1": [
+        0.828,
+        200
+       ],
+       "10": [
+        0.811,
+        200
+       ],
+       "2": [
+        0.797,
+        199
+       ],
+       "3": [
+        0.782,
+        199
+       ],
+       "4": [
+        0.762,
+        199
+       ],
+       "5": [
+        0.774,
+        200
+       ],
+       "6": [
+        0.776,
+        199
+       ],
+       "7": [
+        0.794,
+        199
+       ],
+       "8": [
+        0.812,
+        199
+       ],
+       "9": [
+        0.788,
+        199
+       ]
+      },
+      "sb_class": {
+       "erratic": [
+        0.825,
+        42
+       ],
+       "intermittent": [
+        0.786,
+        1539
+       ],
+       "lumpy": [
+        0.827,
+        236
+       ],
+       "smooth": [
+        0.792,
+        176
+       ]
+      },
+      "keys": {
+       "CA_1|FOODS": [
+        0.811,
+        91
+       ],
+       "CA_1|HOBBIES": [
+        0.827,
+        35
+       ],
+       "CA_1|HOUSEHOLD": [
+        0.814,
+        72
+       ],
+       "CA_2|FOODS": [
+        0.744,
+        79
+       ],
+       "CA_2|HOBBIES": [
+        0.788,
+        27
+       ],
+       "CA_2|HOUSEHOLD": [
+        0.747,
+        62
+       ],
+       "CA_3|FOODS": [
+        0.813,
+        87
+       ],
+       "CA_3|HOBBIES": [
+        0.777,
+        47
+       ],
+       "CA_3|HOUSEHOLD": [
+        0.816,
+        83
+       ],
+       "CA_4|FOODS": [
+        0.773,
+        91
+       ],
+       "CA_4|HOBBIES": [
+        0.818,
+        37
+       ],
+       "CA_4|HOUSEHOLD": [
+        0.782,
+        68
+       ],
+       "TX_1|FOODS": [
+        0.771,
+        82
+       ],
+       "TX_1|HOBBIES": [
+        0.819,
+        36
+       ],
+       "TX_1|HOUSEHOLD": [
+        0.814,
+        68
+       ],
+       "TX_2|FOODS": [
+        0.801,
+        97
+       ],
+       "TX_2|HOBBIES": [
+        0.784,
+        52
+       ],
+       "TX_2|HOUSEHOLD": [
+        0.821,
+        74
+       ],
+       "TX_3|FOODS": [
+        0.791,
+        104
+       ],
+       "TX_3|HOBBIES": [
+        0.77,
+        38
+       ],
+       "TX_3|HOUSEHOLD": [
+        0.791,
+        63
+       ],
+       "WI_1|FOODS": [
+        0.785,
+        88
+       ],
+       "WI_1|HOBBIES": [
+        0.823,
+        31
+       ],
+       "WI_1|HOUSEHOLD": [
+        0.798,
+        80
+       ],
+       "WI_2|FOODS": [
+        0.793,
+        89
+       ],
+       "WI_2|HOBBIES": [
+        0.802,
+        30
+       ],
+       "WI_2|HOUSEHOLD": [
+        0.813,
+        65
+       ],
+       "WI_3|FOODS": [
+        0.77,
+        96
+       ],
+       "WI_3|HOBBIES": [
+        0.791,
+        44
+       ],
+       "WI_3|HOUSEHOLD": [
+        0.778,
+        77
+       ]
+      }
+     }
+    },
+    "95": {
+     "coverage": 0.9476,
+     "msis": 14.78,
+     "width": 5.9894,
+     "share_below_nominal_by_10": 0.0552,
+     "worst_gap": {
+      "abc_xyz": 0.0145,
+      "sigma_decile": 0.0159,
+      "sb_class": 0.0053,
+      "keys": 0.0283
+     },
+     "by_group": {
+      "abc_xyz": {
+       "AX": [
+        0.952,
+        521
+       ],
+       "AY": [
+        0.955,
+        65
+       ],
+       "AZ": [
+        0.982,
+        8
+       ],
+       "BX": [
+        0.951,
+        142
+       ],
+       "BY": [
+        0.945,
+        467
+       ],
+       "BZ": [
+        0.935,
+        62
+       ],
+       "CX": [
+        0.946,
+        2
+       ],
+       "CY": [
+        0.951,
+        132
+       ],
+       "CZ": [
+        0.944,
+        594
+       ]
+      },
+      "sigma_decile": {
+       "1": [
+        0.934,
+        200
+       ],
+       "10": [
+        0.959,
+        200
+       ],
+       "2": [
+        0.96,
+        199
+       ],
+       "3": [
+        0.95,
+        199
+       ],
+       "4": [
+        0.943,
+        199
+       ],
+       "5": [
+        0.939,
+        200
+       ],
+       "6": [
+        0.94,
+        199
+       ],
+       "7": [
+        0.945,
+        199
+       ],
+       "8": [
+        0.955,
+        199
+       ],
+       "9": [
+        0.951,
+        199
+       ]
+      },
+      "sb_class": {
+       "erratic": [
+        0.957,
+        42
+       ],
+       "intermittent": [
+        0.945,
+        1539
+       ],
+       "lumpy": [
+        0.957,
+        236
+       ],
+       "smooth": [
+        0.958,
+        176
+       ]
+      },
+      "keys": {
+       "CA_1|FOODS": [
+        0.958,
+        91
+       ],
+       "CA_1|HOBBIES": [
+        0.956,
+        35
+       ],
+       "CA_1|HOUSEHOLD": [
+        0.959,
+        72
+       ],
+       "CA_2|FOODS": [
+        0.925,
+        79
+       ],
+       "CA_2|HOBBIES": [
+        0.951,
+        27
+       ],
+       "CA_2|HOUSEHOLD": [
+        0.948,
+        62
+       ],
+       "CA_3|FOODS": [
+        0.958,
+        87
+       ],
+       "CA_3|HOBBIES": [
+        0.922,
+        47
+       ],
+       "CA_3|HOUSEHOLD": [
+        0.955,
+        83
+       ],
+       "CA_4|FOODS": [
+        0.938,
+        91
+       ],
+       "CA_4|HOBBIES": [
+        0.964,
+        37
+       ],
+       "CA_4|HOUSEHOLD": [
+        0.948,
+        68
+       ],
+       "TX_1|FOODS": [
+        0.952,
+        82
+       ],
+       "TX_1|HOBBIES": [
+        0.947,
+        36
+       ],
+       "TX_1|HOUSEHOLD": [
+        0.957,
+        68
+       ],
+       "TX_2|FOODS": [
+        0.947,
+        97
+       ],
+       "TX_2|HOBBIES": [
+        0.948,
+        52
+       ],
+       "TX_2|HOUSEHOLD": [
+        0.96,
+        74
+       ],
+       "TX_3|FOODS": [
+        0.952,
+        104
+       ],
+       "TX_3|HOBBIES": [
+        0.939,
+        38
+       ],
+       "TX_3|HOUSEHOLD": [
+        0.954,
+        63
+       ],
+       "WI_1|FOODS": [
+        0.936,
+        88
+       ],
+       "WI_1|HOBBIES": [
+        0.956,
+        31
+       ],
+       "WI_1|HOUSEHOLD": [
+        0.96,
+        80
+       ],
+       "WI_2|FOODS": [
+        0.945,
+        89
+       ],
+       "WI_2|HOBBIES": [
+        0.93,
+        30
+       ],
+       "WI_2|HOUSEHOLD": [
+        0.951,
+        65
+       ],
+       "WI_3|FOODS": [
+        0.929,
+        96
+       ],
+       "WI_3|HOBBIES": [
+        0.946,
+        44
+       ],
+       "WI_3|HOUSEHOLD": [
+        0.941,
+        77
+       ]
+      }
+     }
+    }
+   },
+   "StatsForecastCrostonSBA": {
+    "series": 1993,
+    "wis": 0.7941,
+    "80": {
+     "coverage": 0.7986,
+     "msis": 8.1838,
+     "width": 2.9042,
+     "share_below_nominal_by_10": 0.2042,
+     "worst_gap": {
+      "abc_xyz": 0.016,
+      "sigma_decile": 0.042,
+      "sb_class": 0.0109,
+      "keys": 0.0911
+     },
+     "by_group": {
+      "abc_xyz": {
+       "AX": [
+        0.818,
+        521
+       ],
+       "AY": [
+        0.842,
+        65
+       ],
+       "AZ": [
+        0.888,
+        8
+       ],
+       "BX": [
+        0.794,
+        142
+       ],
+       "BY": [
+        0.785,
+        467
+       ],
+       "BZ": [
+        0.793,
+        62
+       ],
+       "CX": [
+        0.875,
+        2
+       ],
+       "CY": [
+        0.817,
+        132
+       ],
+       "CZ": [
+        0.784,
+        594
+       ]
+      },
+      "sigma_decile": {
+       "1": [
+        0.758,
+        200
+       ],
+       "10": [
+        0.844,
+        200
+       ],
+       "2": [
+        0.785,
+        199
+       ],
+       "3": [
+        0.796,
+        199
+       ],
+       "4": [
+        0.792,
+        199
+       ],
+       "5": [
+        0.801,
+        200
+       ],
+       "6": [
+        0.776,
+        199
+       ],
+       "7": [
+        0.785,
+        199
+       ],
+       "8": [
+        0.84,
+        199
+       ],
+       "9": [
+        0.809,
+        199
+       ]
+      },
+      "sb_class": {
+       "erratic": [
+        0.842,
+        42
+       ],
+       "intermittent": [
+        0.789,
+        1539
+       ],
+       "lumpy": [
+        0.822,
+        236
+       ],
+       "smooth": [
+        0.841,
+        176
+       ]
+      },
+      "keys": {
+       "CA_1|FOODS": [
+        0.781,
+        91
+       ],
+       "CA_1|HOBBIES": [
+        0.859,
+        35
+       ],
+       "CA_1|HOUSEHOLD": [
+        0.822,
+        72
+       ],
+       "CA_2|FOODS": [
+        0.709,
+        79
+       ],
+       "CA_2|HOBBIES": [
+        0.774,
+        27
+       ],
+       "CA_2|HOUSEHOLD": [
+        0.796,
+        62
+       ],
+       "CA_3|FOODS": [
+        0.805,
+        87
+       ],
+       "CA_3|HOBBIES": [
+        0.809,
+        47
+       ],
+       "CA_3|HOUSEHOLD": [
+        0.815,
+        83
+       ],
+       "CA_4|FOODS": [
+        0.753,
+        91
+       ],
+       "CA_4|HOBBIES": [
+        0.814,
+        37
+       ],
+       "CA_4|HOUSEHOLD": [
+        0.812,
+        68
+       ],
+       "TX_1|FOODS": [
+        0.791,
+        82
+       ],
+       "TX_1|HOBBIES": [
+        0.869,
+        36
+       ],
+       "TX_1|HOUSEHOLD": [
+        0.813,
+        68
+       ],
+       "TX_2|FOODS": [
+        0.816,
+        97
+       ],
+       "TX_2|HOBBIES": [
+        0.827,
+        52
+       ],
+       "TX_2|HOUSEHOLD": [
+        0.84,
+        74
+       ],
+       "TX_3|FOODS": [
+        0.789,
+        104
+       ],
+       "TX_3|HOBBIES": [
+        0.825,
+        38
+       ],
+       "TX_3|HOUSEHOLD": [
+        0.838,
+        63
+       ],
+       "WI_1|FOODS": [
+        0.774,
+        88
+       ],
+       "WI_1|HOBBIES": [
+        0.832,
+        31
+       ],
+       "WI_1|HOUSEHOLD": [
+        0.82,
+        80
+       ],
+       "WI_2|FOODS": [
+        0.784,
+        89
+       ],
+       "WI_2|HOBBIES": [
+        0.83,
+        30
+       ],
+       "WI_2|HOUSEHOLD": [
+        0.774,
+        65
+       ],
+       "WI_3|FOODS": [
+        0.77,
+        96
+       ],
+       "WI_3|HOBBIES": [
+        0.808,
+        44
+       ],
+       "WI_3|HOUSEHOLD": [
+        0.773,
+        77
+       ]
+      }
+     }
+    },
+    "95": {
+     "coverage": 0.9493,
+     "msis": 17.0674,
+     "width": 5.6475,
+     "share_below_nominal_by_10": 0.0707,
+     "worst_gap": {
+      "abc_xyz": 0.018,
+      "sigma_decile": 0.0505,
+      "sb_class": 0.0032,
+      "keys": 0.027
+     },
+     "by_group": {
+      "abc_xyz": {
+       "AX": [
+        0.957,
+        521
+       ],
+       "AY": [
+        0.976,
+        65
+       ],
+       "AZ": [
+        0.987,
+        8
+       ],
+       "BX": [
+        0.967,
+        142
+       ],
+       "BY": [
+        0.938,
+        467
+       ],
+       "BZ": [
+        0.932,
+        62
+       ],
+       "CX": [
+        1.0,
+        2
+       ],
+       "CY": [
+        0.958,
+        132
+       ],
+       "CZ": [
+        0.944,
+        594
+       ]
+      },
+      "sigma_decile": {
+       "1": [
+        0.899,
+        200
+       ],
+       "10": [
+        0.973,
+        200
+       ],
+       "2": [
+        0.962,
+        199
+       ],
+       "3": [
+        0.965,
+        199
+       ],
+       "4": [
+        0.94,
+        199
+       ],
+       "5": [
+        0.949,
+        200
+       ],
+       "6": [
+        0.938,
+        199
+       ],
+       "7": [
+        0.957,
+        199
+       ],
+       "8": [
+        0.961,
+        199
+       ],
+       "9": [
+        0.95,
+        199
+       ]
+      },
+      "sb_class": {
+       "erratic": [
+        0.977,
+        42
+       ],
+       "intermittent": [
+        0.947,
+        1539
+       ],
+       "lumpy": [
+        0.949,
+        236
+       ],
+       "smooth": [
+        0.965,
+        176
+       ]
+      },
+      "keys": {
+       "CA_1|FOODS": [
+        0.94,
+        91
+       ],
+       "CA_1|HOBBIES": [
+        0.971,
+        35
+       ],
+       "CA_1|HOUSEHOLD": [
+        0.951,
+        72
+       ],
+       "CA_2|FOODS": [
+        0.927,
+        79
+       ],
+       "CA_2|HOBBIES": [
+        0.966,
+        27
+       ],
+       "CA_2|HOUSEHOLD": [
+        0.948,
+        62
+       ],
+       "CA_3|FOODS": [
+        0.933,
+        87
+       ],
+       "CA_3|HOBBIES": [
+        0.953,
+        47
+       ],
+       "CA_3|HOUSEHOLD": [
+        0.934,
+        83
+       ],
+       "CA_4|FOODS": [
+        0.929,
+        91
+       ],
+       "CA_4|HOBBIES": [
+        0.976,
+        37
+       ],
+       "CA_4|HOUSEHOLD": [
+        0.971,
+        68
+       ],
+       "TX_1|FOODS": [
+        0.947,
+        82
+       ],
+       "TX_1|HOBBIES": [
+        0.972,
+        36
+       ],
+       "TX_1|HOUSEHOLD": [
+        0.974,
+        68
+       ],
+       "TX_2|FOODS": [
+        0.94,
+        97
+       ],
+       "TX_2|HOBBIES": [
+        0.957,
+        52
+       ],
+       "TX_2|HOUSEHOLD": [
+        0.958,
+        74
+       ],
+       "TX_3|FOODS": [
+        0.951,
+        104
+       ],
+       "TX_3|HOBBIES": [
+        0.959,
+        38
+       ],
+       "TX_3|HOUSEHOLD": [
+        0.97,
+        63
+       ],
+       "WI_1|FOODS": [
+        0.939,
+        88
+       ],
+       "WI_1|HOBBIES": [
+        0.968,
+        31
+       ],
+       "WI_1|HOUSEHOLD": [
+        0.959,
+        80
+       ],
+       "WI_2|FOODS": [
+        0.95,
+        89
+       ],
+       "WI_2|HOBBIES": [
+        0.969,
+        30
+       ],
+       "WI_2|HOUSEHOLD": [
+        0.945,
+        65
+       ],
+       "WI_3|FOODS": [
+        0.945,
+        96
+       ],
+       "WI_3|HOBBIES": [
+        0.963,
+        44
+       ],
+       "WI_3|HOUSEHOLD": [
+        0.923,
+        77
+       ]
+      }
+     }
+    }
+   }
+  },
+  "sb_class": {
+   "StatsForecastAutoETS": {
+    "series": 1993,
+    "wis": 0.6881,
+    "80": {
+     "coverage": 0.7877,
+     "msis": 7.0805,
+     "width": 2.5379,
+     "share_below_nominal_by_10": 0.2012,
+     "worst_gap": {
+      "abc_xyz": 0.0484,
+      "sigma_decile": 0.0644,
+      "sb_class": 0.0346,
+      "keys": 0.092
+     },
+     "by_group": {
+      "abc_xyz": {
+       "AX": [
+        0.752,
+        521
+       ],
+       "AY": [
+        0.803,
+        65
+       ],
+       "AZ": [
+        0.839,
+        8
+       ],
+       "BX": [
+        0.773,
+        142
+       ],
+       "BY": [
+        0.78,
+        467
+       ],
+       "BZ": [
+        0.793,
+        62
+       ],
+       "CX": [
+        0.732,
+        2
+       ],
+       "CY": [
+        0.781,
+        132
+       ],
+       "CZ": [
+        0.827,
+        594
+       ]
+      },
+      "sigma_decile": {
+       "1": [
+        0.862,
+        200
+       ],
+       "10": [
+        0.796,
+        200
+       ],
+       "2": [
+        0.818,
+        199
+       ],
+       "3": [
+        0.82,
+        199
+       ],
+       "4": [
+        0.757,
+        199
+       ],
+       "5": [
+        0.78,
+        200
+       ],
+       "6": [
+        0.779,
+        199
+       ],
+       "7": [
+        0.766,
+        199
+       ],
+       "8": [
+        0.763,
+        199
+       ],
+       "9": [
+        0.736,
+        199
+       ]
+      },
+      "sb_class": {
+       "erratic": [
+        0.774,
+        42
+       ],
+       "intermittent": [
+        0.791,
+        1539
+       ],
+       "lumpy": [
+        0.787,
+        236
+       ],
+       "smooth": [
+        0.765,
+        176
+       ]
+      },
+      "keys": {
+       "CA_1|FOODS": [
+        0.802,
+        91
+       ],
+       "CA_1|HOBBIES": [
+        0.828,
+        35
+       ],
+       "CA_1|HOUSEHOLD": [
+        0.797,
+        72
+       ],
+       "CA_2|FOODS": [
+        0.708,
+        79
+       ],
+       "CA_2|HOBBIES": [
+        0.81,
+        27
+       ],
+       "CA_2|HOUSEHOLD": [
+        0.725,
+        62
+       ],
+       "CA_3|FOODS": [
+        0.778,
+        87
+       ],
+       "CA_3|HOBBIES": [
+        0.769,
+        47
+       ],
+       "CA_3|HOUSEHOLD": [
+        0.78,
+        83
+       ],
+       "CA_4|FOODS": [
+        0.749,
+        91
+       ],
+       "CA_4|HOBBIES": [
+        0.835,
+        37
+       ],
+       "CA_4|HOUSEHOLD": [
+        0.813,
+        68
+       ],
+       "TX_1|FOODS": [
+        0.785,
+        82
+       ],
+       "TX_1|HOBBIES": [
+        0.812,
+        36
+       ],
+       "TX_1|HOUSEHOLD": [
+        0.803,
+        68
+       ],
+       "TX_2|FOODS": [
+        0.797,
+        97
+       ],
+       "TX_2|HOBBIES": [
+        0.786,
+        52
+       ],
+       "TX_2|HOUSEHOLD": [
+        0.838,
+        74
+       ],
+       "TX_3|FOODS": [
+        0.788,
+        104
+       ],
+       "TX_3|HOBBIES": [
+        0.811,
+        38
+       ],
+       "TX_3|HOUSEHOLD": [
+        0.806,
+        63
+       ],
+       "WI_1|FOODS": [
+        0.759,
+        88
+       ],
+       "WI_1|HOBBIES": [
+        0.811,
+        31
+       ],
+       "WI_1|HOUSEHOLD": [
+        0.791,
+        80
+       ],
+       "WI_2|FOODS": [
+        0.779,
+        89
+       ],
+       "WI_2|HOBBIES": [
+        0.829,
+        30
+       ],
+       "WI_2|HOUSEHOLD": [
+        0.809,
+        65
+       ],
+       "WI_3|FOODS": [
+        0.758,
+        96
+       ],
+       "WI_3|HOBBIES": [
+        0.826,
+        44
+       ],
+       "WI_3|HOUSEHOLD": [
+        0.807,
+        77
+       ]
+      }
+     }
+    },
+    "95": {
+     "coverage": 0.9443,
+     "msis": 12.8393,
+     "width": 4.6802,
+     "share_below_nominal_by_10": 0.0547,
+     "worst_gap": {
+      "abc_xyz": 0.0295,
+      "sigma_decile": 0.0505,
+      "sb_class": 0.0146,
+      "keys": 0.0381
+     },
+     "by_group": {
+      "abc_xyz": {
+       "AX": [
+        0.954,
+        521
+       ],
+       "AY": [
+        0.948,
+        65
+       ],
+       "AZ": [
+        0.951,
+        8
+       ],
+       "BX": [
+        0.969,
+        142
+       ],
+       "BY": [
+        0.949,
+        467
+       ],
+       "BZ": [
+        0.921,
+        62
+       ],
+       "CX": [
+        0.964,
+        2
+       ],
+       "CY": [
+        0.953,
+        132
+       ],
+       "CZ": [
+        0.927,
+        594
+       ]
+      },
+      "sigma_decile": {
+       "1": [
+        0.899,
+        200
+       ],
+       "10": [
+        0.957,
+        200
+       ],
+       "2": [
+        0.944,
+        199
+       ],
+       "3": [
+        0.953,
+        199
+       ],
+       "4": [
+        0.936,
+        199
+       ],
+       "5": [
+        0.944,
+        200
+       ],
+       "6": [
+        0.952,
+        199
+       ],
+       "7": [
+        0.955,
+        199
+       ],
+       "8": [
+        0.961,
+        199
+       ],
+       "9": [
+        0.943,
+        199
+       ]
+      },
+      "sb_class": {
+       "erratic": [
+        0.935,
+        42
+       ],
+       "intermittent": [
+        0.944,
+        1539
+       ],
+       "lumpy": [
+        0.945,
+        236
+       ],
+       "smooth": [
+        0.945,
+        176
+       ]
+      },
+      "keys": {
+       "CA_1|FOODS": [
+        0.947,
+        91
+       ],
+       "CA_1|HOBBIES": [
+        0.947,
+        35
+       ],
+       "CA_1|HOUSEHOLD": [
+        0.965,
+        72
+       ],
+       "CA_2|FOODS": [
+        0.92,
+        79
+       ],
+       "CA_2|HOBBIES": [
+        0.934,
+        27
+       ],
+       "CA_2|HOUSEHOLD": [
+        0.942,
+        62
+       ],
+       "CA_3|FOODS": [
+        0.953,
+        87
+       ],
+       "CA_3|HOBBIES": [
+        0.93,
+        47
+       ],
+       "CA_3|HOUSEHOLD": [
+        0.953,
+        83
+       ],
+       "CA_4|FOODS": [
+        0.936,
+        91
+       ],
+       "CA_4|HOBBIES": [
+        0.954,
+        37
+       ],
+       "CA_4|HOUSEHOLD": [
+        0.945,
+        68
+       ],
+       "TX_1|FOODS": [
+        0.951,
+        82
+       ],
+       "TX_1|HOBBIES": [
+        0.94,
+        36
+       ],
+       "TX_1|HOUSEHOLD": [
+        0.954,
+        68
+       ],
+       "TX_2|FOODS": [
+        0.951,
+        97
+       ],
+       "TX_2|HOBBIES": [
+        0.943,
+        52
+       ],
+       "TX_2|HOUSEHOLD": [
+        0.959,
+        74
+       ],
+       "TX_3|FOODS": [
+        0.948,
+        104
+       ],
+       "TX_3|HOBBIES": [
+        0.937,
+        38
+       ],
+       "TX_3|HOUSEHOLD": [
+        0.949,
+        63
+       ],
+       "WI_1|FOODS": [
+        0.935,
+        88
+       ],
+       "WI_1|HOBBIES": [
+        0.942,
+        31
+       ],
+       "WI_1|HOUSEHOLD": [
+        0.951,
+        80
+       ],
+       "WI_2|FOODS": [
+        0.953,
+        89
+       ],
+       "WI_2|HOBBIES": [
+        0.912,
+        30
+       ],
+       "WI_2|HOUSEHOLD": [
+        0.947,
+        65
+       ],
+       "WI_3|FOODS": [
+        0.932,
+        96
+       ],
+       "WI_3|HOBBIES": [
+        0.939,
+        44
+       ],
+       "WI_3|HOUSEHOLD": [
+        0.927,
+        77
+       ]
+      }
+     }
+    }
+   },
+   "StatsForecastBaselineSeasonalNaive": {
+    "series": 1993,
+    "wis": 0.8212,
+    "80": {
+     "coverage": 0.7869,
+     "msis": 8.5666,
+     "width": 3.4756,
+     "share_below_nominal_by_10": 0.2178,
+     "worst_gap": {
+      "abc_xyz": 0.044,
+      "sigma_decile": 0.0484,
+      "sb_class": 0.016,
+      "keys": 0.0654
+     },
+     "by_group": {
+      "abc_xyz": {
+       "AX": [
+        0.762,
+        521
+       ],
+       "AY": [
+        0.808,
+        65
+       ],
+       "AZ": [
+        0.893,
+        8
+       ],
+       "BX": [
+        0.756,
+        142
+       ],
+       "BY": [
+        0.774,
+        467
+       ],
+       "BZ": [
+        0.831,
+        62
+       ],
+       "CX": [
+        0.661,
+        2
+       ],
+       "CY": [
+        0.779,
+        132
+       ],
+       "CZ": [
+        0.819,
+        594
+       ]
+      },
+      "sigma_decile": {
+       "1": [
+        0.836,
+        200
+       ],
+       "10": [
+        0.795,
+        200
+       ],
+       "2": [
+        0.819,
+        199
+       ],
+       "3": [
+        0.807,
+        199
+       ],
+       "4": [
+        0.775,
+        199
+       ],
+       "5": [
+        0.782,
+        200
+       ],
+       "6": [
+        0.765,
+        199
+       ],
+       "7": [
+        0.766,
+        199
+       ],
+       "8": [
+        0.773,
+        199
+       ],
+       "9": [
+        0.752,
+        199
+       ]
+      },
+      "sb_class": {
+       "erratic": [
+        0.784,
+        42
+       ],
+       "intermittent": [
+        0.785,
+        1539
+       ],
+       "lumpy": [
+        0.785,
+        236
+       ],
+       "smooth": [
+        0.807,
+        176
+       ]
+      },
+      "keys": {
+       "CA_1|FOODS": [
+        0.806,
+        91
+       ],
+       "CA_1|HOBBIES": [
+        0.82,
+        35
+       ],
+       "CA_1|HOUSEHOLD": [
+        0.801,
+        72
+       ],
+       "CA_2|FOODS": [
+        0.735,
+        79
+       ],
+       "CA_2|HOBBIES": [
+        0.791,
+        27
+       ],
+       "CA_2|HOUSEHOLD": [
+        0.75,
+        62
+       ],
+       "CA_3|FOODS": [
+        0.79,
+        87
+       ],
+       "CA_3|HOBBIES": [
+        0.767,
+        47
+       ],
+       "CA_3|HOUSEHOLD": [
+        0.809,
+        83
+       ],
+       "CA_4|FOODS": [
+        0.775,
+        91
+       ],
+       "CA_4|HOBBIES": [
+        0.817,
+        37
+       ],
+       "CA_4|HOUSEHOLD": [
+        0.786,
+        68
+       ],
+       "TX_1|FOODS": [
+        0.775,
+        82
+       ],
+       "TX_1|HOBBIES": [
+        0.821,
+        36
+       ],
+       "TX_1|HOUSEHOLD": [
+        0.798,
+        68
+       ],
+       "TX_2|FOODS": [
+        0.804,
+        97
+       ],
+       "TX_2|HOBBIES": [
+        0.789,
+        52
+       ],
+       "TX_2|HOUSEHOLD": [
+        0.819,
+        74
+       ],
+       "TX_3|FOODS": [
+        0.786,
+        104
+       ],
+       "TX_3|HOBBIES": [
+        0.77,
+        38
+       ],
+       "TX_3|HOUSEHOLD": [
+        0.776,
+        63
+       ],
+       "WI_1|FOODS": [
+        0.774,
+        88
+       ],
+       "WI_1|HOBBIES": [
+        0.832,
+        31
+       ],
+       "WI_1|HOUSEHOLD": [
+        0.787,
+        80
+       ],
+       "WI_2|FOODS": [
+        0.762,
+        89
+       ],
+       "WI_2|HOBBIES": [
+        0.812,
+        30
+       ],
+       "WI_2|HOUSEHOLD": [
+        0.805,
+        65
+       ],
+       "WI_3|FOODS": [
+        0.764,
+        96
+       ],
+       "WI_3|HOBBIES": [
+        0.79,
+        44
+       ],
+       "WI_3|HOUSEHOLD": [
+        0.78,
+        77
+       ]
+      }
+     }
+    },
+    "95": {
+     "coverage": 0.9473,
+     "msis": 14.8414,
+     "width": 6.0069,
+     "share_below_nominal_by_10": 0.0572,
+     "worst_gap": {
+      "abc_xyz": 0.0099,
+      "sigma_decile": 0.0204,
+      "sb_class": 0.0037,
+      "keys": 0.0283
+     },
+     "by_group": {
+      "abc_xyz": {
+       "AX": [
+        0.949,
+        521
+       ],
+       "AY": [
+        0.953,
+        65
+       ],
+       "AZ": [
+        0.978,
+        8
+       ],
+       "BX": [
+        0.955,
+        142
+       ],
+       "BY": [
+        0.949,
+        467
+       ],
+       "BZ": [
+        0.94,
+        62
+       ],
+       "CX": [
+        0.964,
+        2
+       ],
+       "CY": [
+        0.952,
+        132
+       ],
+       "CZ": [
+        0.941,
+        594
+       ]
+      },
+      "sigma_decile": {
+       "1": [
+        0.93,
+        200
+       ],
+       "10": [
+        0.956,
+        200
+       ],
+       "2": [
+        0.959,
+        199
+       ],
+       "3": [
+        0.948,
+        199
+       ],
+       "4": [
+        0.945,
+        199
+       ],
+       "5": [
+        0.944,
+        200
+       ],
+       "6": [
+        0.944,
+        199
+       ],
+       "7": [
+        0.948,
+        199
+       ],
+       "8": [
+        0.954,
+        199
+       ],
+       "9": [
+        0.945,
+        199
+       ]
+      },
+      "sb_class": {
+       "erratic": [
+        0.946,
+        42
+       ],
+       "intermittent": [
+        0.946,
+        1539
+       ],
+       "lumpy": [
+        0.948,
+        236
+       ],
+       "smooth": [
+        0.956,
+        176
+       ]
+      },
+      "keys": {
+       "CA_1|FOODS": [
+        0.954,
+        91
+       ],
+       "CA_1|HOBBIES": [
+        0.959,
+        35
+       ],
+       "CA_1|HOUSEHOLD": [
+        0.958,
+        72
+       ],
+       "CA_2|FOODS": [
+        0.923,
+        79
+       ],
+       "CA_2|HOBBIES": [
+        0.956,
+        27
+       ],
+       "CA_2|HOUSEHOLD": [
+        0.949,
+        62
+       ],
+       "CA_3|FOODS": [
+        0.958,
+        87
+       ],
+       "CA_3|HOBBIES": [
+        0.922,
+        47
+       ],
+       "CA_3|HOUSEHOLD": [
+        0.954,
+        83
+       ],
+       "CA_4|FOODS": [
+        0.942,
+        91
+       ],
+       "CA_4|HOBBIES": [
+        0.963,
+        37
+       ],
+       "CA_4|HOUSEHOLD": [
+        0.952,
+        68
+       ],
+       "TX_1|FOODS": [
+        0.946,
+        82
+       ],
+       "TX_1|HOBBIES": [
+        0.951,
+        36
+       ],
+       "TX_1|HOUSEHOLD": [
+        0.959,
+        68
+       ],
+       "TX_2|FOODS": [
+        0.946,
+        97
+       ],
+       "TX_2|HOBBIES": [
+        0.947,
+        52
+       ],
+       "TX_2|HOUSEHOLD": [
+        0.959,
+        74
+       ],
+       "TX_3|FOODS": [
+        0.951,
+        104
+       ],
+       "TX_3|HOBBIES": [
+        0.937,
+        38
+       ],
+       "TX_3|HOUSEHOLD": [
+        0.952,
+        63
+       ],
+       "WI_1|FOODS": [
+        0.937,
+        88
+       ],
+       "WI_1|HOBBIES": [
+        0.96,
+        31
+       ],
+       "WI_1|HOUSEHOLD": [
+        0.958,
+        80
+       ],
+       "WI_2|FOODS": [
+        0.945,
+        89
+       ],
+       "WI_2|HOBBIES": [
+        0.925,
+        30
+       ],
+       "WI_2|HOUSEHOLD": [
+        0.951,
+        65
+       ],
+       "WI_3|FOODS": [
+        0.928,
+        96
+       ],
+       "WI_3|HOBBIES": [
+        0.946,
+        44
+       ],
+       "WI_3|HOUSEHOLD": [
+        0.941,
+        77
+       ]
+      }
+     }
+    }
+   },
+   "StatsForecastCrostonSBA": {
+    "series": 1993,
+    "wis": 0.8004,
+    "80": {
+     "coverage": 0.7982,
+     "msis": 8.232,
+     "width": 2.8309,
+     "share_below_nominal_by_10": 0.1952,
+     "worst_gap": {
+      "abc_xyz": 0.0661,
+      "sigma_decile": 0.0532,
+      "sb_class": 0.0064,
+      "keys": 0.0979
+     },
+     "by_group": {
+      "abc_xyz": {
+       "AX": [
+        0.824,
+        521
+       ],
+       "AY": [
+        0.76,
+        65
+       ],
+       "AZ": [
+        0.871,
+        8
+       ],
+       "BX": [
+        0.862,
+        142
+       ],
+       "BY": [
+        0.805,
+        467
+       ],
+       "BZ": [
+        0.734,
+        62
+       ],
+       "CX": [
+        0.821,
+        2
+       ],
+       "CY": [
+        0.837,
+        132
+       ],
+       "CZ": [
+        0.756,
+        594
+       ]
+      },
+      "sigma_decile": {
+       "1": [
+        0.747,
+        200
+       ],
+       "10": [
+        0.827,
+        200
+       ],
+       "2": [
+        0.756,
+        199
+       ],
+       "3": [
+        0.773,
+        199
+       ],
+       "4": [
+        0.788,
+        199
+       ],
+       "5": [
+        0.815,
+        200
+       ],
+       "6": [
+        0.798,
+        199
+       ],
+       "7": [
+        0.82,
+        199
+       ],
+       "8": [
+        0.852,
+        199
+       ],
+       "9": [
+        0.807,
+        199
+       ]
+      },
+      "sb_class": {
+       "erratic": [
+        0.804,
+        42
+       ],
+       "intermittent": [
+        0.794,
+        1539
+       ],
+       "lumpy": [
+        0.803,
+        236
+       ],
+       "smooth": [
+        0.83,
+        176
+       ]
+      },
+      "keys": {
+       "CA_1|FOODS": [
+        0.784,
+        91
+       ],
+       "CA_1|HOBBIES": [
+        0.867,
+        35
+       ],
+       "CA_1|HOUSEHOLD": [
+        0.829,
+        72
+       ],
+       "CA_2|FOODS": [
+        0.702,
+        79
+       ],
+       "CA_2|HOBBIES": [
+        0.774,
+        27
+       ],
+       "CA_2|HOUSEHOLD": [
+        0.813,
+        62
+       ],
+       "CA_3|FOODS": [
+        0.8,
+        87
+       ],
+       "CA_3|HOBBIES": [
+        0.813,
+        47
+       ],
+       "CA_3|HOUSEHOLD": [
+        0.813,
+        83
+       ],
+       "CA_4|FOODS": [
+        0.76,
+        91
+       ],
+       "CA_4|HOBBIES": [
+        0.818,
+        37
+       ],
+       "CA_4|HOUSEHOLD": [
+        0.799,
+        68
+       ],
+       "TX_1|FOODS": [
+        0.786,
+        82
+       ],
+       "TX_1|HOBBIES": [
+        0.846,
+        36
+       ],
+       "TX_1|HOUSEHOLD": [
+        0.821,
+        68
+       ],
+       "TX_2|FOODS": [
+        0.81,
+        97
+       ],
+       "TX_2|HOBBIES": [
+        0.826,
+        52
+       ],
+       "TX_2|HOUSEHOLD": [
+        0.843,
+        74
+       ],
+       "TX_3|FOODS": [
+        0.772,
+        104
+       ],
+       "TX_3|HOBBIES": [
+        0.833,
+        38
+       ],
+       "TX_3|HOUSEHOLD": [
+        0.843,
+        63
+       ],
+       "WI_1|FOODS": [
+        0.769,
+        88
+       ],
+       "WI_1|HOBBIES": [
+        0.828,
+        31
+       ],
+       "WI_1|HOUSEHOLD": [
+        0.83,
+        80
+       ],
+       "WI_2|FOODS": [
+        0.789,
+        89
+       ],
+       "WI_2|HOBBIES": [
+        0.825,
+        30
+       ],
+       "WI_2|HOUSEHOLD": [
+        0.784,
+        65
+       ],
+       "WI_3|FOODS": [
+        0.768,
+        96
+       ],
+       "WI_3|HOBBIES": [
+        0.791,
+        44
+       ],
+       "WI_3|HOUSEHOLD": [
+        0.775,
+        77
+       ]
+      }
+     }
+    },
+    "95": {
+     "coverage": 0.9496,
+     "msis": 17.5004,
+     "width": 5.5222,
+     "share_below_nominal_by_10": 0.0687,
+     "worst_gap": {
+      "abc_xyz": 0.056,
+      "sigma_decile": 0.0923,
+      "sb_class": 0.0017,
+      "keys": 0.0437
+     },
+     "by_group": {
+      "abc_xyz": {
+       "AX": [
+        0.969,
+        521
+       ],
+       "AY": [
+        0.958,
+        65
+       ],
+       "AZ": [
+        0.929,
+        8
+       ],
+       "BX": [
+        0.994,
+        142
+       ],
+       "BY": [
+        0.959,
+        467
+       ],
+       "BZ": [
+        0.894,
+        62
+       ],
+       "CX": [
+        1.0,
+        2
+       ],
+       "CY": [
+        0.978,
+        132
+       ],
+       "CZ": [
+        0.913,
+        594
+       ]
+      },
+      "sigma_decile": {
+       "1": [
+        0.858,
+        200
+       ],
+       "10": [
+        0.969,
+        200
+       ],
+       "2": [
+        0.931,
+        199
+       ],
+       "3": [
+        0.954,
+        199
+       ],
+       "4": [
+        0.947,
+        199
+       ],
+       "5": [
+        0.961,
+        200
+       ],
+       "6": [
+        0.963,
+        199
+       ],
+       "7": [
+        0.977,
+        199
+       ],
+       "8": [
+        0.977,
+        199
+       ],
+       "9": [
+        0.961,
+        199
+       ]
+      },
+      "sb_class": {
+       "erratic": [
+        0.964,
+        42
+       ],
+       "intermittent": [
+        0.948,
+        1539
+       ],
+       "lumpy": [
+        0.952,
+        236
+       ],
+       "smooth": [
+        0.955,
+        176
+       ]
+      },
+      "keys": {
+       "CA_1|FOODS": [
+        0.938,
+        91
+       ],
+       "CA_1|HOBBIES": [
+        0.952,
+        35
+       ],
+       "CA_1|HOUSEHOLD": [
+        0.962,
+        72
+       ],
+       "CA_2|FOODS": [
+        0.929,
+        79
+       ],
+       "CA_2|HOBBIES": [
+        0.942,
+        27
+       ],
+       "CA_2|HOUSEHOLD": [
+        0.949,
+        62
+       ],
+       "CA_3|FOODS": [
+        0.954,
+        87
+       ],
+       "CA_3|HOBBIES": [
+        0.963,
+        47
+       ],
+       "CA_3|HOUSEHOLD": [
+        0.939,
+        83
+       ],
+       "CA_4|FOODS": [
+        0.93,
+        91
+       ],
+       "CA_4|HOBBIES": [
+        0.972,
+        37
+       ],
+       "CA_4|HOUSEHOLD": [
+        0.945,
+        68
+       ],
+       "TX_1|FOODS": [
+        0.946,
+        82
+       ],
+       "TX_1|HOBBIES": [
+        0.969,
+        36
+       ],
+       "TX_1|HOUSEHOLD": [
+        0.967,
+        68
+       ],
+       "TX_2|FOODS": [
+        0.954,
+        97
+       ],
+       "TX_2|HOBBIES": [
+        0.967,
+        52
+       ],
+       "TX_2|HOUSEHOLD": [
+        0.963,
+        74
+       ],
+       "TX_3|FOODS": [
+        0.948,
+        104
+       ],
+       "TX_3|HOBBIES": [
+        0.948,
+        38
+       ],
+       "TX_3|HOUSEHOLD": [
+        0.973,
+        63
+       ],
+       "WI_1|FOODS": [
+        0.948,
+        88
+       ],
+       "WI_1|HOBBIES": [
+        0.942,
+        31
+       ],
+       "WI_1|HOUSEHOLD": [
+        0.958,
+        80
+       ],
+       "WI_2|FOODS": [
+        0.955,
+        89
+       ],
+       "WI_2|HOBBIES": [
+        0.952,
+        30
+       ],
+       "WI_2|HOUSEHOLD": [
+        0.958,
+        65
+       ],
+       "WI_3|FOODS": [
+        0.94,
+        96
+       ],
+       "WI_3|HOBBIES": [
+        0.964,
+        44
+       ],
+       "WI_3|HOUSEHOLD": [
+        0.906,
+        77
+       ]
+      }
+     }
+    }
+   }
+  },
+  "keys": {
+   "StatsForecastAutoETS": {
+    "series": 1993,
+    "wis": 0.6881,
+    "80": {
+     "coverage": 0.7889,
+     "msis": 7.0847,
+     "width": 2.5518,
+     "share_below_nominal_by_10": 0.2032,
+     "worst_gap": {
+      "abc_xyz": 0.052,
+      "sigma_decile": 0.0566,
+      "sb_class": 0.0764,
+      "keys": 0.0645
+     },
+     "by_group": {
+      "abc_xyz": {
+       "AX": [
+        0.748,
+        521
+       ],
+       "AY": [
+        0.829,
+        65
+       ],
+       "AZ": [
+        0.857,
+        8
+       ],
+       "BX": [
+        0.77,
+        142
+       ],
+       "BY": [
+        0.784,
+        467
+       ],
+       "BZ": [
+        0.814,
+        62
+       ],
+       "CX": [
+        0.75,
+        2
+       ],
+       "CY": [
+        0.782,
+        132
+       ],
+       "CZ": [
+        0.827,
+        594
+       ]
+      },
+      "sigma_decile": {
+       "1": [
+        0.862,
+        200
+       ],
+       "10": [
+        0.784,
+        200
+       ],
+       "2": [
+        0.818,
+        199
+       ],
+       "3": [
+        0.817,
+        199
+       ],
+       "4": [
+        0.761,
+        199
+       ],
+       "5": [
+        0.782,
+        200
+       ],
+       "6": [
+        0.783,
+        199
+       ],
+       "7": [
+        0.766,
+        199
+       ],
+       "8": [
+        0.772,
+        199
+       ],
+       "9": [
+        0.743,
+        199
+       ]
+      },
+      "sb_class": {
+       "erratic": [
+        0.788,
+        42
+       ],
+       "intermittent": [
+        0.789,
+        1539
+       ],
+       "lumpy": [
+        0.835,
+        236
+       ],
+       "smooth": [
+        0.724,
+        176
+       ]
+      },
+      "keys": {
+       "CA_1|FOODS": [
+        0.781,
+        91
+       ],
+       "CA_1|HOBBIES": [
+        0.807,
+        35
+       ],
+       "CA_1|HOUSEHOLD": [
+        0.796,
+        72
+       ],
+       "CA_2|FOODS": [
+        0.736,
+        79
+       ],
+       "CA_2|HOBBIES": [
+        0.811,
+        27
+       ],
+       "CA_2|HOUSEHOLD": [
+        0.744,
+        62
+       ],
+       "CA_3|FOODS": [
+        0.762,
+        87
+       ],
+       "CA_3|HOBBIES": [
+        0.796,
+        47
+       ],
+       "CA_3|HOUSEHOLD": [
+        0.781,
+        83
+       ],
+       "CA_4|FOODS": [
+        0.75,
+        91
+       ],
+       "CA_4|HOBBIES": [
+        0.826,
+        37
+       ],
+       "CA_4|HOUSEHOLD": [
+        0.821,
+        68
+       ],
+       "TX_1|FOODS": [
+        0.783,
+        82
+       ],
+       "TX_1|HOBBIES": [
+        0.795,
+        36
+       ],
+       "TX_1|HOUSEHOLD": [
+        0.815,
+        68
+       ],
+       "TX_2|FOODS": [
+        0.793,
+        97
+       ],
+       "TX_2|HOBBIES": [
+        0.789,
+        52
+       ],
+       "TX_2|HOUSEHOLD": [
+        0.845,
+        74
+       ],
+       "TX_3|FOODS": [
+        0.776,
+        104
+       ],
+       "TX_3|HOBBIES": [
+        0.807,
+        38
+       ],
+       "TX_3|HOUSEHOLD": [
+        0.808,
+        63
+       ],
+       "WI_1|FOODS": [
+        0.774,
+        88
+       ],
+       "WI_1|HOBBIES": [
+        0.793,
+        31
+       ],
+       "WI_1|HOUSEHOLD": [
+        0.791,
+        80
+       ],
+       "WI_2|FOODS": [
+        0.785,
+        89
+       ],
+       "WI_2|HOBBIES": [
+        0.823,
+        30
+       ],
+       "WI_2|HOUSEHOLD": [
+        0.803,
+        65
+       ],
+       "WI_3|FOODS": [
+        0.782,
+        96
+       ],
+       "WI_3|HOBBIES": [
+        0.821,
+        44
+       ],
+       "WI_3|HOUSEHOLD": [
+        0.795,
+        77
+       ]
+      }
+     }
+    },
+    "95": {
+     "coverage": 0.9459,
+     "msis": 12.8226,
+     "width": 4.7551,
+     "share_below_nominal_by_10": 0.0502,
+     "worst_gap": {
+      "abc_xyz": 0.0226,
+      "sigma_decile": 0.0448,
+      "sb_class": 0.0085,
+      "keys": 0.026
+     },
+     "by_group": {
+      "abc_xyz": {
+       "AX": [
+        0.962,
+        521
+       ],
+       "AY": [
+        0.954,
+        65
+       ],
+       "AZ": [
+        0.951,
+        8
+       ],
+       "BX": [
+        0.964,
+        142
+       ],
+       "BY": [
+        0.946,
+        467
+       ],
+       "BZ": [
+        0.93,
+        62
+       ],
+       "CX": [
+        0.964,
+        2
+       ],
+       "CY": [
+        0.952,
+        132
+       ],
+       "CZ": [
+        0.927,
+        594
+       ]
+      },
+      "sigma_decile": {
+       "1": [
+        0.905,
+        200
+       ],
+       "10": [
+        0.971,
+        200
+       ],
+       "2": [
+        0.942,
+        199
+       ],
+       "3": [
+        0.951,
+        199
+       ],
+       "4": [
+        0.935,
+        199
+       ],
+       "5": [
+        0.941,
+        200
+       ],
+       "6": [
+        0.948,
+        199
+       ],
+       "7": [
+        0.95,
+        199
+       ],
+       "8": [
+        0.96,
+        199
+       ],
+       "9": [
+        0.957,
+        199
+       ]
+      },
+      "sb_class": {
+       "erratic": [
+        0.963,
+        42
+       ],
+       "intermittent": [
+        0.941,
+        1539
+       ],
+       "lumpy": [
+        0.958,
+        236
+       ],
+       "smooth": [
+        0.964,
+        176
+       ]
+      },
+      "keys": {
+       "CA_1|FOODS": [
+        0.942,
+        91
+       ],
+       "CA_1|HOBBIES": [
+        0.945,
+        35
+       ],
+       "CA_1|HOUSEHOLD": [
+        0.952,
+        72
+       ],
+       "CA_2|FOODS": [
+        0.939,
+        79
+       ],
+       "CA_2|HOBBIES": [
+        0.946,
+        27
+       ],
+       "CA_2|HOUSEHOLD": [
+        0.937,
+        62
+       ],
+       "CA_3|FOODS": [
+        0.947,
+        87
+       ],
+       "CA_3|HOBBIES": [
+        0.924,
+        47
+       ],
+       "CA_3|HOUSEHOLD": [
+        0.952,
+        83
+       ],
+       "CA_4|FOODS": [
+        0.931,
+        91
+       ],
+       "CA_4|HOBBIES": [
+        0.952,
+        37
+       ],
+       "CA_4|HOUSEHOLD": [
+        0.952,
+        68
+       ],
+       "TX_1|FOODS": [
+        0.954,
+        82
+       ],
+       "TX_1|HOBBIES": [
+        0.956,
+        36
+       ],
+       "TX_1|HOUSEHOLD": [
+        0.949,
+        68
+       ],
+       "TX_2|FOODS": [
+        0.948,
+        97
+       ],
+       "TX_2|HOBBIES": [
+        0.946,
+        52
+       ],
+       "TX_2|HOUSEHOLD": [
+        0.964,
+        74
+       ],
+       "TX_3|FOODS": [
+        0.944,
+        104
+       ],
+       "TX_3|HOBBIES": [
+        0.945,
+        38
+       ],
+       "TX_3|HOUSEHOLD": [
+        0.952,
+        63
+       ],
+       "WI_1|FOODS": [
+        0.935,
+        88
+       ],
+       "WI_1|HOBBIES": [
+        0.946,
+        31
+       ],
+       "WI_1|HOUSEHOLD": [
+        0.952,
+        80
+       ],
+       "WI_2|FOODS": [
+        0.955,
+        89
+       ],
+       "WI_2|HOBBIES": [
+        0.937,
+        30
+       ],
+       "WI_2|HOUSEHOLD": [
+        0.958,
+        65
+       ],
+       "WI_3|FOODS": [
+        0.937,
+        96
+       ],
+       "WI_3|HOBBIES": [
+        0.95,
+        44
+       ],
+       "WI_3|HOUSEHOLD": [
+        0.935,
+        77
+       ]
+      }
+     }
+    }
+   },
+   "StatsForecastBaselineSeasonalNaive": {
+    "series": 1993,
+    "wis": 0.8223,
+    "80": {
+     "coverage": 0.7896,
+     "msis": 8.5894,
+     "width": 3.4732,
+     "share_below_nominal_by_10": 0.2102,
+     "worst_gap": {
+      "abc_xyz": 0.0494,
+      "sigma_decile": 0.0462,
+      "sb_class": 0.0703,
+      "keys": 0.0397
+     },
+     "by_group": {
+      "abc_xyz": {
+       "AX": [
+        0.751,
+        521
+       ],
+       "AY": [
+        0.842,
+        65
+       ],
+       "AZ": [
+        0.906,
+        8
+       ],
+       "BX": [
+        0.766,
+        142
+       ],
+       "BY": [
+        0.785,
+        467
+       ],
+       "BZ": [
+        0.84,
+        62
+       ],
+       "CX": [
+        0.732,
+        2
+       ],
+       "CY": [
+        0.787,
+        132
+       ],
+       "CZ": [
+        0.821,
+        594
+       ]
+      },
+      "sigma_decile": {
+       "1": [
+        0.837,
+        200
+       ],
+       "10": [
+        0.764,
+        200
+       ],
+       "2": [
+        0.821,
+        199
+       ],
+       "3": [
+        0.813,
+        199
+       ],
+       "4": [
+        0.779,
+        199
+       ],
+       "5": [
+        0.787,
+        200
+       ],
+       "6": [
+        0.778,
+        199
+       ],
+       "7": [
+        0.775,
+        199
+       ],
+       "8": [
+        0.787,
+        199
+       ],
+       "9": [
+        0.754,
+        199
+       ]
+      },
+      "sb_class": {
+       "erratic": [
+        0.789,
+        42
+       ],
+       "intermittent": [
+        0.789,
+        1539
+       ],
+       "lumpy": [
+        0.839,
+        236
+       ],
+       "smooth": [
+        0.73,
+        176
+       ]
+      },
+      "keys": {
+       "CA_1|FOODS": [
+        0.788,
+        91
+       ],
+       "CA_1|HOBBIES": [
+        0.794,
+        35
+       ],
+       "CA_1|HOUSEHOLD": [
+        0.792,
+        72
+       ],
+       "CA_2|FOODS": [
+        0.785,
+        79
+       ],
+       "CA_2|HOBBIES": [
+        0.803,
+        27
+       ],
+       "CA_2|HOUSEHOLD": [
+        0.764,
+        62
+       ],
+       "CA_3|FOODS": [
+        0.787,
+        87
+       ],
+       "CA_3|HOBBIES": [
+        0.787,
+        47
+       ],
+       "CA_3|HOUSEHOLD": [
+        0.808,
+        83
+       ],
+       "CA_4|FOODS": [
+        0.77,
+        91
+       ],
+       "CA_4|HOBBIES": [
+        0.805,
+        37
+       ],
+       "CA_4|HOUSEHOLD": [
+        0.796,
+        68
+       ],
+       "TX_1|FOODS": [
+        0.772,
+        82
+       ],
+       "TX_1|HOBBIES": [
+        0.796,
+        36
+       ],
+       "TX_1|HOUSEHOLD": [
+        0.811,
+        68
+       ],
+       "TX_2|FOODS": [
+        0.796,
+        97
+       ],
+       "TX_2|HOBBIES": [
+        0.778,
+        52
+       ],
+       "TX_2|HOUSEHOLD": [
+        0.829,
+        74
+       ],
+       "TX_3|FOODS": [
+        0.779,
+        104
+       ],
+       "TX_3|HOBBIES": [
+        0.76,
+        38
+       ],
+       "TX_3|HOUSEHOLD": [
+        0.79,
+        63
+       ],
+       "WI_1|FOODS": [
+        0.791,
+        88
+       ],
+       "WI_1|HOBBIES": [
+        0.817,
+        31
+       ],
+       "WI_1|HOUSEHOLD": [
+        0.792,
+        80
+       ],
+       "WI_2|FOODS": [
+        0.795,
+        89
+       ],
+       "WI_2|HOBBIES": [
+        0.801,
+        30
+       ],
+       "WI_2|HOUSEHOLD": [
+        0.788,
+        65
+       ],
+       "WI_3|FOODS": [
+        0.786,
+        96
+       ],
+       "WI_3|HOBBIES": [
+        0.785,
+        44
+       ],
+       "WI_3|HOUSEHOLD": [
+        0.776,
+        77
+       ]
+      }
+     }
+    },
+    "95": {
+     "coverage": 0.9481,
+     "msis": 14.862,
+     "width": 6.0724,
+     "share_below_nominal_by_10": 0.0522,
+     "worst_gap": {
+      "abc_xyz": 0.0076,
+      "sigma_decile": 0.0184,
+      "sb_class": 0.004,
+      "keys": 0.0179
+     },
+     "by_group": {
+      "abc_xyz": {
+       "AX": [
+        0.949,
+        521
+       ],
+       "AY": [
+        0.955,
+        65
+       ],
+       "AZ": [
+        0.982,
+        8
+       ],
+       "BX": [
+        0.951,
+        142
+       ],
+       "BY": [
+        0.949,
+        467
+       ],
+       "BZ": [
+        0.942,
+        62
+       ],
+       "CX": [
+        1.0,
+        2
+       ],
+       "CY": [
+        0.956,
+        132
+       ],
+       "CZ": [
+        0.943,
+        594
+       ]
+      },
+      "sigma_decile": {
+       "1": [
+        0.932,
+        200
+       ],
+       "10": [
+        0.958,
+        200
+       ],
+       "2": [
+        0.959,
+        199
+       ],
+       "3": [
+        0.952,
+        199
+       ],
+       "4": [
+        0.947,
+        199
+       ],
+       "5": [
+        0.946,
+        200
+       ],
+       "6": [
+        0.941,
+        199
+       ],
+       "7": [
+        0.946,
+        199
+       ],
+       "8": [
+        0.952,
+        199
+       ],
+       "9": [
+        0.948,
+        199
+       ]
+      },
+      "sb_class": {
+       "erratic": [
+        0.957,
+        42
+       ],
+       "intermittent": [
+        0.946,
+        1539
+       ],
+       "lumpy": [
+        0.958,
+        236
+       ],
+       "smooth": [
+        0.951,
+        176
+       ]
+      },
+      "keys": {
+       "CA_1|FOODS": [
+        0.951,
+        91
+       ],
+       "CA_1|HOBBIES": [
+        0.943,
+        35
+       ],
+       "CA_1|HOUSEHOLD": [
+        0.95,
+        72
+       ],
+       "CA_2|FOODS": [
+        0.951,
+        79
+       ],
+       "CA_2|HOBBIES": [
+        0.96,
+        27
+       ],
+       "CA_2|HOUSEHOLD": [
+        0.951,
+        62
+       ],
+       "CA_3|FOODS": [
+        0.956,
+        87
+       ],
+       "CA_3|HOBBIES": [
+        0.939,
+        47
+       ],
+       "CA_3|HOUSEHOLD": [
+        0.95,
+        83
+       ],
+       "CA_4|FOODS": [
+        0.932,
+        91
+       ],
+       "CA_4|HOBBIES": [
+        0.96,
+        37
+       ],
+       "CA_4|HOUSEHOLD": [
+        0.963,
+        68
+       ],
+       "TX_1|FOODS": [
+        0.95,
+        82
+       ],
+       "TX_1|HOBBIES": [
+        0.944,
+        36
+       ],
+       "TX_1|HOUSEHOLD": [
+        0.948,
+        68
+       ],
+       "TX_2|FOODS": [
+        0.95,
+        97
+       ],
+       "TX_2|HOBBIES": [
+        0.935,
+        52
+       ],
+       "TX_2|HOUSEHOLD": [
+        0.958,
+        74
+       ],
+       "TX_3|FOODS": [
+        0.938,
+        104
+       ],
+       "TX_3|HOBBIES": [
+        0.933,
+        38
+       ],
+       "TX_3|HOUSEHOLD": [
+        0.95,
+        63
+       ],
+       "WI_1|FOODS": [
+        0.942,
+        88
+       ],
+       "WI_1|HOBBIES": [
+        0.95,
+        31
+       ],
+       "WI_1|HOUSEHOLD": [
+        0.954,
+        80
+       ],
+       "WI_2|FOODS": [
+        0.955,
+        89
+       ],
+       "WI_2|HOBBIES": [
+        0.939,
+        30
+       ],
+       "WI_2|HOUSEHOLD": [
+        0.95,
+        65
+       ],
+       "WI_3|FOODS": [
+        0.946,
+        96
+       ],
+       "WI_3|HOBBIES": [
+        0.951,
+        44
+       ],
+       "WI_3|HOUSEHOLD": [
+        0.942,
+        77
+       ]
+      }
+     }
+    }
+   },
+   "StatsForecastCrostonSBA": {
+    "series": 1993,
+    "wis": 0.7964,
+    "80": {
+     "coverage": 0.7966,
+     "msis": 8.2205,
+     "width": 2.8667,
+     "share_below_nominal_by_10": 0.2052,
+     "worst_gap": {
+      "abc_xyz": 0.0609,
+      "sigma_decile": 0.0802,
+      "sb_class": 0.0167,
+      "keys": 0.1321
+     },
+     "by_group": {
+      "abc_xyz": {
+       "AX": [
+        0.844,
+        521
+       ],
+       "AY": [
+        0.785,
+        65
+       ],
+       "AZ": [
+        0.871,
+        8
+       ],
+       "BX": [
+        0.865,
+        142
+       ],
+       "BY": [
+        0.795,
+        467
+       ],
+       "BZ": [
+        0.739,
+        62
+       ],
+       "CX": [
+        0.839,
+        2
+       ],
+       "CY": [
+        0.808,
+        132
+       ],
+       "CZ": [
+        0.744,
+        594
+       ]
+      },
+      "sigma_decile": {
+       "1": [
+        0.72,
+        200
+       ],
+       "10": [
+        0.86,
+        200
+       ],
+       "2": [
+        0.74,
+        199
+       ],
+       "3": [
+        0.773,
+        199
+       ],
+       "4": [
+        0.764,
+        199
+       ],
+       "5": [
+        0.802,
+        200
+       ],
+       "6": [
+        0.798,
+        199
+       ],
+       "7": [
+        0.822,
+        199
+       ],
+       "8": [
+        0.855,
+        199
+       ],
+       "9": [
+        0.832,
+        199
+       ]
+      },
+      "sb_class": {
+       "erratic": [
+        0.864,
+        42
+       ],
+       "intermittent": [
+        0.783,
+        1539
+       ],
+       "lumpy": [
+        0.818,
+        236
+       ],
+       "smooth": [
+        0.869,
+        176
+       ]
+      },
+      "keys": {
+       "CA_1|FOODS": [
+        0.805,
+        91
+       ],
+       "CA_1|HOBBIES": [
+        0.849,
+        35
+       ],
+       "CA_1|HOUSEHOLD": [
+        0.771,
+        72
+       ],
+       "CA_2|FOODS": [
+        0.795,
+        79
+       ],
+       "CA_2|HOBBIES": [
+        0.786,
+        27
+       ],
+       "CA_2|HOUSEHOLD": [
+        0.804,
+        62
+       ],
+       "CA_3|FOODS": [
+        0.799,
+        87
+       ],
+       "CA_3|HOBBIES": [
+        0.791,
+        47
+       ],
+       "CA_3|HOUSEHOLD": [
+        0.81,
+        83
+       ],
+       "CA_4|FOODS": [
+        0.791,
+        91
+       ],
+       "CA_4|HOBBIES": [
+        0.778,
+        37
+       ],
+       "CA_4|HOUSEHOLD": [
+        0.779,
+        68
+       ],
+       "TX_1|FOODS": [
+        0.769,
+        82
+       ],
+       "TX_1|HOBBIES": [
+        0.784,
+        36
+       ],
+       "TX_1|HOUSEHOLD": [
+        0.781,
+        68
+       ],
+       "TX_2|FOODS": [
+        0.821,
+        97
+       ],
+       "TX_2|HOBBIES": [
+        0.781,
+        52
+       ],
+       "TX_2|HOUSEHOLD": [
+        0.843,
+        74
+       ],
+       "TX_3|FOODS": [
+        0.791,
+        104
+       ],
+       "TX_3|HOBBIES": [
+        0.793,
+        38
+       ],
+       "TX_3|HOUSEHOLD": [
+        0.8,
+        63
+       ],
+       "WI_1|FOODS": [
+        0.834,
+        88
+       ],
+       "WI_1|HOBBIES": [
+        0.801,
+        31
+       ],
+       "WI_1|HOUSEHOLD": [
+        0.812,
+        80
+       ],
+       "WI_2|FOODS": [
+        0.804,
+        89
+       ],
+       "WI_2|HOBBIES": [
+        0.668,
+        30
+       ],
+       "WI_2|HOUSEHOLD": [
+        0.771,
+        65
+       ],
+       "WI_3|FOODS": [
+        0.806,
+        96
+       ],
+       "WI_3|HOBBIES": [
+        0.79,
+        44
+       ],
+       "WI_3|HOUSEHOLD": [
+        0.792,
+        77
+       ]
+      }
+     }
+    },
+    "95": {
+     "coverage": 0.9527,
+     "msis": 17.1447,
+     "width": 5.8185,
+     "share_below_nominal_by_10": 0.0627,
+     "worst_gap": {
+      "abc_xyz": 0.0374,
+      "sigma_decile": 0.0904,
+      "sb_class": 0.0018,
+      "keys": 0.0207
+     },
+     "by_group": {
+      "abc_xyz": {
+       "AX": [
+        0.983,
+        521
+       ],
+       "AY": [
+        0.959,
+        65
+       ],
+       "AZ": [
+        0.938,
+        8
+       ],
+       "BX": [
+        0.988,
+        142
+       ],
+       "BY": [
+        0.956,
+        467
+       ],
+       "BZ": [
+        0.921,
+        62
+       ],
+       "CX": [
+        1.0,
+        2
+       ],
+       "CY": [
+        0.976,
+        132
+       ],
+       "CZ": [
+        0.913,
+        594
+       ]
+      },
+      "sigma_decile": {
+       "1": [
+        0.86,
+        200
+       ],
+       "10": [
+        0.987,
+        200
+       ],
+       "2": [
+        0.934,
+        199
+       ],
+       "3": [
+        0.948,
+        199
+       ],
+       "4": [
+        0.948,
+        199
+       ],
+       "5": [
+        0.959,
+        200
+       ],
+       "6": [
+        0.96,
+        199
+       ],
+       "7": [
+        0.973,
+        199
+       ],
+       "8": [
+        0.98,
+        199
+       ],
+       "9": [
+        0.979,
+        199
+       ]
+      },
+      "sb_class": {
+       "erratic": [
+        0.988,
+        42
+       ],
+       "intermittent": [
+        0.948,
+        1539
+       ],
+       "lumpy": [
+        0.95,
+        236
+       ],
+       "smooth": [
+        0.988,
+        176
+       ]
+      },
+      "keys": {
+       "CA_1|FOODS": [
+        0.953,
+        91
+       ],
+       "CA_1|HOBBIES": [
+        0.951,
+        35
+       ],
+       "CA_1|HOUSEHOLD": [
+        0.944,
+        72
+       ],
+       "CA_2|FOODS": [
+        0.949,
+        79
+       ],
+       "CA_2|HOBBIES": [
+        0.948,
+        27
+       ],
+       "CA_2|HOUSEHOLD": [
+        0.946,
+        62
+       ],
+       "CA_3|FOODS": [
+        0.951,
+        87
+       ],
+       "CA_3|HOBBIES": [
+        0.929,
+        47
+       ],
+       "CA_3|HOUSEHOLD": [
+        0.946,
+        83
+       ],
+       "CA_4|FOODS": [
+        0.938,
+        91
+       ],
+       "CA_4|HOBBIES": [
+        0.952,
+        37
+       ],
+       "CA_4|HOUSEHOLD": [
+        0.951,
+        68
+       ],
+       "TX_1|FOODS": [
+        0.944,
+        82
+       ],
+       "TX_1|HOBBIES": [
+        0.962,
+        36
+       ],
+       "TX_1|HOUSEHOLD": [
+        0.939,
+        68
+       ],
+       "TX_2|FOODS": [
+        0.968,
+        97
+       ],
+       "TX_2|HOBBIES": [
+        0.958,
+        52
+       ],
+       "TX_2|HOUSEHOLD": [
+        0.964,
+        74
+       ],
+       "TX_3|FOODS": [
+        0.955,
+        104
+       ],
+       "TX_3|HOBBIES": [
+        0.967,
+        38
+       ],
+       "TX_3|HOUSEHOLD": [
+        0.955,
+        63
+       ],
+       "WI_1|FOODS": [
+        0.966,
+        88
+       ],
+       "WI_1|HOBBIES": [
+        0.93,
+        31
+       ],
+       "WI_1|HOUSEHOLD": [
+        0.954,
+        80
+       ],
+       "WI_2|FOODS": [
+        0.967,
+        89
+       ],
+       "WI_2|HOBBIES": [
+        0.95,
+        30
+       ],
+       "WI_2|HOUSEHOLD": [
+        0.965,
+        65
+       ],
+       "WI_3|FOODS": [
+        0.955,
+        96
+       ],
+       "WI_3|HOBBIES": [
+        0.961,
+        44
+       ],
+       "WI_3|HOUSEHOLD": [
+        0.947,
+        77
+       ]
+      }
+     }
+    }
+   }
+  }
+ },
+ "paired_vs_default": {
+  "native": {
+   "StatsForecastAutoETS": {
+    "coverage_80": [
+     0.0676,
+     0.0639,
+     0.0709
+    ],
+    "coverage_95": [
+     -0.0104,
+     -0.0114,
+     -0.0093
+    ],
+    "wis": [
+     0.05,
+     0.047,
+     0.0536
+    ],
+    "worst_gap_abc_xyz_80": [
+     -0.0537,
+     -0.0678,
+     -0.0425
+    ],
+    "worst_gap_abc_xyz_95": [
+     0.0091,
+     0.006,
+     0.014
+    ],
+    "worst_gap_sigma_decile_80": [
+     -0.0583,
+     -0.0737,
+     -0.0418
+    ],
+    "worst_gap_sigma_decile_95": [
+     0.0057,
+     0.0027,
+     0.0091
+    ]
+   },
+   "StatsForecastBaselineSeasonalNaive": {
+    "coverage_80": [
+     0.1161,
+     0.1116,
+     0.1204
+    ],
+    "coverage_95": [
+     0.0187,
+     0.0173,
+     0.0203
+    ],
+    "wis": [
+     0.191,
+     0.183,
+     0.2003
+    ],
+    "worst_gap_abc_xyz_80": [
+     -0.0541,
+     -0.0645,
+     -0.0439
+    ],
+    "worst_gap_abc_xyz_95": [
+     -0.01,
+     -0.0161,
+     -0.005
+    ],
+    "worst_gap_sigma_decile_80": [
+     -0.0542,
+     -0.0686,
+     -0.0394
+    ],
+    "worst_gap_sigma_decile_95": [
+     -0.0086,
+     -0.0124,
+     -0.0046
+    ]
+   }
+  },
+  "abc_xyz": {
+   "StatsForecastAutoETS": {
+    "coverage_80": [
+     0.0036,
+     0.0014,
+     0.0059
+    ],
+    "coverage_95": [
+     0.0001,
+     -0.0009,
+     0.0013
+    ],
+    "wis": [
+     0.0027,
+     0.0015,
+     0.0038
+    ],
+    "worst_gap_abc_xyz_80": [
+     -0.0049,
+     -0.0278,
+     0.0391
+    ],
+    "worst_gap_abc_xyz_95": [
+     -0.003,
+     -0.0165,
+     0.0061
+    ],
+    "worst_gap_sigma_decile_80": [
+     -0.0114,
+     -0.0203,
+     0.0018
+    ],
+    "worst_gap_sigma_decile_95": [
+     -0.0127,
+     -0.0167,
+     -0.0089
+    ]
+   },
+   "StatsForecastBaselineSeasonalNaive": {
+    "coverage_80": [
+     0.0053,
+     0.0026,
+     0.0079
+    ],
+    "coverage_95": [
+     0.0001,
+     -0.0006,
+     0.0009
+    ],
+    "wis": [
+     0.0033,
+     0.0017,
+     0.0051
+    ],
+    "worst_gap_abc_xyz_80": [
+     -0.0232,
+     -0.0433,
+     0.0042
+    ],
+    "worst_gap_abc_xyz_95": [
+     0.0047,
+     -0.0042,
+     0.0137
+    ],
+    "worst_gap_sigma_decile_80": [
+     -0.0165,
+     -0.0339,
+     0.0034
+    ],
+    "worst_gap_sigma_decile_95": [
+     -0.0042,
+     -0.0082,
+     0.0034
+    ]
+   },
+   "StatsForecastCrostonSBA": {
+    "coverage_80": [
+     0.0015,
+     -0.0018,
+     0.0047
+    ],
+    "coverage_95": [
+     -0.0007,
+     -0.0036,
+     0.0024
+    ],
+    "wis": [
+     -0.0084,
+     -0.0109,
+     -0.0064
+    ],
+    "worst_gap_abc_xyz_80": [
+     -0.049,
+     -0.0926,
+     -0.015
+    ],
+    "worst_gap_abc_xyz_95": [
+     -0.0384,
+     -0.0641,
+     -0.0183
+    ],
+    "worst_gap_sigma_decile_80": [
+     -0.0182,
+     -0.0395,
+     0.0003
+    ],
+    "worst_gap_sigma_decile_95": [
+     -0.0464,
+     -0.0595,
+     -0.0332
+    ]
+   }
+  },
+  "sb_class": {
+   "StatsForecastAutoETS": {
+    "coverage_80": [
+     -0.0007,
+     -0.0024,
+     0.0007
+    ],
+    "coverage_95": [
+     -0.0002,
+     -0.0011,
+     0.0007
+    ],
+    "wis": [
+     -0.0006,
+     -0.001,
+     -0.0001
+    ],
+    "worst_gap_abc_xyz_80": [
+     -0.0051,
+     -0.0091,
+     0.0003
+    ],
+    "worst_gap_abc_xyz_95": [
+     0.002,
+     -0.0042,
+     0.0098
+    ],
+    "worst_gap_sigma_decile_80": [
+     0.0071,
+     -0.0017,
+     0.017
+    ],
+    "worst_gap_sigma_decile_95": [
+     -0.0018,
+     -0.0029,
+     -0.0009
+    ]
+   },
+   "StatsForecastBaselineSeasonalNaive": {
+    "coverage_80": [
+     -0.0004,
+     -0.0023,
+     0.0016
+    ],
+    "coverage_95": [
+     -0.0002,
+     -0.0008,
+     0.0004
+    ],
+    "wis": [
+     -0.0006,
+     -0.0011,
+     -0.0001
+    ],
+    "worst_gap_abc_xyz_80": [
+     -0.0083,
+     -0.0201,
+     0.0066
+    ],
+    "worst_gap_abc_xyz_95": [
+     0.0015,
+     -0.0013,
+     0.0067
+    ],
+    "worst_gap_sigma_decile_80": [
+     -0.0048,
+     -0.0186,
+     0.0097
+    ],
+    "worst_gap_sigma_decile_95": [
+     -0.0014,
+     -0.0026,
+     -0.0004
+    ]
+   },
+   "StatsForecastCrostonSBA": {
+    "coverage_80": [
+     0.0011,
+     -0.0003,
+     0.0025
+    ],
+    "coverage_95": [
+     -0.0004,
+     -0.0015,
+     0.0008
+    ],
+    "wis": [
+     -0.0021,
+     -0.0029,
+     -0.0015
+    ],
+    "worst_gap_abc_xyz_80": [
+     -0.0006,
+     -0.0078,
+     0.0096
+    ],
+    "worst_gap_abc_xyz_95": [
+     -0.0021,
+     -0.0059,
+     0.0011
+    ],
+    "worst_gap_sigma_decile_80": [
+     -0.0047,
+     -0.0114,
+     -0.001
+    ],
+    "worst_gap_sigma_decile_95": [
+     -0.0046,
+     -0.0069,
+     -0.0026
+    ]
+   }
+  },
+  "keys": {
+   "StatsForecastAutoETS": {
+    "coverage_80": [
+     0.0005,
+     -0.001,
+     0.002
+    ],
+    "coverage_95": [
+     0.0014,
+     0.0004,
+     0.0024
+    ],
+    "wis": [
+     -0.0006,
+     -0.0012,
+     0.0
+    ],
+    "worst_gap_abc_xyz_80": [
+     -0.0021,
+     -0.0055,
+     0.0018
+    ],
+    "worst_gap_abc_xyz_95": [
+     -0.0035,
+     -0.006,
+     0.0
+    ],
+    "worst_gap_sigma_decile_80": [
+     -0.0008,
+     -0.007,
+     0.0049
+    ],
+    "worst_gap_sigma_decile_95": [
+     -0.0076,
+     -0.0109,
+     -0.0043
+    ]
+   },
+   "StatsForecastBaselineSeasonalNaive": {
+    "coverage_80": [
+     0.0023,
+     0.0009,
+     0.0037
+    ],
+    "coverage_95": [
+     0.0006,
+     -0.0004,
+     0.0017
+    ],
+    "wis": [
+     0.0005,
+     -0.0003,
+     0.0012
+    ],
+    "worst_gap_abc_xyz_80": [
+     -0.0042,
+     -0.0089,
+     -0.0005
+    ],
+    "worst_gap_abc_xyz_95": [
+     -0.0006,
+     -0.0037,
+     0.0047
+    ],
+    "worst_gap_sigma_decile_80": [
+     -0.006,
+     -0.0125,
+     0.0013
+    ],
+    "worst_gap_sigma_decile_95": [
+     -0.0033,
+     -0.006,
+     -0.0001
+    ]
+   },
+   "StatsForecastCrostonSBA": {
+    "coverage_80": [
+     -0.0004,
+     -0.0052,
+     0.0039
+    ],
+    "coverage_95": [
+     0.0027,
+     -0.0004,
+     0.0058
+    ],
+    "wis": [
+     -0.0062,
+     -0.0149,
+     -0.0009
+    ],
+    "worst_gap_abc_xyz_80": [
+     -0.0035,
+     -0.0199,
+     0.0136
+    ],
+    "worst_gap_abc_xyz_95": [
+     -0.0166,
+     -0.0452,
+     0.0003
+    ],
+    "worst_gap_sigma_decile_80": [
+     0.0179,
+     -0.0046,
+     0.0386
+    ],
+    "worst_gap_sigma_decile_95": [
+     -0.0065,
+     -0.0185,
+     0.0102
+    ]
+   }
+  }
+ }
+}
