@@ -8,7 +8,8 @@ Validates parameters, asks the user about backtesting setup, generates notebooks
 (the **orchestrator + run_gpu** pattern for GPU classes on classic GPU clusters, a
 single **run_serverless_{class}** notebook for GPU classes on serverless GPU), creates
 **one job per model class** (local, global_ml, global, foundation, foundationforecast),
-and triggers them **in parallel**.
+and triggers them **in parallel**. With calibrated prediction intervals (Step 1d option (d)), it also creates a CPU
+calibration job, and an orchestrating job that runs the forecast jobs in parallel and the calibration after them.
 
 ## ⛔ Preconditions — DO NOT SKIP
 
@@ -362,13 +363,24 @@ AskUserQuestion:
        → prediction_intervals = {"enabled": True, "levels": [80, 95]}
 
    (c) Yes, custom levels or quantiles
-       → e.g. {"enabled": True, "levels": [90]} or {"enabled": True, "quantiles": [0.1, 0.5, 0.9]}"
+       → e.g. {"enabled": True, "levels": [90]} or {"enabled": True, "quantiles": [0.1, 0.5, 0.9]}
+
+   (d) Yes, calibrated intervals (80% and 95%, or custom levels) for every model
+       → the intervals of (b)/(c), plus a calibration job on CPU after the forecast jobs"
 ```
 
 Tell the user clearly what they get: intervals only for the models that have them: statsforecast AutoETS, AutoArima, AutoCES, AutoTheta, AutoTbats, Naive and SeasonalNaive; the Chronos and TimesFM models; SKTimeProphet; and the FoundationForecast FF* models. All other models (e.g. CrostonSBA, ADIDA, MLForecast, NeuralForecast) get NULL interval columns. A band can cover more or fewer actuals than its level (e.g. an 80% band covering 70%); Skill 5 measures this on the backtest. Some models only have quantiles from 10% to 90% (Chronos-Bolt, TimesFM, several FF* models): their 95% bounds are NULL. The intervals land in `scoring_output` as a `y_quantiles` map, and in `evaluation_output` as `forecast_quantiles` for each backtest window.
 
+For option (d), add: the calibration job corrects the models' own bands (or, for models without them, builds intervals
+from the backtest errors) so that they reach the requested coverage on the backtest, for every model. It runs
+`mmf_sa.calibrate_intervals` on CPU after all forecast jobs, reading only their tables, and writes
+`{use_case}_scoring_output_intervals` (the calibrated intervals) plus `{use_case}_evaluation_output_calibration` and
+`{use_case}_evaluation_output_interval_metrics` (out-of-sample coverage, which Skill 5 reports). It needs at least 2
+backtest windows, and 3 or more give better per-series intervals (Step 1b).
+
 - Option (a): set `{prediction_intervals}` to `None` in every notebook.
 - Options (b)/(c): set `{prediction_intervals}` to the Python dict literal in every notebook (local, global ML, the GPU orchestrators and the serverless GPU notebooks; the Step 3e non-forecastable notebooks use the same value). If the user wants bound columns for SQL or dashboards, add `"output_format": "both"` (adds `y_lo_80`, `y_hi_80`, ...).
+- Option (d): do the same as (b)/(c), so that the models that have intervals write their bands for the calibration, and set `{calibrate_intervals}` to `True`: Step 3f generates the calibration notebook with the same levels (`{calibration_levels}`), and Step 5b creates the calibration and orchestrating jobs. For options (a)-(c), `{calibrate_intervals}` is `False`.
 
 ### Step 2: Gather and validate parameters
 
@@ -598,6 +610,23 @@ These orchestrators call the same `run_gpu` notebook (shared with the main pipel
 
 If a GPU class runs on serverless GPU, generate `notebooks/{use_case}/run_serverless_{class}_nf.ipynb` from the serverless template instead, with the same `{train_table}` and `{use_case}_nf` substitutions. Step 5b creates its job from the [serverless GPU job template](#serverless-gpu-jobs-global-dl-foundation-foundationforecast) with job name `{use_case}_nf_{class}_forecasting_{username}`.
 
+#### 3f: Calibration notebook (only if `{calibrate_intervals}`, Step 1d option (d))
+
+Generate one notebook from `mmf_calibration_notebook_template.ipynb`. It calls `mmf_sa.calibrate_intervals` on the
+tables the forecast jobs write, and fails if a model could not be calibrated. It installs `mmf_sa` without extras:
+it needs no model library and no GPU.
+
+| Placeholder | Value |
+|---|---|
+| `{catalog}`, `{schema}`, `{use_case}`, `{freq}`, `{group_id}`, `{date_col}`, `{target}` | Same as the forecast notebooks |
+| `{train_table}` | Same as the forecast notebooks (Step 0a): the series' scale is computed from it |
+| `{calibration_levels}` | Python list of the Step 1d levels, e.g. `[80, 95]` |
+| `{output_format}` | `quantile_map`, `lo_hi` or `both`, as in `{prediction_intervals}` (default `quantile_map`) |
+| `{calibrate_non_forecastable}` | `True` if `separate_job` and the Step 3e notebooks have prediction intervals, else `False` |
+
+Use the template from:
+- [mmf_calibration_notebook_template.ipynb](mmf_calibration_notebook_template.ipynb) → save locally as `notebooks/{use_case}/calibrate_intervals.ipynb`
+
 #### Frequency-specific configuration (automatic)
 
 `run_forecast` **automatically loads the correct frequency-specific YAML config** from the installed `mmf_sa` package based on the `freq` parameter. No explicit `conf` argument is needed in the generated notebooks.
@@ -694,6 +723,11 @@ databricks workspace import {notebook_base_path}/run_serverless_{class} \
   --file /tmp/{use_case}_run_serverless_{class}.ipynb \
   --format JUPYTER --overwrite
 
+# Calibration notebook (only if calibrated intervals, Step 3f)
+databricks workspace import {notebook_base_path}/calibrate_intervals \
+  --file /tmp/{use_case}_calibrate_intervals.ipynb \
+  --format JUPYTER --overwrite
+
 # Non-forecastable notebooks (only if separate_job; see Step 3e). Same pattern with an _nf suffix
 # for each one generated: run_local_nf, run_global_ml_nf, orchestrator_{class}_nf, run_serverless_{class}_nf
 databricks workspace import {notebook_base_path}/run_local_nf \
@@ -719,6 +753,7 @@ notebooks = {
     "orchestrator_foundation": "/tmp/{use_case}_orchestrator_foundation.ipynb",  # if foundation models selected (classic)
     "orchestrator_foundationforecast": "/tmp/{use_case}_orchestrator_foundationforecast.ipynb",  # if FF* models selected (classic)
     "run_serverless_foundationforecast": "/tmp/{use_case}_run_serverless_foundationforecast.ipynb",  # one entry per GPU class on serverless GPU
+    "calibrate_intervals": "/tmp/{use_case}_calibrate_intervals.ipynb",  # calibrated intervals only (Step 3f)
     "run_local_nf": "/tmp/{use_case}_run_local_nf.ipynb",  # separate_job only: one entry per Step 3e notebook (_nf suffix)
 }
 
@@ -758,6 +793,8 @@ Job names follow the pattern `{use_case}_{type}_forecasting_{username}` (no date
 - Global (DL): `{use_case}_global_forecasting_{username}`
 - Foundation: `{use_case}_foundation_forecasting_{username}`
 - Foundationforecast: `{use_case}_foundationforecast_forecasting_{username}`
+- Calibration (only if `{calibrate_intervals}`): `{use_case}_calibrate_intervals_{username}`
+- Orchestrating job (only if `{calibrate_intervals}`): `{use_case}_forecast_and_calibrate_{username}`
 
 The name is the same whether the class runs on a classic GPU cluster or on serverless GPU. If the user switches a class between the two, update the job with the other template (classic jobs have `job_clusters`; serverless jobs have `environments` instead).
 
@@ -768,7 +805,7 @@ For each model class selected, **upsert** the job:
 
 This ensures there is always exactly one job per type per user — no accumulation of stale jobs.
 
-> ⚠️ **One job per model class — no exceptions.** Do NOT combine model classes into a single multi-task job. Local, global ML, global DL, foundation and foundationforecast models require different compute (multi-node CPU vs single-node CPU vs single-node GPU) or different Python environments, and must run independently in parallel.
+> ⚠️ **One job per model class — no exceptions.** Do NOT combine model classes into a single multi-task job. Local, global ML, global DL, foundation and foundationforecast models require different compute (multi-node CPU vs single-node CPU vs single-node GPU) or different Python environments, and must run independently in parallel. The orchestrating job of calibrated intervals does not break this rule: it holds only "Run Job" tasks, each of which runs one of these jobs on its own compute.
 
 ---
 
@@ -1223,6 +1260,81 @@ Same pattern as NF-3, with job name `{use_case}_nf_foundationforecast_forecastin
 
 Use `create_job` (or `update_job` on upsert) to create each job. **After `create_job` / `update_job` and BEFORE `run_job`, run Step 5c.**
 
+#### Calibration jobs (only if `{calibrate_intervals}`, Step 1d option (d))
+
+The calibration is CPU work on the forecast tables: it must **never** run in a GPU job. Create two jobs after the
+forecast jobs (including the non-forecastable ones), so that their job IDs are known.
+
+**Job 6: Calibration.** One task running the Step 3f notebook on a classic CPU cluster. Size it like the local job
+(`{cpu_node_type}`, `{cpu_workers}` from Skill 3; single-node settings if 0 workers, as in the note after Job 1); the
+driver must be on-demand (`{cpu_availability_attributes}`):
+
+```json
+{
+  "name": "{use_case}_calibrate_intervals_{username}",
+  "description": "MMF interval calibration | use_case={use_case} | catalog={catalog}.{schema} | levels={calibration_levels} | created={YYYYMMDD}",
+  "tags": {
+    "aidevkit_project": "mmf-agent",
+    "created_by": "databricks-ai-dev-kit"
+  },
+  "tasks": [{
+    "task_key": "calibrate_intervals",
+    "notebook_task": {
+      "notebook_path": "{notebook_base_path}/calibrate_intervals",
+      "source": "WORKSPACE"
+    },
+    "job_cluster_key": "{use_case}_calibration_cluster",
+    "timeout_seconds": 21600
+  }],
+  "job_clusters": [{
+    "job_cluster_key": "{use_case}_calibration_cluster",
+    "new_cluster": {
+      "spark_version": "18.x-cpu-ml-scala2.13",
+      "node_type_id": "{cpu_node_type}",
+      "num_workers": {cpu_workers},
+      "data_security_mode": "SINGLE_USER",
+      {cpu_availability_attributes},
+      "spark_conf": {
+        "spark.sql.adaptive.enabled": "false",
+        "spark.databricks.delta.schema.autoMerge.enabled": "true"
+      }
+    }
+  }]
+}
+```
+
+If the user prefers **serverless CPU**, omit `job_clusters`, replace `job_cluster_key` with `"environment_key": "Default"`,
+and add `"environments": [{"environment_key": "Default", "spec": {"client": "4"}}]`. On serverless, the calibration
+writes its intermediate results to temporary tables `{use_case}_pi_tmp_*`, which it drops at the end.
+
+**Orchestrating job.** One "Run Job" task per forecast job created in Step 5b (main and non-forecastable), with no
+dependencies between them so that they run in parallel, and a "Run Job" task for Job 6 that depends on all of them.
+It has no cluster of its own:
+
+```json
+{
+  "name": "{use_case}_forecast_and_calibrate_{username}",
+  "description": "MMF forecasting and interval calibration | use_case={use_case} | catalog={catalog}.{schema} | created={YYYYMMDD}",
+  "tags": {
+    "aidevkit_project": "mmf-agent",
+    "created_by": "databricks-ai-dev-kit"
+  },
+  "tasks": [
+    {"task_key": "local_forecasting", "run_job_task": {"job_id": {local_job_id}}},
+    {"task_key": "foundation_forecasting", "run_job_task": {"job_id": {foundation_job_id}}},
+    {"task_key": "calibrate_intervals", "run_job_task": {"job_id": {calibration_job_id}},
+     "depends_on": [{"task_key": "local_forecasting"}, {"task_key": "foundation_forecasting"}],
+     "run_if": "ALL_SUCCESS"}
+  ]
+}
+```
+
+List one `*_forecasting` task per forecast job that exists (`global_ml`, `global`, `foundationforecast`, and the
+`nf_*` jobs), and put every one of them in `depends_on`. With `run_if: ALL_SUCCESS`, a failed forecast job skips the
+calibration: fix and rerun that job, then run `{use_case}_calibrate_intervals_{username}` on its own. It calibrates
+the latest run of each model, so it does not need the other forecast jobs to run again. Re-running the calibration
+alone (other levels, after a forecast rerun) never reruns the models.
+
 ### Step 5c: Verify each job's cluster runtime (MANDATORY)
 
 > ⛔ **This step is not optional and cannot be skipped.** It exists to catch the most common failure mode: the agent copying the local job's `spark_version` into the global or foundation JSON (e.g. using `18.x-cpu-ml-scala2.13` for a GPU cluster). The verification reads the runtime back from the API after job creation, so it does not depend on the agent's intent.
@@ -1241,12 +1353,18 @@ For every job created in Step 5b (including the non-forecastable jobs if `separa
 | `{use_case}_nf_global_forecasting_{username}` | `18.x-gpu-ml-scala2.13` | single-node |
 | `{use_case}_nf_foundation_forecasting_{username}` | `18.x-gpu-ml-scala2.13` | single-node |
 | `{use_case}_nf_foundationforecast_forecasting_{username}` | `18.x-gpu-ml-scala2.13` | single-node |
+| `{use_case}_calibrate_intervals_{username}` *(calibrated intervals)* | `18.x-cpu-ml-scala2.13` | like the local job; never a GPU node type |
 
 The GPU rows apply to classes on a classic GPU cluster. For a GPU class on **serverless GPU**, check instead that:
 - `settings.job_clusters` is absent or empty;
 - the task has `environment_key` and `compute.hardware_accelerator == "GPU_1xA10"`, and no `job_cluster_key`;
 - the matching `settings.environments[*].spec.base_environment` is `workspace-base-environments/databricks_ai_v6` or the uploaded AI v6 YAML path;
 - the task's notebook is `run_serverless_{class}`.
+
+For the **orchestrating job** (calibrated intervals), check that it has no `job_clusters` and no `environments`, that
+every task is a `run_job_task` whose `job_id` is one of the jobs above, and that `calibrate_intervals` depends on every
+other task. For a calibration job on **serverless CPU**, check that it has no `job_clusters` and no
+`compute.hardware_accelerator`.
 
 For each job:
 
@@ -1312,7 +1430,11 @@ ALTER TABLE {catalog}.{schema}.{use_case}_scoring_output ADD COLUMNS (
 
 With `"output_format": "lo_hi"`, MMF writes these columns and not `{target}_quantiles`, which then stays null. These schemas follow `mmf_sa/intervals/scoring.py` (`interval_columns`); keep them in sync if it changes.
 
-Then call `run_job` for **all jobs simultaneously**.
+The calibration tables need no pre-creation: one job writes them, after the forecast jobs.
+
+Then call `run_job` for **all jobs simultaneously**. With calibrated intervals, call `run_job` on the orchestrating job
+`{use_case}_forecast_and_calibrate_{username}` only: it starts the forecast jobs in parallel, and the calibration after
+them.
 
 ### Step 6: Monitor execution
 
@@ -1354,6 +1476,7 @@ Poll all job run statuses until completion. Report progress to the user with str
   GROUP BY model
   ```
   Report missing models as failed, and show the error from that model's `run_gpu` child run (classic) or the job's notebook output (serverless). If every model in a classic GPU job failed with the same CUDA error, rerun the job once to get a fresh cluster before changing anything else. On short series, some Auto models fail by design: `NeuralForecastAutoRNN` / `NeuralForecastAutoLSTM` with `No windows available for training` and `MLForecastAutoLGBM` with `Input data must be 2 dimensional and non empty` (seen with 60 monthly points and `backtest_length=36`); report them as unsupported for this data rather than rerunning.
+- **With calibrated intervals**, monitor the orchestrating job: each `*_forecasting` task shows the state of its forecast job's run (open the child run for details), and `calibrate_intervals` starts when all of them have succeeded. Report it as skipped, not failed, when a forecast job failed. When it finishes, its notebook output lists, per model, the method of each level and the leave-one-window-out coverage.
 - **Foundationforecast is the slowest class.** 19 models over 1,000 monthly series took 80–100 minutes on serverless GPU and 2.5–3 hours on a single-A10 classic cluster (`g5.xlarge`, `Standard_NV36ads_A10_v5`) in testing.
 
 ### Step 7: Log run metadata
@@ -1439,6 +1562,12 @@ AskUserQuestion:
 - Delta table `<catalog>.<schema>.{use_case}_scoring_output` — forward-looking forecasts (forecastable series only when strategy is `fallback` or `separate_job`)
 - Delta table `<catalog>.<schema>.{use_case}_run_metadata` — run parameters, audit trail, and non-forecastable strategy
 - MLflow experiment at `{experiment_path}` (default: `/Users/{full_email}/{project_folder}/experiments/{use_case}`) — pre-created and validated in Step 1c, never overlapping `{notebook_base_path}`
+
+**Produced with calibrated intervals (Step 1d option (d)):**
+- Delta table `<catalog>.<schema>.{use_case}_scoring_output_intervals` — the calibrated interval columns of each model's latest forecasts
+- Delta table `<catalog>.<schema>.{use_case}_evaluation_output_calibration` — the corrections per model, series, horizon step and level
+- Delta table `<catalog>.<schema>.{use_case}_evaluation_output_interval_metrics` — out-of-sample coverage, miss rates, MSIS, width and WIS per series and backtest window
+- (the same `{use_case}_nf_*` tables when `separate_job` with intervals)
 
 **Produced when `separate_job` strategy:**
 - Delta table `<catalog>.<schema>.{use_case}_nf_evaluation_output` — backtest metrics for non-forecastable series
