@@ -575,10 +575,17 @@ def calibrate_model_spark(spark: SparkSession, eval_sdf: DataFrame, features: Da
             scored = materializer.cache(folded(long, w).select("fold", "pool", "step", *[c.alias(n) for n, c in cols.items()]))
             try:
                 if adaptive:
-                    lower = pool_statistics(spark, scored, {f: stat_requests(plan, lv, "lower") for f in folds})
+                    lower_reqs = stat_requests(plan, lv, "lower")
+                    lower = pool_statistics(spark, scored, {f: lower_reqs for f in folds})
                     m_lo.update(lower_miss_rates(long, series_col, plan, lv, i, w, h, clip_lower, lower))
-                stats[lv] = pool_statistics(spark, scored, {
-                    f: stat_requests(plan, lv, "main", m_lo.get((lv, f))) for f in folds})
+                    # The main pass repeats the lower-tail requests: only the upper tail is ranked again.
+                    main_reqs = {f: stat_requests(plan, lv, "main", m_lo.get((lv, f))) for f in folds}
+                    upper = pool_statistics(spark, scored, {f: [r for r in reqs if r not in lower_reqs]
+                                                            for f, reqs in main_reqs.items()})
+                    stats[lv] = {f: {**lower[f], **upper[f]} for f in folds}
+                else:
+                    stats[lv] = pool_statistics(spark, scored, {
+                        f: stat_requests(plan, lv, "main", m_lo.get((lv, f))) for f in folds})
             finally:
                 materializer.uncache(scored)
 
