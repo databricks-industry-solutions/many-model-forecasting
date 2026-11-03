@@ -105,6 +105,7 @@ The expected layout, where `{user}` is your Databricks user folder name (typical
             ├── mmf_gpu_run_notebook_template.ipynb
             ├── mmf_gpu_orchestrator_notebook_template.ipynb
             ├── mmf_gpu_serverless_notebook_template.ipynb
+            ├── mmf_calibration_notebook_template.ipynb
             ├── serverless_gpu_ai_v6_environment.yml
             ├── mmf_profiling_notebook_template.ipynb
             ├── mmf_prep_notebook_template.ipynb
@@ -196,6 +197,7 @@ your-project/
     ├── mmf_gpu_run_notebook_template.ipynb
     ├── mmf_gpu_orchestrator_notebook_template.ipynb
     ├── mmf_gpu_serverless_notebook_template.ipynb
+    ├── mmf_calibration_notebook_template.ipynb
     ├── serverless_gpu_ai_v6_environment.yml
     ├── mmf_profiling_notebook_template.ipynb
     ├── mmf_prep_notebook_template.ipynb

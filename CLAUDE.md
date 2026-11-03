@@ -16,6 +16,7 @@ Read these files to learn the patterns before starting any forecasting task:
 - `databricks-skills/many-model-forecasting/mmf_gpu_run_notebook_template.ipynb` — GPU single-model runner (static, uses widgets)
 - `databricks-skills/many-model-forecasting/mmf_gpu_orchestrator_notebook_template.ipynb` — GPU orchestrator (loops models via dbutils.notebook.run)
 - `databricks-skills/many-model-forecasting/mmf_gpu_serverless_notebook_template.ipynb` — serverless GPU runner (one notebook per GPU class, loops models)
+- `databricks-skills/many-model-forecasting/mmf_calibration_notebook_template.ipynb` — prediction-interval calibration on CPU, after the forecast jobs (calibrate_intervals)
 - `databricks-skills/many-model-forecasting/serverless_gpu_ai_v6_environment.yml` — AI v6 environment spec for serverless GPU jobs (fallback base environment)
 - `databricks-skills/many-model-forecasting/mmf_profiling_notebook_template.ipynb` — profiling notebook template
 - `databricks-skills/many-model-forecasting/mmf_prep_notebook_template.ipynb` — data prep reproducibility notebook (generated after Skill 1)
