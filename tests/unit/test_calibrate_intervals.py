@@ -10,6 +10,9 @@ a copy of AutoETS without its 95% quantiles, as run_forecast writes them for a m
 
 These tests need Spark Python workers (PySpark >= 3.5 on Python <= 3.11 locally); they are skipped otherwise.
 """
+import uuid
+from datetime import datetime
+
 import mlflow
 import numpy as np
 import pandas as pd
@@ -18,6 +21,7 @@ from omegaconf import OmegaConf
 from pyspark.sql import functions as F
 
 from mmf_sa import calibrate_intervals, run_forecast
+from mmf_sa.intervals import spark as calibration_spark
 from mmf_sa.intervals.calibration_config import resolve_prediction_intervals_conf
 from mmf_sa.intervals.calibrator import IntervalCalibrator
 
@@ -183,3 +187,56 @@ def test_native_map_falls_back_to_the_bounds_row_by_row(spark_session):
     got = {r["uid"]: {k: v for k, v in (r["native"] or {}).items() if v is not None}
            for r in sdf.select("uid", native.alias("native")).collect()}
     assert got == {"map": {"0.1": [0.5], "0.9": [4.0]}, "nulls": {"0.1": [1.0], "0.9": [3.0]}, "nothing": {}}
+
+
+def _model_output(spark, model):
+    """One calibration row and one metric row of a model, as calibrate_model_spark returns them."""
+    schema = calibration_spark.output_schema("uid")
+    cal = {"kind": "calibration", "model": model, "method": "conformal", "score": "signed", "coverage_target": "series",
+           "uid": "s0", "pool_key": "__all__", "step": 1, "level": 80.0, "q_lo": -1.0, "q_hi": 1.0, "n_windows": 2,
+           "shrinkage_weight": 0.5, "infinite_bound": False, "clip_lower": 0.0, "sigma": 1.0, "abc_class": "A",
+           "xyz_class": "X", "sb_class": "smooth"}
+    metric = {"kind": "metric", "model": model, "uid": "s0", "window_date": datetime(2024, 1, 1),
+              "metric_name": "scaled_ae", "metric_value": 0.5}
+    return spark.createDataFrame([tuple(r.get(f.name) for f in schema.fields) for r in (cal, metric)], schema)
+
+
+def test_a_model_whose_write_fails_does_not_stop_the_others(spark_session, monkeypatch, caplog):
+    """
+    A failing write of one model is logged and recorded in its summary; the other model is still written. The
+    scoring intervals are stubbed (their inputs are a full run_forecast), the calibration and metric tables are real.
+    """
+    prefix = f"default.pi_bug3_{uuid.uuid4().hex[:8]}"
+    runs = {"A": {"run_id": "run-a", "run_date": datetime(2024, 1, 2), "metric_name": "rmse"},
+            "B": {"run_id": "run-b", "run_date": datetime(2024, 1, 2), "metric_name": "rmse"}}
+    backtest = spark_session.createDataFrame([("s0", datetime(2024, 1, 1))],
+                                             "uid string, backtest_window_start_date timestamp")
+    monkeypatch.setattr(IntervalCalibrator, "latest_runs", lambda self: runs)
+    monkeypatch.setattr(IntervalCalibrator, "backtest_rows", lambda self, model, run: backtest)
+    monkeypatch.setattr(IntervalCalibrator, "calibration_features", lambda self, first_window, materializer: (
+        backtest, 0.0))
+    monkeypatch.setattr(calibration_spark, "calibrate_model_spark", lambda spark, rows, features, gid, model, pi,
+                        clip_lower, materializer: (_model_output(spark, model), {"method": "conformal"}))
+    monkeypatch.setattr(IntervalCalibrator, "write_scoring_intervals", lambda self, model, run, cal: 1)
+    real_write = IntervalCalibrator.write_interval_metrics
+
+    def failing_write(self, rows, run):
+        if run["run_id"] == "run-a":
+            raise OSError("metrics table is locked")
+        return real_write(self, rows, run)
+
+    monkeypatch.setattr(IntervalCalibrator, "write_interval_metrics", failing_write)
+    conf = OmegaConf.create({
+        "evaluation_output": "unused", "scoring_output": "unused", "train_data": None, "output_prefix": prefix,
+        "group_id": "uid", "date_col": "ds", "target": "y", "freq": "D", "models": None, "run_ids": None,
+        "prediction_intervals": resolve_prediction_intervals_conf({"enabled": True}),
+    })
+    with caplog.at_level("ERROR"):
+        out = IntervalCalibrator(spark_session, conf, train_data=pd.DataFrame()).run()
+
+    assert "metrics table is locked" in out["models"]["A"]["error"]
+    assert "error" not in out["models"]["B"] and out["models"]["B"]["run_id"] == "run-b"
+    assert "Calibration of A failed" in caplog.text
+    written = spark_session.table(out["tables"]["interval_metrics"]).select("run_id").distinct().collect()
+    assert [r["run_id"] for r in written] == ["run-b"]
+    assert spark_session.table(out["tables"]["calibration"]).filter(F.col("model") == "B").count() == 1
