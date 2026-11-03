@@ -21,6 +21,7 @@ from omegaconf import OmegaConf
 from pyspark.sql import functions as F
 
 from mmf_sa import calibrate_intervals, run_forecast
+from mmf_sa.exceptions import ConfigurationError
 from mmf_sa.intervals import spark as calibration_spark
 from mmf_sa.intervals.calibration_config import resolve_prediction_intervals_conf
 from mmf_sa.intervals.calibrator import IntervalCalibrator
@@ -240,3 +241,60 @@ def test_a_model_whose_write_fails_does_not_stop_the_others(spark_session, monke
     written = spark_session.table(out["tables"]["interval_metrics"]).select("run_id").distinct().collect()
     assert [r["run_id"] for r in written] == ["run-b"]
     assert spark_session.table(out["tables"]["calibration"]).filter(F.col("model") == "B").count() == 1
+
+
+@pytest.fixture
+def configured(monkeypatch):
+    """calibrate_intervals up to the calibration: returns the resolved prediction_intervals block, no Spark work."""
+    seen = {}
+
+    def run(self):
+        seen["pi"] = self.settings.prediction_intervals
+        return {}
+
+    monkeypatch.setattr(IntervalCalibrator, "run", run)
+
+    def resolve(**kwargs):
+        calibrate_intervals(None, train_data=None, evaluation_output=f"{PREFIX}_evaluation_output",
+                            scoring_output=f"{PREFIX}_scoring_output", **kwargs)
+        return seen["pi"]
+
+    return resolve
+
+
+def test_settings_are_used_when_the_arguments_are_left_at_their_defaults(configured):
+    pi = configured(settings={"method": "cqr", "output_format": "lo_hi", "method_by_model": {NO_NATIVE: "conformal"},
+                              "cqr_pool": "series", "coverage": {"shrinkage_kappa": 20, "group_col": None}})
+    assert (pi.method, pi.output_format, pi.cqr_pool) == ("cqr", "lo_hi", "series")
+    assert pi.method_by_model[NO_NATIVE] == "conformal"
+    assert pi.coverage.shrinkage_kappa == 20
+
+
+def test_levels_in_settings_are_used_without_an_argument(configured):
+    assert configured(settings={"levels": [90]}).levels == [90]
+
+
+def test_the_argument_wins_over_a_setting_only_when_they_agree(configured):
+    assert configured(method="cqr", settings={"method": "cqr"}).method == "cqr"
+    assert configured(output_format="lo_hi", settings={"output_format": "lo_hi"}).output_format == "lo_hi"
+
+
+@pytest.mark.parametrize("kwargs, key", [
+    ({"method": "conformal", "settings": {"method": "cqr"}}, "method"),
+    ({"output_format": "both", "settings": {"output_format": "lo_hi"}}, "output_format"),
+    ({"method_by_model": {NO_NATIVE: "cqr"}, "settings": {"method_by_model": {NO_NATIVE: "conformal"}}},
+     "method_by_model"),
+    ({"levels": [80], "settings": {"levels": [90]}}, "levels"),
+    ({"pool": "group", "group_col": "auto", "settings": {"cqr_pool": "marginal"}}, "cqr_pool"),
+    ({"shrinkage_kappa": 5, "settings": {"coverage": {"shrinkage_kappa": 20}}}, "shrinkage_kappa"),
+])
+def test_arguments_and_settings_that_disagree_raise(configured, kwargs, key):
+    with pytest.raises(ConfigurationError, match=key):
+        configured(**kwargs)
+
+
+def test_levels_and_quantiles_together_raise(configured):
+    with pytest.raises(ConfigurationError, match="levels or quantiles, not both"):
+        configured(levels=[80], quantiles=[0.1, 0.5, 0.9])
+    with pytest.raises(ConfigurationError, match="levels or quantiles, not both"):
+        configured(quantiles=[0.1, 0.5, 0.9], settings={"levels": [80]})
