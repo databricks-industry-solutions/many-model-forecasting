@@ -1,9 +1,10 @@
 """Unit tests for one model's calibration and its output rows (prediction intervals).
 
 Tests cover:
-- calibrate_model: method resolution (conformal, CQR, native, fallbacks), per-model methods
+- calibrate_model: the default series_scale target (one pool, each series' scale shrunk toward it; per group, steps
+  pooled for small pools), the former series target, method resolution (conformal, CQR, native, fallbacks), per-model methods
   (method_by_model), agreement with the lower-level functions, clipping, and leave-one-window-out metrics
-- calibrate_model on the golden M5 sample with the default settings
+- calibrate_model on the golden M5 sample with the former default settings (the research notebook's)
 - backtest_cubes: window alignment, dropped series, native bands and their fallbacks
 - Group labels, scale fallback, and the calibration_output / metric row builders
 - Unsupported settings
@@ -37,6 +38,12 @@ def _pi(**overrides):
     return resolve_prediction_intervals_conf(base)
 
 
+# The settings of the calibration before marginal pooling became the default: ABC x XYZ groups, tail quantiles shrunk
+# toward the group's. The golden tests check them against the research notebook.
+FORMER = {"cqr_pool": "group", "coverage": {"target": "series", "group_col": "auto"}}
+SERIES = {"coverage": {"target": "series", "group_col": "auto"}}
+
+
 @pytest.fixture(scope="module")
 def cubes():
     rng = np.random.default_rng(3)
@@ -49,9 +56,46 @@ def cubes():
     return y, yhat, sigma, labels, native
 
 
-def test_conformal_matches_residual_quantiles(cubes):
+def test_default_conformal_shrinks_each_series_scale_toward_one_pool(cubes):
     y, yhat, sigma, labels, _ = cubes
     res = calibrate_model(y, yhat, sigma, _pi(), labels=labels, clip_lower=0.0)
+    r = res[80]
+    assert (r["method"], r["score"], r["target"]) == ("conformal", "signed_normalized", "series_scale")
+    # By hand: c_i = (n d_i + kappa d) / ((n + kappa) d), n = W H = 20; quantiles of e / c_i per step over all series.
+    e = (y - yhat) / sigma[:, None, None]
+    d_i, d = np.abs(e).reshape(30, -1).mean(axis=1), np.abs(e).mean()
+    c = (20 * d_i + 10 * d) / (30 * d)
+    q_lo, q_hi, _ = residual_quantiles(e / c[:, None, None], 80, "marginal")
+    np.testing.assert_allclose(r["q_lo"], q_lo * c[:, None], rtol=1e-12)
+    np.testing.assert_allclose(r["q_hi"], q_hi * c[:, None], rtol=1e-12)
+    assert r["shrinkage_weight"] == pytest.approx(20 / 30)
+    # The labels are not used without group_col: one pool.
+    np.testing.assert_array_equal(calibrate_model(y, yhat, sigma, _pi(), labels=None, clip_lower=0.0)[80]["q_hi"],
+                                  r["q_hi"])
+
+
+def test_series_scale_per_group_and_steps_pooled_when_a_pool_is_too_small(cubes):
+    y, yhat, sigma, labels, _ = cubes
+    res = calibrate_model(y, yhat, sigma, _pi(coverage={"group_col": "auto"}), labels=labels, clip_lower=0.0)
+    e = (y - yhat) / sigma[:, None, None]
+    for g, rows in (("A", slice(0, 10)), ("B", slice(10, 30))):
+        sub = e[rows]
+        d_i, d = np.abs(sub).reshape(len(sub), -1).mean(axis=1), np.abs(sub).mean()
+        c = (20 * d_i + 10 * d) / (30 * d)
+        scaled = sub / c[:, None, None]
+        # 95% needs 39 scores per step: A has 10 x 4 = 40 per step, B 80, so both keep their step profile at 95%.
+        q_lo, q_hi, _ = residual_quantiles(scaled, 95, "marginal")
+        np.testing.assert_allclose(res[95]["q_hi"][rows], q_hi * c[:, None], rtol=1e-12, err_msg=g)
+    # With 3 windows, A has 30 scores per step: too few at 95%, so it uses its quantiles over all 5 steps.
+    res3 = calibrate_model(y[:, :3], yhat[:, :3], sigma, _pi(coverage={"group_col": "auto"}, levels=[95]),
+                           labels=labels, clip_lower=0.0)
+    q = res3[95]["q_hi"][:10]
+    assert np.isfinite(q).all() and np.allclose(q / q[:, :1], 1.0)  # no step profile: the same quantile per step
+
+
+def test_former_series_target_matches_residual_quantiles(cubes):
+    y, yhat, sigma, labels, _ = cubes
+    res = calibrate_model(y, yhat, sigma, _pi(**SERIES), labels=labels, clip_lower=0.0)
     assert set(res) == {80, 95}
     q_lo, q_hi, inf = residual_quantiles((y - yhat) / sigma[:, None, None], 80, "series", labels,
                                              shrinkage_kappa=10, min_scores_per_group=1)
@@ -63,13 +107,14 @@ def test_conformal_matches_residual_quantiles(cubes):
     assert r["native_metrics"] == {}
 
 
-def test_auto_uses_cqr_with_native_bands(cubes):
+@pytest.mark.parametrize("overrides, pool", [({}, "marginal"), (FORMER, "group")])
+def test_auto_uses_cqr_with_native_bands(cubes, overrides, pool):
     y, yhat, sigma, labels, native = cubes
-    res = calibrate_model(y, yhat, sigma, _pi(), labels=labels, native=native, clip_lower=0.0)
+    res = calibrate_model(y, yhat, sigma, _pi(**overrides), labels=labels, native=native, clip_lower=0.0)
     r = res[95]
-    assert (r["method"], r["score"], r["target"]) == ("cqr", "asymmetric", "group")
+    assert (r["method"], r["score"], r["target"]) == ("cqr", "asymmetric", pool)
     lo, hi = np.maximum(native[95][0], 0.0), native[95][1]
-    q_lo, q_hi, _ = cqr_corrections(y, yhat, lo, hi, sigma, 95, pool="group", labels=labels,
+    q_lo, q_hi, _ = cqr_corrections(y, yhat, lo, hi, sigma, 95, pool=pool, labels=labels,
                                         min_scores_per_group=1)
     np.testing.assert_array_equal(r["q_lo"], q_lo)
     np.testing.assert_array_equal(r["q_hi"], q_hi)
@@ -139,7 +184,7 @@ def test_method_by_model_native_falls_back_without_bands(cubes, caplog):
 
 def test_leave_one_window_out_metrics(cubes):
     y, yhat, sigma, labels, _ = cubes
-    pi = _pi(coverage={"target": "group"})
+    pi = _pi(coverage={"target": "group", "group_col": "auto"})
     res = calibrate_model(y, yhat, sigma, pi, labels=labels, clip_lower=0.0)
     m = res[80]["metrics"]
     assert m["coverage"].shape == (30, 4)
@@ -187,8 +232,8 @@ def test_unsupported_settings(overrides, message):
         check_supported(_pi(**overrides))
 
 
-def test_golden_default_settings_reproduce_notebook():
-    """The default settings (auto -> CQR asymmetric, adaptive split, ABC x XYZ pool) on AutoETS, W=12."""
+def test_golden_former_default_settings_reproduce_notebook():
+    """The former default settings (auto -> CQR asymmetric, adaptive split, ABC x XYZ pool) on AutoETS, W=12."""
     g = np.load(GOLDEN)
     sigma, labels = g["sigma"], g["abc_xyz"].astype(object)
     yhat = np.nan_to_num(np.maximum(g["AutoETS_cal"], 0.0))
@@ -196,7 +241,7 @@ def test_golden_default_settings_reproduce_notebook():
     for lv in (80, 95):
         lo, hi = g[f"AutoETS_lo_{lv}_cal"], g[f"AutoETS_hi_{lv}_cal"]
         native[lv] = (np.where(np.isfinite(lo), lo, yhat), np.where(np.isfinite(hi), hi, yhat))
-    res = calibrate_model(g["Y_cal"], yhat, sigma, _pi(), labels=labels, native=native, clip_lower=0.0)
+    res = calibrate_model(g["Y_cal"], yhat, sigma, _pi(**FORMER), labels=labels, native=native, clip_lower=0.0)
     for lv in (80, 95):
         q_lo, q_hi, _ = cqr_corrections(g["Y_cal"], yhat, np.maximum(native[lv][0], 0.0), native[lv][1],
                                             sigma, lv, pool="group", labels=labels, min_scores_per_group=1)
@@ -255,7 +300,8 @@ def _features():
 
 def test_group_labels():
     f = _features()
-    assert list(group_labels(f, _pi())) == list(f["abc_xyz"])
+    assert group_labels(f, _pi()) is None  # no groups by default
+    assert list(group_labels(f, _pi(coverage={"group_col": "auto"}))) == list(f["abc_xyz"])
     assert list(group_labels(f, _pi(coverage={"group_col": ["store", "sb_class"]}))) == [
         "s1|smooth", "s2|intermittent", "s1|lumpy"]
     assert group_labels(f, _pi(cqr_pool="marginal", coverage={"target": "marginal", "group_col": None})) is None
@@ -277,7 +323,7 @@ def test_output_rows(cubes):
     feats = classify_series(pd.DataFrame(
         {"sigma": sigma, "volume": np.arange(30.0) + 1, "cv": np.linspace(0.1, 3, 30), "adi": 1.0, "cv2": 0.1},
         index=ids))
-    res = calibrate_model(y, yhat, sigma, _pi(), labels=labels, native=native, clip_lower=0.0)
+    res = calibrate_model(y, yhat, sigma, _pi(**FORMER), labels=labels, native=native, clip_lower=0.0)
     rows = calibration_rows("AutoETS", "uid", ids, res, feats, labels, 4, 1, 0.0)
     assert len(rows) == 30 * 5 * 2
     assert set(rows["method"]) == {"cqr"} and set(rows["pool_key"]) == {"A", "B"}
@@ -328,9 +374,12 @@ def _many_windows(w, seed=4):
 def test_auto_pools_the_horizon_below_the_windows_the_widest_level_needs():
     # 20 windows are enough for 80% and 90% per step, not for 95%: auto pools, so the 95% bounds stay finite.
     y, yhat, sigma, labels = _many_windows(20)
-    auto = calibrate_model(y, yhat, sigma, _pi(method="conformal"), labels=labels)
-    per_step = calibrate_model(y, yhat, sigma, _pi(method="conformal", coverage={"pool_horizon": False}), labels=labels)
-    pooled = calibrate_model(y, yhat, sigma, _pi(method="conformal", coverage={"pool_horizon": True}), labels=labels)
+    series = {"target": "series", "group_col": "auto"}
+    auto = calibrate_model(y, yhat, sigma, _pi(method="conformal", coverage=series), labels=labels)
+    per_step = calibrate_model(y, yhat, sigma, _pi(method="conformal", coverage={**series, "pool_horizon": False}),
+                               labels=labels)
+    pooled = calibrate_model(y, yhat, sigma, _pi(method="conformal", coverage={**series, "pool_horizon": True}),
+                             labels=labels)
     assert not auto[95]["infinite"].any() and per_step[95]["infinite"].all()
     for lv in (80, 95):
         np.testing.assert_array_equal(auto[lv]["q_hi"], pooled[lv]["q_hi"])
@@ -341,7 +390,8 @@ def test_auto_follows_the_widest_calibrated_level():
     assert fit_plan(_pi(method="conformal", levels=[80]), has_band=False)["pool_windows"] == 9
     # With only an 80% level, 12 windows are enough per step: auto does not pool.
     y, yhat, sigma, labels = _many_windows(12)
-    auto = calibrate_model(y, yhat, sigma, _pi(method="conformal", levels=[80]), labels=labels)
-    per_step = calibrate_model(y, yhat, sigma, _pi(method="conformal", levels=[80], coverage={"pool_horizon": False}),
-                               labels=labels)
+    series = {"target": "series", "group_col": "auto"}
+    auto = calibrate_model(y, yhat, sigma, _pi(method="conformal", levels=[80], coverage=series), labels=labels)
+    per_step = calibrate_model(y, yhat, sigma, _pi(method="conformal", levels=[80],
+                                                   coverage={**series, "pool_horizon": False}), labels=labels)
     np.testing.assert_array_equal(auto[80]["q_hi"], per_step[80]["q_hi"])

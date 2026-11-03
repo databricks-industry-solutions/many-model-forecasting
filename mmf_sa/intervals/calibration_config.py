@@ -24,10 +24,12 @@ DEFAULT_PREDICTION_INTERVALS: Dict[str, Any] = {
     "method_by_model": {},
     "cqr_score": "asymmetric",
     "cqr_tail_split": "adaptive",
-    "cqr_pool": "group",
+    "cqr_pool": "marginal",
     "coverage": {
-        "target": "series",
-        "group_col": "auto",
+        # series_scale: one pool (per group_col if set) per horizon step, each series' scale shrunk toward it.
+        "target": "series_scale",
+        # None: no groups. "auto" pools by ABC x XYZ class (validated on M5 retail demand only), or user columns.
+        "group_col": None,
         "min_scores_per_group": 100,
         "shrinkage_kappa": 10,
         "pool_horizon": "auto",
@@ -47,7 +49,7 @@ _CHOICES = {
     "output_format": {"quantile_map", "lo_hi", "both"},
 }
 
-_COVERAGE_TARGETS = {"marginal", "group", "series"}
+_COVERAGE_TARGETS = {"marginal", "group", "series", "series_scale"}
 
 
 def _is_number(value) -> bool:

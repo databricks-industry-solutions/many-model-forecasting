@@ -84,9 +84,10 @@ def calibrated(spark, forecast):
 def test_methods_per_model_and_level(calibrated):
     out, _ = calibrated
     methods = {m: s["methods"] for m, s in out["models"].items()}
-    assert methods[NATIVE] == {"80": "cqr/asymmetric/group", "95": "cqr/asymmetric/group"}
-    assert methods[NO_NATIVE] == {"80": "conformal/signed_normalized/series", "95": "conformal/signed_normalized/series"}
-    assert methods[NARROW] == {"80": "cqr/asymmetric/group", "95": "conformal/signed_normalized/series"}
+    cqr, conformal = "cqr/asymmetric/marginal", "conformal/signed_normalized/series_scale"
+    assert methods[NATIVE] == {"80": cqr, "95": cqr}
+    assert methods[NO_NATIVE] == {"80": conformal, "95": conformal}
+    assert methods[NARROW] == {"80": cqr, "95": conformal}
     assert out["tables"] == {"calibration": f"{PREFIX}_evaluation_output_calibration",
                              "interval_metrics": f"{PREFIX}_evaluation_output_interval_metrics",
                              "scoring_intervals": f"{PREFIX}_scoring_output_intervals"}
@@ -137,3 +138,26 @@ def test_run_ids_that_do_not_exist_calibrate_nothing(spark, calibrated, caplog):
                                   scoring_output=f"{PREFIX}_scoring_output", freq="D", run_ids={NATIVE: "nope"},
                                   models=[NATIVE])
     assert out["models"] == {} and "No backtest rows" in caplog.text
+
+
+def test_pool_and_group_col_go_together(spark):
+    from mmf_sa.exceptions import ConfigurationError
+    kwargs = dict(train_data="pi_cal_train", evaluation_output=f"{PREFIX}_evaluation_output",
+                  scoring_output=f"{PREFIX}_scoring_output")
+    with pytest.raises(ConfigurationError, match="pool='group' needs group_col"):
+        calibrate_intervals(spark, pool="group", **kwargs)
+    with pytest.raises(ConfigurationError, match="pool='group' needs group_col"):
+        calibrate_intervals(spark, group_col="auto", **kwargs)
+    with pytest.raises(ConfigurationError, match="pool must be"):
+        calibrate_intervals(spark, pool="series", **kwargs)
+
+
+def test_pool_group_pools_per_abc_xyz_class(spark, forecast):
+    out = calibrate_intervals(spark, train_data="pi_cal_train", evaluation_output=f"{PREFIX}_evaluation_output",
+                              scoring_output=f"{PREFIX}_scoring_output", output_prefix="default.pi_cal_grouped",
+                              models=[NATIVE, NO_NATIVE], pool="group", group_col="auto")
+    assert out["models"][NATIVE]["methods"]["80"] == "cqr/asymmetric/group"
+    assert out["models"][NO_NATIVE]["methods"]["80"] == "conformal/signed_normalized/series_scale"
+    pools = spark.table("default.pi_cal_grouped_evaluation_output_calibration").select("pool_key").distinct().count()
+    assert pools >= 1
+

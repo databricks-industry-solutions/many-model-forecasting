@@ -461,7 +461,8 @@ def calibrate_intervals(
     run_ids: Optional[Dict[str, str]] = None,
     method: str = "auto",
     method_by_model: Optional[Dict[str, str]] = None,
-    group_col: Union[str, List[str], None] = "auto",
+    pool: str = "marginal",
+    group_col: Union[str, List[str], None] = None,
     shrinkage_kappa: float = 10,
     output_format: str = "quantile_map",
     settings: Optional[Dict[str, Any]] = None,
@@ -485,9 +486,12 @@ def calibrate_intervals(
         run_ids (Dict[str, str]): The run to calibrate per model. Default: each model's latest run.
         method (str): auto (CQR on native bands where available, else conformal), conformal, native or cqr.
         method_by_model (Dict[str, str]): Per-model override of `method`.
-        group_col: Groups of similar series to pool over: "auto" (ABC x XYZ classes), a column of train_data, a
-            list of columns, or None.
-        shrinkage_kappa (float): Strength of the shrinkage of each series toward its group.
+        pool (str): "marginal" (default): the conformal quantiles and CQR corrections are pooled over all series, per
+            horizon step, and each series' scale is shrunk toward the pool. "group": pooled per group of group_col.
+        group_col: With pool="group", the groups: a column of train_data, a list of columns, or "auto" for the ABC x
+            XYZ classes that MMF computes (volume and volatility classes, validated on M5 retail demand only).
+        shrinkage_kappa (float): Strength of the shrinkage of each series' scale toward its pool: weight
+            n / (n + kappa) on the series' own mean absolute error, n its number of backtest scores.
         output_format (str): quantile_map, lo_hi or both, for scoring_output_intervals.
         settings (Dict[str, Any]): Other calibration settings (cqr_score, cqr_tail_split, cqr_pool, coverage,
             score, clip_lower), see calibration_config.
@@ -498,10 +502,15 @@ def calibrate_intervals(
             scaled_ae and WIS per series and backtest window;
         <output_prefix>_scoring_output_intervals: the calibrated interval columns of each forecast.
     """
+    if pool not in ("marginal", "group"):
+        raise ConfigurationError(f"calibrate_intervals: pool must be 'marginal' or 'group', got {pool!r}")
+    if (pool == "group") != (group_col is not None):
+        raise ConfigurationError("calibrate_intervals: pool='group' needs group_col, and group_col needs pool='group'")
     block = dict(settings or {})
     coverage = dict(block.pop("coverage", None) or {})
     coverage.setdefault("group_col", group_col)
     coverage.setdefault("shrinkage_kappa", shrinkage_kappa)
+    block.setdefault("cqr_pool", pool)
     block.update({"enabled": True, "method": method, "method_by_model": method_by_model or {},
                   "output_format": output_format, "coverage": coverage})
     if quantiles is not None:
