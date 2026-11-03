@@ -272,6 +272,21 @@ def test_spark_single_window_adaptive_cqr(spark):
     _compare(spark, ids, y, yhat, sigma, labels, native, _pi())
 
 
+def test_spark_adaptive_cqr_ranks_each_request_once(spark, monkeypatch):
+    """The adaptive split ranks its lower tail in the lower pass only: no (fold, statistic) is requested twice."""
+    requested = []
+    real = cs.pool_statistics
+
+    def spy(spark_session, scored, requests):
+        requested.extend((f, r) for f, reqs in requests.items() for r in reqs)
+        return real(spark_session, scored, requests)
+
+    monkeypatch.setattr(cs, "pool_statistics", spy)
+    ids, y, yhat, sigma, labels, native = _data(n=12, w=4, h=3, seed=6)
+    _compare(spark, ids, y, yhat, sigma, labels, native, _pi())
+    assert requested and len(requested) == len(set(requested))
+
+
 def test_spark_dataframes_with_the_same_plan_are_not_separate_scoring_data(spark):
     from omegaconf import OmegaConf
     from mmf_sa import Forecaster
