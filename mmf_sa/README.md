@@ -477,8 +477,9 @@ misses on the backtest:
   after correction: for non-negative series whose lower bound is clipped at 0, the lower tail rarely misses, and the
   unused share goes to the upper tail. `equal` gives each tail alpha/2.
 - **Bounds.** lo - sigma_i q_lo and hi + sigma_i q_hi. A negative correction narrows a band that over-covers.
-- **Pool (`cqr_pool: marginal`).** The corrections are pooled over all series, per horizon step; `group` pools per
-  `group_col`, `series` shrinks per-series corrections toward the pool.
+- **Pool (`cqr_pool: marginal`).** The corrections are pooled over all series, per horizon step, with no per-series
+  shrinkage. `group` pools per `group_col`; `series` shrinks each series' corrections toward its pool, with the weight
+  of the conformal tails above.
 - **Other scores.** `symmetric` uses one score max(lo - y, y - hi) / sigma_i; `scaled` divides |y - yhat| by the native
   half-width, so the correction is a factor of the band.
 - **Native quantiles at scoring.** The corrections are applied to the forecast's own native band from scoring_output.
@@ -514,7 +515,7 @@ W - 1 windows, so the metrics are out of sample (they need W >= 2).
 | `method` / `method_by_model` | `auto` | `auto`: CQR on native bands where available, conformal otherwise; or `conformal`, `native` (the band as is), `cqr` |
 | `pool` | `marginal` | `group` pools per `group_col` |
 | `group_col` | `None` | With `pool="group"`: a column of train_data, a list of columns, or `"auto"` for MMF's ABC x XYZ classes |
-| `shrinkage_kappa` | `10` | Strength of the per-series shrinkage toward the pool |
+| `shrinkage_kappa` | `10` | Strength of the per-series shrinkage toward the pool (conformal tails; CQR corrections with `cqr_pool: series`) |
 | `output_format` | `quantile_map` | Columns of `_scoring_output_intervals`: `quantile_map`, `lo_hi` or `both` |
 | `settings` | `{}` | Advanced keys of `calibration_config`: `cqr_score`, `cqr_tail_split`, `cqr_pool`, `coverage` (`target`, `pool_horizon`, `min_scores_per_group`), `score`, `clip_lower` |
 

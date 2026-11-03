@@ -497,13 +497,14 @@ def calibrate_intervals(
         run_ids (Dict[str, str]): The run to calibrate per model. Default: each model's latest run.
         method (str): auto (CQR on native bands where available, else conformal), conformal, native or cqr.
         method_by_model (Dict[str, str]): Per-model override of `method`.
-        pool (str): "marginal" (default): the conformal quantiles and CQR corrections are pooled over all series, per
-            horizon step, and each series' own tail quantiles are shrunk toward the pool's. "group": pooled per group
-            of group_col.
+        pool (str): "marginal" (default): the CQR corrections are pooled over all series, per horizon step (one pool,
+            no per-series shrinkage). The conformal intervals pool their scores the same way, and shrink each series'
+            own tail toward that pool (coverage.target "series", the default). "group": pooled per group of group_col.
         group_col: With pool="group", the groups: a column of train_data, a list of columns, or "auto" for the ABC x
             XYZ classes that MMF computes (volume and volatility classes, validated on M5 retail demand only).
         shrinkage_kappa (float): Strength of the shrinkage of each series toward its pool: weight W / (W + kappa) on
-            the series' own tail quantiles, W its number of backtest windows.
+            the series' own tail quantiles, W its number of backtest windows. It applies to the conformal intervals,
+            and to the CQR corrections only with cqr_pool "series".
         output_format (str): quantile_map, lo_hi or both, for scoring_output_intervals.
         settings (Dict[str, Any]): Other calibration settings (cqr_score, cqr_tail_split, cqr_pool, coverage,
             score, clip_lower), see calibration_config.

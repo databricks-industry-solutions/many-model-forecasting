@@ -623,7 +623,7 @@ it needs no model library and no GPU.
 | `{calibration_levels}` | Python list of the Step 1d levels, e.g. `[80, 95]` |
 | `{output_format}` | `quantile_map`, `lo_hi` or `both`, as in `{prediction_intervals}` (default `quantile_map`) |
 | `{calibrate_non_forecastable}` | `True` if `separate_job` and the Step 3e notebooks have prediction intervals, else `False` |
-| `{pool}` | `marginal` (default): all series in one pool, each series' tail quantiles shrunk toward it. `group` only if the user asks to pool by a column of the training data |
+| `{pool}` | `marginal` (default): all series in one pool. The CQR corrections are pooled with no per-series shrinkage; the conformal intervals shrink each series' tails toward the pool. `group` only if the user asks to pool by a column of the training data |
 | `{group_col}` | `None` (default), or with `{pool}` = `group` the column name as a string literal (e.g. `"category"`), or `"auto"` for MMF's ABC x XYZ classes. Tell the user that ABC x XYZ is validated on M5 retail demand only, and is meaningless for targets that are not volumes |
 
 Use the template from:
