@@ -1,17 +1,18 @@
 """Applying the calibration to forecasts, and the output rows of the calibration (restored from the calibrated #232
 for PR 2). The native interval columns of scoring_output are mmf_sa.intervals.scoring.
 
-The rows are calibration_output and the interval metrics. Pure pandas: apply_calibration is the reference of
-apply_joined_corrections, which runs in mapInPandas at scoring time.
+The rows are calibration_output and the interval metrics. Pandas, apart from the column names (intervals.scoring):
+apply_calibration is the reference of apply_joined_corrections, which runs in mapInPandas at scoring time.
 """
 from typing import Optional
 
 import numpy as np
 import pandas as pd
 
-from mmf_sa.intervals.calibration_config import level_quantiles
+from mmf_sa.intervals.config import level_quantiles
 from mmf_sa.intervals.conformal import MARGINAL_POOL, finalize_bounds, merge_small_groups
 from mmf_sa.intervals.quantiles import quantile_key
+from mmf_sa.intervals.scoring import interval_column, quantiles_column
 
 
 def _metric_name(name: str, level: Optional[float], native: bool) -> str:
@@ -90,26 +91,6 @@ def metric_rows(model: str, series_col: str, ids, dates, results: dict) -> pd.Da
     out = pd.concat(frames, ignore_index=True)
     out["model"] = model
     return out
-
-
-def quantiles_column(target: str) -> str:
-    """Name of the quantile-map column of scoring_output (output_format quantile_map or both)."""
-    return f"{target}_quantiles"
-
-
-def interval_column(target: str, side: str, level: float) -> str:
-    """Name of a bound column of scoring_output (output_format lo_hi or both), e.g. y_lo_80 or y_hi_97_5."""
-    return f"{target}_{side}_{level:g}".replace(".", "_")
-
-
-def interval_columns(target: str, levels, output_format: str) -> list:
-    """Names of the interval columns that scoring_output gets for an output_format."""
-    cols = []
-    if output_format in ("quantile_map", "both"):
-        cols.append(quantiles_column(target))
-    if output_format in ("lo_hi", "both"):
-        cols += [interval_column(target, side, lv) for lv in levels for side in ("lo", "hi")]
-    return cols
 
 
 def _as_dict(m):

@@ -17,7 +17,8 @@ import pandas as pd
 import pytest
 from pyspark.sql import functions as F
 
-from mmf_sa.intervals.calibration_config import level_quantiles, resolve_prediction_intervals_conf
+from mmf_sa.intervals.calibration_config import resolve_prediction_intervals_conf
+from mmf_sa.intervals.config import level_quantiles
 from mmf_sa.intervals.quantiles import quantile_key
 from mmf_sa.intervals.conformal import calibrate_model
 from mmf_sa.intervals.features import classify_series, series_features

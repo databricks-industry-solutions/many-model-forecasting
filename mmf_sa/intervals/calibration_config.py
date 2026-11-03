@@ -1,17 +1,16 @@
 """Configuration of the interval calibration (restored from the calibrated #232 for PR 2; to become the settings of
 calibrate_intervals). The `prediction_intervals` block of run_forecast is mmf_sa.intervals.config.
 
-The calibration settings: their defaults and validation.
-
-Also the level helpers that map interval levels (in percent) to quantile levels, and the interval method of each model.
+The calibration settings: their defaults and validation, and the interval method of each model. The level helpers
+(level_quantiles, central_levels, interval_levels) are those of mmf_sa.intervals.config.
 Pure Python and OmegaConf, no Spark.
 """
-import numbers
 from typing import Any, Dict, Optional, Union
 
 from omegaconf import DictConfig, OmegaConf
 
 from mmf_sa.exceptions import ConfigurationError
+from mmf_sa.intervals.config import _check_level, _is_number
 
 
 # Defaults of the `prediction_intervals` block. The shipped forecasting_conf_*.yaml files
@@ -53,15 +52,6 @@ _CHOICES = {
 }
 
 _COVERAGE_TARGETS = {"marginal", "group", "series", "series_scale"}
-
-
-def _is_number(value) -> bool:
-    return isinstance(value, numbers.Real) and not isinstance(value, bool)
-
-
-def _check_level(value, where: str) -> None:
-    if not _is_number(value) or not 0 < value < 100:
-        raise ConfigurationError(f"prediction_intervals.{where}: levels must be numbers in (0, 100), got {value!r}")
 
 
 def _check_keys(conf: Dict[str, Any], defaults: Dict[str, Any], where: str) -> None:
@@ -172,32 +162,6 @@ def resolve_prediction_intervals_conf(
     return OmegaConf.create(pi)
 
 
-def level_quantiles(level: float):
-    """Lower and upper quantile levels of a central interval level in percent (80 -> 0.1, 0.9)."""
-    a = (100 - level) / 200
-    return round(a, 6), round(1 - a, 6)
-
-
-def requested_quantiles(pi_conf) -> list:
-    """
-    Quantile levels to request from models with native intervals, given the prediction_intervals block.
-    Returns the sorted quantiles of every configured level and the median, or the configured
-    `quantiles` plus the median.
-    """
-    if pi_conf.get("quantiles"):
-        qs = {round(float(q), 6) for q in pi_conf["quantiles"]}
-    else:
-        qs = {q for level in set(pi_conf["levels"] or []) for q in level_quantiles(level)}
-    qs.add(0.5)
-    return sorted(qs)
-
-
-def central_levels(quantiles) -> list:
-    """Central interval levels in percent whose bounds are the given quantiles (0.1 or 0.9 -> 80)."""
-    levels = {round(abs(200 * q - 100), 6) for q in quantiles if q != 0.5}
-    return sorted(int(lv) if float(lv).is_integer() else lv for lv in levels)
-
-
 def resolve_clip_lower(clip_lower, min_target: float):
     """
     Lower clipping bound of the intervals.
@@ -211,13 +175,6 @@ def resolve_clip_lower(clip_lower, min_target: float):
     if clip_lower == "auto":
         return 0.0 if min_target >= 0 else None
     return float(clip_lower)
-
-
-def calibration_levels(pi_conf) -> list:
-    """Central levels to calibrate: `levels`, or the central levels of `quantiles`."""
-    if pi_conf.get("quantiles"):
-        return central_levels(pi_conf["quantiles"])
-    return sorted(pi_conf["levels"])
 
 
 def check_supported(pi_conf) -> None:
