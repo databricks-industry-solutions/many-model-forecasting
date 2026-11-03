@@ -462,19 +462,20 @@ def bootstrap(df, base, rng):
             means = d[idx].mean(axis=1)
             res[metric] = [round(float(d.mean()), 4), round(float(np.quantile(means, 0.025)), 4),
                            round(float(np.quantile(means, 0.975)), 4)]
-        labels = g["abc_xyz"].to_numpy()
-        for lv in LEVELS:
-            cov, cov_b, gaps = g[f"coverage_{lv}"].to_numpy(), g[f"coverage_{lv}_base"].to_numpy(), []
-            for row in idx[:200]:  # the worst-group gap is costlier: 200 resamples
-                agg = pd.DataFrame({"k": labels[row], "c": cov[row], "b": cov_b[row]}).groupby("k").agg(
-                    c=("c", "mean"), b=("b", "mean"), n=("c", "size"))
-                agg = agg[agg["n"] >= MIN_GROUP]
-                if len(agg):
-                    gaps.append(max(0.0, lv / 100 - agg["c"].min()) - max(0.0, lv / 100 - agg["b"].min()))
-            if gaps:
-                res[f"worst_gap_abc_xyz_{lv}"] = [round(float(np.mean(gaps)), 4),
-                                                  round(float(np.quantile(gaps, 0.025)), 4),
-                                                  round(float(np.quantile(gaps, 0.975)), 4)]
+        for grouping in ("abc_xyz", "sigma_decile"):
+            labels = g[grouping].to_numpy()
+            for lv in LEVELS:
+                cov, cov_b, gaps = g[f"coverage_{lv}"].to_numpy(), g[f"coverage_{lv}_base"].to_numpy(), []
+                for row in idx[:200]:  # the worst-group gap is costlier: 200 resamples
+                    agg = pd.DataFrame({"k": labels[row], "c": cov[row], "b": cov_b[row]}).groupby("k").agg(
+                        c=("c", "mean"), b=("b", "mean"), n=("c", "size"))
+                    agg = agg[agg["n"] >= MIN_GROUP]
+                    if len(agg):
+                        gaps.append(max(0.0, lv / 100 - agg["c"].min()) - max(0.0, lv / 100 - agg["b"].min()))
+                if gaps:
+                    res[f"worst_gap_{grouping}_{lv}"] = [round(float(np.mean(gaps)), 4),
+                                                         round(float(np.quantile(gaps, 0.025)), 4),
+                                                         round(float(np.quantile(gaps, 0.975)), 4)]
         out[model] = res
     return out
 
