@@ -17,9 +17,9 @@ from omegaconf import OmegaConf
 from mmf_sa import Forecaster
 from mmf_sa.intervals.quantiles import QUANTILE_COLUMN_PREFIX
 from mmf_sa.intervals.calibration_scoring import (
-    CORRECTION_FIELDS, apply_calibration, apply_joined_corrections, correction_column, interval_columns,
-    median_corrections, nest_bounds,
+    CORRECTION_FIELDS, apply_calibration, apply_joined_corrections, correction_column, median_corrections, nest_bounds,
 )
+from mmf_sa.intervals.scoring import interval_columns
 from mmf_sa.models.statsforecast.StatsFcForecastingPipeline import StatsFcAutoETS
 
 H = 3

@@ -7,7 +7,7 @@ import pandas as pd
 
 from mmf_sa.exceptions import ConfigurationError
 
-from mmf_sa.intervals.calibration_config import level_quantiles
+from mmf_sa.intervals.config import level_quantiles
 from mmf_sa.intervals.quantiles import quantile_key
 
 

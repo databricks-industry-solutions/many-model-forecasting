@@ -22,13 +22,13 @@ from pyspark.sql.window import Window
 from mmf_sa.exceptions import ConfigurationError
 from mmf_sa.intervals import spark as calibration_spark
 from mmf_sa.intervals.calibration_config import (
-    calibration_levels, check_supported, level_quantiles, model_method, resolve_clip_lower,
-    resolve_prediction_intervals_conf,
+    check_supported, model_method, resolve_clip_lower, resolve_prediction_intervals_conf,
 )
 from mmf_sa.intervals.calibration_scoring import (
-    CORRECTION_FIELDS, apply_joined_corrections, correction_column, interval_column, interval_columns,
-    median_corrections, quantiles_column,
+    CORRECTION_FIELDS, apply_joined_corrections, correction_column, median_corrections,
 )
+from mmf_sa.intervals.config import interval_levels, level_quantiles
+from mmf_sa.intervals.scoring import interval_column, interval_columns, quantiles_column
 from mmf_sa.intervals.features import FEATURE_PERIODS, SEASON_LENGTH, group_columns
 from mmf_sa.intervals.quantiles import quantile_key
 
@@ -237,7 +237,7 @@ class IntervalCalibrator:
         which need no native band at scoring.
         """
         pi = self.pi
-        levels = calibration_levels(pi)
+        levels = interval_levels(pi)
         if model_method(pi, model) == "conformal":
             return [(pi, backtest)]
         native = self.native_levels(backtest, levels)
@@ -259,7 +259,7 @@ class IntervalCalibrator:
         metric): (0.5 scaled_ae + sum over levels of alpha/2 msis) / (K + 0.5), as conformal.wis_from_metrics.
         """
         gid = self.settings.group_id
-        levels = calibration_levels(self.pi)
+        levels = interval_levels(self.pi)
         keys = [gid, "window_date", "model"]
         terms = metrics.filter(col("metric_name").isin(["scaled_ae"] + [f"msis_{lv:g}" for lv in levels]))
         weight = when(col("metric_name") == "scaled_ae", lit(0.5))
@@ -294,7 +294,7 @@ class IntervalCalibrator:
                     _logger.warning(f"{model}: no series to calibrate.")
                     return {**summary, "error": "no series to calibrate"}
                 results.append(result)
-                for lv in calibration_levels(pi):
+                for lv in interval_levels(pi):
                     summary["methods"][f"{lv:g}"] = f"{info.get('method')}/{info.get('score')}/{info.get('target')}"
             cal = results[0].filter(col("kind") == "calibration")
             metrics = results[0].filter(col("kind") == "metric")
@@ -369,7 +369,7 @@ class IntervalCalibrator:
         """
         target = self.settings.target
         pairs = []
-        for level in calibration_levels(self.pi):
+        for level in interval_levels(self.pi):
             for side, q in zip(("lo", "hi"), level_quantiles(level)):
                 name = interval_column(target, side, level)
                 if name in sdf.columns:
@@ -433,7 +433,7 @@ class IntervalCalibrator:
         so nothing is collected to the driver except the per-level fallback corrections. Returns the row count.
         """
         gid, target = self.settings.group_id, self.settings.target
-        levels = calibration_levels(self.pi)
+        levels = interval_levels(self.pi)
         output_format = self.pi.output_format
         sdf = self.scoring_rows(model, run)
         fallback = self.fallback_corrections(cal)

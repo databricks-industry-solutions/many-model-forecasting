@@ -23,7 +23,7 @@ from pyspark.sql.types import (
 )
 from pyspark.sql.window import Window
 
-from mmf_sa.intervals.calibration_config import calibration_levels, level_quantiles
+from mmf_sa.intervals.config import interval_levels, level_quantiles
 from mmf_sa.intervals.conformal import (
     MARGINAL_POOL, MEAN_ABS_REQUEST, OTHER_GROUP, SERIES_SCALE, conformal_rank, cqr_lower_from_statistics,
     finalize_bounds, fit_from_statistics, fit_plan, interval_metrics, score_cubes, scaled_absolute_error,
@@ -525,7 +525,7 @@ def calibrate_model_spark(spark: SparkSession, eval_sdf: DataFrame, features: Da
     Returns: (DataFrame or None, dict): Rows of output_schema (kind "calibration" or "metric"), and a
         summary (dropped series, W, H, method) for logging. None when there is nothing to calibrate.
     """
-    levels = calibration_levels(pi_conf)
+    levels = interval_levels(pi_conf)
     has_quantiles = ("forecast_quantiles" in eval_sdf.columns
                      and eval_sdf.filter(F.col("forecast_quantiles").isNotNull()).limit(1).count() > 0)
     plan = fit_plan(pi_conf, has_quantiles, model)

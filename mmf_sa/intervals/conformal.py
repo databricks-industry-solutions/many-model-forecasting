@@ -13,7 +13,8 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
-from mmf_sa.intervals.calibration_config import calibration_levels, model_method
+from mmf_sa.intervals.calibration_config import model_method
+from mmf_sa.intervals.config import interval_levels
 
 _logger = logging.getLogger(__name__)
 
@@ -449,7 +450,7 @@ def fit_plan(pi_conf, has_band: bool, model: Optional[str] = None) -> dict:
         "kappa": cov["shrinkage_kappa"] if target in ("series", SERIES_SCALE) else None,
         "tail_split": pi_conf["cqr_tail_split"], "pool_horizon": cov["pool_horizon"],
         # pool_horizon "auto" pools a series' horizon steps when it has fewer windows than this.
-        "pool_windows": windows_for_finite_bounds(max(calibration_levels(pi_conf))),
+        "pool_windows": windows_for_finite_bounds(max(interval_levels(pi_conf))),
         "min_scores_per_group": cov["min_scores_per_group"],
         # Without group_col there are no groups, whatever labels are passed (as the Spark path's label_column).
         "grouped": cov["group_col"] is not None,
@@ -692,7 +693,7 @@ def calibrate_model(y, yhat, sigma, pi_conf, labels=None, native=None, clip_lowe
     has_band = native is not None
     plan = fit_plan(pi_conf, has_band, model)
     results = {}
-    for level in calibration_levels(pi_conf):
+    for level in interval_levels(pi_conf):
         band = _native_band(native, level, n, w, h)
         if band is not None and clip_lower is not None:
             # Calibration and forecast bands are clipped alike.
@@ -737,7 +738,7 @@ def calibrate_model(y, yhat, sigma, pi_conf, labels=None, native=None, clip_lowe
             "shrinkage_weight": shrinkage_weight(plan, w, h),
             "metrics": metrics, "native_metrics": native_metrics,
         }
-    level_free = _level_free_metrics(y, yhat, sigma, results, calibration_levels(pi_conf), native is not None)
+    level_free = _level_free_metrics(y, yhat, sigma, results, interval_levels(pi_conf), native is not None)
     for r in results.values():
         r["level_free"] = level_free
     return results
