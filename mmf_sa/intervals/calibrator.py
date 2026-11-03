@@ -13,8 +13,8 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from omegaconf import DictConfig, OmegaConf
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.functions import (
-    array_sort, avg, col, collect_list, count, create_map, explode, expr, first, isnan, lit, map_keys, max, min,
-    row_number, struct, sum as sum_, to_timestamp, when,
+    array_sort, avg, coalesce, col, collect_list, count, create_map, explode, expr, first, isnan, lit, map_keys, max,
+    min, row_number, struct, sum as sum_, to_timestamp, when,
 )
 from pyspark.sql.types import ArrayType, DoubleType, MapType, StringType, StructField, StructType
 from pyspark.sql.window import Window
@@ -345,19 +345,23 @@ class IntervalCalibrator:
 
     def native_scoring_map(self, sdf: DataFrame):
         """
-        The native quantile map of scoring_output rows, as a column: <target>_quantiles, or rebuilt from the
-        <target>_lo_<L> / <target>_hi_<L> columns (output_format lo_hi); None when there is neither.
+        The native quantile map of scoring_output rows, as a column: <target>_quantiles where the row has one, else
+        the map rebuilt from the <target>_lo_<L> / <target>_hi_<L> columns (output_format lo_hi); None when there is
+        neither column. Per row, so that an all-NULL <target>_quantiles column does not hide the bounds.
         """
         target = self.settings.target
-        if quantiles_column(target) in sdf.columns:
-            return col(quantiles_column(target))
         pairs = []
         for level in calibration_levels(self.pi):
             for side, q in zip(("lo", "hi"), level_quantiles(level)):
                 name = interval_column(target, side, level)
                 if name in sdf.columns:
                     pairs += [lit(quantile_key(q)), col(name)]
-        return create_map(*pairs) if pairs else None
+        from_bounds = create_map(*pairs) if pairs else None
+        if quantiles_column(target) not in sdf.columns:
+            return from_bounds
+        if from_bounds is None:
+            return col(quantiles_column(target))
+        return coalesce(col(quantiles_column(target)), from_bounds)
 
     def scoring_rows(self, model: str, run: dict) -> DataFrame:
         """The model's forecasts of its run in scoring_output, with the native quantile map as NATIVE_FIELD."""
