@@ -71,36 +71,36 @@ to see how the comparison moves with more calibration data).
 
 ### Volume targets (where ABC x XYZ makes sense)
 
-| Dataset | Domain | Freq | Series | Horizon | Why | Natural keys |
-|---|---|---|---|---|---|---|
-| M5 (Walmart) | Retail sales | Daily | 30,490 (sample) | 28 | Baseline; intermittent; already run | store, category, department |
-| Car Parts | Spare parts sales | Monthly | 2,674 | 12 | Very intermittent and lumpy: stress test for C-Z classes; only 51 months | none |
-| Hospital | Patient counts (medical products) | Monthly | 767 | 12 | Counts outside retail, smooth to erratic | none |
-| PBS (Australia) | Prescription counts | Monthly | 336 | 12 | Health-care counts with a hierarchy | concession, type, ATC1, ATC2 |
-| `aus_retail` (Australia) | Retail turnover | Monthly | 152 | 12 | Retail but aggregate, smooth, not intermittent | state, industry |
-| Tourism (Australia) | Overnight trips | Quarterly | 304 | 8 | Non-retail volumes with a hierarchy | region, state, purpose |
-| Electricity (UCI, 321 clients) | Energy consumption | Hourly | 321 | 48 | Smooth, high frequency, very different scales | none |
-| Pedestrian counts (Melbourne) | Sensor counts | Hourly | 66 | 48 | Few series, strong daily seasonality; tests small pools | none |
+| Registry name | Dataset | Domain | Freq | Series | Horizon | Why | Natural keys |
+|---|---|---|---|---|---|---|---|
+| `m5` | M5 (Walmart) | Retail sales, US | Daily | 2,000 sampled | 28 | Baseline; intermittent | store, category |
+| `car_parts` | Car Parts | Spare parts sales, US | Monthly | 2,674 | 6 | 76% zeros: stress test for C-Z classes; only 51 months | none |
+| `hospital` | Hospital | Patient counts (medical products), US | Monthly | 767 | 12 | Counts outside retail | none |
+| `web_traffic` | Kaggle Web Traffic | Wikipedia page views | Daily | 2,000 of 145k | 28 | Heavy tails and spikes, huge scale range | none |
+| `london_smart_meters` | London Smart Meters | Household electricity, UK | Daily (summed from half-hourly) | 2,000 of 5,560 | 28 | Many small, noisy series | none |
+| `electricity` | Electricity (UCI) | Electricity of 321 clients, Portugal | Hourly | 321 | 24 | Smooth, high frequency, very different scales | none |
+| `online_retail` | UCI Online Retail II | E-commerce product sales, UK | Daily | products with 60+ sale days | 14 | Intermittent online demand | none |
+| `tourism` | TourismLarge | Overnight trips, Australia | Monthly | 304 (region x purpose) | 12 | Volumes with a hierarchy | state, purpose |
 
 ### Targets that are not volumes (negative controls)
 
-| Dataset | Domain | Freq | Series | Horizon | Why |
-|---|---|---|---|---|---|
-| M4 monthly | Macro, micro, finance, industry, demographic | Monthly | 48,000 (sample) | 18 | Mixed domains; already run |
-| Weather (Australian BoM) | Rainfall, min/max temperature, solar radiation | Daily | 3,010 | 28 | Temperatures can be negative: ABC is meaningless; rainfall is zero-inflated |
-| Traffic (California occupancy) | Occupancy rates in [0, 1] | Hourly | 862 | 48 | A rate, not a volume |
+| Registry name | Dataset | Domain | Freq | Series | Horizon | Why | Natural keys |
+|---|---|---|---|---|---|---|---|
+| `m4_monthly` | M4 monthly | Macro, micro, finance, industry, demographic | Monthly | 2,000 sampled | 18 | Mixed domains | none |
+| `traffic` | Traffic (PeMS) | Road occupancy rates in [0, 1], California | Hourly | 862 | 24 | A rate, not a volume | none |
+| `epf_prices` | EPF day-ahead prices (NP, PJM, BE, FR, DE) | Electricity prices; DE goes negative | Daily, one series per market x hour | 120 | 7 | Prices, negative values; BE and FR are coupled | market, hour |
+| `fred_md` | FRED-MD | US macro levels | Monthly | ~125 | 12 | Indices and rates; reachability from Databricks unverified | none |
 
-### Sources and loaders (to verify before running)
+### Sources and loaders
 
-- **M4, M5, Electricity, Traffic, Tourism (hierarchical)**: the `datasetsforecast` package (already a dependency of
-  the examples) has M4 and M5, and loaders for long-horizon and hierarchical benchmarks that should include
-  Electricity, Traffic and the Australian tourism hierarchy.
-- **Car Parts, Hospital, Pedestrian counts, Weather**: the Monash Time Series Forecasting Repository
-  (forecastingdata.org), as `.tsf` files on Zenodo; the repository provides a Python loader for the format.
-- **PBS, `aus_retail`**: the R packages `tsibbledata` / `fpp3` (data from the Australian Bureau of Statistics and the
-  Department of Health); export them to CSV once, or read them from an R-datasets mirror.
-- **Licenses**: check each source's license before publishing results in the repository (the Monash datasets are on
-  Zenodo with their own licenses; the ABS data is CC BY).
+All are in the registry of `pi_calibration_coverage.py`:
+
+- **Monash repository** (Zenodo, CC BY 4.0): Car Parts (record 4656021, without missing values), Hospital (4656014), Kaggle Web Traffic (4656075, zeros for missing), London Smart Meters (4656091), Electricity (4656140), Traffic (4656132). `.tsf` files, parsed by `read_tsf`. Monthly series are moved to month ends; hourly ones start at 00:00:01 and are floored to the hour.
+- **UCI Online Retail II** (CC BY 4.0): transactions aggregated to daily quantity per product (returns and non-product codes dropped), zeros on days without sales.
+- **EPF** (Lago et al. 2021, Zenodo 4624805): hourly prices, one daily series per market and hour.
+- **TourismLarge** (`datasetsforecast.hierarchical`): the 304 bottom series; state and purpose come from the positional ids.
+- **FRED-MD** (St. Louis Fed `current.csv`): raw levels; the URL could not be reached from a laptop.
+- Dropped from the first plan: PBS, `aus_retail`, Pedestrian counts and BoM weather (too many Australian sets), and NYC mobility (no public count dataset on Monash; its rideshare set is Boston prices).
 
 ## Models
 
