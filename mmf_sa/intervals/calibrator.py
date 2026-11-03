@@ -193,8 +193,15 @@ class IntervalCalibrator:
             clip_lower = resolve_clip_lower(pi.clip_lower, min_target)
             print(f"Prediction intervals: clip_lower resolved to {clip_lower}")
             for model in sorted(runs):
-                out["models"][model] = self.calibrate_one(model, runs[model], backtests[model], features,
-                                                          clip_lower, materializer)
+                try:
+                    out["models"][model] = self.calibrate_one(model, runs[model], backtests[model], features,
+                                                              clip_lower, materializer)
+                except Exception as err:
+                    # Its tables may already hold some of its rows of this run: the log says so.
+                    _logger.error(f"Calibration of {model} failed, its output tables may hold part of its rows for "
+                                  f"run {runs[model]['run_id']}; the other models continue: {repr(err)}", exc_info=err)
+                    out["models"][model] = {"run_id": runs[model]["run_id"], "methods": {},
+                                            "error": repr(err)[:500]}
         finally:
             materializer.close()
         return out
