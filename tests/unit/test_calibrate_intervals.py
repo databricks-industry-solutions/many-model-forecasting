@@ -14,9 +14,12 @@ import mlflow
 import numpy as np
 import pandas as pd
 import pytest
+from omegaconf import OmegaConf
 from pyspark.sql import functions as F
 
 from mmf_sa import calibrate_intervals, run_forecast
+from mmf_sa.intervals.calibration_config import resolve_prediction_intervals_conf
+from mmf_sa.intervals.calibrator import IntervalCalibrator
 
 H = 7
 NATIVE, NO_NATIVE, NARROW = "StatsForecastAutoETS", "StatsForecastCrostonSBA", "NarrowNative"
@@ -161,3 +164,22 @@ def test_pool_group_pools_per_abc_xyz_class(spark, forecast):
     pools = spark.table("default.pi_cal_grouped_evaluation_output_calibration").select("pool_key").distinct().count()
     assert pools >= 1
 
+
+def _calibrator(spark, levels=(80,)):
+    pi = resolve_prediction_intervals_conf({"enabled": True, "levels": list(levels)})
+    return IntervalCalibrator(spark, OmegaConf.create({"target": "y", "prediction_intervals": pi}),
+                              train_data=pd.DataFrame())
+
+
+def test_native_map_falls_back_to_the_bounds_row_by_row(spark_session):
+    """An all-NULL y_quantiles column (pre-created, or left by an earlier quantile_map run) must not hide the bounds."""
+    schema = "uid string, y_quantiles map<string,array<double>>, y_lo_80 array<double>, y_hi_80 array<double>"
+    sdf = spark_session.createDataFrame([
+        ("map", {"0.1": [0.5], "0.9": [4.0]}, [1.0], [3.0]),
+        ("nulls", None, [1.0], [3.0]),
+        ("nothing", None, None, None),
+    ], schema)
+    native = _calibrator(spark_session).native_scoring_map(sdf)
+    got = {r["uid"]: {k: v for k, v in (r["native"] or {}).items() if v is not None}
+           for r in sdf.select("uid", native.alias("native")).collect()}
+    assert got == {"map": {"0.1": [0.5], "0.9": [4.0]}, "nulls": {"0.1": [1.0], "0.9": [3.0]}, "nothing": {}}
