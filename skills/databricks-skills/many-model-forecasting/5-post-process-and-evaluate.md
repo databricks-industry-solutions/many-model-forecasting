@@ -261,8 +261,8 @@ ORDER BY c.model, c.level
 Report to the user, per model and level: the calibrated coverage against nominal and against the raw coverage of
 Step 2b, the method, and the models ranked by `wis`. A model 5 or more points below nominal usually has too few
 backtest windows (suggest Step 1b option (b) or (c) of Skill 4); a few points off on its own is expected noise.
-Report coverage per group (`pool_key` of the calibration table) only if the calibration pooled by a group column the
-user supplied: the default ABC x XYZ classes are validated on M5 retail demand only.
+Report coverage per group (`pool_key` of the calibration table) only if the calibration pooled by group
+(`pool="group"`).
 
 ### Step 3: Best model selection per series (forecastable)
 

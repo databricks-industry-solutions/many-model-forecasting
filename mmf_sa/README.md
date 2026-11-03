@@ -524,9 +524,12 @@ W - 1 windows, so the metrics are out of sample (they need W >= 2).
 intervals), the `series` target over one pool reached
 0.76-0.80 held-out coverage at 80% and 0.93-0.95 at 95% for every model, within about half a point of ABC x XYZ pools,
 while `series_scale` under-covered M4 monthly (0.70-0.73 and 0.84-0.86). ABC x XYZ pools (`pool="group",
-group_col="auto"`) still lift the worst classes by 2-5 points; they are validated on M5 retail demand only and are
-meaningless for targets that are not volumes, so they stay opt-in (`tests/validation/POOLING_VALIDATION.md` plans the
-test on other datasets).
+group_col="auto"`) were then compared with one pool on 11 datasets (`tests/validation/POOLING_VALIDATION.md`, 3 samples
+of series and 3 or 6 windows). On intermittent demand (M5, Car Parts, Online Retail) they lower the coverage gap of the
+worst-covered decile of series scale by 1-27 points and WIS by 1-6%, mostly for models without native intervals, at
+the same marginal coverage. They change little on smooth volumes (Hospital, London smart meters, Tourism, Electricity),
+and lose 1-10 points of coverage on rates and prices (Traffic occupancy, EPF electricity prices). So one pool stays the
+default, and ABC x XYZ is recommended for intermittent demand only.
 
 #### Scaling
 

@@ -517,7 +517,8 @@ def calibrate_intervals(
             no per-series shrinkage). The conformal intervals pool their scores the same way, and shrink each series'
             own tail toward that pool (coverage.target "series", the default). "group": pooled per group of group_col.
         group_col: With pool="group", the groups: a column of train_data, a list of columns, or "auto" for the ABC x
-            XYZ classes that MMF computes (volume and volatility classes, validated on M5 retail demand only).
+            XYZ classes that MMF computes (volume and volatility classes; recommended for intermittent demand, not for
+            rates or prices).
         shrinkage_kappa (float): Strength of the shrinkage of each series toward its pool: weight W / (W + kappa) on
             the series' own tail quantiles, W its number of backtest windows. It applies to the conformal intervals,
             and to the CQR corrections only with cqr_pool "series".

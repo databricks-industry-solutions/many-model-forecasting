@@ -30,7 +30,8 @@ DEFAULT_PREDICTION_INTERVALS: Dict[str, Any] = {
         # toward its pool's with weight W / (W + shrinkage_kappa); one pool, or one per group_col if set.
         # series_scale (an option) shrinks a scale estimate of each series instead.
         "target": "series",
-        # None: no groups. "auto" pools by ABC x XYZ class (validated on M5 retail demand only), or user columns.
+        # None: no groups. "auto" pools by ABC x XYZ class (helps on intermittent demand, hurts on rates and prices:
+        # tests/validation/POOLING_VALIDATION.md), or user columns.
         "group_col": None,
         "min_scores_per_group": 100,
         "shrinkage_kappa": 10,
