@@ -190,6 +190,80 @@ Report to the user, per model and level, the coverage next to the level. Tell th
 cover more than their level are too wide, bands that cover less are too narrow. With few backtest windows, the
 coverage itself is noisy.
 
+### Step 2c: Coverage of the calibrated intervals (only if the calibration job ran)
+
+Check whether Skill 4 calibrated the intervals (Step 1d option (d)): the table
+`{use_case}_evaluation_output_interval_metrics` exists. If it does not, skip to Step 3.
+
+**First, check that the calibration is current.** The calibration job calibrates the latest run of each model; if a
+forecast job ran again after it, its intervals belong to an older run. List the models whose latest forecast run has
+no calibration:
+
+```sql
+WITH latest_forecast AS (
+  SELECT model, run_id FROM (
+    SELECT model, run_id, ROW_NUMBER() OVER (PARTITION BY model ORDER BY run_date DESC, run_id DESC) AS rn
+    FROM (SELECT DISTINCT model, run_id, run_date FROM {catalog}.{schema}.{use_case}_evaluation_output))
+  WHERE rn = 1),
+calibrated AS (SELECT DISTINCT model, run_id FROM {catalog}.{schema}.{use_case}_evaluation_output_calibration)
+SELECT f.model, f.run_id AS latest_forecast_run
+FROM latest_forecast f
+LEFT ANTI JOIN calibrated c ON f.model = c.model AND f.run_id = c.run_id
+```
+
+If it returns rows, tell the user and offer to run `{use_case}_calibrate_intervals_{username}` again (it does not
+rerun the models) before reporting.
+
+**Then report the metrics of each model's latest calibration.** They are **out of sample**: each backtest window is
+scored with intervals calibrated on the other windows. Compare `coverage_<L>` with the nominal level `L/100`, and with
+the raw native coverage of Step 2b (`native_coverage_<L>` here). `miss_lo_<L>` and `miss_hi_<L>` are the shares of
+actuals below the lower and above the upper bound (`coverage + miss_lo + miss_hi = 1`): when coverage falls short,
+the larger one shows which tail misses. `msis_<L>` is the interval score scaled by the series' seasonal-naive error,
+and `wis` the weighted interval score over all levels; lower is better at equal coverage, so compare models on `wis`.
+`native_wis` exists only when a model has native quantiles for every level. Under `separate_job`, run the queries
+again on the `{use_case}_nf_*` tables.
+
+```sql
+WITH latest AS (
+  SELECT model, run_id, calibration_date FROM (
+    SELECT model, run_id, calibration_date,
+           ROW_NUMBER() OVER (PARTITION BY model ORDER BY calibration_date DESC, run_date DESC) AS rn
+    FROM (SELECT DISTINCT model, run_id, run_date, calibration_date
+          FROM {catalog}.{schema}.{use_case}_evaluation_output_interval_metrics))
+  WHERE rn = 1)
+SELECT m.model, m.metric_name, ROUND(AVG(m.metric_value), 3) AS value, COUNT(DISTINCT m.unique_id) AS series
+FROM {catalog}.{schema}.{use_case}_evaluation_output_interval_metrics AS m
+JOIN latest AS l ON m.model = l.model AND m.run_id = l.run_id AND m.calibration_date = l.calibration_date
+WHERE m.metric_name RLIKE '^(native_)?(coverage|msis|miss_lo|miss_hi)_|^(native_)?wis$'
+GROUP BY m.model, m.metric_name
+ORDER BY m.model, m.metric_name
+```
+
+And the method used for each model and level (CQR on the native bands, or conformal from the backtest errors for
+models, or levels, without native quantiles):
+
+```sql
+WITH latest AS (
+  SELECT model, run_id, calibration_date FROM (
+    SELECT model, run_id, calibration_date,
+           ROW_NUMBER() OVER (PARTITION BY model ORDER BY calibration_date DESC, run_date DESC) AS rn
+    FROM (SELECT DISTINCT model, run_id, run_date, calibration_date
+          FROM {catalog}.{schema}.{use_case}_evaluation_output_calibration))
+  WHERE rn = 1)
+SELECT c.model, c.level, c.method, c.score, c.coverage_target, COUNT(DISTINCT c.unique_id) AS series,
+       MAX(c.n_windows) AS backtest_windows
+FROM {catalog}.{schema}.{use_case}_evaluation_output_calibration AS c
+JOIN latest AS l ON c.model = l.model AND c.run_id = l.run_id AND c.calibration_date = l.calibration_date
+GROUP BY c.model, c.level, c.method, c.score, c.coverage_target
+ORDER BY c.model, c.level
+```
+
+Report to the user, per model and level: the calibrated coverage against nominal and against the raw coverage of
+Step 2b, the method, and the models ranked by `wis`. A model 5 or more points below nominal usually has too few
+backtest windows (suggest Step 1b option (b) or (c) of Skill 4); a few points off on its own is expected noise.
+Report coverage per group (`pool_key` of the calibration table) only if the calibration pooled by a group column the
+user supplied: the default ABC x XYZ classes are validated on M5 retail demand only.
+
 ### Step 3: Best model selection per series (forecastable)
 
 Select the best-performing model for each forecastable time series based on the primary metric:
@@ -366,7 +440,27 @@ GROUP BY forecast_source
 
 ### Step 3b: Keep the intervals of the best models (only if prediction intervals were enabled)
 
-Keep the intervals of the selected model for each series. The columns depend on Skill 4's `output_format`:
+**With calibrated intervals (Step 2c ran),** keep the calibrated intervals of the selected model for each series, from
+`{use_case}_scoring_output_intervals` (each model's latest calibration of the selected run). Every model has them,
+including models without native intervals. Select the interval columns of Skill 4's `output_format` (`y_quantiles`
+by default, and/or `y_lo_<L>` / `y_hi_<L>`):
+
+```sql
+CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_best_models_intervals AS
+WITH cal AS (
+  SELECT *, ROW_NUMBER() OVER (PARTITION BY model, run_id, unique_id ORDER BY calibration_date DESC) AS rn
+  FROM {catalog}.{schema}.{use_case}_scoring_output_intervals)
+SELECT b.unique_id, b.model, b.run_id, s.ds, s.y, s.y_quantiles, s.calibration_date
+FROM {catalog}.{schema}.{use_case}_best_models AS b
+JOIN cal AS s ON b.unique_id = s.unique_id AND b.model = s.model AND b.run_id = s.run_id AND s.rn = 1
+WHERE b.forecast_source = 'main_pipeline'
+```
+
+Under `separate_job`, add `UNION ALL` the same `SELECT` on `{use_case}_nf_scoring_output_intervals` with
+`b.forecast_source = 'non_forecastable_pipeline'`. Report how many of the best models' series have no calibrated
+intervals: their model's calibration failed, or is not current (Step 2c).
+
+**With native intervals only,** keep the native intervals of the selected model for each series. The columns depend on Skill 4's `output_format`:
 `y_quantiles` (default), and/or `y_lo_<L>` / `y_hi_<L>`. Under `separate_job`, the non-forecastable winners'
 forecasts are in `{use_case}_nf_scoring_output` (Step 3a), so read both; with `include` every series is in the main
 tables, and with `fallback` the non-forecastable series have no intervals.
@@ -592,6 +686,7 @@ AskUserQuestion:
    • Overall avg {metric}: {overall_avg} (forecastable series only)
    • Best models table: {catalog}.{schema}.{use_case}_best_models
    • Evaluation summary: {catalog}.{schema}.{use_case}_evaluation_summary
+   {if prediction intervals: • Intervals of the best models: {catalog}.{schema}.{use_case}_best_models_intervals ({calibrated or native}; coverage {coverage summary from Step 2c or 2b})}
    • Reproducibility notebook: {notebook_base_path}/post_process
 
    What would you like to do next?
@@ -628,7 +723,7 @@ Combined table of best forecasts for all series (forecastable + non-forecastable
 | `avg_{metric}` | DOUBLE | Average primary metric over the series the model won; the name follows `{metric}` (e.g. `avg_smape`) |
 | `avg_wape` | DOUBLE | Average WAPE over the series the model won (NULL for fallback series) |
 
-**Table** (only if prediction intervals were enabled): `<catalog>.<schema>.{use_case}_best_models_intervals` — the best model's forecast and intervals per series (`y_quantiles`: map from quantile level to an array over the horizon).
+**Table** (only if prediction intervals were enabled): `<catalog>.<schema>.{use_case}_best_models_intervals` — the best model's forecast and intervals per series (`y_quantiles`: map from quantile level to an array over the horizon). They are the calibrated intervals of `{use_case}_scoring_output_intervals` when the calibration job ran, and the native ones of `{use_case}_scoring_output` otherwise.
 
 **Notebook**: `{notebook_base_path}/post_process` — reproducibility notebook that re-creates both output tables
 
