@@ -1,131 +1,124 @@
-"""Prediction intervals of a Forecaster: the native-quantile settings of its models, the calibration of this run's
-backtest, and the interval columns of the scoring output.
+"""Calibration of prediction intervals from the tables that run_forecast writes (calibrate_intervals).
 
-The Forecaster creates an IntervalCalibrator and delegates its prediction-interval methods to it. Nothing here
-collects data that grows with the number of series to the driver: the calibration runs in intervals.spark.
+The calibration reads the backtest rows of evaluation_output, with the native quantiles that run_forecast writes for
+models with native intervals; the training data, for each series' scale; and the forecasts of scoring_output. It
+writes three tables of its own and never modifies the tables it reads, so it runs on its own CPU compute after the
+forecast jobs, and can be re-run with other settings without re-running the models. Nothing here collects data that
+grows with the number of series to the driver: the calibration runs in intervals.spark.
 """
 import logging
-from typing import Tuple
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple, Union
 
-import pandas as pd
-from omegaconf import OmegaConf
-from pyspark.sql import DataFrame
+from omegaconf import DictConfig, OmegaConf
+from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.functions import (
-    array_sort, avg, col, collect_list, expr, first, isnan, lit, max, min, row_number, struct, to_timestamp, when,
+    array_sort, avg, col, collect_list, count, create_map, explode, expr, first, isnan, lit, map_keys, max, min,
+    row_number, struct, sum as sum_, to_timestamp, when,
 )
-from pyspark.sql.types import (
-    ArrayType, DoubleType, LongType, MapType, StringType, StructField, StructType, TimestampType,
-)
+from pyspark.sql.types import ArrayType, DoubleType, MapType, StringType, StructField, StructType
 from pyspark.sql.window import Window
 
 from mmf_sa.exceptions import ConfigurationError
 from mmf_sa.intervals import spark as calibration_spark
 from mmf_sa.intervals.calibration_config import (
-    calibration_levels, check_supported, model_method, requested_quantiles, resolve_clip_lower,
+    calibration_levels, check_supported, level_quantiles, model_method, resolve_clip_lower,
+    resolve_prediction_intervals_conf,
+)
+from mmf_sa.intervals.calibration_scoring import (
+    CORRECTION_FIELDS, apply_joined_corrections, correction_column, interval_column, interval_columns,
+    median_corrections, quantiles_column,
 )
 from mmf_sa.intervals.features import FEATURE_PERIODS, SEASON_LENGTH, group_columns
-from mmf_sa.intervals.calibration_scoring import (
-    CORRECTION_FIELDS, apply_joined_corrections, correction_column, interval_columns, median_corrections,
-    quantiles_column,
-)
-from mmf_sa.models.abstract_model import ForecastingRegressor
+from mmf_sa.intervals.quantiles import quantile_key
 
 _logger = logging.getLogger(__name__)
+
+# Column of the forecasts holding the native quantile map, as in evaluation_output and the calibration functions.
+NATIVE_FIELD = "forecast_quantiles"
+
+
+def default_output_prefix(evaluation_output: str) -> str:
+    """The output_prefix of calibrate_intervals by default: evaluation_output without its _evaluation_output suffix."""
+    suffix = "_evaluation_output"
+    return evaluation_output[:-len(suffix)] if evaluation_output.endswith(suffix) else evaluation_output
 
 
 class IntervalCalibrator:
     """
-    The prediction intervals of a Forecaster: the native-quantile settings of its models, the calibration of this
-    run's backtest (run_calibration), and the interval columns of the scoring output (add_prediction_intervals).
-
-    The calibrator reads the state of its Forecaster when it is used (conf, spark, model_registry, run_id, run_date,
-    resolve_source), so a value that the Forecaster gets after construction, such as run_date, applies here too.
+    Calibrates the prediction intervals of the latest run of each model, from the tables of run_forecast.
     Parameters:
-        forecaster (Forecaster): The Forecaster that owns the run.
+        spark (SparkSession): The Spark session.
+        settings (DictConfig): train_data (table name or DataFrame), evaluation_output, scoring_output,
+            output_prefix, group_id, date_col, target, freq, models (or None), run_ids ({model: run_id} or None)
+            and prediction_intervals (the calibration block, see calibration_config).
     """
 
-    def __init__(self, forecaster):
-        self._forecaster = forecaster
-        # Known models that are not active are skipped silently: the GPU orchestrator runs one model per Forecaster.
-        unknown_methods = set(self.conf.prediction_intervals.method_by_model) - set(
-            self.model_registry.all_models_conf)
-        if unknown_methods:
-            _logger.warning("prediction_intervals.method_by_model names unknown models, ignored: "
-                            f"{', '.join(sorted(unknown_methods))}.")
+    def __init__(self, spark: SparkSession, settings: DictConfig, train_data=None):
+        self.spark = spark
+        self.settings = settings
+        self.train_data = train_data if train_data is not None else settings.train_data
+        self.calibration_date = datetime.now()
 
     @property
-    def conf(self):
-        return self._forecaster.conf
+    def pi(self):
+        return self.settings.prediction_intervals
 
-    @property
-    def spark(self):
-        return self._forecaster.spark
-
-    @property
-    def model_registry(self):
-        return self._forecaster.model_registry
-
-    @property
-    def run_id(self) -> str:
-        return self._forecaster.run_id
-
-    @property
-    def run_date(self):
-        return self._forecaster.run_date
-
-    @property
-    def intervals_enabled(self) -> bool:
-        return self._forecaster.intervals_enabled
-
-    def resolve_source(self, key: str) -> DataFrame:
-        return self._forecaster.resolve_source(key)
-
-    def native_quantiles(self, model_conf) -> list:
-        """
-        Quantile levels a model must produce in its backtest, or None.
-        Only models flagged native_intervals produce them, and only when the model's interval method
-        (method_by_model, else method) uses native bands: auto, native or cqr.
-        """
-        pi = self.conf.prediction_intervals
-        if not pi.enabled or not model_conf.get("native_intervals", False):
-            return None
-        if model_method(pi, model_conf["name"]) == "conformal":
-            return None
-        return requested_quantiles(pi)
-
-    def get_model_with_native_quantiles(self, model_conf) -> ForecastingRegressor:
-        """Instantiates a model for evaluation or scoring, passing it native_quantiles when it must produce
-        native bands."""
-        quantiles = self.native_quantiles(model_conf)
-        override = OmegaConf.create({"native_quantiles": quantiles}) if quantiles else None
-        return self.model_registry.get_model(model_conf["name"], override_conf=override)
-
-    def evaluation_quantile_fields(self) -> list:
-        """The forecast_quantiles field of evaluation rows, present only when intervals are enabled."""
-        if not self.intervals_enabled:
-            return []
-        return [StructField("forecast_quantiles", MapType(StringType(), ArrayType(DoubleType())))]
-
-    def evaluation_writer(self, sdf: DataFrame):
-        """Append writer for evaluation_output. With intervals enabled, existing tables gain forecast_quantiles."""
-        writer = sdf.write.mode("append")
-        if self.intervals_enabled:
-            writer = writer.option("mergeSchema", "true")
-        return writer
-
-    def calibration_output_table(self) -> str:
-        """Name of the calibration_output table: the calibration_output setting, or <evaluation_output>_calibration."""
-        return self.conf.get("calibration_output") or f"{self.conf['evaluation_output']}_calibration"
-
-    def interval_metrics_table(self) -> str:
-        """Name of the interval metrics table: the interval_metrics_output setting, or
-        <evaluation_output>_interval_metrics. Kept apart from evaluation_output, whose readers average
-        metric_value per series and model without filtering metric_name."""
-        return self.conf.get("interval_metrics_output") or f"{self.conf['evaluation_output']}_interval_metrics"
+    def table(self, name: str) -> str:
+        """Name of an output table: <output_prefix>_<name>."""
+        return f"{self.settings.output_prefix}_{name}"
 
     def materializer(self) -> "calibration_spark.Materializer":
-        """Cache of the prediction-interval steps, with temporary tables next to evaluation_output as fallback."""
-        return calibration_spark.Materializer(self.spark, f"{self.conf['evaluation_output']}_pi_tmp")
+        """Cache of the calibration steps, with temporary tables next to the outputs as fallback."""
+        return calibration_spark.Materializer(self.spark, self.table("pi_tmp"))
+
+    def train(self) -> DataFrame:
+        if isinstance(self.train_data, DataFrame):
+            return self.train_data
+        if isinstance(self.train_data, str):
+            return self.spark.table(self.train_data)
+        return self.spark.createDataFrame(self.train_data)  # a pandas DataFrame
+
+    # --- Run selection -------------------------------------------------------------------------------------
+
+    def latest_runs(self) -> Dict[str, Dict[str, Any]]:
+        """
+        The run to calibrate for each model: run_ids[model] if given, else the model's latest run in
+        evaluation_output, by run_date. Within a run, the latest run_date (a re-run with the same run_id appends)
+        and one metric_name (the backtest rows repeat per metric). Models not in `models` are left out.
+        Returns: {model: {"run_id", "run_date", "metric_name"}}.
+        """
+        ev = self.spark.table(self.settings.evaluation_output)
+        models, run_ids = self.settings.models, self.settings.run_ids or {}
+        if models:
+            ev = ev.filter(col("model").isin(list(models)))
+        runs = ev.groupBy("model", "run_id").agg(max("run_date").alias("run_date"),
+                                                 min("metric_name").alias("metric_name"))
+        rank = row_number().over(Window.partitionBy("model").orderBy(col("run_date").desc(), col("run_id").desc()))
+        chosen = {}
+        for r in runs.withColumn("_rank", rank).collect():
+            wanted = run_ids.get(r["model"])
+            if (wanted is None and r["_rank"] == 1) or (wanted is not None and r["run_id"] == wanted):
+                chosen[r["model"]] = {"run_id": r["run_id"], "run_date": r["run_date"],
+                                      "metric_name": r["metric_name"]}
+        missing = sorted((set(models or []) | set(run_ids)) - set(chosen))
+        if missing:
+            _logger.warning(f"No backtest rows in {self.settings.evaluation_output} for {', '.join(missing)}; "
+                            "they are not calibrated.")
+        return chosen
+
+    def backtest_rows(self, model: str, run: dict) -> DataFrame:
+        """The model's backtest rows of its run: series (string), window, forecast, actual and native quantiles."""
+        gid = self.settings.group_id
+        ev = self.spark.table(self.settings.evaluation_output).filter(
+            (col("model") == model) & (col("run_id") == run["run_id"]) & (col("run_date") == lit(run["run_date"]))
+            & (col("metric_name") == run["metric_name"]))
+        cols = [col(gid).cast(StringType()).alias(gid), "backtest_window_start_date", "forecast", "actual"]
+        if NATIVE_FIELD in ev.columns:
+            cols.append(NATIVE_FIELD)
+        return ev.select(*cols)
+
+    # --- Calibration ---------------------------------------------------------------------------------------
 
     def calibration_features(self, first_window: DataFrame, materializer) -> Tuple[DataFrame, float]:
         """
@@ -135,10 +128,10 @@ class IntervalCalibrator:
             first_window (DataFrame): Series id (string) and first backtest window start date per series.
             materializer (calibration_spark.Materializer): Caches the features (returned cached).
         """
-        gid, date_col, target = self.conf["group_id"], self.conf["date_col"], self.conf["target"]
-        freq = self.conf["freq"]
-        extra_cols = group_columns(self.conf.prediction_intervals)
-        train = self.resolve_source("train_data")
+        gid, date_col, target = self.settings.group_id, self.settings.date_col, self.settings.target
+        freq = self.settings.freq
+        extra_cols = group_columns(self.pi)
+        train = self.train()
         missing = [c for c in extra_cols if c not in train.columns]
         if missing:
             raise ConfigurationError(f"prediction_intervals.coverage.group_col: column(s) {missing} "
@@ -164,140 +157,230 @@ class IntervalCalibrator:
         materializer.uncache(cached)
         return classified, 0.0 if min_target is None else float(min_target)
 
-    def run_calibration(self):
+    def run(self) -> Dict[str, Any]:
         """
-        Calibrates prediction intervals from the backtest results of this run in evaluation_output
-        in Spark: nothing that grows with the
-        number of series is collected to the driver. Writes one calibration_output row per model, series,
-        horizon step and level, and the leave-one-window-out interval metrics to the interval metrics
-        table (interval_metrics_table).
-        Parameters: self (Forecaster): A Forecaster object.
+        Calibrates each model's latest run and writes, for each, its calibration_output rows, its leave-one-window-out
+        interval metrics and its calibrated scoring intervals. One model's failure is logged and does not stop the
+        others.
+        Returns: {"tables": {...}, "models": {model: summary}}.
         """
-        pi = self.conf.prediction_intervals
+        pi = self.pi
         check_supported(pi)
-        gid = self.conf["group_id"]
-        print("Starting run_calibration")
-        # Only the models of this call: the GPU orchestrator runs one model per run_forecast call with a shared
-        # run_id, and earlier calls have already calibrated theirs.
-        active = list(self.model_registry.get_active_model_keys())
-        eval_sdf = self.spark.table(self.conf["evaluation_output"]).filter(
-            (col("run_id") == self.run_id) & (col("metric_name") == self.conf["metric"]) & col("model").isin(active))
-        # A re-run with the same run_id appends a second backtest; keep each model's latest one.
-        eval_sdf = eval_sdf.withColumn("_latest", max("run_date").over(Window.partitionBy("model"))) \
-            .filter(col("run_date") == col("_latest"))
-        cols = [col(gid).cast(StringType()).alias(gid), "backtest_window_start_date", "model", "forecast", "actual"]
-        if "forecast_quantiles" in eval_sdf.columns:
-            cols.append("forecast_quantiles")
+        gid = self.settings.group_id
+        tables = {"calibration": self.table("evaluation_output_calibration"),
+                  "interval_metrics": self.table("evaluation_output_interval_metrics"),
+                  "scoring_intervals": self.table("scoring_output_intervals")}
+        out = {"tables": tables, "models": {}}
+        runs = self.latest_runs()
+        if not runs:
+            _logger.warning(f"No backtest rows in {self.settings.evaluation_output}; nothing to calibrate.")
+            return out
+        known = set(runs)
+        unknown_methods = set(pi.method_by_model) - known
+        if unknown_methods:
+            _logger.warning("prediction_intervals.method_by_model names models that are not calibrated, ignored: "
+                            f"{', '.join(sorted(unknown_methods))}.")
         materializer = self.materializer()
-        eval_sdf = materializer.cache(eval_sdf.select(*cols))
-        models = [r[0] for r in eval_sdf.select("model").distinct().collect()]
-        if not models:
-            materializer.close()
-            _logger.warning(f"No backtest rows for run_id {self.run_id} in {self.conf['evaluation_output']}; "
-                            "nothing to calibrate.")
-            return
-        features, min_target = self.calibration_features(
-            eval_sdf.groupBy(gid).agg(min("backtest_window_start_date").alias("backtest_window_start_date")),
-            materializer)
-        clip_lower = resolve_clip_lower(pi.clip_lower, min_target)
-        print(f"Prediction intervals: clip_lower resolved to {clip_lower}")
         try:
-            for model_name in sorted(models):
-                try:
-                    result, summary = calibration_spark.calibrate_model_spark(
-                        self.spark, eval_sdf.filter(col("model") == model_name).drop("model"), features, gid,
-                        model_name, pi, clip_lower, materializer)
-                except Exception as err:
-                    # One model's failure must not stop the others, nor scoring (its intervals will be null).
-                    _logger.error(f"Calibration failed for {model_name}: {repr(err)}", exc_info=err)
-                    continue
-                if summary.get("dropped"):
-                    _logger.warning(f"{model_name}: {summary['dropped']} series dropped from calibration "
-                                    "(incomplete or non-finite backtest windows).")
-                if result is None:
-                    _logger.warning(f"{model_name}: no series to calibrate.")
-                    continue
-                try:
-                    self.write_calibration_output(result.filter(col("kind") == "calibration"))
-                    metrics = result.filter(col("kind") == "metric")
-                    self.write_interval_metrics(metrics)
-                    for r in (metrics.filter(col("metric_name").rlike("^(coverage|msis)_"))
-                              .groupBy("metric_name").agg(avg("metric_value").alias("v"))
-                              .orderBy("metric_name").collect()):
-                        print(f"{model_name} ({summary['method']}, {summary['score']}, {summary['target']}): "
-                              f"leave-one-window-out {r['metric_name']} {r['v']:.3f}")
-                finally:
-                    materializer.uncache(result)
+            backtests = {m: self.backtest_rows(m, r) for m, r in runs.items()}
+            first_window = None
+            for rows in backtests.values():
+                fw = rows.groupBy(gid).agg(min("backtest_window_start_date").alias("backtest_window_start_date"))
+                first_window = fw if first_window is None else first_window.unionByName(fw)
+            first_window = first_window.groupBy(gid).agg(
+                min("backtest_window_start_date").alias("backtest_window_start_date"))
+            features, min_target = self.calibration_features(first_window, materializer)
+            clip_lower = resolve_clip_lower(pi.clip_lower, min_target)
+            print(f"Prediction intervals: clip_lower resolved to {clip_lower}")
+            for model in sorted(runs):
+                out["models"][model] = self.calibrate_one(model, runs[model], backtests[model], features,
+                                                          clip_lower, materializer)
         finally:
             materializer.close()
-        print("Finished run_calibration")
+        return out
 
-    def write_calibration_output(self, rows: DataFrame):
-        gid = self.conf["group_id"]
+    def native_levels(self, backtest: DataFrame, levels) -> list:
+        """The levels whose two native quantiles are in every backtest row that has native quantiles."""
+        if NATIVE_FIELD not in backtest.columns:
+            return []
+        with_map = backtest.filter(col(NATIVE_FIELD).isNotNull())
+        n = with_map.count()
+        if not n:
+            return []
+        counts = with_map.select(explode(map_keys(col(NATIVE_FIELD))).alias("key")).groupBy("key").count().collect()
+        complete = {r["key"] for r in counts if r["count"] == n}
+        return [lv for lv in levels if all(quantile_key(q) in complete for q in level_quantiles(lv))]
+
+    def level_blocks(self, model: str, backtest: DataFrame) -> list:
+        """
+        The (calibration block, backtest rows) pairs to calibrate a model with. The levels whose native quantiles
+        the model returned get native-band methods (CQR by default); the levels it has none for (e.g. 95% for a model
+        whose native range is 10-90%, left out by run_forecast) get conformal intervals from the backtest errors,
+        which need no native band at scoring.
+        """
+        pi = self.pi
+        levels = calibration_levels(pi)
+        if model_method(pi, model) == "conformal":
+            return [(pi, backtest)]
+        native = self.native_levels(backtest, levels)
+        rest = [lv for lv in levels if lv not in native]
+        if not rest:
+            return [(pi, backtest)]
+        plain = backtest.drop(NATIVE_FIELD) if NATIVE_FIELD in backtest.columns else backtest
+        if not native:
+            return [(pi, plain)]  # calibrate_model warns that the native method falls back to conformal
+        _logger.warning(f"{model}: no native quantiles for levels {rest}; they get conformal intervals, and "
+                        f"levels {native} get calibrated native bands.")
+        with_levels = lambda lv, extra: OmegaConf.merge(pi, OmegaConf.create({"levels": lv, "quantiles": None, **extra}))
+        return [(with_levels(native, {}), backtest),
+                (with_levels(rest, {"method_by_model": {**pi.method_by_model, model: "conformal"}}), plain)]
+
+    def combined_wis(self, metrics: DataFrame) -> DataFrame:
+        """
+        wis over all levels from the metric rows of several calibration passes (one row per series, window and
+        metric): (0.5 scaled_ae + sum over levels of alpha/2 msis) / (K + 0.5), as conformal.wis_from_metrics.
+        """
+        gid = self.settings.group_id
+        levels = calibration_levels(self.pi)
+        keys = [gid, "window_date", "model"]
+        terms = metrics.filter(col("metric_name").isin(["scaled_ae"] + [f"msis_{lv:g}" for lv in levels]))
+        weight = when(col("metric_name") == "scaled_ae", lit(0.5))
+        for lv in levels:
+            weight = weight.when(col("metric_name") == f"msis_{lv:g}", lit((1 - lv / 100) / 2))
+        return (terms.groupBy(*keys)
+                .agg((sum_(weight * col("metric_value")) / lit(len(levels) + 0.5)).alias("metric_value"),
+                     count(lit(1)).alias("_terms"))
+                .filter(col("_terms") == len(levels) + 1)
+                .select(*keys, lit("wis").alias("metric_name"), "metric_value"))
+
+    def calibrate_one(self, model: str, run: dict, backtest: DataFrame, features: DataFrame, clip_lower,
+                      materializer) -> Dict[str, Any]:
+        """Calibrates one model and writes its rows to the three output tables. Returns a summary."""
+        gid = self.settings.group_id
+        summary = {"run_id": run["run_id"], "methods": {}}
+        backtest = materializer.cache(backtest)
+        blocks = self.level_blocks(model, backtest)
+        results = []
+        try:
+            for pi, rows in blocks:
+                try:
+                    result, info = calibration_spark.calibrate_model_spark(
+                        self.spark, rows, features, gid, model, pi, clip_lower, materializer)
+                except Exception as err:
+                    _logger.error(f"Calibration failed for {model}: {repr(err)}", exc_info=err)
+                    return {**summary, "error": repr(err)[:500]}
+                if info.get("dropped"):
+                    _logger.warning(f"{model}: {info['dropped']} series dropped from calibration "
+                                    "(incomplete or non-finite backtest windows).")
+                if result is None:
+                    _logger.warning(f"{model}: no series to calibrate.")
+                    return {**summary, "error": "no series to calibrate"}
+                results.append(result)
+                for lv in calibration_levels(pi):
+                    summary["methods"][f"{lv:g}"] = f"{info.get('method')}/{info.get('score')}/{info.get('target')}"
+            cal = results[0].filter(col("kind") == "calibration")
+            metrics = results[0].filter(col("kind") == "metric")
+            for extra in results[1:]:
+                cal = cal.unionByName(extra.filter(col("kind") == "calibration"))
+                # Level-free metrics are recomputed over all levels below; scaled_ae comes from the first pass.
+                metrics = metrics.unionByName(extra.filter((col("kind") == "metric") & ~col("metric_name").isin(
+                    "scaled_ae", "wis", "native_wis")))
+            metric_cols = [gid, "window_date", "model", "metric_name", "metric_value"]
+            metrics = metrics.select(*metric_cols)
+            if len(results) > 1:
+                metrics = metrics.filter(~col("metric_name").isin("wis", "native_wis"))
+                metrics = metrics.unionByName(self.combined_wis(metrics).select(*metric_cols))
+            self.write_calibration_output(cal, run)
+            self.write_interval_metrics(metrics, run)
+            summary["coverage"] = {}
+            for r in (metrics.filter(col("metric_name").rlike("^(native_)?coverage_"))
+                      .groupBy("metric_name").agg(avg("metric_value").alias("v"))
+                      .orderBy("metric_name").collect()):
+                summary["coverage"][r["metric_name"]] = round(float(r["v"]), 4)
+                print(f"{model} ({summary['methods']}): leave-one-window-out {r['metric_name']} {r['v']:.3f}")
+            summary["scoring_rows"] = self.write_scoring_intervals(model, run, cal)
+        finally:
+            for result in results:
+                materializer.uncache(result)
+            materializer.uncache(backtest)
+        return summary
+
+    def append(self, sdf: DataFrame, table: str) -> None:
+        """
+        Appends to an output table with mergeSchema. Columns of the table that the rows lack (e.g. a re-run with
+        another output_format) are added as typed NULLs, which tables that are not Delta also need.
+        """
+        if self.spark.catalog.tableExists(table):
+            for field in self.spark.table(table).schema.fields:
+                if field.name not in sdf.columns:
+                    sdf = sdf.withColumn(field.name, lit(None).cast(field.dataType))
+        sdf.write.mode("append").option("mergeSchema", "true").saveAsTable(table)
+
+    def _run_columns(self, sdf: DataFrame, run: dict) -> DataFrame:
+        return (sdf.withColumn("run_id", lit(run["run_id"]))
+                .withColumn("run_date", lit(run["run_date"]))
+                .withColumn("calibration_date", lit(self.calibration_date)))
+
+    def write_calibration_output(self, rows: DataFrame, run: dict):
+        gid = self.settings.group_id
         names = ["model", "method", "score", "coverage_target", gid, "pool_key", "step", "level", "q_lo", "q_hi",
                  "n_windows", "shrinkage_weight", "infinite_bound", "clip_lower", "sigma", "abc_class",
                  "xyz_class", "sb_class"]
-        (
+        sdf = (
             rows.select(*names)
             .withColumn("clip_lower", when(isnan(col("clip_lower")), lit(None)).otherwise(col("clip_lower")))
             .withColumn("shrinkage_weight",
                         when(isnan(col("shrinkage_weight")), lit(None)).otherwise(col("shrinkage_weight")))
-            .withColumn("run_id", lit(self.run_id))
-            .withColumn("run_date", lit(self.run_date))
-            .withColumn("use_case", lit(self.conf["use_case_name"]))
-            .write.mode("append").option("mergeSchema", "true")
-            .saveAsTable(self.calibration_output_table())
         )
+        self.append(self._run_columns(sdf, run), self.table("evaluation_output_calibration"))
 
-    def write_interval_metrics(self, rows: DataFrame):
-        """Appends interval metric rows (series, window, metric_name, metric_value, model) to the interval metrics table."""
-        gid = self.conf["group_id"]
-        (
-            rows.select(gid, col("window_date").alias("backtest_window_start_date"), "metric_name",
-                        "metric_value", "model")
-            .withColumn("run_id", lit(self.run_id))
-            .withColumn("run_date", lit(self.run_date))
-            .withColumn("use_case", lit(self.conf["use_case_name"]))
-            .write.mode("append").option("mergeSchema", "true")
-            .saveAsTable(self.interval_metrics_table())
-        )
+    def write_interval_metrics(self, rows: DataFrame, run: dict):
+        """Appends interval metric rows (series, window, metric_name, metric_value, model)."""
+        gid = self.settings.group_id
+        sdf = rows.select(gid, col("window_date").alias("backtest_window_start_date"), "metric_name",
+                          "metric_value", "model")
+        self.append(self._run_columns(sdf, run), self.table("evaluation_output_interval_metrics"))
 
-    def foundation_scoring_schema(self, prediction_df: pd.DataFrame) -> StructType:
-        """Explicit schema of a foundation model's predictions with forecast_quantiles (map inference is unreliable)."""
-        fields = []
-        for c in prediction_df.columns:
-            if c == "forecast_quantiles":
-                fields.append(StructField(c, MapType(StringType(), ArrayType(DoubleType()))))
-            elif c == self.conf["date_col"]:
-                fields.append(StructField(c, ArrayType(TimestampType())))
-            elif c == self.conf["target"]:
-                fields.append(StructField(c, ArrayType(DoubleType())))
-            elif c == "index":
-                fields.append(StructField(c, LongType()))
-            else:
-                fields.append(StructField(c, StringType()))
-        return StructType(fields)
+    # --- Scoring ---------------------------------------------------------------------------------------------
 
-    def calibration_rows_for(self, model_name: str):
-        """This run's calibration_output rows of one model, as a Spark DataFrame, or None when there are none."""
-        try:
-            cal = self.spark.table(self.calibration_output_table()).filter(
-                (col("run_id") == self.run_id) & (col("model") == model_name))
-            latest = cal.agg(max("run_date")).collect()[0][0]
-            if latest is None:
-                return None
-            # A re-run with the same run_id appends a second calibration; keep only the latest one.
-            return cal.filter(col("run_date") == lit(latest))
-        except Exception as err:
-            _logger.warning(f"Cannot read calibration_output ({err}).")
-            return None
+    def native_scoring_map(self, sdf: DataFrame):
+        """
+        The native quantile map of scoring_output rows, as a column: <target>_quantiles, or rebuilt from the
+        <target>_lo_<L> / <target>_hi_<L> columns (output_format lo_hi); None when there is neither.
+        """
+        target = self.settings.target
+        if quantiles_column(target) in sdf.columns:
+            return col(quantiles_column(target))
+        pairs = []
+        for level in calibration_levels(self.pi):
+            for side, q in zip(("lo", "hi"), level_quantiles(level)):
+                name = interval_column(target, side, level)
+                if name in sdf.columns:
+                    pairs += [lit(quantile_key(q)), col(name)]
+        return create_map(*pairs) if pairs else None
+
+    def scoring_rows(self, model: str, run: dict) -> DataFrame:
+        """The model's forecasts of its run in scoring_output, with the native quantile map as NATIVE_FIELD."""
+        gid, date_col, target = self.settings.group_id, self.settings.date_col, self.settings.target
+        sc = self.spark.table(self.settings.scoring_output).filter(
+            (col("model") == model) & (col("run_id") == run["run_id"]))
+        latest = sc.agg(max("run_date")).collect()[0][0]
+        sc = sc.filter(col("run_date") == lit(latest))
+        native = self.native_scoring_map(sc)
+        cols = [col(gid).cast(StringType()).alias(gid), date_col, target, "model"]
+        if "use_case" in sc.columns:
+            cols.append("use_case")
+        out = sc.select(*cols, (native if native is not None
+                                else lit(None).cast(MapType(StringType(), ArrayType(DoubleType())))).alias(NATIVE_FIELD))
+        # NULL bounds (levels outside a model's native range) are dropped from the map.
+        return out.withColumn(NATIVE_FIELD, expr(f"map_filter({NATIVE_FIELD}, (k, v) -> v IS NOT NULL)"))
 
     def wide_corrections(self, cal: DataFrame, levels: list) -> DataFrame:
         """
         One row per series with its corrections in correction_column(i, field) columns: q_lo and
         q_hi as arrays ordered by step, sigma, method and score, for each level i.
         """
-        gid = self.conf["group_id"]
+        gid = self.settings.group_id
         per_level = cal.groupBy(gid, "level").agg(
             array_sort(collect_list(struct("step", "q_lo", "q_hi"))).alias("_steps"),
             first("sigma").alias("sigma"), first("method").alias("method"), first("score").alias("score"),
@@ -312,7 +395,6 @@ class IntervalCalibrator:
 
     def fallback_corrections(self, cal: DataFrame) -> dict:
         """Per-level median corrections for series without calibration rows (small: levels x horizon rows)."""
-        gid = self.conf["group_id"]
         steps = cal.groupBy("level", "step").agg(
             expr("percentile(q_lo, 0.5)").alias("q_lo"), expr("percentile(q_hi, 0.5)").alias("q_hi"))
         sigma = cal.filter(col("step") == 1).groupBy("level").agg(expr("percentile(sigma, 0.5)").alias("sigma"))
@@ -322,34 +404,28 @@ class IntervalCalibrator:
         stats = steps.join(sigma, "level").join(kinds, "level").toPandas()
         return median_corrections(stats)
 
-    def add_prediction_intervals(self, sdf: DataFrame, model_name: str) -> DataFrame:
+    def write_scoring_intervals(self, model: str, run: dict, cal: DataFrame) -> int:
         """
-        Applies this run's calibration_output of one model to its scoring rows (one row per series). The
-        corrections are joined to the forecasts and applied per partition, so nothing is collected to the
-        driver except the per-level fallback corrections.
+        Applies the model's corrections to its forecasts in scoring_output and appends the calibrated interval
+        columns to scoring_output_intervals. The corrections are joined to the forecasts and applied per partition,
+        so nothing is collected to the driver except the per-level fallback corrections. Returns the row count.
         """
-        pi = self.conf.prediction_intervals
-        gid, target = self.conf["group_id"], self.conf["target"]
-        levels = calibration_levels(pi)
-        output_format = pi.output_format
-        cal = self.calibration_rows_for(model_name)
-        if cal is None:
-            _logger.warning(f"{model_name}: no calibration rows for run_id {self.run_id}; "
-                            "interval columns will be null.")
-            fallback, clip_lower, joined = {}, None, sdf
-        else:
-            fallback = self.fallback_corrections(cal)
-            clip_row = (cal.select("clip_lower").filter(col("clip_lower").isNotNull() & ~isnan(col("clip_lower")))
-                        .limit(1).collect())
-            clip_lower = float(clip_row[0][0]) if clip_row else None
-            wide = self.wide_corrections(cal, levels)
-            n_missing = sdf.select(gid).join(wide.select(gid), on=gid, how="left_anti").count()
-            if n_missing:
-                _logger.warning(f"{model_name}: {n_missing} series without calibration rows use the model's "
-                                "median correction.")
-            joined = sdf.join(wide, on=gid, how="left")
+        gid, target = self.settings.group_id, self.settings.target
+        levels = calibration_levels(self.pi)
+        output_format = self.pi.output_format
+        sdf = self.scoring_rows(model, run)
+        fallback = self.fallback_corrections(cal)
+        clip_row = (cal.select("clip_lower").filter(col("clip_lower").isNotNull() & ~isnan(col("clip_lower")))
+                    .limit(1).collect())
+        clip_lower = float(clip_row[0][0]) if clip_row else None
+        wide = self.wide_corrections(cal, levels)
+        n_missing = sdf.select(gid).join(wide.select(gid), on=gid, how="left_anti").count()
+        if n_missing:
+            _logger.warning(f"{model}: {n_missing} series without calibration rows use the model's "
+                            "median correction.")
+        joined = sdf.join(wide, on=gid, how="left")
 
-        fields = [f for f in sdf.schema.fields if f.name != "forecast_quantiles"]
+        fields = [f for f in sdf.schema.fields if f.name != NATIVE_FIELD]
         for name in interval_columns(target, levels, output_format):
             dtype = (MapType(StringType(), ArrayType(DoubleType())) if name == quantiles_column(target)
                      else ArrayType(DoubleType()))
@@ -363,4 +439,81 @@ class IntervalCalibrator:
                     batch.reset_index(drop=True), gid, target, levels, output_format, clip_lower, fallback)
                 yield out[names]
 
-        return joined.mapInPandas(apply_batches, schema)
+        calibrated = self._run_columns(joined.mapInPandas(apply_batches, schema), run)
+        self.append(calibrated, self.table("scoring_output_intervals"))
+        return self.spark.table(self.table("scoring_output_intervals")).filter(
+            (col("model") == model) & (col("calibration_date") == lit(self.calibration_date))).count()
+
+
+def calibrate_intervals(
+    spark: SparkSession,
+    train_data: Union[str, DataFrame, Any],
+    evaluation_output: str,
+    scoring_output: str,
+    group_id: str = "unique_id",
+    date_col: str = "ds",
+    target: str = "y",
+    freq: str = "D",
+    levels: Optional[List[float]] = None,
+    quantiles: Optional[List[float]] = None,
+    output_prefix: Optional[str] = None,
+    models: Optional[List[str]] = None,
+    run_ids: Optional[Dict[str, str]] = None,
+    method: str = "auto",
+    method_by_model: Optional[Dict[str, str]] = None,
+    group_col: Union[str, List[str], None] = "auto",
+    shrinkage_kappa: float = 10,
+    output_format: str = "quantile_map",
+    settings: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Calibrates the prediction intervals of the latest run of each model, from the tables that run_forecast wrote.
+    Run it after the forecast jobs, on CPU compute: it does not use the models, only their backtest and forecasts.
+    Models whose backtest has native quantiles (prediction_intervals enabled in run_forecast) get their native bands
+    corrected (CQR); the others get conformal intervals from their backtest errors.
+    Parameters:
+        spark (SparkSession): The Spark session.
+        train_data: The training data of run_forecast (table name or DataFrame), for each series' scale.
+        evaluation_output (str): The evaluation_output table of run_forecast (backtest rows).
+        scoring_output (str): The scoring_output table of run_forecast (forecasts).
+        group_id, date_col, target, freq (str): As in run_forecast.
+        levels (List[float]): Central interval levels in percent. Default [80, 95]. Or set `quantiles`.
+        quantiles (List[float]): Quantile levels in central pairs, e.g. [0.1, 0.5, 0.9]; replaces `levels`.
+        output_prefix (str): Prefix of the output tables. Default: evaluation_output without its
+            "_evaluation_output" suffix, e.g. "cat.sch.uc" for "cat.sch.uc_evaluation_output".
+        models (List[str]): Models to calibrate. Default: every model in evaluation_output.
+        run_ids (Dict[str, str]): The run to calibrate per model. Default: each model's latest run.
+        method (str): auto (CQR on native bands where available, else conformal), conformal, native or cqr.
+        method_by_model (Dict[str, str]): Per-model override of `method`.
+        group_col: Groups of similar series to pool over: "auto" (ABC x XYZ classes), a column of train_data, a
+            list of columns, or None.
+        shrinkage_kappa (float): Strength of the shrinkage of each series toward its group.
+        output_format (str): quantile_map, lo_hi or both, for scoring_output_intervals.
+        settings (Dict[str, Any]): Other calibration settings (cqr_score, cqr_tail_split, cqr_pool, coverage,
+            score, clip_lower), see calibration_config.
+    Returns: Dict with the output table names ("tables") and a summary per model ("models").
+    Writes, appending, with run_id, run_date (of the forecast run) and calibration_date:
+        <output_prefix>_evaluation_output_calibration: the corrections per model, series, step and level;
+        <output_prefix>_evaluation_output_interval_metrics: leave-one-window-out coverage, miss rates, MSIS, width,
+            scaled_ae and WIS per series and backtest window;
+        <output_prefix>_scoring_output_intervals: the calibrated interval columns of each forecast.
+    """
+    block = dict(settings or {})
+    coverage = dict(block.pop("coverage", None) or {})
+    coverage.setdefault("group_col", group_col)
+    coverage.setdefault("shrinkage_kappa", shrinkage_kappa)
+    block.update({"enabled": True, "method": method, "method_by_model": method_by_model or {},
+                  "output_format": output_format, "coverage": coverage})
+    if quantiles is not None:
+        block["quantiles"] = quantiles
+    if levels is not None:
+        block["levels"] = levels
+    conf = OmegaConf.create({
+        "evaluation_output": evaluation_output, "scoring_output": scoring_output,
+        "train_data": train_data if isinstance(train_data, str) else None,
+        "output_prefix": output_prefix or default_output_prefix(evaluation_output),
+        "group_id": group_id, "date_col": date_col, "target": target, "freq": freq,
+        "models": list(models) if models else None, "run_ids": dict(run_ids) if run_ids else None,
+    })
+    conf["prediction_intervals"] = resolve_prediction_intervals_conf(block)
+    return IntervalCalibrator(spark, conf, train_data=train_data).run()
