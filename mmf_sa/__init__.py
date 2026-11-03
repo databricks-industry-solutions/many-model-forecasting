@@ -11,6 +11,7 @@ from omegaconf.basecontainer import BaseContainer
 from pyspark.sql import SparkSession, DataFrame
 from mmf_sa.Forecaster import Forecaster
 from mmf_sa.reconciliation import run_reconciliation_multilevel
+from mmf_sa.intervals.calibrator import calibrate_intervals
 
 
 def _configure_logging():
@@ -214,4 +215,4 @@ def run_forecast(
     return run_id
 
 
-__all__ = ["run_forecast", "run_reconciliation_multilevel", "Forecaster"]
+__all__ = ["run_forecast", "calibrate_intervals", "run_reconciliation_multilevel", "Forecaster"]

@@ -245,26 +245,6 @@ def test_spark_dataframes_with_the_same_plan_are_not_separate_scoring_data(spark
     assert other.has_separate_scoring_data()
 
 
-@pytest.mark.skip(reason="IntervalCalibrator is no longer wired into Forecaster (PR 1); to be rewritten for calibrate_intervals, which reads the tables")
-def test_scoring_reads_only_the_latest_calibration_of_a_run(spark, tmp_path):
-    from omegaconf import OmegaConf
-    from mmf_sa import Forecaster
-    rows = []
-    for run_date, q in ((pd.Timestamp("2024-01-01"), 1.0), (pd.Timestamp("2024-01-02"), 2.0)):
-        for step in (1, 2):
-            rows.append({"model": "m", "method": "conformal", "score": "signed_normalized", "coverage_target": "series",
-                         "uid": "a", "pool_key": "__all__", "step": step, "level": 80.0, "q_lo": -q, "q_hi": q * step,
-                         "sigma": 1.0, "clip_lower": 0.0, "run_id": "r", "run_date": run_date})
-    spark.createDataFrame(pd.DataFrame(rows)).write.mode("overwrite").saveAsTable("default.pi_cal_rerun")
-    conf = OmegaConf.create({"freq": "D", "backtest_length": 7, "active_models": [], "group_id": "uid",
-                             "evaluation_output": "default.pi_eval", "calibration_output": "default.pi_cal_rerun",
-                             "prediction_intervals": {"enabled": True}})
-    f = Forecaster(conf=conf, data_conf={}, spark=spark, experiment_id="e", run_id="r")
-    cal_rows = f.calibration_rows_for("m")
-    wide = f.wide_corrections(cal_rows, [80]).toPandas()
-    np.testing.assert_array_equal(wide[correction_column(0, "q_hi")].iloc[0], [2.0, 4.0])
-
-
 @pytest.mark.parametrize("overrides", [{}, {"method": "conformal"}, {"cqr_pool": "series"}])
 def test_spark_matches_numpy_across_many_buckets(spark, monkeypatch, overrides):
     monkeypatch.setattr(cs, "SERIES_PER_BUCKET", 5)  # 24 series -> 5 buckets
