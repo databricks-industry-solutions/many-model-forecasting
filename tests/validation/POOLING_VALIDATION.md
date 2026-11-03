@@ -193,3 +193,54 @@ tail shrinkage over one pool (`coverage.target: series`) won; it is now the defa
 0.763 / 0.935 (was 0.707 / 0.850), CrostonSBA on M5 0.797 / 0.952, and the CQR models unchanged. ABC x XYZ is now the
 same method pooled per class, so the pooling study compares `default` and `abc_xyz` directly. Add the series-scale decile and the AX class to the conditional-coverage report, since that is where
 the default and ABC x XYZ differ on M5.
+
+## First pass (seed 7, 3 windows)
+
+Job run 783821921772758 on commit 9074796; results in `results/pi_pooling_<dataset>_s7_w3.json`. 11 of 12 datasets ran;
+FRED-MD failed with HTTP 403 (the download now sends a User-Agent; retry in the next pass). Paired differences are
+against `default`, with 95% bootstrap intervals over series.
+
+**H1, marginal coverage of the default.** Within 2-3 points of nominal on 9 datasets. Exceptions: Electricity (0.70-0.73
+at 80%, 0.85-0.87 at 95%, native bands included: the held-out day is harder than the backtest days) and Traffic
+SeasonalNaive (0.736 / 0.882). On the zero-heavy datasets (Car Parts, London, Online Retail) 80% intervals over-cover
+(0.84-0.87): ties at zero.
+
+**H2, ABC x XYZ on volume data.** Cells meeting the decision rule (worst ABC x XYZ gap down by 3+ points with the
+interval excluding 0, marginal coverage within 1 point, WIS not worse by more than 2%):
+
+| Dataset | Cells | Where |
+|---|---|---|
+| M5 | 2 | SeasonalNaive 80, CrostonSBA 95 |
+| Web Traffic | 2 | SeasonalNaive 95, WindowAverage 80 (but SeasonalNaive 80 loses 1.9 points of coverage) |
+| Car Parts | 1 | CrostonSBA 95 (CrostonSBA 80: gap -13.6 points, WIS -6%, but coverage +2.6) |
+| Online Retail | 1 | AutoETS 80 |
+| Hospital, London, Tourism, Electricity | 0 | Neutral; Electricity slightly worse (WIS +1%, coverage -0.3 to -1.1) |
+
+The gains concentrate on the conformal models (CrostonSBA, WindowAverage) and on intermittent data; for the CQR models
+the differences are mostly within 1-2 points. ABC x XYZ also lowers WIS on Car Parts, M5 CrostonSBA, Online Retail and
+Web Traffic (1-6%).
+
+**H3, not volumes.** Confirmed. On Traffic, ABC x XYZ loses 3-10 points of marginal coverage (AutoETS 80: 0.851 to
+0.788; SeasonalNaive 80: 0.736 to 0.641) and raises WIS by 1.5-5.6%. On EPF prices it loses 1-4 points of coverage
+and SeasonalNaive's WIS rises 6.9%. M4 monthly is neutral (one winning cell).
+
+**H4, alternatives.** `sb_class` is nearly identical to the default almost everywhere (most series are "smooth", so
+one class holds most of them); it wins once on Online Retail CrostonSBA and once on Traffic AutoETS. `keys` is neutral
+on M5 (store x category). On Tourism (state x purpose) and EPF (market x hour) every group was below
+`min_scores_per_group` (34 series at 3 windows), so everything merged into one pool and `keys` equals the default: the
+next pass uses `purpose` and `market`.
+
+**Caveats.**
+- The worst-group gap of the decision rule is measured on the ABC x XYZ classes, the grouping `abc_xyz` pools on, which
+  favours it. The series-scale decile gap is the fairer check: it agrees on M5 CrostonSBA (-5.2 points), Car Parts
+  CrostonSBA (-13.4) and M4 WindowAverage (-4.5), and is near zero for most other winning cells.
+- One seed, 3 windows: 11 datasets x 3 models x 2 levels are many comparisons; a few winning cells are expected by chance.
+- Web Traffic AutoETS has a few exploding forecasts, so its mean WIS (about 3e13) is meaningless; the paired
+  differences are not affected.
+
+**Reading against the decision rule (provisional).** Four volume datasets have at least one winning cell, so the
+"recommend for volume data" branch is met on a lenient count, but only M5 and Web Traffic win on more than one cell, and
+the wins are mostly for conformal models on intermittent data. It loses clearly on Traffic and EPF, so it cannot be a
+default. Provisional conclusion: keep `pool="marginal"` as the default; document ABC x XYZ as an opt-in for intermittent
+volume data (mainly for models without native intervals), never for rates or prices. To confirm with seeds 11 and 23,
+6 windows where series allow, and with the series-scale decile gap as the primary conditional metric.

@@ -72,7 +72,8 @@ spark.sql(f"CREATE SCHEMA IF NOT EXISTS {CATALOG}.{SCHEMA}")
 
 
 def download(url: str) -> bytes:
-    with urllib.request.urlopen(url, timeout=600) as r:
+    request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (mmf-validation)"})
+    with urllib.request.urlopen(request, timeout=600) as r:
         return r.read()
 
 
@@ -278,13 +279,13 @@ REGISTRY = {
     "online_retail": {"load": load_online_retail, "freq": "D", "h": 14, "stride": 14, "max_len": 730, "keys": [],
                       "volume": True, "conformal_model": CROSTON},
     "tourism": {"load": load_tourism, "freq": "M", "h": 12, "stride": 6, "max_len": 228,
-                "keys": ["state", "purpose"], "volume": True, "conformal_model": WINDOW_AVERAGE},
+                "keys": ["purpose"], "volume": True, "conformal_model": WINDOW_AVERAGE},
     # Targets that are not volumes
     "m4_monthly": {"load": load_m4_monthly, "freq": "M", "h": 18, "stride": 6, "max_len": 144, "keys": [],
                    "volume": False, "conformal_model": WINDOW_AVERAGE},
     "traffic": {"load": load_traffic, "freq": "H", "h": 24, "stride": 24, "max_len": 24 * 7 * 8, "keys": [],
                 "volume": False, "conformal_model": WINDOW_AVERAGE},
-    "epf_prices": {"load": load_epf, "freq": "D", "h": 7, "stride": 7, "max_len": 728, "keys": ["market", "hour"],
+    "epf_prices": {"load": load_epf, "freq": "D", "h": 7, "stride": 7, "max_len": 728, "keys": ["market"],
                    "volume": False, "conformal_model": WINDOW_AVERAGE},
     "fred_md": {"load": load_fred_md, "freq": "M", "h": 12, "stride": 6, "max_len": 240, "keys": [],
                 "volume": False, "conformal_model": WINDOW_AVERAGE},
