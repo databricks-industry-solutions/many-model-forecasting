@@ -341,3 +341,8 @@ def test_use_case_calibrates_only_the_rows_of_that_use_case(spark_session, monke
     finally:
         spark_session.catalog.dropTempView(ev_view)
         spark_session.catalog.dropTempView(sc_view)
+
+
+def test_unsupported_freq_raises_before_any_work(configured):
+    with pytest.raises(ConfigurationError, match="freq must be one of H, D, W, M"):
+        configured(freq="Q")

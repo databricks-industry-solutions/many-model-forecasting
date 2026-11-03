@@ -549,6 +549,8 @@ def calibrate_intervals(
             scaled_ae and WIS per series and backtest window;
         <output_prefix>_scoring_output_intervals: the calibrated interval columns of each forecast.
     """
+    if freq not in SEASON_LENGTH:
+        raise ConfigurationError(f"calibrate_intervals: freq must be one of {', '.join(SEASON_LENGTH)}, got {freq!r}")
     if pool not in ("marginal", "group"):
         raise ConfigurationError(f"calibrate_intervals: pool must be 'marginal' or 'group', got {pool!r}")
     if (pool == "group") != (group_col is not None):
