@@ -234,28 +234,6 @@ Derive `backtest_length` and `stride` from the user's choice. For option (e), as
 
 Report the resulting number of backtest windows: `(backtest_length - prediction_length) / stride + 1`.
 
-### ⛔ STOP GATE — Step 1d: Ask user about prediction intervals
-
-**Always ask. Do NOT proceed until the user answers.**
-
-```
-AskUserQuestion:
-  "Do you want prediction intervals (lower/upper bounds) with the forecasts?
-
-   (a) No — point forecasts only (default)
-
-   (b) Yes, 80% and 95% native intervals, for the models that have them
-       → prediction_intervals = {"enabled": True, "levels": [80, 95]}
-
-   (c) Yes, custom levels or quantiles
-       → e.g. {"enabled": True, "levels": [90]} or {"enabled": True, "quantiles": [0.1, 0.5, 0.9]}"
-```
-
-Tell the user clearly what they get: the models' **native** intervals, **uncalibrated**, and only for the models that have them: statsforecast AutoETS, AutoArima, AutoCES, AutoTheta, AutoTbats, Naive and SeasonalNaive; the Chronos and TimesFM models; SKTimeProphet; and the FoundationForecast FF* models. All other models (e.g. CrostonSBA, ADIDA, MLForecast, NeuralForecast) get NULL interval columns. The coverage of the native bands can be off nominal; Skill 5 measures it on the backtest. Some models only have quantiles from 10% to 90% (Chronos-Bolt, TimesFM, several FF* models): their 95% bounds are NULL. The intervals land in `scoring_output` as a `y_quantiles` map, and in `evaluation_output` as `forecast_quantiles` for each backtest window.
-
-- Option (a): set `{prediction_intervals}` to `None` in every notebook.
-- Options (b)/(c): set `{prediction_intervals}` to the Python dict literal in every notebook (local, global ML, the GPU orchestrators and the serverless GPU notebooks; the Step 3e non-forecastable notebooks use the same value). If the user wants bound columns for SQL or dashboards, add `"output_format": "both"` (adds `y_lo_80`, `y_hi_80`, ...).
-
 ### Step 1c: Validate and pre-create the MLflow experiment (MANDATORY — fail-fast)
 
 > ⛔ **This step is not optional.** It exists to prevent the most common silent failure of `mmf_sa.run_forecast`:
@@ -369,6 +347,28 @@ assert experiment_id is not None, "MLflow experiment_id is None after create —
 ```
 
 If this step succeeds, the experiment is registered and `Forecaster.set_mlflow_experiment` will resolve it cleanly inside every job. If it fails, **do NOT launch any job** — instead route the user back to Step 0b to pick a different `{project_folder}` or `{experiment_path}`.
+
+### ⛔ STOP GATE — Step 1d: Ask user about prediction intervals
+
+**Always ask. Do NOT proceed until the user answers.**
+
+```
+AskUserQuestion:
+  "Do you want prediction intervals (lower/upper bounds) with the forecasts?
+
+   (a) No — point forecasts only (default)
+
+   (b) Yes, 80% and 95% native intervals, for the models that have them
+       → prediction_intervals = {"enabled": True, "levels": [80, 95]}
+
+   (c) Yes, custom levels or quantiles
+       → e.g. {"enabled": True, "levels": [90]} or {"enabled": True, "quantiles": [0.1, 0.5, 0.9]}"
+```
+
+Tell the user clearly what they get: the models' **native** intervals, **uncalibrated**, and only for the models that have them: statsforecast AutoETS, AutoArima, AutoCES, AutoTheta, AutoTbats, Naive and SeasonalNaive; the Chronos and TimesFM models; SKTimeProphet; and the FoundationForecast FF* models. All other models (e.g. CrostonSBA, ADIDA, MLForecast, NeuralForecast) get NULL interval columns. The coverage of the native bands can be off nominal; Skill 5 measures it on the backtest. Some models only have quantiles from 10% to 90% (Chronos-Bolt, TimesFM, several FF* models): their 95% bounds are NULL. The intervals land in `scoring_output` as a `y_quantiles` map, and in `evaluation_output` as `forecast_quantiles` for each backtest window.
+
+- Option (a): set `{prediction_intervals}` to `None` in every notebook.
+- Options (b)/(c): set `{prediction_intervals}` to the Python dict literal in every notebook (local, global ML, the GPU orchestrators and the serverless GPU notebooks; the Step 3e non-forecastable notebooks use the same value). If the user wants bound columns for SQL or dashboards, add `"output_format": "both"` (adds `y_lo_80`, `y_hi_80`, ...).
 
 ### Step 2: Gather and validate parameters
 
@@ -1303,7 +1303,7 @@ CREATE TABLE IF NOT EXISTS {catalog}.{schema}.{use_case}_scoring_output (
   {target}_quantiles MAP<STRING, ARRAY<DOUBLE>>);
 ```
 
-If the tables already exist without the interval columns, add them: `ALTER TABLE … ADD COLUMNS (forecast_quantiles MAP<STRING, ARRAY<DOUBLE>>)` on `evaluation_output` and `ALTER TABLE … ADD COLUMNS ({target}_quantiles MAP<STRING, ARRAY<DOUBLE>>)` on `scoring_output`. With `"output_format": "lo_hi"` or `"both"`, also add one `ARRAY<DOUBLE>` column per bound to `scoring_output`, named `{target}_lo_<L>` and `{target}_hi_<L>` (a level of 97.5 becomes `97_5`). For the default levels:
+If the tables already exist without the interval columns, add them: `ALTER TABLE … ADD COLUMNS (forecast_quantiles MAP<STRING, ARRAY<DOUBLE>>)` on `evaluation_output` and `ALTER TABLE … ADD COLUMNS ({target}_quantiles MAP<STRING, ARRAY<DOUBLE>>)` on `scoring_output`. With `"output_format": "lo_hi"` or `"both"`, also add one `ARRAY<DOUBLE>` column per bound to `scoring_output`, named `{target}_lo_<L>` and `{target}_hi_<L>` (a level of 97.5 becomes `97_5`), whether the table was just created or already existed; otherwise the jobs add them at the same time. Skip any bound column the table already has. For the default levels:
 
 ```sql
 ALTER TABLE {catalog}.{schema}.{use_case}_scoring_output ADD COLUMNS (

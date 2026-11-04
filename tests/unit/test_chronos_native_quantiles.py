@@ -4,6 +4,8 @@ The UDF functions run directly (udf.func) with a fake chronos library, as on a S
 Tests cover:
 - Chronos-Bolt: packing of medians and quantiles across batches, NaN for the levels outside the trained range with
   one warning naming the model, and the plain path (no native_quantiles) unchanged
+- Chronos-Bolt: the point forecast equals the plain path's when the quantile outputs cross, and levels between the
+  trained quantiles are interpolated
 - the round trip UDF output -> _predict_distributed, which decodes the quantile columns
 - Chronos-2, with and without known-future covariates
 The fake quantile value of series s at step h and level q is s + 100 q + h, so a wrong series, step or level shows.
@@ -107,7 +109,7 @@ def test_bolt_udf_packs_medians_and_quantiles_across_batches(chronos, caplog):
         (packed,) = list(udf.func(iter([_histories()])))
 
     assert loaded == [{"repo": "amazon/chronos-bolt-small", "device_map": "cuda:0", "dtype": torch.bfloat16}]
-    assert [c[:3] for c in pipeline.calls] == [("predict_quantiles", 2, QUANTILES), ("predict_quantiles", 1, QUANTILES)]
+    assert [c[:3] for c in pipeline.calls] == [("predict_quantiles", 2, TRAINED), ("predict_quantiles", 1, TRAINED)]
     levels = forecast_levels(QUANTILES)
     frame = decode_quantile_forecasts(pd.DataFrame({"y": list(packed)}), "y", levels, H)
     for s in range(3):
@@ -129,6 +131,36 @@ def test_bolt_udf_without_native_quantiles_returns_the_median_only(chronos):
     assert all(len(v) == H for v in out)
     for s in range(3):
         np.testing.assert_allclose(out[s], _expected(10 * s, 0.5), rtol=1e-6)
+
+
+class _FakeCrossingBolt(_FakeBolt):
+    """Chronos-Bolt whose 0.5 output is above its 0.6 and 0.7 outputs: the median of its trained quantiles is the 0.6 one."""
+
+    def _cube(self, inputs, levels, prediction_length):
+        bump = torch.tensor([25.0 if round(level, 6) == 0.5 else 0.0 for level in levels])
+        return super()._cube(inputs, levels, prediction_length) + bump[None, None, :]
+
+
+def test_bolt_point_forecast_is_unchanged_when_quantiles_cross(chronos):
+    pipeline = _FakeCrossingBolt()
+    chronos(pipeline)
+    (plain,) = list(_model(ChronosBoltSmall).create_predict_udf(1).func(iter([_histories()])))
+    (packed,) = list(_model(ChronosBoltSmall, QUANTILES).create_predict_udf(1).func(iter([_histories()])))
+    frame = decode_quantile_forecasts(pd.DataFrame({"y": list(packed)}), "y", forecast_levels(QUANTILES), H)
+    for s in range(3):
+        np.testing.assert_allclose(frame["y"].iloc[s], np.asarray(plain[s], dtype=np.float64))
+        np.testing.assert_allclose(frame["y"].iloc[s], _expected(10 * s, 0.6), rtol=1e-6)
+        np.testing.assert_array_equal(frame["__q_0.5"].iloc[s], frame["y"].iloc[s])
+    assert all(c[2] == TRAINED for c in pipeline.calls if c[0] == "predict_quantiles")
+
+
+def test_bolt_levels_between_trained_quantiles_are_interpolated(chronos):
+    chronos(_FakeBolt())
+    (packed,) = list(_model(ChronosBoltSmall, [0.25, 0.75]).create_predict_udf(1).func(iter([_histories()])))
+    frame = decode_quantile_forecasts(pd.DataFrame({"y": list(packed)}), "y", forecast_levels([0.25, 0.75]), H)
+    for s in range(3):
+        for q in (0.25, 0.75):
+            np.testing.assert_allclose(frame[f"__q_{q}"].iloc[s], _expected(10 * s, q), rtol=1e-6)
 
 
 def test_bolt_udf_output_round_trips_through_predict_distributed(chronos, caplog):

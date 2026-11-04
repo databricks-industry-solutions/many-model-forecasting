@@ -48,20 +48,38 @@ def quantile_forecasts(pipeline, inputs, prediction_length: int, quantiles, mode
     Returns: (np.ndarray, np.ndarray, list): medians (n, H), quantiles (n, Q, H) and the Q levels. Levels outside
         the checkpoint's trained range are NaN: Chronos would clamp them (0.1-0.9 for Chronos-Bolt), so e.g. a
         "95%" band would really be the 80% band.
+        Only the trained quantiles are requested, which are pipeline.predict's output: the median is taken over them
+        as without native_quantiles, so that requesting quantiles does not change the point forecast when the
+        model's quantile outputs cross, and the 0.5 level is set to it. Other levels inside the range are
+        interpolated linearly between the trained ones.
     """
     levels = forecast_levels(quantiles)
-    trained = getattr(pipeline, "quantiles", None)
-    outside = []
-    if trained:
-        native_range = (min(trained), max(trained))
-        warn_if_outside_range(model, levels, native_range)
-        outside = [i for i, q in enumerate(levels) if q not in in_native_range(levels, native_range)]
-    q, _ = pipeline.predict_quantiles(inputs, prediction_length=prediction_length, quantile_levels=levels)
-    if isinstance(q, list):  # Chronos-2: one (n_variates, H, Q) tensor per series
-        q = torch.stack([x[0] for x in q])
-    q = q.to(torch.float32).cpu().numpy().transpose(0, 2, 1).astype(np.float64)  # (n, Q, H)
-    q[:, outside, :] = np.nan
-    return q[:, levels.index(0.5), :], q, levels
+    trained = sorted(round(float(t), 6) for t in getattr(pipeline, "quantiles", None) or [])
+
+    def cube(query):
+        q, _ = pipeline.predict_quantiles(inputs, prediction_length=prediction_length, quantile_levels=query)
+        if isinstance(q, list):  # Chronos-2: one (n_variates, H, Q) tensor per series
+            q = torch.stack([x[0] for x in q])
+        return q.to(torch.float32).cpu().numpy().transpose(0, 2, 1).astype(np.float64)  # (n, Q, H)
+
+    if not trained:
+        q = cube(levels)
+        return q[:, levels.index(0.5), :], q, levels
+    native_range = (min(trained), max(trained))
+    warn_if_outside_range(model, levels, native_range)
+    kept = in_native_range(levels, native_range)
+    raw = cube(trained)
+    medians = np.median(raw, axis=1)
+    q = np.full((raw.shape[0], len(levels), raw.shape[2]), np.nan)
+    for i, level in enumerate(levels):
+        if level in trained:
+            q[:, i, :] = raw[:, trained.index(level), :]
+        elif level in kept:
+            j = int(np.searchsorted(trained, level)) - 1
+            w = (level - trained[j]) / (trained[j + 1] - trained[j])
+            q[:, i, :] = (1 - w) * raw[:, j, :] + w * raw[:, j + 1, :]
+    q[:, levels.index(0.5), :] = medians
+    return medians, q, levels
 
 
 def warn_unavailable_levels(forecast_df: pd.DataFrame, model: str) -> None:
