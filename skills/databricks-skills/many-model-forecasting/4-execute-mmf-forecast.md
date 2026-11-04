@@ -626,6 +626,10 @@ it needs no model library and no GPU.
 | `{pool}` | `marginal` (default): all series in one pool. The CQR corrections are pooled with no per-series shrinkage; the conformal intervals shrink each series' tails toward the pool. `group` if the target is intermittent demand (sales, spare parts, orders: many series intermittent or lumpy in Skill 2) and the user agrees, with `{group_col}` = `"auto"`; or if the user asks to pool by a column of the training data |
 | `{group_col}` | `None` (default), or with `{pool}` = `group` the column name as a string literal (e.g. `"category"`), or `"auto"` for MMF's ABC x XYZ classes. Tell the user that ABC x XYZ helped on intermittent demand (M5, Car Parts, Online Retail), changed little on smooth volumes, and lost coverage on rates and prices: never use it for targets that are not volumes |
 
+The notebook passes `{calibration_levels}`, `{output_format}`, `{pool}` and `{group_col}` in the `settings` dict of the
+call: `settings = {"levels": ..., "output_format": ..., "pool": ..., "group_col": ...}`. Keep those four keys, with the
+values filled in, when you edit the generated notebook.
+
 Use the template from:
 - [mmf_calibration_notebook_template.ipynb](mmf_calibration_notebook_template.ipynb) → save locally as `notebooks/{use_case}/calibrate_intervals.ipynb`
 

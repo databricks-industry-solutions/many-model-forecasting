@@ -361,8 +361,8 @@ for name, kwargs in CONFIGS.items():
     t0 = time.time()
     out = calibrate_intervals(
         spark, train_data=calibration_train, evaluation_output=f"{PREFIX}_evaluation_output",
-        scoring_output=f"{PREFIX}_scoring_output", output_prefix=f"{PREFIX}_{name}", freq=FREQ, levels=LEVELS,
-        output_format="lo_hi", **kwargs)
+        scoring_output=f"{PREFIX}_scoring_output", output_prefix=f"{PREFIX}_{name}", freq=FREQ,
+        settings={"levels": LEVELS, "output_format": "lo_hi", **kwargs})
     timings[f"calibrate_{name}"] = round(time.time() - t0, 1)
     calibration[name] = {m: {k: s.get(k) for k in ("methods", "coverage", "error")} for m, s in out["models"].items()}
     pools = spark.table(f"{PREFIX}_{name}_evaluation_output_calibration").select("model", "unique_id", "pool_key") \

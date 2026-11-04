@@ -140,7 +140,7 @@ timings["generate_scoring"] = round(time.time() - t0, 1)
 
 t0 = time.time()
 summary = calibrate_intervals(spark, train_data=f"{PREFIX}_train", evaluation_output=f"{PREFIX}_evaluation_output",
-                              scoring_output=f"{PREFIX}_scoring_output", freq="D", output_format="both")
+                              scoring_output=f"{PREFIX}_scoring_output", freq="D", settings={"output_format": "both"})
 timings["calibrate_intervals"] = round(time.time() - t0, 1)
 print(timings, json.dumps(summary, default=str))
 

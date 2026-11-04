@@ -15,6 +15,7 @@ import pathlib
 import numpy as np
 import pandas as pd
 import pytest
+from omegaconf import OmegaConf
 
 from mmf_sa.intervals.calibration_config import check_supported, resolve_prediction_intervals_conf
 from mmf_sa.intervals.conformal import (
@@ -243,6 +244,34 @@ def test_rejects_bad_inputs(cubes):
 def test_unsupported_settings(overrides, message):
     with pytest.raises(ConfigurationError, match=message):
         check_supported(_pi(**overrides))
+
+
+@pytest.mark.parametrize("overrides, message", [
+    ({"pool": "series"}, "pool must be"),
+    ({"pool": "group"}, "pool='group' needs group_col"),
+    ({"group_col": "auto"}, "group_col needs pool='group'"),
+    ({"pool": "marginal", "group_col": "auto"}, "group_col needs pool='group'"),
+    ({"pool": "marginal", "coverage": {"group_col": "auto"}}, "pool='group' needs group_col"),
+    ({"pool": "group", "cqr_pool": "group", "group_col": "auto"}, "pool or cqr_pool"),
+    ({"pool": "group", "group_col": "auto", "coverage": {"group_col": "auto"}}, "group_col or coverage.group_col"),
+])
+def test_pooling_names_are_checked_together(overrides, message):
+    with pytest.raises(ConfigurationError, match=message):
+        resolve_prediction_intervals_conf(overrides)
+
+
+@pytest.mark.parametrize("overrides, cqr_pool, group_col", [
+    ({}, "marginal", None),
+    ({"pool": "marginal"}, "marginal", None),
+    ({"pool": "group", "group_col": "auto"}, "group", "auto"),
+    ({"pool": "group", "group_col": ["store", "sku"]}, "group", ["store", "sku"]),
+    ({"cqr_pool": "series"}, "series", None),
+    ({"coverage": {"group_col": "auto"}}, "marginal", "auto"),  # the internal names: conformal per group only
+])
+def test_pooling_names_map_to_the_internal_settings(overrides, cqr_pool, group_col):
+    pi = OmegaConf.to_container(resolve_prediction_intervals_conf(overrides))
+    assert (pi["cqr_pool"], pi["coverage"]["group_col"]) == (cqr_pool, group_col)
+    assert "pool" not in pi and "group_col" not in pi
 
 
 def test_golden_former_default_settings_reproduce_notebook():
