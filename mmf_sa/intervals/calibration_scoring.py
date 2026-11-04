@@ -99,26 +99,42 @@ def _as_dict(m):
     return dict(m) if not isinstance(m, dict) else m
 
 
+# Columns of the per-level statistics that median_corrections consumes: one row per level and step.
+FALLBACK_COLUMNS = ("level", "step", "q_lo", "q_hi", "sigma", "method", "score")
+
+
+def mode_value(values: pd.Series):
+    """The most frequent value, the smallest on ties (as intervals.spark.mode_by)."""
+    counts = values.value_counts()
+    return counts[counts == counts.max()].index.min()
+
+
+def fallback_stats(cal_rows: pd.DataFrame, series_col: str) -> pd.DataFrame:
+    """
+    The per-level statistics of calibration_output rows that median_corrections consumes (FALLBACK_COLUMNS): per
+    level and step, q_lo and q_hi are medians over the series; per level, sigma is the median scale of the series
+    (their step-1 rows) and method and score the most frequent. IntervalCalibrator.fallback_corrections computes
+    the same frame in Spark.
+    """
+    steps = cal_rows.groupby(["level", "step"], as_index=False).agg(q_lo=("q_lo", "median"), q_hi=("q_hi", "median"))
+    first = cal_rows[cal_rows["step"] == 1].groupby("level").agg(
+        sigma=("sigma", "median"), method=("method", mode_value), score=("score", mode_value)).reset_index()
+    return steps.merge(first, on="level")[list(FALLBACK_COLUMNS)]
+
+
 def _corrections(cal_rows: pd.DataFrame, series_col: str):
     """
-    Per-(series, level) corrections from calibration_output rows, plus per-level fallbacks (the
-    median correction per step, and the median scale) for series without rows.
+    Per-(series, level) corrections from calibration_output rows, plus per-level fallbacks (median_corrections of
+    fallback_stats) for series without rows.
     """
     rows = cal_rows.sort_values([series_col, "level", "step"])
-    per_series, fallback = {}, {}
+    per_series = {}
     for (sid, level), g in rows.groupby([series_col, "level"], sort=False):
         per_series[(str(sid), float(level))] = {
             "q_lo": g["q_lo"].to_numpy(float), "q_hi": g["q_hi"].to_numpy(float),
             "sigma": float(g["sigma"].iloc[0]), "method": g["method"].iloc[0], "score": g["score"].iloc[0],
         }
-    for level, g in rows.groupby("level"):
-        steps = g.groupby("step")
-        fallback[float(level)] = {
-            "q_lo": steps["q_lo"].median().to_numpy(float), "q_hi": steps["q_hi"].median().to_numpy(float),
-            "sigma": float(g.drop_duplicates(series_col)["sigma"].median()),
-            "method": g["method"].mode().iloc[0], "score": g["score"].mode().iloc[0],
-        }
-    return per_series, fallback
+    return per_series, median_corrections(fallback_stats(cal_rows, series_col))
 
 
 def series_bounds(yhat: np.ndarray, native: dict, corr: dict, level: float, clip_lower):
@@ -300,8 +316,8 @@ def apply_joined_corrections(batch: pd.DataFrame, series_col: str, target: str, 
 
 def median_corrections(stats: pd.DataFrame) -> dict:
     """
-    Fallback corrections per level, from per-(level, step) aggregates of calibration_output with columns
-    level, step, q_lo and q_hi (medians over series), sigma (median scale), method and score (most frequent).
+    Fallback corrections per level, from the statistics of fallback_stats (FALLBACK_COLUMNS): one row per level and
+    step, with q_lo and q_hi, and the level's sigma, method and score.
     """
     fallback = {}
     for level, g in stats.sort_values(["level", "step"]).groupby("level"):

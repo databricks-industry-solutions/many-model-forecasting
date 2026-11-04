@@ -25,9 +25,10 @@ from mmf_sa.intervals.calibration_config import (
     check_supported, model_method, resolve_clip_lower, resolve_prediction_intervals_conf,
 )
 from mmf_sa.intervals.calibration_scoring import (
-    CORRECTION_FIELDS, apply_joined_corrections, correction_column, median_corrections,
+    CORRECTION_FIELDS, FALLBACK_COLUMNS, _metric_name, apply_joined_corrections, correction_column, median_corrections,
 )
 from mmf_sa.intervals.config import interval_levels, level_quantiles
+from mmf_sa.intervals.conformal import wis_weights
 from mmf_sa.intervals.scoring import interval_column, interval_columns, quantiles_column
 from mmf_sa.intervals.features import FEATURE_PERIODS, SEASON_LENGTH, group_columns
 from mmf_sa.intervals.quantiles import quantile_key
@@ -256,17 +257,19 @@ class IntervalCalibrator:
     def combined_wis(self, metrics: DataFrame) -> DataFrame:
         """
         wis over all levels from the metric rows of several calibration passes (one row per series, window and
-        metric): (0.5 scaled_ae + sum over levels of alpha/2 msis) / (K + 0.5), as conformal.wis_from_metrics.
+        metric), with the weights of conformal.wis_weights, as conformal.wis_from_metrics.
         """
         gid = self.settings.group_id
         levels = interval_levels(self.pi)
+        w_ae, w_level, d = wis_weights(levels)
         keys = [gid, "window_date", "model"]
-        terms = metrics.filter(col("metric_name").isin(["scaled_ae"] + [f"msis_{lv:g}" for lv in levels]))
-        weight = when(col("metric_name") == "scaled_ae", lit(0.5))
-        for lv in levels:
-            weight = weight.when(col("metric_name") == f"msis_{lv:g}", lit((1 - lv / 100) / 2))
+        msis_names = [_metric_name("msis", lv, False) for lv in levels]
+        terms = metrics.filter(col("metric_name").isin(["scaled_ae"] + msis_names))
+        weight = when(col("metric_name") == "scaled_ae", lit(w_ae))
+        for lv, name in zip(levels, msis_names):
+            weight = weight.when(col("metric_name") == name, lit(w_level[lv]))
         return (terms.groupBy(*keys)
-                .agg((sum_(weight * col("metric_value")) / lit(len(levels) + 0.5)).alias("metric_value"),
+                .agg((sum_(weight * col("metric_value")) / lit(d)).alias("metric_value"),
                      count(lit(1)).alias("_terms"))
                 .filter(col("_terms") == len(levels) + 1)
                 .select(*keys, lit("wis").alias("metric_name"), "metric_value"))
@@ -416,15 +419,18 @@ class IntervalCalibrator:
         return per_level.groupBy(gid).agg(*aggs)
 
     def fallback_corrections(self, cal: DataFrame) -> dict:
-        """Per-level median corrections for series without calibration rows (small: levels x horizon rows)."""
+        """
+        Per-level median corrections for series without calibration rows: the statistics of
+        calibration_scoring.fallback_stats, computed in Spark. Only levels x horizon rows are collected.
+        """
         steps = cal.groupBy("level", "step").agg(
             expr("percentile(q_lo, 0.5)").alias("q_lo"), expr("percentile(q_hi, 0.5)").alias("q_hi"))
-        sigma = cal.filter(col("step") == 1).groupBy("level").agg(expr("percentile(sigma, 0.5)").alias("sigma"))
-        kinds = (cal.filter(col("step") == 1).groupBy("level", "method", "score").count()
-                 .withColumn("_rank", row_number().over(Window.partitionBy("level").orderBy(col("count").desc())))
-                 .filter(col("_rank") == 1).select("level", "method", "score"))
-        stats = steps.join(sigma, "level").join(kinds, "level").toPandas()
-        return median_corrections(stats)
+        first = cal.filter(col("step") == 1)
+        sigma = first.groupBy("level").agg(expr("percentile(sigma, 0.5)").alias("sigma"))
+        stats = (steps.join(sigma, "level")
+                 .join(calibration_spark.mode_by(first, "level", "method"), "level")
+                 .join(calibration_spark.mode_by(first, "level", "score"), "level"))
+        return median_corrections(stats.select(*FALLBACK_COLUMNS).toPandas())
 
     def write_scoring_intervals(self, model: str, run: dict, cal: DataFrame) -> int:
         """

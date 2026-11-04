@@ -346,3 +346,54 @@ def test_use_case_calibrates_only_the_rows_of_that_use_case(spark_session, monke
 def test_unsupported_freq_raises_before_any_work(configured):
     with pytest.raises(ConfigurationError, match="freq must be one of H, D, W, M"):
         configured(freq="Q")
+
+
+def test_fallback_corrections_in_spark_match_the_pandas_reference(spark_session):
+    """
+    The Spark fallback of calibrate_intervals equals the pandas reference (apply_calibration's), on 4 series (even
+    medians) and two levels: method ties at 80 go to the smallest value, and the 95 mode is the majority, not the first.
+    """
+    from mmf_sa.intervals.calibration_scoring import _corrections
+    rng = np.random.default_rng(5)
+    methods = {80.0: ["cqr", "conformal", "cqr", "conformal"], 95.0: ["cqr", "cqr", "conformal", "cqr"]}
+    scores = {80.0: ["signed", "signed_normalized", "signed_normalized", "signed"], 95.0: ["signed"] * 4}
+    rows = []
+    for i in range(4):
+        sigma = float(rng.uniform(0.5, 3.0))
+        for level in (80.0, 95.0):
+            for step in (1, 2, 3):
+                rows.append({"uid": f"s{i}", "level": level, "step": step, "sigma": sigma,
+                             "q_lo": float(-rng.uniform(0.5, 2.0)), "q_hi": float(rng.uniform(0.5, 2.0)),
+                             "method": methods[level][i], "score": scores[level][i]})
+    pdf = pd.DataFrame(rows)
+    got = _calibrator(spark_session).fallback_corrections(spark_session.createDataFrame(pdf))
+    _, want = _corrections(pdf, "uid")
+    assert set(got) == set(want) == {80.0, 95.0}
+    for lv in want:
+        np.testing.assert_allclose(got[lv]["q_lo"], want[lv]["q_lo"], rtol=0, atol=1e-12)
+        np.testing.assert_allclose(got[lv]["q_hi"], want[lv]["q_hi"], rtol=0, atol=1e-12)
+        assert got[lv]["sigma"] == pytest.approx(want[lv]["sigma"], abs=1e-12)
+        assert (got[lv]["method"], got[lv]["score"]) == (want[lv]["method"], want[lv]["score"])
+    assert (want[80.0]["method"], want[80.0]["score"]) == ("conformal", "signed")
+    assert want[95.0]["method"] == "cqr"
+
+
+def test_combined_wis_over_several_passes_is_wis_from_metrics(spark_session):
+    """wis of several calibration passes (Spark) is the numpy wis_from_metrics on the same metrics."""
+    from mmf_sa.intervals.conformal import wis_from_metrics
+    levels, n = [80, 95], 4
+    rng = np.random.default_rng(6)
+    scaled = rng.uniform(0, 1, n)
+    msis = {lv: rng.uniform(0, 3, n) for lv in levels}
+    date = datetime(2024, 1, 1)
+    rows = [(f"s{i}", date, "model", "scaled_ae", float(scaled[i])) for i in range(n)]
+    rows += [(f"s{i}", date, "model", f"msis_{lv}", float(msis[lv][i])) for i in range(n) for lv in levels]
+    sdf = spark_session.createDataFrame(rows, "uid string, window_date timestamp, model string, metric_name string, "
+                                              "metric_value double")
+    pi = resolve_prediction_intervals_conf({"enabled": True, "levels": levels})
+    cal = IntervalCalibrator(spark_session, OmegaConf.create({"group_id": "uid", "prediction_intervals": pi}),
+                             train_data=pd.DataFrame())
+    got = cal.combined_wis(sdf).toPandas().sort_values("uid")
+    want = wis_from_metrics(scaled.reshape(n, 1), {lv: msis[lv].reshape(n, 1) for lv in levels}, levels).ravel()
+    assert got["metric_name"].eq("wis").all()
+    np.testing.assert_allclose(got["metric_value"].to_numpy(), want, rtol=0, atol=1e-12)
