@@ -1,0 +1,236 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1290" width="1600" height="1290">
+<rect x="0" y="0" width="1600" height="1290" rx="0" fill="#F9F7F4"/>
+<text x="40" y="62" font-family="Helvetica, Arial, sans-serif" font-size="36" fill="#1B3139" font-weight="bold" text-anchor="start">Pooling configurations of calibrate_intervals</text>
+<text x="40" y="98" font-family="Helvetica, Arial, sans-serif" font-size="19" fill="#5A6F77" font-weight="normal" text-anchor="start">Which series share their backtest errors decides how wide each series' interval is</text>
+<rect x="40" y="116" width="1520" height="3" rx="0" fill="#FF3621"/>
+<rect x="40" y="140" width="1520" height="250" rx="14" fill="#FFFFFF" stroke="#EEEDE9" stroke-width="1.5"/>
+<text x="64" y="174" font-family="Helvetica, Arial, sans-serif" font-size="20" fill="#1B3139" font-weight="bold" text-anchor="start">How a pool is used</text>
+<text x="64" y="212" font-family="Helvetica, Arial, sans-serif" font-size="16" fill="#1B3139" font-weight="bold" text-anchor="start">1  Backtest errors</text>
+<text x="64" y="238" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#1B3139" xml:space="preserve"><tspan>Each window forecasts data the model</tspan></text>
+<text x="64" y="258" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#1B3139" xml:space="preserve"><tspan>has not seen. Error per series, window</tspan></text>
+<text x="64" y="278" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#1B3139" xml:space="preserve"><tspan>and step, scaled by the series' σ:</tspan></text>
+<text x="64" y="312" font-family="Menlo, Consolas, monospace" font-size="14" fill="#FF3621" font-weight="bold" text-anchor="start">e = (y − ŷ) / σᵢ</text>
+<line x1="382" y1="260" x2="408" y2="260" stroke="#1B3139" stroke-width="2"/>
+<polygon points="416,260 406,255 406,265" fill="#1B3139"/>
+<text x="439" y="212" font-family="Helvetica, Arial, sans-serif" font-size="16" fill="#FF3621" font-weight="bold" text-anchor="start">2  Pool</text>
+<text x="439" y="238" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#1B3139" xml:space="preserve"><tspan>The errors of the series that share a</tspan></text>
+<text x="439" y="258" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#1B3139" xml:space="preserve"><tspan>pool are put together, per horizon</tspan></text>
+<text x="439" y="278" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#1B3139" xml:space="preserve"><tspan>step: the configurations below.</tspan></text>
+<text x="439" y="312" font-family="Menlo, Consolas, monospace" font-size="14" fill="#FF3621" font-weight="bold" text-anchor="start">who shares?</text>
+<line x1="757" y1="260" x2="783" y2="260" stroke="#1B3139" stroke-width="2"/>
+<polygon points="791,260 781,255 781,265" fill="#1B3139"/>
+<text x="814" y="212" font-family="Helvetica, Arial, sans-serif" font-size="16" fill="#1B3139" font-weight="bold" text-anchor="start">3  Quantiles</text>
+<text x="814" y="238" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#1B3139" xml:space="preserve"><tspan>The pool's 10% / 90% errors for an</tspan></text>
+<text x="814" y="258" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#1B3139" xml:space="preserve"><tspan>80% interval (2.5% / 97.5% for 95%),</tspan></text>
+<text x="814" y="278" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#1B3139" xml:space="preserve"><tspan>at the finite-sample conformal rank.</tspan></text>
+<text x="814" y="312" font-family="Menlo, Consolas, monospace" font-size="14" fill="#FF3621" font-weight="bold" text-anchor="start">rank ⌈(n + 1) · 0.9⌉</text>
+<line x1="1132" y1="260" x2="1158" y2="260" stroke="#1B3139" stroke-width="2"/>
+<polygon points="1166,260 1156,255 1156,265" fill="#1B3139"/>
+<text x="1189" y="212" font-family="Helvetica, Arial, sans-serif" font-size="16" fill="#1B3139" font-weight="bold" text-anchor="start">4  Interval</text>
+<text x="1189" y="238" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#1B3139" xml:space="preserve"><tspan>Applied to every future step of every</tspan></text>
+<text x="1189" y="258" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#1B3139" xml:space="preserve"><tspan>series of the pool, clipped at 0 for</tspan></text>
+<text x="1189" y="278" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#1B3139" xml:space="preserve"><tspan>non-negative data.</tspan></text>
+<text x="1189" y="312" font-family="Menlo, Consolas, monospace" font-size="14" fill="#FF3621" font-weight="bold" text-anchor="start">ŷ + σᵢ · [q_lo, q_hi]</text>
+<text x="64" y="350" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#5A6F77" xml:space="preserve"><tspan font-weight="bold">CQR </tspan><tspan>(models with native quantiles) pools the misses outside the model's own band the same way, and corrects the band: [lo − σ·q_lo, hi + σ·q_hi].</tspan></text>
+<text x="64" y="371" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#5A6F77" xml:space="preserve"><tspan font-weight="bold">Small groups </tspan><tspan>(fewer than min_scores_per_group = 100 errors per step: 34 series at 3 windows) merge into one "other" pool.</tspan></text>
+<rect x="40" y="420" width="490" height="380" rx="14" fill="#FFFFFF" stroke="#EEEDE9" stroke-width="1.5"/>
+<circle cx="74" cy="456" r="15" fill="#FF3621"/>
+<text x="74" y="461" font-family="Helvetica, Arial, sans-serif" font-size="15" fill="#FFFFFF" font-weight="bold" text-anchor="middle">1</text>
+<text x="100" y="463" font-family="Helvetica, Arial, sans-serif" font-size="22" fill="#1B3139" font-weight="bold" text-anchor="start">native</text>
+<rect x="426" y="444" width="84" height="24" rx="12" fill="#5A6F77"/>
+<text x="468.0" y="461" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#FFFFFF" font-weight="bold" text-anchor="middle">REFERENCE</text>
+<text x="60" y="496" font-family="Menlo, Consolas, monospace" font-size="11.5" fill="#FF3621" font-weight="bold" text-anchor="start">run_forecast(..., prediction_intervals={...})</text>
+<rect x="100" y="540" width="370" height="46" rx="0" fill="#FFD4CC"/>
+<line x1="100" y1="563" x2="470" y2="563" stroke="#00A972" stroke-width="3"/>
+<circle cx="120" cy="554" r="4.5" fill="#1B3139"/>
+<circle cx="160" cy="576" r="4.5" fill="#1B3139"/>
+<circle cx="200" cy="528" r="4.5" fill="#FF3621"/>
+<circle cx="240" cy="570" r="4.5" fill="#1B3139"/>
+<circle cx="280" cy="550" r="4.5" fill="#1B3139"/>
+<circle cx="320" cy="598" r="4.5" fill="#FF3621"/>
+<circle cx="360" cy="560" r="4.5" fill="#1B3139"/>
+<circle cx="400" cy="574" r="4.5" fill="#1B3139"/>
+<circle cx="440" cy="546" r="4.5" fill="#1B3139"/>
+<text x="285" y="524" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#5A6F77" font-weight="normal" text-anchor="middle">model's band: lo, hi</text>
+<text x="60" y="636" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#1B3139" xml:space="preserve"><tspan>No calibration: the model's own quantiles, as</tspan></text>
+<text x="60" y="655" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#1B3139" xml:space="preserve"><tspan>written by run_forecast. Models without native</tspan></text>
+<text x="60" y="674" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#1B3139" xml:space="preserve"><tspan>intervals have none (NULL).</tspan></text>
+<rect x="54" y="720" width="462" height="68" rx="8" fill="#F9F7F4"/>
+<text x="66" y="742" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1B3139" xml:space="preserve"><tspan font-weight="bold">Held out: </tspan><tspan>Off nominal both ways: too wide on intermittent</tspan></text>
+<text x="66" y="760" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1B3139" xml:space="preserve"><tspan>data (M5 SeasonalNaive 0.90 at 80%), too narrow</tspan></text>
+<text x="66" y="778" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1B3139" xml:space="preserve"><tspan>elsewhere (M4 AutoETS 0.885 at 95%).</tspan></text>
+<rect x="555" y="420" width="490" height="380" rx="14" fill="#FFFFFF" stroke="#EEEDE9" stroke-width="1.5"/>
+<circle cx="589" cy="456" r="15" fill="#FF3621"/>
+<text x="589" y="461" font-family="Helvetica, Arial, sans-serif" font-size="15" fill="#FFFFFF" font-weight="bold" text-anchor="middle">2</text>
+<text x="615" y="463" font-family="Helvetica, Arial, sans-serif" font-size="22" fill="#1B3139" font-weight="bold" text-anchor="start">default</text>
+<rect x="957" y="444" width="68" height="24" rx="12" fill="#00A972"/>
+<text x="991.0" y="461" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#FFFFFF" font-weight="bold" text-anchor="middle">DEFAULT</text>
+<text x="575" y="496" font-family="Menlo, Consolas, monospace" font-size="11.5" fill="#FF3621" font-weight="bold" text-anchor="start">settings={"pool": "marginal"}</text>
+<rect x="595" y="514" width="410" height="24" rx="5" fill="#1B3139"/>
+<text x="800.0" y="530.5" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#FFFFFF" font-weight="bold" text-anchor="middle">errors of all series, step h</text>
+<circle cx="609.0" cy="554" r="3.2" fill="#1B3139"/>
+<circle cx="632.5" cy="554" r="3.2" fill="#1B3139"/>
+<circle cx="656.0" cy="554" r="3.2" fill="#1B3139"/>
+<circle cx="679.5" cy="554" r="3.2" fill="#1B3139"/>
+<circle cx="703.0" cy="554" r="3.2" fill="#1B3139"/>
+<circle cx="726.5" cy="554" r="3.2" fill="#1B3139"/>
+<circle cx="750.0" cy="554" r="3.2" fill="#1B3139"/>
+<circle cx="773.5" cy="554" r="3.2" fill="#1B3139"/>
+<circle cx="797.0" cy="554" r="3.2" fill="#1B3139"/>
+<circle cx="820.5" cy="554" r="3.2" fill="#1B3139"/>
+<circle cx="844.0" cy="554" r="3.2" fill="#1B3139"/>
+<circle cx="867.5" cy="554" r="3.2" fill="#1B3139"/>
+<circle cx="891.0" cy="554" r="3.2" fill="#1B3139"/>
+<circle cx="914.5" cy="554" r="3.2" fill="#1B3139"/>
+<circle cx="938.0" cy="554" r="3.2" fill="#1B3139"/>
+<circle cx="961.5" cy="554" r="3.2" fill="#1B3139"/>
+<circle cx="985.0" cy="554" r="3.2" fill="#1B3139"/>
+<circle cx="609.0" cy="574" r="3.2" fill="#1B3139"/>
+<circle cx="632.5" cy="574" r="3.2" fill="#1B3139"/>
+<circle cx="656.0" cy="574" r="3.2" fill="#1B3139"/>
+<circle cx="679.5" cy="574" r="3.2" fill="#1B3139"/>
+<circle cx="703.0" cy="574" r="3.2" fill="#1B3139"/>
+<circle cx="726.5" cy="574" r="3.2" fill="#1B3139"/>
+<circle cx="750.0" cy="574" r="3.2" fill="#1B3139"/>
+<circle cx="773.5" cy="574" r="3.2" fill="#1B3139"/>
+<circle cx="797.0" cy="574" r="3.2" fill="#1B3139"/>
+<circle cx="820.5" cy="574" r="3.2" fill="#1B3139"/>
+<circle cx="844.0" cy="574" r="3.2" fill="#1B3139"/>
+<circle cx="867.5" cy="574" r="3.2" fill="#1B3139"/>
+<circle cx="891.0" cy="574" r="3.2" fill="#1B3139"/>
+<circle cx="914.5" cy="574" r="3.2" fill="#1B3139"/>
+<circle cx="938.0" cy="574" r="3.2" fill="#1B3139"/>
+<circle cx="961.5" cy="574" r="3.2" fill="#1B3139"/>
+<circle cx="985.0" cy="574" r="3.2" fill="#1B3139"/>
+<rect x="595" y="596" width="94" height="16" rx="3" fill="#FF3621"/>
+<rect x="689" y="596" width="316" height="16" rx="3" fill="#1B3139"/>
+<text x="642" y="608" font-family="Helvetica, Arial, sans-serif" font-size="10.5" fill="#FFFFFF" font-weight="bold" text-anchor="middle">23% own</text>
+<text x="847" y="608" font-family="Helvetica, Arial, sans-serif" font-size="10.5" fill="#FFFFFF" font-weight="bold" text-anchor="middle">77% pool (conformal tails, W = 3)</text>
+<text x="575" y="636" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#1B3139" xml:space="preserve"><tspan>One pool of all series, per horizon step.</tspan></text>
+<text x="575" y="655" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#1B3139" xml:space="preserve"><tspan>Conformal: each series' tail quantiles lean</tspan></text>
+<text x="575" y="674" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#1B3139" xml:space="preserve"><tspan>23% on its own errors, 77% on the pool's</tspan></text>
+<text x="575" y="693" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#1B3139" xml:space="preserve"><tspan>(λ = W / (W + κ), W = 3 windows, κ = 10).</tspan></text>
+<text x="575" y="712" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#1B3139" xml:space="preserve"><tspan>CQR: the pool's correction, no per-series part.</tspan></text>
+<rect x="569" y="720" width="462" height="68" rx="8" fill="#F9F7F4"/>
+<text x="581" y="742" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1B3139" xml:space="preserve"><tspan font-weight="bold">Held out: </tspan><tspan>0.94–0.97 at 95% on 8 of 11 datasets; under</tspan></text>
+<text x="581" y="760" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1B3139" xml:space="preserve"><tspan>only where the held-out horizon is harder than</tspan></text>
+<text x="581" y="778" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1B3139" xml:space="preserve"><tspan>the backtest (Electricity, Traffic).</tspan></text>
+<rect x="1070" y="420" width="490" height="380" rx="14" fill="#FFFFFF" stroke="#EEEDE9" stroke-width="1.5"/>
+<circle cx="1104" cy="456" r="15" fill="#FF3621"/>
+<text x="1104" y="461" font-family="Helvetica, Arial, sans-serif" font-size="15" fill="#FFFFFF" font-weight="bold" text-anchor="middle">3</text>
+<text x="1130" y="463" font-family="Helvetica, Arial, sans-serif" font-size="22" fill="#1B3139" font-weight="bold" text-anchor="start">abc_xyz</text>
+<rect x="1480" y="444" width="60" height="24" rx="12" fill="#FF3621"/>
+<text x="1510.0" y="461" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#FFFFFF" font-weight="bold" text-anchor="middle">OPT-IN</text>
+<text x="1090" y="496" font-family="Menlo, Consolas, monospace" font-size="11.5" fill="#FF3621" font-weight="bold" text-anchor="start">settings={"pool": "group", "group_col": "auto"}</text>
+<rect x="1130" y="516" width="80" height="24" rx="5" fill="#EEEDE9"/>
+<text x="1170.0" y="532.5" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#1B3139" font-weight="bold" text-anchor="middle">AX</text>
+<rect x="1222" y="516" width="80" height="24" rx="5" fill="#EEEDE9"/>
+<text x="1262.0" y="532.5" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#1B3139" font-weight="bold" text-anchor="middle">AY</text>
+<rect x="1314" y="516" width="80" height="24" rx="5" fill="#EEEDE9"/>
+<text x="1354.0" y="532.5" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#1B3139" font-weight="bold" text-anchor="middle">AZ</text>
+<rect x="1130" y="547" width="80" height="24" rx="5" fill="#EEEDE9"/>
+<text x="1170.0" y="563.5" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#1B3139" font-weight="bold" text-anchor="middle">BX</text>
+<rect x="1222" y="547" width="80" height="24" rx="5" fill="#EEEDE9"/>
+<text x="1262.0" y="563.5" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#1B3139" font-weight="bold" text-anchor="middle">BY</text>
+<rect x="1314" y="547" width="80" height="24" rx="5" fill="#EEEDE9"/>
+<text x="1354.0" y="563.5" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#1B3139" font-weight="bold" text-anchor="middle">BZ</text>
+<rect x="1130" y="578" width="80" height="24" rx="5" fill="#EEEDE9"/>
+<text x="1170.0" y="594.5" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#1B3139" font-weight="bold" text-anchor="middle">CX</text>
+<rect x="1222" y="578" width="80" height="24" rx="5" fill="#EEEDE9"/>
+<text x="1262.0" y="594.5" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#1B3139" font-weight="bold" text-anchor="middle">CY</text>
+<rect x="1314" y="578" width="80" height="24" rx="5" fill="#EEEDE9"/>
+<text x="1354.0" y="594.5" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#1B3139" font-weight="bold" text-anchor="middle">CZ</text>
+<rect x="1420" y="547" width="90" height="24" rx="5" fill="#F9F7F4" stroke="#5A6F77" stroke-width="1" stroke-dasharray="4 3"/>
+<text x="1465.0" y="563.5" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#1B3139" font-weight="bold" text-anchor="middle">other</text>
+<text x="1465" y="590" font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#5A6F77" font-weight="normal" text-anchor="middle">merged small classes</text>
+<text x="1090" y="636" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#1B3139" xml:space="preserve"><tspan>One pool per class of volume × volatility:</tspan></text>
+<text x="1090" y="655" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#1B3139" xml:space="preserve"><tspan>A = top 80% of the total volume, B the next 15%,</tspan></text>
+<text x="1090" y="674" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#1B3139" xml:space="preserve"><tspan>C the last 5%; X / Y / Z = terciles of the</tspan></text>
+<text x="1090" y="693" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#1B3139" xml:space="preserve"><tspan>coefficient of variation (X the most stable).</tspan></text>
+<rect x="1084" y="720" width="462" height="68" rx="8" fill="#F9F7F4"/>
+<text x="1096" y="742" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1B3139" xml:space="preserve"><tspan font-weight="bold">Held out: </tspan><tspan>Helps intermittent demand (M5, Car Parts, Online</tspan></text>
+<text x="1096" y="760" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1B3139" xml:space="preserve"><tspan>Retail): worst-decile gap −5 to −27 pts, WIS −1 to</tspan></text>
+<text x="1096" y="778" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1B3139" xml:space="preserve"><tspan>−7%. Hurts rates, prices: Traffic −3 to −10 pts.</tspan></text>
+<rect x="40" y="825" width="490" height="380" rx="14" fill="#FFFFFF" stroke="#EEEDE9" stroke-width="1.5"/>
+<circle cx="74" cy="861" r="15" fill="#FF3621"/>
+<text x="74" y="866" font-family="Helvetica, Arial, sans-serif" font-size="15" fill="#FFFFFF" font-weight="bold" text-anchor="middle">4</text>
+<text x="100" y="868" font-family="Helvetica, Arial, sans-serif" font-size="22" fill="#1B3139" font-weight="bold" text-anchor="start">sb_class</text>
+<rect x="450" y="849" width="60" height="24" rx="12" fill="#FF3621"/>
+<text x="480.0" y="866" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#FFFFFF" font-weight="bold" text-anchor="middle">OPT-IN</text>
+<text x="60" y="901" font-family="Menlo, Consolas, monospace" font-size="11.5" fill="#FF3621" font-weight="bold" text-anchor="start">settings={"pool": "group", "group_col": "sb_class"}</text>
+<rect x="170" y="919" width="120" height="36" rx="5" fill="#EEEDE9"/>
+<text x="230.0" y="941.5" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#1B3139" font-weight="bold" text-anchor="middle">erratic</text>
+<rect x="298" y="919" width="120" height="36" rx="5" fill="#EEEDE9"/>
+<text x="358.0" y="941.5" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#1B3139" font-weight="bold" text-anchor="middle">lumpy</text>
+<rect x="170" y="961" width="120" height="36" rx="5" fill="#EEEDE9"/>
+<text x="230.0" y="983.5" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#1B3139" font-weight="bold" text-anchor="middle">smooth</text>
+<rect x="298" y="961" width="120" height="36" rx="5" fill="#EEEDE9"/>
+<text x="358.0" y="983.5" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#1B3139" font-weight="bold" text-anchor="middle">intermittent</text>
+<text x="294" y="1019" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#5A6F77" font-weight="normal" text-anchor="middle">ADI →  (1.32)</text>
+<text x="156" y="961" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#5A6F77" text-anchor="middle" transform="rotate(-90 156 961)">CV² → (0.49)</text>
+<text x="60" y="1041" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#1B3139" xml:space="preserve"><tspan>One pool per Syntetos-Boylan class, from the</tspan></text>
+<text x="60" y="1060" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#1B3139" xml:space="preserve"><tspan>average demand interval (ADI, threshold 1.32)</tspan></text>
+<text x="60" y="1079" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#1B3139" xml:space="preserve"><tspan>and the squared CV of non-zero demand (0.49).</tspan></text>
+<rect x="54" y="1125" width="462" height="68" rx="8" fill="#F9F7F4"/>
+<text x="66" y="1147" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1B3139" xml:space="preserve"><tspan font-weight="bold">Held out: </tspan><tspan>Close to the default: most series are "smooth",</tspan></text>
+<text x="66" y="1165" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1B3139" xml:space="preserve"><tspan>so one class holds most of them. WIS −2 to −6%</tspan></text>
+<text x="66" y="1183" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1B3139" xml:space="preserve"><tspan>on Online Retail.</tspan></text>
+<rect x="555" y="825" width="490" height="380" rx="14" fill="#FFFFFF" stroke="#EEEDE9" stroke-width="1.5"/>
+<circle cx="589" cy="861" r="15" fill="#FF3621"/>
+<text x="589" y="866" font-family="Helvetica, Arial, sans-serif" font-size="15" fill="#FFFFFF" font-weight="bold" text-anchor="middle">5</text>
+<text x="615" y="868" font-family="Helvetica, Arial, sans-serif" font-size="22" fill="#1B3139" font-weight="bold" text-anchor="start">keys</text>
+<rect x="965" y="849" width="60" height="24" rx="12" fill="#FF3621"/>
+<text x="995.0" y="866" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#FFFFFF" font-weight="bold" text-anchor="middle">OPT-IN</text>
+<text x="575" y="901" font-family="Menlo, Consolas, monospace" font-size="11.5" fill="#FF3621" font-weight="bold" text-anchor="start">settings={"pool": "group", "group_col": ["store_id", "cat_id"]}</text>
+<rect x="595" y="929" width="130" height="24" rx="5" fill="#EEEDE9"/>
+<text x="660.0" y="945.5" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#1B3139" font-weight="bold" text-anchor="middle">CA_1 · FOODS</text>
+<rect x="735" y="929" width="130" height="24" rx="5" fill="#EEEDE9"/>
+<text x="800.0" y="945.5" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#1B3139" font-weight="bold" text-anchor="middle">CA_1 · HOBBIES</text>
+<rect x="875" y="929" width="130" height="24" rx="5" fill="#EEEDE9"/>
+<text x="940.0" y="945.5" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#1B3139" font-weight="bold" text-anchor="middle">CA_1 · HOUSEHOLD</text>
+<rect x="595" y="963" width="130" height="24" rx="5" fill="#EEEDE9"/>
+<text x="660.0" y="979.5" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#1B3139" font-weight="bold" text-anchor="middle">TX_2 · FOODS</text>
+<rect x="735" y="963" width="130" height="24" rx="5" fill="#EEEDE9"/>
+<text x="800.0" y="979.5" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#1B3139" font-weight="bold" text-anchor="middle">TX_2 · HOBBIES</text>
+<rect x="875" y="963" width="130" height="24" rx="5" fill="#EEEDE9"/>
+<text x="940.0" y="979.5" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#1B3139" font-weight="bold" text-anchor="middle">WI_3 · FOODS</text>
+<text x="800" y="1011" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#5A6F77" font-weight="normal" text-anchor="middle">one pool per store_id × cat_id</text>
+<text x="575" y="1041" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#1B3139" xml:space="preserve"><tspan>One pool per value of columns of train_data</tspan></text>
+<text x="575" y="1060" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#1B3139" xml:space="preserve"><tspan>(several columns combine into one key): the</tspan></text>
+<text x="575" y="1079" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#1B3139" xml:space="preserve"><tspan>user's own groups, e.g. store × category on M5.</tspan></text>
+<rect x="569" y="1125" width="462" height="68" rx="8" fill="#F9F7F4"/>
+<text x="581" y="1147" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1B3139" xml:space="preserve"><tspan font-weight="bold">Held out: </tspan><tspan>Neutral on M5 (store × category) and Tourism</tspan></text>
+<text x="581" y="1165" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1B3139" xml:space="preserve"><tspan>(purpose). EPF by market: −4 pts of coverage</tspan></text>
+<text x="581" y="1183" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1B3139" xml:space="preserve"><tspan>(pools large enough only at 6 windows).</tspan></text>
+<rect x="1070" y="825" width="490" height="380" rx="14" fill="#FFFFFF" stroke="#EEEDE9" stroke-width="1.5"/>
+<circle cx="1104" cy="861" r="15" fill="#FF3621"/>
+<text x="1104" y="866" font-family="Helvetica, Arial, sans-serif" font-size="15" fill="#FFFFFF" font-weight="bold" text-anchor="middle">6</text>
+<text x="1130" y="868" font-family="Helvetica, Arial, sans-serif" font-size="22" fill="#1B3139" font-weight="bold" text-anchor="start">series_scale</text>
+<rect x="1480" y="849" width="60" height="24" rx="12" fill="#5A6F77"/>
+<text x="1510.0" y="866" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#FFFFFF" font-weight="bold" text-anchor="middle">OPTION</text>
+<text x="1090" y="901" font-family="Menlo, Consolas, monospace" font-size="11.5" fill="#FF3621" font-weight="bold" text-anchor="start">settings={"coverage": {"target": "series_scale"}}</text>
+<rect x="1110" y="919" width="410" height="24" rx="5" fill="#1B3139"/>
+<text x="1315.0" y="935.5" font-family="Helvetica, Arial, sans-serif" font-size="12" fill="#FFFFFF" font-weight="bold" text-anchor="middle">one pool, each series' scale cᵢ</text>
+<rect x="1130" y="981" width="18" height="30" rx="2" fill="#5A6F77"/>
+<rect x="1162" y="959" width="18" height="52" rx="2" fill="#5A6F77"/>
+<rect x="1194" y="989" width="18" height="22" rx="2" fill="#5A6F77"/>
+<rect x="1226" y="967" width="18" height="44" rx="2" fill="#5A6F77"/>
+<rect x="1258" y="951" width="18" height="60" rx="2" fill="#FF3621"/>
+<rect x="1290" y="975" width="18" height="36" rx="2" fill="#5A6F77"/>
+<rect x="1322" y="985" width="18" height="26" rx="2" fill="#5A6F77"/>
+<rect x="1354" y="963" width="18" height="48" rx="2" fill="#5A6F77"/>
+<rect x="1386" y="971" width="18" height="40" rx="2" fill="#5A6F77"/>
+<rect x="1418" y="955" width="18" height="56" rx="2" fill="#FF3621"/>
+<rect x="1450" y="979" width="18" height="32" rx="2" fill="#5A6F77"/>
+<rect x="1482" y="965" width="18" height="46" rx="2" fill="#5A6F77"/>
+<text x="1090" y="1041" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#1B3139" xml:space="preserve"><tspan>One pool; each series' scale is shrunk toward</tspan></text>
+<text x="1090" y="1060" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#1B3139" xml:space="preserve"><tspan>the pool's instead of its tails:</tspan></text>
+<text x="1090" y="1079" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#1B3139" xml:space="preserve"><tspan>cᵢ = (nᵢdᵢ + κ d_pool) / ((nᵢ + κ) d_pool),</tspan></text>
+<text x="1090" y="1098" font-family="Helvetica, Arial, sans-serif" font-size="14" fill="#1B3139" xml:space="preserve"><tspan>dᵢ its mean absolute error; bounds ŷ + σᵢ cᵢ q.</tspan></text>
+<rect x="1084" y="1125" width="462" height="68" rx="8" fill="#F9F7F4"/>
+<text x="1096" y="1147" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1B3139" xml:space="preserve"><tspan font-weight="bold">Held out: </tspan><tspan>Under-covered M4 monthly (WindowAverage 0.71 /</tspan></text>
+<text x="1096" y="1165" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1B3139" xml:space="preserve"><tspan>0.85 at 80 / 95%): replaced as the default by the</tspan></text>
+<text x="1096" y="1183" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#1B3139" xml:space="preserve"><tspan>per-series tails, kept as an option.</tspan></text>
+<rect x="40" y="1210" width="1520" height="56" rx="12" fill="#1B3139"/>
+<text x="64" y="1244" font-family="Helvetica, Arial, sans-serif" font-size="15" fill="#FFFFFF" xml:space="preserve"><tspan font-weight="bold">Decision: </tspan><tspan>one pool stays the default; ABC × XYZ is recommended for intermittent demand only, never for rates or prices.   </tspan><tspan font-weight="bold">Results: </tspan><tspan>POOLING_VALIDATION.md</tspan></text>
+</svg>
