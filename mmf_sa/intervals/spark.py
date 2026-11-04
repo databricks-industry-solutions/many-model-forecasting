@@ -12,6 +12,7 @@ collected to the driver: only window/horizon counts, group-label counts, pool or
 """
 import logging
 import uuid
+from contextlib import contextmanager
 from typing import Tuple
 
 import numpy as np
@@ -83,6 +84,15 @@ class Materializer:
         except Exception:
             pass
         self.persisted = [p for p in self.persisted if p is not df]
+
+    @contextmanager
+    def scratch(self, df: DataFrame):
+        """Caches df for the body of a with block, and releases it on exit, also when the block raises."""
+        cached = self.cache(df)
+        try:
+            yield cached
+        finally:
+            self.uncache(cached)
 
     def close(self) -> None:
         """Releases everything still cached: unpersists DataFrames, drops the temporary tables."""
@@ -514,6 +524,66 @@ def output_schema(series_col: str) -> StructType:
     )
 
 
+def _score_frame(long: DataFrame, w: int, cols: dict) -> DataFrame:
+    """Folded rows with fold, pool, step and the score columns cols (name -> expression)."""
+    return folded(long, w).select("fold", "pool", "step", *[c.alias(n) for n, c in cols.items()])
+
+
+def _conformal_statistics(spark: SparkSession, long: DataFrame, series_col: str, plan: dict, levels, w: int,
+                          clip_lower, materializer: Materializer) -> Tuple[dict, dict]:
+    """
+    Pool statistics of the conformal target, as numpy_pool_statistics. Residual scores do not depend on the level:
+    they are folded, sorted and ranked once for all levels.
+    Returns: (dict level -> statistics per fold, {}), as _band_statistics.
+    """
+    cols = score_columns(plan, 0, clip_lower)
+    means = None
+    if plan["target"] == SERIES_SCALE:
+        scored, means = series_scale_scores(folded(long, w), series_col, plan, cols["e"])
+    else:
+        scored = _score_frame(long, w, cols)
+    folds = list(_folds(w))
+    with materializer.scratch(scored) as cached:
+        shared = pool_statistics(spark, cached, {
+            f: [r for lv in levels for r in stat_requests(plan, lv, "main")] for f in folds})
+        if means is not None:
+            for rec in means.toPandas().to_dict("records"):
+                shared.setdefault(int(rec["fold"]), {})[(rec["pool"], 0, MEAN_ABS_REQUEST)] = (
+                    float(rec["_d_pool"]), False)
+    return {lv: shared for lv in levels}, {}
+
+
+def _band_statistics(spark: SparkSession, long: DataFrame, series_col: str, plan: dict, levels, w: int, h: int,
+                     clip_lower, materializer: Materializer) -> Tuple[dict, dict]:
+    """
+    Pool statistics of the native-band targets (CQR, native), per level. The adaptive CQR split ranks the lower tail
+    first (phase 1), then the upper tail with the realised lower miss rates m_lo (phase 2).
+    Returns: (dict level -> statistics per fold, dict (level, fold) -> m_lo, empty unless the split is adaptive).
+    """
+    folds = list(_folds(w))
+    adaptive = plan["kind"] == "cqr" and plan["score"] == "asymmetric" and plan["tail_split"] == "adaptive"
+    stats, m_lo = {}, {}
+    for i, lv in enumerate(levels):
+        cols = score_columns(plan, i, clip_lower)
+        if not cols:
+            stats[lv] = {f: {} for f in folds}
+            continue
+        with materializer.scratch(_score_frame(long, w, cols)) as scored:
+            if not adaptive:
+                stats[lv] = pool_statistics(spark, scored, {
+                    f: stat_requests(plan, lv, "main", m_lo.get((lv, f))) for f in folds})
+                continue
+            lower_reqs = stat_requests(plan, lv, "lower")
+            lower = pool_statistics(spark, scored, {f: lower_reqs for f in folds})
+            m_lo.update(lower_miss_rates(long, series_col, plan, lv, i, w, h, clip_lower, lower))
+            # The main pass repeats the lower-tail requests: only the upper tail is ranked again.
+            main_reqs = {f: stat_requests(plan, lv, "main", m_lo.get((lv, f))) for f in folds}
+            upper = pool_statistics(spark, scored, {f: [r for r in reqs if r not in lower_reqs]
+                                                    for f, reqs in main_reqs.items()})
+            stats[lv] = {f: {**lower[f], **upper[f]} for f in folds}
+    return stats, m_lo
+
+
 def calibrate_model_spark(spark: SparkSession, eval_sdf: DataFrame, features: DataFrame, series_col: str,
                           model: str, pi_conf, clip_lower, materializer: Materializer):
     """
@@ -541,53 +611,13 @@ def calibrate_model_spark(spark: SparkSession, eval_sdf: DataFrame, features: Da
     long = long.join(feats.select(series_col, "sigma", "_label", "abc_class", "xyz_class", "sb_class"),
                      on=series_col, how="inner")
     pools = merged_pools(spark, long.select(series_col, "_label").distinct(), plan, w, label is not None)
-    long = materializer.cache(long.join(F.broadcast(pools), on="_label", how="left").drop("_label")
-                              .withColumn("_bucket", bucket_column(series_col, n_kept)))
-    try:
-        adaptive = plan["kind"] == "cqr" and plan["score"] == "asymmetric" and plan["tail_split"] == "adaptive"
-        folds = list(_folds(w))
-        stats, m_lo = {}, {}
+    base = long.join(F.broadcast(pools), on="_label", how="left").drop("_label").withColumn(
+        "_bucket", bucket_column(series_col, n_kept))
+    with materializer.scratch(base) as long:
         if plan["kind"] == "conformal":
-            # Residual scores do not depend on the level: fold, sort and query them once for all levels.
-            cols = score_columns(plan, 0, clip_lower)
-            means = None
-            if plan["target"] == SERIES_SCALE:
-                scored, means = series_scale_scores(folded(long, w), series_col, plan, cols["e"])
-                scored = materializer.cache(scored)
-            else:
-                scored = materializer.cache(
-                    folded(long, w).select("fold", "pool", "step", *[c.alias(n) for n, c in cols.items()]))
-            try:
-                shared = pool_statistics(spark, scored, {
-                    f: [r for lv in levels for r in stat_requests(plan, lv, "main")] for f in folds})
-                if means is not None:
-                    for rec in means.toPandas().to_dict("records"):
-                        shared.setdefault(int(rec["fold"]), {})[(rec["pool"], 0, MEAN_ABS_REQUEST)] = (
-                            float(rec["_d_pool"]), False)
-            finally:
-                materializer.uncache(scored)
-            stats = {lv: shared for lv in levels}
-        for i, lv in enumerate([] if plan["kind"] == "conformal" else levels):
-            cols = score_columns(plan, i, clip_lower)
-            if not cols:
-                stats[lv] = {f: {} for f in folds}
-                continue
-            scored = materializer.cache(folded(long, w).select("fold", "pool", "step", *[c.alias(n) for n, c in cols.items()]))
-            try:
-                if adaptive:
-                    lower_reqs = stat_requests(plan, lv, "lower")
-                    lower = pool_statistics(spark, scored, {f: lower_reqs for f in folds})
-                    m_lo.update(lower_miss_rates(long, series_col, plan, lv, i, w, h, clip_lower, lower))
-                    # The main pass repeats the lower-tail requests: only the upper tail is ranked again.
-                    main_reqs = {f: stat_requests(plan, lv, "main", m_lo.get((lv, f))) for f in folds}
-                    upper = pool_statistics(spark, scored, {f: [r for r in reqs if r not in lower_reqs]
-                                                            for f, reqs in main_reqs.items()})
-                    stats[lv] = {f: {**lower[f], **upper[f]} for f in folds}
-                else:
-                    stats[lv] = pool_statistics(spark, scored, {
-                        f: stat_requests(plan, lv, "main", m_lo.get((lv, f))) for f in folds})
-            finally:
-                materializer.uncache(scored)
+            stats, m_lo = _conformal_statistics(spark, long, series_col, plan, levels, w, clip_lower, materializer)
+        else:
+            stats, m_lo = _band_statistics(spark, long, series_col, plan, levels, w, h, clip_lower, materializer)
 
         def final_fn(pdf):
             out = batch_udf_final(pdf, plan=plan, levels=levels, has_band=has_quantiles, w=w, h=h,
@@ -604,7 +634,5 @@ def calibrate_model_spark(spark: SparkSession, eval_sdf: DataFrame, features: Da
         result = long.select(*cols).groupBy("_bucket").applyInPandas(final_fn, output_schema(series_col))
         result = materializer.cache(result)
         result.count()
-    finally:
-        materializer.uncache(long)
     return result, {"dropped": dropped, "w": w, "h": h, "method": plan["kind"], "score": plan["score"],
                     "target": plan["target"]}
