@@ -473,44 +473,21 @@ class IntervalCalibrator:
             (col("model") == model) & (col("calibration_date") == lit(self.calibration_date))).count()
 
 
-def _argument_or_setting(name: str, value, default, block: dict):
-    """
-    The value of a calibrate_intervals argument that is also a key of `settings` (block). An argument left at its
-    default takes the value in settings; an argument set to another value than settings' is a conflict.
-    """
-    given = block.get(name)
-    if not given:
-        return value
-    if value == default:
-        return given
-    if value != given:
-        raise ConfigurationError(f"calibrate_intervals: {name} is set both as an argument ({value!r}) and in settings "
-                                 f"({given!r}); set it in one place")
-    return value
-
-
 def calibrate_intervals(
     spark: SparkSession,
     train_data: Union[str, DataFrame, Any],
     evaluation_output: str,
     scoring_output: str,
+    *,
     group_id: str = "unique_id",
     date_col: str = "ds",
     target: str = "y",
     freq: str = "D",
-    levels: Optional[List[float]] = None,
-    quantiles: Optional[List[float]] = None,
     output_prefix: Optional[str] = None,
     models: Optional[List[str]] = None,
     run_ids: Optional[Dict[str, str]] = None,
-    method: str = "auto",
-    method_by_model: Optional[Dict[str, str]] = None,
-    pool: str = "marginal",
-    group_col: Union[str, List[str], None] = None,
-    shrinkage_kappa: float = 10,
-    output_format: str = "quantile_map",
-    settings: Optional[Dict[str, Any]] = None,
     use_case: Optional[str] = None,
+    settings: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Calibrates the prediction intervals of the latest run of each model, from the tables that run_forecast wrote.
@@ -523,31 +500,29 @@ def calibrate_intervals(
         evaluation_output (str): The evaluation_output table of run_forecast (backtest rows).
         scoring_output (str): The scoring_output table of run_forecast (forecasts).
         group_id, date_col, target, freq (str): As in run_forecast.
-        levels (List[float]): Central interval levels in percent. Default [80, 95]. Or set `quantiles`.
-        quantiles (List[float]): Quantile levels in central pairs, e.g. [0.1, 0.5, 0.9]; replaces `levels`.
         output_prefix (str): Prefix of the output tables. Default: evaluation_output without its
             "_evaluation_output" suffix, e.g. "cat.sch.uc" for "cat.sch.uc_evaluation_output".
         models (List[str]): Models to calibrate. Default: every model in evaluation_output.
         run_ids (Dict[str, str]): The run to calibrate per model. Default: each model's latest run.
-        method (str): auto (CQR on native bands where available, else conformal), conformal, native or cqr.
-        method_by_model (Dict[str, str]): Per-model override of `method`.
-        pool (str): "marginal" (default): the CQR corrections are pooled over all series, per horizon step (one pool,
-            no per-series shrinkage). The conformal intervals pool their scores the same way, and shrink each series'
-            own tail toward that pool (coverage.target "series", the default). "group": pooled per group of group_col.
-        group_col: With pool="group", the groups: a column of train_data, a list of columns, or "auto" for the ABC x
-            XYZ classes that MMF computes (volume and volatility classes; recommended for intermittent demand, not for
-            rates or prices).
-        shrinkage_kappa (float): Strength of the shrinkage of each series toward its pool: weight W / (W + kappa) on
-            the series' own tail quantiles, W its number of backtest windows. It applies to the conformal intervals,
-            and to the CQR corrections only with cqr_pool "series".
-        output_format (str): quantile_map, lo_hi or both, for scoring_output_intervals.
-        settings (Dict[str, Any]): Other calibration settings (cqr_score, cqr_tail_split, cqr_pool, coverage,
-            score, clip_lower), see calibration_config. The settings that are also arguments (method, method_by_model,
-            output_format, levels, quantiles, cqr_pool for pool, and coverage's group_col and shrinkage_kappa) take the
-            argument when it is not the default, and the settings' value otherwise; different values for both raise.
         use_case (str): Calibrate only the rows of this use case (the use_case column that run_forecast writes), when
             evaluation_output and scoring_output are shared by several use cases. Default: all rows. The output tables
             have no use_case column, so give each use case its own output_prefix.
+        settings (Dict[str, Any]): The calibration block, as the prediction_intervals block of run_forecast, resolved
+            by calibration_config (enabled is implied). Its keys:
+            levels: central levels in percent, default [80, 95]; or quantiles: quantile levels in central pairs, e.g.
+                [0.1, 0.5, 0.9], which replace levels.
+            method: auto (CQR on native bands where available, else conformal), conformal, native (the band as is) or
+                cqr; method_by_model: {model: method}, per-model overrides.
+            pool: "marginal" (default): the CQR corrections are pooled over all series, per horizon step (one pool, no
+                per-series shrinkage). The conformal intervals pool their scores the same way, and shrink each series'
+                own tail toward that pool (coverage.target "series", the default). "group": pooled per group_col.
+            group_col: With pool "group", the groups: a column of train_data, a list of columns, or "auto" for the
+                ABC x XYZ classes that MMF computes (volume and volatility classes; recommended for intermittent
+                demand, not for rates or prices).
+            output_format: quantile_map (default), lo_hi or both, for scoring_output_intervals.
+            Advanced: cqr_score, cqr_tail_split, cqr_pool ("series" shrinks the CQR corrections toward the pool),
+            coverage (target, shrinkage_kappa, pool_horizon, min_scores_per_group, group_col), score, clip_lower.
+            See calibration_config and mmf_sa/README.md.
     Returns: Dict with the output table names ("tables") and a summary per model ("models").
     Writes, appending, with run_id, run_date (of the forecast run) and calibration_date:
         <output_prefix>_evaluation_output_calibration: the corrections per model, series, step and level;
@@ -557,28 +532,8 @@ def calibrate_intervals(
     """
     if freq not in SEASON_LENGTH:
         raise ConfigurationError(f"calibrate_intervals: freq must be one of {', '.join(SEASON_LENGTH)}, got {freq!r}")
-    if pool not in ("marginal", "group"):
-        raise ConfigurationError(f"calibrate_intervals: pool must be 'marginal' or 'group', got {pool!r}")
-    if (pool == "group") != (group_col is not None):
-        raise ConfigurationError("calibrate_intervals: pool='group' needs group_col, and group_col needs pool='group'")
     block = dict(settings or {})
-    coverage = dict(block.pop("coverage", None) or {})
-    block["cqr_pool"] = _argument_or_setting("cqr_pool", pool, "marginal", block)
-    coverage["group_col"] = _argument_or_setting("group_col", group_col, None, coverage)
-    coverage["shrinkage_kappa"] = _argument_or_setting("shrinkage_kappa", shrinkage_kappa, 10, coverage)
     block["enabled"] = True
-    block["method"] = _argument_or_setting("method", method, "auto", block)
-    block["method_by_model"] = _argument_or_setting("method_by_model", method_by_model, None, block) or {}
-    block["output_format"] = _argument_or_setting("output_format", output_format, "quantile_map", block)
-    block["coverage"] = coverage
-    levels = _argument_or_setting("levels", levels, None, block)
-    quantiles = _argument_or_setting("quantiles", quantiles, None, block)
-    if levels is not None and quantiles is not None:
-        raise ConfigurationError("calibrate_intervals: give levels or quantiles, not both")
-    if quantiles is not None:
-        block["quantiles"] = quantiles
-    if levels is not None:
-        block["levels"] = levels
     conf = OmegaConf.create({
         "evaluation_output": evaluation_output, "scoring_output": scoring_output,
         "train_data": train_data if isinstance(train_data, str) else None,

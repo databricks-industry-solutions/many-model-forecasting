@@ -85,7 +85,7 @@ def _snapshot(spark):
 def calibrated(spark, forecast):
     before = _snapshot(spark)
     out = calibrate_intervals(spark, train_data="pi_cal_train", evaluation_output=f"{PREFIX}_evaluation_output",
-                              scoring_output=f"{PREFIX}_scoring_output", freq="D", output_format="both")
+                              scoring_output=f"{PREFIX}_scoring_output", freq="D", settings={"output_format": "both"})
     return out, before
 
 
@@ -134,7 +134,7 @@ def test_a_rerun_appends_with_a_new_calibration_date_and_models_select(spark, ca
     out, _ = calibrated
     again = calibrate_intervals(spark, train_data="pi_cal_train", evaluation_output=f"{PREFIX}_evaluation_output",
                                 scoring_output=f"{PREFIX}_scoring_output", freq="D", models=[NO_NATIVE],
-                                method="conformal")
+                                settings={"method": "conformal"})
     assert list(again["models"]) == [NO_NATIVE]
     score = spark.table(out["tables"]["scoring_intervals"]).filter(F.col("model") == NO_NATIVE)
     assert score.select("calibration_date").distinct().count() == 2 and score.count() == 20
@@ -148,22 +148,21 @@ def test_run_ids_that_do_not_exist_calibrate_nothing(spark, calibrated, caplog):
     assert out["models"] == {} and "No backtest rows" in caplog.text
 
 
-def test_pool_and_group_col_go_together(spark):
-    from mmf_sa.exceptions import ConfigurationError
+def test_the_pooling_settings_are_checked_before_any_work(spark):
     kwargs = dict(train_data="pi_cal_train", evaluation_output=f"{PREFIX}_evaluation_output",
                   scoring_output=f"{PREFIX}_scoring_output")
     with pytest.raises(ConfigurationError, match="pool='group' needs group_col"):
-        calibrate_intervals(spark, pool="group", **kwargs)
+        calibrate_intervals(spark, settings={"pool": "group"}, **kwargs)
     with pytest.raises(ConfigurationError, match="pool='group' needs group_col"):
-        calibrate_intervals(spark, group_col="auto", **kwargs)
+        calibrate_intervals(spark, settings={"group_col": "auto"}, **kwargs)
     with pytest.raises(ConfigurationError, match="pool must be"):
-        calibrate_intervals(spark, pool="series", **kwargs)
+        calibrate_intervals(spark, settings={"pool": "series"}, **kwargs)
 
 
 def test_pool_group_pools_per_abc_xyz_class(spark, forecast):
     out = calibrate_intervals(spark, train_data="pi_cal_train", evaluation_output=f"{PREFIX}_evaluation_output",
                               scoring_output=f"{PREFIX}_scoring_output", output_prefix="default.pi_cal_grouped",
-                              models=[NATIVE, NO_NATIVE], pool="group", group_col="auto")
+                              models=[NATIVE, NO_NATIVE], settings={"pool": "group", "group_col": "auto"})
     assert out["models"][NATIVE]["methods"]["80"] == "cqr/asymmetric/group"
     assert out["models"][NO_NATIVE]["methods"]["80"] == "conformal/signed_normalized/series"
     pools = spark.table("default.pi_cal_grouped_evaluation_output_calibration").select("pool_key").distinct().count()
@@ -262,42 +261,30 @@ def configured(monkeypatch):
     return resolve
 
 
-def test_settings_are_used_when_the_arguments_are_left_at_their_defaults(configured):
+def test_settings_are_the_prediction_intervals_block(configured):
     pi = configured(settings={"method": "cqr", "output_format": "lo_hi", "method_by_model": {NO_NATIVE: "conformal"},
-                              "cqr_pool": "series", "coverage": {"shrinkage_kappa": 20, "group_col": None}})
+                              "cqr_pool": "series", "coverage": {"shrinkage_kappa": 20}})
     assert (pi.method, pi.output_format, pi.cqr_pool) == ("cqr", "lo_hi", "series")
     assert pi.method_by_model[NO_NATIVE] == "conformal"
-    assert pi.coverage.shrinkage_kappa == 20
+    assert pi.coverage.shrinkage_kappa == 20 and pi.enabled is True
 
 
-def test_levels_in_settings_are_used_without_an_argument(configured):
+def test_levels_and_quantiles_in_settings(configured):
     assert configured(settings={"levels": [90]}).levels == [90]
+    pi = configured(settings={"quantiles": [0.1, 0.5, 0.9]})
+    assert pi.levels is None and pi.quantiles == [0.1, 0.5, 0.9]
 
 
-def test_the_argument_wins_over_a_setting_only_when_they_agree(configured):
-    assert configured(method="cqr", settings={"method": "cqr"}).method == "cqr"
-    assert configured(output_format="lo_hi", settings={"output_format": "lo_hi"}).output_format == "lo_hi"
+def test_pool_and_group_col_are_mapped_to_the_block(configured):
+    pi = configured(settings={"pool": "group", "group_col": "auto"})
+    assert pi.cqr_pool == "group" and pi.coverage.group_col == "auto"
+    assert configured(settings={"pool": "marginal"}).cqr_pool == "marginal"
 
 
-@pytest.mark.parametrize("kwargs, key", [
-    ({"method": "conformal", "settings": {"method": "cqr"}}, "method"),
-    ({"output_format": "both", "settings": {"output_format": "lo_hi"}}, "output_format"),
-    ({"method_by_model": {NO_NATIVE: "cqr"}, "settings": {"method_by_model": {NO_NATIVE: "conformal"}}},
-     "method_by_model"),
-    ({"levels": [80], "settings": {"levels": [90]}}, "levels"),
-    ({"pool": "group", "group_col": "auto", "settings": {"cqr_pool": "marginal"}}, "cqr_pool"),
-    ({"shrinkage_kappa": 5, "settings": {"coverage": {"shrinkage_kappa": 20}}}, "shrinkage_kappa"),
-])
-def test_arguments_and_settings_that_disagree_raise(configured, kwargs, key):
-    with pytest.raises(ConfigurationError, match=key):
-        configured(**kwargs)
-
-
-def test_levels_and_quantiles_together_raise(configured):
-    with pytest.raises(ConfigurationError, match="levels or quantiles, not both"):
-        configured(levels=[80], quantiles=[0.1, 0.5, 0.9])
-    with pytest.raises(ConfigurationError, match="levels or quantiles, not both"):
-        configured(quantiles=[0.1, 0.5, 0.9], settings={"levels": [80]})
+def test_the_calibrator_does_not_change_the_settings_it_is_given(configured):
+    settings = {"pool": "group", "group_col": "auto", "coverage": {"shrinkage_kappa": 5}}
+    configured(settings=settings)
+    assert settings == {"pool": "group", "group_col": "auto", "coverage": {"shrinkage_kappa": 5}}
 
 
 def test_use_case_calibrates_only_the_rows_of_that_use_case(spark_session, monkeypatch):
@@ -346,6 +333,12 @@ def test_use_case_calibrates_only_the_rows_of_that_use_case(spark_session, monke
 def test_unsupported_freq_raises_before_any_work(configured):
     with pytest.raises(ConfigurationError, match="freq must be one of H, D, W, M"):
         configured(freq="Q")
+
+
+def test_calibration_options_are_settings_not_keyword_arguments(configured):
+    """Calibration settings are not keyword arguments: the former ones (levels=, pool=, ...) are rejected."""
+    with pytest.raises(TypeError):
+        configured(levels=[80])
 
 
 def test_fallback_corrections_in_spark_match_the_pandas_reference(spark_session):

@@ -411,7 +411,8 @@ never reruns the models.
 from mmf_sa import calibrate_intervals
 
 calibrate_intervals(spark, train_data="cat.sch.uc_train_data", evaluation_output="cat.sch.uc_evaluation_output",
-                    scoring_output="cat.sch.uc_scoring_output", freq="D", levels=[80, 95], output_format="both")
+                    scoring_output="cat.sch.uc_scoring_output", freq="D",
+                    settings={"levels": [80, 95], "output_format": "both"})
 ```
 
 #### Modules
@@ -509,16 +510,28 @@ W - 1 windows, so the metrics are out of sample (they need W >= 2).
 
 #### Settings and defaults
 
-| `calibrate_intervals` argument | Default | Meaning |
+`calibrate_intervals` takes the data and the tables as arguments (`train_data`, `evaluation_output`, `scoring_output`,
+`group_id`, `date_col`, `target`, `freq`), plus `output_prefix`, `models`, `run_ids` and `use_case`. Everything about the
+calibration goes in `settings`, the calibration block: the same keys as the `prediction_intervals` block of
+`run_forecast`, with `enabled` implied.
+
+| `settings` key | Default | Meaning |
 |---|---|---|
-| `levels` / `quantiles` | `[80, 95]` | The calibrated levels |
-| `method` / `method_by_model` | `auto` | `auto`: CQR on native bands where available, conformal otherwise; or `conformal`, `native` (the band as is), `cqr` |
-| `pool` | `marginal` | `group` pools per `group_col` |
-| `group_col` | `None` | With `pool="group"`: a column of train_data, a list of columns, or `"auto"` for MMF's ABC x XYZ classes |
-| `shrinkage_kappa` | `10` | Strength of the per-series shrinkage toward the pool (conformal tails; CQR corrections with `cqr_pool: series`) |
+| `levels` / `quantiles` | `[80, 95]` | The calibrated levels. `quantiles` (central pairs, e.g. `[0.1, 0.5, 0.9]`) replaces `levels` |
+| `method` / `method_by_model` | `auto` | `auto`: CQR on native bands where available, conformal otherwise; or `conformal`, `native` (the band as is), `cqr`. `method_by_model` maps a model to its method |
+| `pool` | `marginal` | `group` pools per `group_col`; `marginal` pools all series in one pool. Applies to the CQR corrections and the conformal scores |
+| `group_col` | `None` | With `pool="group"`: a column of train_data, a list of columns, or `"auto"` for MMF's ABC x XYZ classes. Given without `pool="group"`, or `pool="group"` without it, is an error |
+| `coverage.shrinkage_kappa` | `10` | Strength of the per-series shrinkage toward the pool (conformal tails; CQR corrections with `cqr_pool: series`) |
 | `output_format` | `quantile_map` | Columns of `_scoring_output_intervals`: `quantile_map`, `lo_hi` or `both` |
-| `use_case` | `None` | Calibrate only the rows of one use case, when the forecast tables are shared by several (the output tables have no use_case column: give each use case its own `output_prefix`) |
-| `settings` | `{}` | Advanced keys of `calibration_config`: `cqr_score`, `cqr_tail_split`, `cqr_pool`, `coverage` (`target`, `pool_horizon`, `min_scores_per_group`), `score`, `clip_lower` |
+| `cqr_pool` | `marginal` | The internal name of `pool`, which also accepts `series` (shrinks the CQR corrections toward the pool). Give `pool` or `cqr_pool`, not both |
+| `coverage` | see `calibration_config` | Advanced: `target`, `group_col` (the internal name of `group_col`), `min_scores_per_group`, `pool_horizon`, `shrinkage_kappa` |
+| `cqr_score`, `cqr_tail_split`, `score`, `clip_lower` | see `calibration_config` | Advanced options of the CQR scores, the tail split, the conformal score and the lower clipping |
+
+`use_case` (an argument, not a setting) calibrates only the rows of one use case, when the forecast tables are shared by
+several (the output tables have no use_case column: give each use case its own `output_prefix`).
+
+The pooling keys are checked together in `calibration_config`: `pool="group"` needs `group_col`, and `group_col` needs
+`pool="group"`. A setting given under both names is an error.
 
 **Why these defaults.** On 2,000 series of M5 and of M4 monthly with 3 backtest windows and the last horizon held out
 (`tests/validation/pi_calibration_coverage.py` and `pi_scale_candidates.py`, every model calibrated with conformal

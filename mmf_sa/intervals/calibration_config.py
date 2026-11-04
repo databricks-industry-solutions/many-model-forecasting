@@ -1,9 +1,10 @@
-"""Configuration of the interval calibration (restored from the calibrated #232 for PR 2; to become the settings of
-calibrate_intervals). The `prediction_intervals` block of run_forecast is mmf_sa.intervals.config.
+"""Configuration of the interval calibration: the calibration block, which is the `settings` of calibrate_intervals
+(enabled is implied). Its defaults and validation, and the interval method of each model. The `prediction_intervals`
+block of run_forecast is mmf_sa.intervals.config. The level helpers (level_quantiles, central_levels, interval_levels)
+are those of mmf_sa.intervals.config.
 
-The calibration settings: their defaults and validation, and the interval method of each model. The level helpers
-(level_quantiles, central_levels, interval_levels) are those of mmf_sa.intervals.config.
-Pure Python and OmegaConf, no Spark.
+The pooling has two spellings at the top of the block, which users name: pool ("marginal" or "group") and group_col.
+They are mapped here, and checked together, to cqr_pool and coverage.group_col. Pure Python and OmegaConf, no Spark.
 """
 from typing import Any, Dict, Optional, Union
 
@@ -63,6 +64,34 @@ def _check_keys(conf: Dict[str, Any], defaults: Dict[str, Any], where: str) -> N
         )
 
 
+def _map_pooling(user: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Maps the top-level pool and group_col of a block to cqr_pool and coverage.group_col, and checks them together:
+    pool "group" needs group_col, and group_col needs pool "group". Only when the block names one of them: a block with
+    the internal names alone is checked by the rules of the resolver. Giving a setting by both names raises.
+    """
+    if "pool" not in user and "group_col" not in user:
+        return user
+    user = dict(user)
+    cov = dict(user.get("coverage") or {})
+    if "pool" in user:
+        if user["pool"] not in ("marginal", "group"):
+            raise ConfigurationError(f"prediction_intervals.pool must be 'marginal' or 'group', got {user['pool']!r}")
+        if "cqr_pool" in user:
+            raise ConfigurationError("prediction_intervals: give pool or cqr_pool, not both")
+        user["cqr_pool"] = user.pop("pool")
+    if "group_col" in user:
+        if "group_col" in cov:
+            raise ConfigurationError("prediction_intervals: give group_col or coverage.group_col, not both")
+        cov["group_col"] = user.pop("group_col")
+    user["coverage"] = cov
+    pool = user.get("cqr_pool", DEFAULT_PREDICTION_INTERVALS["cqr_pool"])
+    if (pool == "group") != (cov.get("group_col") is not None):
+        raise ConfigurationError(
+            "prediction_intervals: pool='group' needs group_col, and group_col needs pool='group'")
+    return user
+
+
 def resolve_prediction_intervals_conf(
         conf: Optional[Union[DictConfig, Dict[str, Any]]]) -> DictConfig:
     """
@@ -78,7 +107,8 @@ def resolve_prediction_intervals_conf(
         user = OmegaConf.to_container(conf, resolve=True)
     else:
         user = dict(conf)
-    _check_keys(user, DEFAULT_PREDICTION_INTERVALS, "prediction_intervals")
+    _check_keys(user, {**DEFAULT_PREDICTION_INTERVALS, "pool": None, "group_col": None}, "prediction_intervals")
+    user = _map_pooling(user)
     if "method_by_model" in user and user["method_by_model"] is None:
         user["method_by_model"] = {}
     if not isinstance(user.get("method_by_model", {}), dict):
