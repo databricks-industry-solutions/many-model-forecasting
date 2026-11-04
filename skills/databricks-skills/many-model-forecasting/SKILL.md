@@ -54,7 +54,7 @@ The agent MUST verify these before starting any skill. If preconditions are miss
 | **1. prep-and-clean-data** | A source time-series table the user can name | none |
 | **2. profile-and-classify** *(optional)* | `{catalog}.{schema}.{use_case}_train_data` from Skill 1 | `{forecast_problem_brief}` |
 | **3. provision-resources** | `{use_case}_train_data` from Skill 1 (and optionally `{use_case}_series_profile`, `{use_case}_pipeline_config` from Skill 2) | none beyond Skill 1 |
-| **4. execute-forecast** | `{use_case}_train_data` (or `_train_data_forecastable`), and an `active_models` selection from Skill 3 | `prediction_length`, `freq`, backtest setup |
+| **4. execute-forecast** | `{use_case}_train_data` (or `_train_data_forecastable`), and an `active_models` selection from Skill 3 | `prediction_length`, `freq`, backtest setup, prediction intervals (yes/no, levels) |
 | **5. post-process** | `{use_case}_evaluation_output` and `{use_case}_scoring_output` from Skill 4 | none |
 | **6. hierarchical-reconciliation** *(optional)* | N × (`{use_case}_best_models`, `{use_case}_evaluation_output`) pairs — one per hierarchy level (from Skills 4–5) — plus a user-provided membership table (adjacency list Delta table) | Only run if the use case has a hierarchy; see README for the multi-level workflow |
 
@@ -252,6 +252,7 @@ See [3-provision-forecasting-resources.md](3-provision-forecasting-resources.md)
 - [mmf_gpu_run_notebook_template.ipynb](mmf_gpu_run_notebook_template.ipynb) — GPU single-model runner (widgets include covariate columns, defaulting to empty/univariate; used by orchestrators)
 - [mmf_gpu_orchestrator_notebook_template.ipynb](mmf_gpu_orchestrator_notebook_template.ipynb) — GPU orchestrator (model list + covariate lists passed into `run_gpu`; defaults to `[]` for all covariates)
 - [mmf_gpu_serverless_notebook_template.ipynb](mmf_gpu_serverless_notebook_template.ipynb) — Serverless GPU runner: installs one GPU class with `%pip` and loops `run_forecast(..., serverless=True)` over the class's models in one notebook
+- [mmf_calibration_notebook_template.ipynb](mmf_calibration_notebook_template.ipynb) — Prediction-interval calibration on CPU (`calibrate_intervals`), run after the forecast jobs (Skill 4 Step 3f)
 - [serverless_gpu_ai_v6_environment.yml](serverless_gpu_ai_v6_environment.yml) — AI v6 environment spec to upload as a workspace file when a workspace rejects the `workspace-base-environments/databricks_ai_v6` name (Skill 4 Step 5b)
 - [mmf_profiling_notebook_template.ipynb](mmf_profiling_notebook_template.ipynb) — Series profiling (statsmodels, scipy)
 

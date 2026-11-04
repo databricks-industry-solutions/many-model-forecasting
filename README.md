@@ -14,6 +14,7 @@ Get started now!
 
 Use a cluster with [Databricks Runtime 18 for ML](https://docs.databricks.com/aws/en/release-notes/runtime/18ml) or later for all model classes (local, global, and foundation).
 
+- Oct 2026: Added **native prediction intervals** (`prediction_intervals={"enabled": True}`) for the models that have them: statsforecast, Chronos, TimesFM, Moirai, SKTimeProphet and the FoundationForecast models. They are written to the backtest and scoring tables as the models return them, uncalibrated. See [Prediction Intervals](#prediction-intervals) and try the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/prediction_intervals_daily.ipynb).
 - Oct 2026: Added 19 foundation models through [foundationforecast](https://github.com/TimeCopilot/foundationforecast) (`FF*` models): Chronos-2, TimesFM 2.5 and 3.0, TiRex 2, Toto and Toto 2, FlowState, PatchTST-FM, Tafsut, T0 and Timestral. They run on a single-GPU classic cluster or on serverless GPU (AI v6). Try the [daily](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/foundationforecast/foundationforecast_daily.ipynb), [weekly](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/foundationforecast/foundationforecast_weekly.ipynb) and [monthly](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/foundationforecast/foundationforecast_monthly.ipynb) notebooks, and see [FoundationForecast models](#foundationforecast-models) for licenses and limitations. [MMF Agent](https://github.com/databricks-industry-solutions/many-model-forecasting/tree/main/skills/) supports them too, and now recommends serverless GPU for all GPU model classes.
 - Jun 2026: Added **Hierarchical Reconciliation** — make forecasts coherent across hierarchy levels. Available as a standalone API (`run_reconciliation_multilevel`) and as [MMF Agent Skill 6](https://github.com/databricks-industry-solutions/many-model-forecasting/tree/main/skills/). See the [Hierarchical Reconciliation](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/README.md#hierarchical-reconciliation) docs. ([lourdesmartinezma](https://github.com/lourdesmartinezma))
 - May 2026: Added MLForecast for LightGBM support. Try it out [here](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/global_daily_ml.ipynb) or with [MMF Agent](https://github.com/databricks-industry-solutions/many-model-forecasting/tree/main/skills/).
@@ -162,6 +163,7 @@ run_forecast(
 - `active_models` is a list of models you want to use.
 - `experiment_path` to keep metrics under the MLFlow.
 - `use_case_name` a new column will be created under the delta Table, in case you save multiple trials under 1 table.
+- `prediction_intervals` (optional) enables and configures the native prediction intervals, e.g. `{"enabled": True, "levels": [80, 95]}`. Disabled by default. See [Prediction Intervals](#prediction-intervals).
 
 
 
@@ -354,6 +356,66 @@ active_models = [
 Install [requirements-foundationforecast.txt](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/requirements-foundationforecast.txt) or the `foundationforecast` extra instead of `requirements-foundation.txt`, then call `run_forecast` exactly as for the other foundation models. Use a single-node A10G cluster on [DBR 18 for ML](https://docs.databricks.com/aws/en/release-notes/runtime/18ml), or serverless GPU (A10, AI v6 environment) with `serverless=True`. Inference runs on one GPU on the driver, so extra GPUs or worker nodes are not used.
 
 `FFChronos2`, `FFChronos2Small`, `FFTimesFM_3_0`, `FFTiRex2`, `FFT0Beta`, `FFT0Gamma` and the `FFTimestral_*` models use known-future covariates (`dynamic_future_numerical`, `dynamic_future_categorical`), which need values for the whole forecast horizon in `scoring_data`. They ignore `static_features` and `dynamic_historical_*`, and the other `FF` models ignore all covariates, each with a warning. Monthly data must use month-end timestamps. `FFTimesFM_3_0` and `FFPatchTSTFM_R1` have non-commercial licenses, and the `FFTimestral_*` checkpoints use Mistral's Modified MIT license, which requires a commercial license from Mistral for companies above USD 20M monthly revenue. See [mmf_sa/models/README.md](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/models/README.md#foundationforecast) for the full model list, licenses and hyperparameters, and the runnable examples, which forecast M5 (Walmart) sales with price, SNAP and event covariates and compare each covariate model with and without them, for [daily](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/foundationforecast/foundationforecast_daily.ipynb), [weekly](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/foundationforecast/foundationforecast_weekly.ipynb) and [monthly](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/foundationforecast/foundationforecast_monthly.ipynb) data.
+
+## Prediction Intervals
+
+MMF can add prediction intervals (lower and upper bounds at given coverage levels) to the forecasts of the models that have native intervals. They are disabled by default; enable them with one argument:
+
+```python
+run_forecast(
+    ...,  # the usual arguments
+    prediction_intervals={"enabled": True, "levels": [80, 95]},
+)
+```
+
+The models with **native intervals** are statsforecast `Naive`, `SeasonalNaive`, `AutoArima`, `AutoETS`, `AutoCES`, `AutoTheta` and `AutoTbats`; the Chronos, TimesFM and Moirai models; `SKTimeProphet`; and the FoundationForecast `FF*` models. They return their quantiles in every backtest window and at scoring. The intervals are the models' own bands, **not calibrated**: their coverage can be off nominal (on a sample of M5 sales, the 80% bands of AutoETS covered 88% of the actuals, those of SKTimeProphet 86%, those of Chronos-2 79%, and Chronos-Bolt's widest band is its 80% one). Measure it on the backtest before relying on it (see the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/prediction_intervals_daily.ipynb)). Other models (e.g. CrostonSBA, MLForecast, NeuralForecast) get NULL interval columns, with one warning per model.
+
+**Outputs**
+
+- `evaluation_output` gets a nullable `forecast_quantiles` column, `MAP<STRING, ARRAY<DOUBLE>>`: the native quantiles of each backtest window, keyed by quantile level (`"0.025"`, `"0.1"`, `"0.5"`, `"0.9"`, `"0.975"` for levels 80 and 95), each an array over the horizon aligned with `forecast`. Its rows are unchanged otherwise.
+- `scoring_output` gets the interval columns, per `output_format`: `<target>_quantiles`, the same map for the forecast (default); and/or `<target>_lo_<L>` / `<target>_hi_<L>` arrays such as `y_lo_80` and `y_hi_95` (`output_format: lo_hi` or `both`; level 97.5 gives `_97_5`).
+- The quantiles of each step are sorted, so they never cross and wider intervals contain narrower ones.
+- Both tables are appended with `mergeSchema`, so existing tables gain the new columns.
+
+**Settings** (the block is in [forecasting_conf_daily.yaml](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/forecasting_conf_daily.yaml)):
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `enabled` | `false` | Turns the intervals on. |
+| `levels` | `[80, 95]` | Central interval levels in percent. Or set `quantiles`, e.g. `[0.1, 0.5, 0.9]` (in central pairs). |
+| `output_format` | `quantile_map` | `quantile_map`, `lo_hi` or `both`. |
+
+Notes and limitations:
+
+- Some models only have quantiles from 10% to 90% (Chronos-Bolt, TimesFM, and several FoundationForecast models). Levels that need quantiles outside a model's range get NULL bounds, with a warning, rather than a clamped band that would be labeled 95% but cover like an 80% band. Chronos reads its range from the loaded checkpoint, so this is decided at prediction time.
+- FoundationForecast only accepts quantile levels with at most 3 decimals: other levels (e.g. the 1.25% of a 97.5% interval) are rounded outward, to 1.2%.
+- Moirai's and `FFToto`'s quantiles come from sample paths: with their default `num_samples` (10 and 32) the tails are coarse (a warning is logged under 100 samples), so raise `num_samples` for better bands. `FFToto`'s point forecast, the median of its samples, also changes slightly from run to run.
+- `SKTimeProphet` bands come from Prophet's `predict_interval`. Without `mcmc_samples` they leave out the uncertainty of the seasonality, and they come from random draws, so they vary slightly between runs.
+- The bands are not clipped: lower bounds can be negative for a non-negative target, even when the point forecast is clipped at 0 (statsforecast).
+- Requesting quantiles does not change a model's point forecast, with two exceptions: `FFToto`, which samples, and the distributed (Pandas UDF) path of the Chronos-Bolt models, whose point forecast can differ in the third decimal (on 200 M5 series, by up to 0.0034 on 3% of the backtest rows).
+
+### Calibrated intervals
+
+`calibrate_intervals` turns the native bands into calibrated ones, and gives intervals to the models that have none, from the tables `run_forecast` wrote. Run it after the forecast jobs, on CPU compute: it does not use the models.
+
+```python
+from mmf_sa import calibrate_intervals
+
+calibrate_intervals(
+    spark=spark,
+    train_data="cat.sch.uc_train_data",
+    evaluation_output="cat.sch.uc_evaluation_output",   # backtest rows with the native quantiles
+    scoring_output="cat.sch.uc_scoring_output",         # forecasts with their native maps
+    freq="D", settings={"levels": [80, 95], "output_format": "both"},
+)
+```
+
+- Models with native intervals get their bands corrected by conformalized quantile regression (CQR), so that they reach the requested coverage on the backtest. The other models, and the levels a model has no native quantiles for (e.g. 95% for Chronos-Bolt), get conformal intervals from their backtest errors.
+- The CQR corrections are pooled over all series, per horizon step (one pool, without per-series shrinkage). The conformal intervals pool their scores the same way, and shrink each series' own tail toward that pool. `settings={"pool": "group", "group_col": ...}` pools per group instead (a column of the training data, or `"auto"` for MMF's ABC x XYZ volume and volatility classes). ABC x XYZ is recommended for intermittent sales and demand data: on M5, Car Parts and Online Retail it lowers the coverage gap of the worst-covered series and the interval score, mostly for models without native intervals. Do not use it for rates or prices, where it loses coverage.
+- It writes `<prefix>_scoring_output_intervals` (the calibrated interval columns), `<prefix>_evaluation_output_calibration` (the corrections) and `<prefix>_evaluation_output_interval_metrics` (out-of-sample coverage, miss rates, MSIS and WIS per series and backtest window), with `<prefix>` the evaluation table's name without `_evaluation_output`. The forecast tables are not modified, so recalibrating never reruns the models.
+- It calibrates each model's latest run; pass `models` or `run_ids` to choose, and `use_case` when the tables are shared by several use cases. More backtest windows give more accurate per-series intervals: 3 work with the defaults.
+
+The method, the settings and the validation are described in [mmf_sa/README.md](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/README.md#calibrated-intervals-calibrate_intervals).
 
 ## Hierarchical Reconciliation
 

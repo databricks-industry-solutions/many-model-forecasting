@@ -44,6 +44,7 @@ def run_forecast(
     experiment_path: str = None,
     run_id: str = None,
     conf: Union[str, Dict[str, Any], OmegaConf] = None,
+    prediction_intervals: Dict[str, Any] = None,
 ) -> str:
 ```
 
@@ -355,6 +356,203 @@ def resolve_source(self, key: str) -> DataFrame:
 2. **Quality Checks**: Applies comprehensive data validation
 3. **Format Standardization**: Converts to required format for models
 4. **Feature Engineering**: Processes external regressors and features
+
+## Prediction Intervals
+
+MMF produces prediction intervals in two optional steps:
+
+1. **Native intervals, from `run_forecast`.** With `prediction_intervals={"enabled": True}` (off by default), the models that can return quantiles (statsforecast, Chronos, TimesFM, Moirai, `SKTimeProphet` and the `FF*` models) return them in every backtest window and at scoring. MMF writes them as the models return them, without calibration: `forecast_quantiles` in `evaluation_output`, and the interval columns in `scoring_output`. The other models get NULL intervals. The subsections below, up to [Calibrated intervals](#calibrated-intervals-calibrate_intervals), describe this step.
+2. **Calibrated intervals, from `calibrate_intervals`.** A separate function, run after the forecasts on CPU, reads those tables, corrects the native intervals so that they reach the requested coverage, and builds intervals for the models that have none. It writes its own tables and never modifies the forecast tables. See [Calibrated intervals](#calibrated-intervals-calibrate_intervals).
+
+This section describes the code. The user-facing description is in the [main README](../README.md#prediction-intervals).
+
+### Modules
+
+| Module | Role |
+|---|---|
+| `mmf_sa/intervals/config.py` | Pure Python. The `prediction_intervals` configuration (defaults, validation) and the level helpers. |
+| `mmf_sa/intervals/quantiles.py` | The contract the models use: quantile keys and column names, the packing of the Spark UDF output, and the quantile maps written to the tables (`sorted_quantiles`: non-finite keys dropped, values sorted per step). |
+| `mmf_sa/intervals/scoring.py` | The interval columns of `scoring_output`, built from each forecast's quantile map with Spark column expressions (no Python UDF). |
+| `Forecaster.native_quantiles`, `get_model_with_native_quantiles` | Which models are asked for quantiles: those flagged `native_intervals` in `models_conf.yaml`. The others are logged once and get NULL interval columns. |
+| `Forecaster.write_scoring_output` | Replaces the quantile map of a model's forecasts with the interval columns of `output_format`, and appends to `scoring_output`. |
+
+### Data flow
+
+```
+evaluate_models   models flagged native_intervals get native_quantiles; their backtest writes
+                  forecast_quantiles (MAP<STRING, ARRAY<DOUBLE>>, sorted per step) to evaluation_output;
+                  other models write NULL
+score_models      the same quantiles at forecast time -> <target>_quantiles and/or <target>_lo_<L> /
+                  <target>_hi_<L> in scoring_output (output_format); NULL where a quantile is missing
+```
+
+### The output contract
+
+- Map keys are `quantile_key(q)`: no trailing zeros, e.g. `"0.1"`, `"0.025"`, `"0.975"`. The median `"0.5"` is always included for models with native intervals.
+- Each value is an array over the horizon, aligned with `forecast` (evaluation) or `<target>` (scoring).
+- Level `L` maps to the quantiles `(100 - L) / 200` and `1 - (100 - L) / 200`; in column names, `80` gives `_80` and `97.5` gives `_97_5`.
+- A level's two bounds are both NULL when the model did not return both of its quantiles.
+
+### Adding native intervals to a model
+
+1. Set `native_intervals: true` for the model in `models_conf.yaml`, and `native_quantiles_supported = True` on its class (a unit test checks that both agree). If the model only predicts some quantile levels, set `native_quantile_range = (min, max)`; if its quantiles come from sample paths, set `samples_hparam` to the hyperparameter holding their number.
+2. When `self.params.native_quantiles` is set, make `predict` (backtest) and `forecast` (scoring) return one column per level of `self.native_levels()`, named with `QUANTILE_COLUMN_PREFIX + quantile_key(q)` from `mmf_sa/intervals/quantiles.py` (e.g. `__q_0.975`), next to the point forecast. `native_levels()` sorts the levels, adds the median, leaves out the levels outside `native_quantile_range`, and logs once about them and about fewer than 100 sample paths; call it on the driver, so that the warnings reach the driver log. A model whose range is only known at prediction time (Chronos) returns NaN for the levels outside it. `ForecastingRegressor.forecast_quantiles` (local models) and `ForecastingRegressor.series_metrics` (global and foundation models) turn the columns into the `forecast_quantiles` map.
+3. Requesting quantiles must not change the point forecast.
+
+### Calibrated intervals (`calibrate_intervals`)
+
+The native bands above are the models' own, and their coverage can be far from nominal (Chronos-Bolt's 95% band does
+not exist; on M5, AutoETS's 80% band covers 87-88% and SeasonalNaive's 91%). `mmf_sa.calibrate_intervals` calibrates them, and builds
+intervals for the models that have none. It reads only the tables that `run_forecast` writes, and runs as its own job
+on CPU compute after the forecast jobs (Skill 4's orchestrating job), so the GPU jobs only forecast and recalibrating
+never reruns the models.
+
+```python
+from mmf_sa import calibrate_intervals
+
+calibrate_intervals(spark, train_data="cat.sch.uc_train_data", evaluation_output="cat.sch.uc_evaluation_output",
+                    scoring_output="cat.sch.uc_scoring_output", freq="D",
+                    settings={"levels": [80, 95], "output_format": "both"})
+```
+
+#### Modules
+
+| Module | Role |
+|---|---|
+| `mmf_sa/intervals/calibrator.py` | `calibrate_intervals` and `IntervalCalibrator`: run selection, reading the tables, the split of levels between CQR and conformal, writing the three output tables. |
+| `mmf_sa/intervals/conformal.py` | Pure numpy. The reference implementation (`calibrate_model`): scores, pools, conformal quantiles, CQR corrections, bounds and metrics. |
+| `mmf_sa/intervals/spark.py` | The same calibration distributed: exact pooled order statistics in Spark, the per-series combination in `applyInPandas`. Tests check it against `conformal.calibrate_model`. |
+| `mmf_sa/intervals/features.py` | Per-series scale and classes (ABC, XYZ, Syntetos-Boylan), group labels, backtest cubes. |
+| `mmf_sa/intervals/calibration_config.py` | The calibration settings, their defaults and validation. |
+| `mmf_sa/intervals/calibration_scoring.py` | Applying the corrections to the forecasts (clipping, nesting), and the output rows. |
+
+#### Data flow
+
+```
+latest_runs        each model's latest run in evaluation_output (or models / run_ids)
+features           per series, from train_data before its first backtest window: sigma (in-sample seasonal-naive
+                   MAE), ABC, XYZ and Syntetos-Boylan classes
+per model          the levels with native quantiles in every backtest row -> CQR; the other levels (and models
+                   without native intervals) -> conformal
+                   corrections fitted on all W windows -> <prefix>_evaluation_output_calibration
+                   each window scored with corrections fitted on the other W - 1 -> _interval_metrics
+scoring            corrections applied to the forecasts of scoring_output (their native map for CQR)
+                   -> <prefix>_scoring_output_intervals
+```
+
+#### Scale
+
+Every score is divided by a per-series scale sigma_i, the in-sample mean absolute error of the seasonal-naive
+forecast (season 24, 7, 52 or 12 for hourly, daily, weekly or monthly data) over the history before the series' first
+backtest window. Series with a zero scale (e.g. all zeros) use the median scale of the others. Scores of different
+series are then comparable, and can be pooled.
+
+#### Conformal intervals (models without native intervals)
+
+- **Scores.** e = (y - yhat) / sigma_i for every series, backtest window and horizon step (`score: signed_normalized`;
+  `signed` does not divide by sigma).
+- **Pooled quantiles.** The lower and upper bounds use the alpha/2 and 1 - alpha/2 conformal quantiles of the scores of
+  a pool, per horizon step: the k-th smallest of n scores with k = ceil((n + 1) q) (the split-conformal rank, which
+  guarantees coverage of at least q on exchangeable data). A rank beyond n is clipped to the largest score and flagged
+  `infinite_bound`.
+- **Per-series shrinkage (the default, `coverage.target: series`).** Each series' own quantiles are computed from its
+  scores and shrunk toward the pool's: q_i = lambda q_series + (1 - lambda) q_pool, lambda = W / (W + kappa) with
+  kappa = 10 (`coverage.shrinkage_kappa`), so with 3 windows a series gets 23% weight. With fewer windows than the widest
+  level needs for a finite rank per step (`windows_for_finite_bounds`: 9 at 80%, 39 at 95%), a series' quantiles are
+  computed over all its W x H scores and the pool's step profile is applied as a ratio (`coverage.pool_horizon: auto`).
+- **Bounds.** yhat + sigma_i q_lo and yhat + sigma_i q_hi.
+- **Other targets.** `marginal` and `group` use the pool's quantiles without per-series shrinkage. `series_scale`
+  shrinks a scale estimate of each series instead of its tail quantiles: scores are divided by
+  c_i = (n_i d_i + kappa d_pool) / ((n_i + kappa) d_pool), d being the mean |e| over the series' n_i = W x H scores and
+  over the pool, before the pool's quantiles are taken; the bounds are yhat + sigma_i c_i q.
+
+#### CQR (models with native intervals)
+
+Conformalized quantile regression (Romano et al., 2019) keeps the native band's shape and corrects its width from its
+misses on the backtest:
+
+- **Scores (`cqr_score: asymmetric`, the default).** One per tail: s_lo = (lo - y) / sigma_i and s_hi = (y - hi) /
+  sigma_i, positive when the actual falls outside the band.
+- **Tail split (`cqr_tail_split: adaptive`).** The lower correction is the 1 - alpha/2 conformal quantile of s_lo. The
+  upper one uses the level 1 - alpha + m_lo (at most 1 - alpha/2), where m_lo is the lower tail's realised miss rate
+  after correction: for non-negative series whose lower bound is clipped at 0, the lower tail rarely misses, and the
+  unused share goes to the upper tail. `equal` gives each tail alpha/2.
+- **Bounds.** lo - sigma_i q_lo and hi + sigma_i q_hi. A negative correction narrows a band that over-covers.
+- **Pool (`cqr_pool: marginal`).** The corrections are pooled over all series, per horizon step, with no per-series
+  shrinkage. `group` pools per `group_col`; `series` shrinks each series' corrections toward its pool, with the weight
+  of the conformal tails above.
+- **Other scores.** `symmetric` uses one score max(lo - y, y - hi) / sigma_i; `scaled` divides |y - yhat| by the native
+  half-width, so the correction is a factor of the band.
+- **Native quantiles at scoring.** The corrections are applied to the forecast's own native band from scoring_output.
+  A level the model has no native quantiles for (outside its native range, NULL in scoring_output) is calibrated with
+  conformal intervals instead, at both calibration and scoring.
+
+#### Clipping and nesting
+
+Bounds are clipped at `clip_lower` (`auto`: 0 when the training target is never negative) and uncrossed. Levels are
+calibrated separately, so scoring widens each wider level to contain the next narrower one (and the native median),
+so that quantiles never cross; this only raises coverage. The interval metrics measure each level before this nesting.
+
+#### Interval metrics
+
+Written per series and backtest window, leave-one-window-out: window j is scored with corrections fitted on the other
+W - 1 windows, so the metrics are out of sample (they need W >= 2).
+
+| Metric | Meaning |
+|---|---|
+| `coverage_<L>` | Share of the window's actuals inside the interval |
+| `miss_lo_<L>`, `miss_hi_<L>` | Shares below the lower and above the upper bound (`coverage + miss_lo + miss_hi = 1`) |
+| `msis_<L>` | Interval score (width + 2/alpha x the misses' distances), scaled by sigma_i; lower is better at equal coverage |
+| `width_<L>` | Mean width, scaled by sigma_i |
+| `scaled_ae` | Mean absolute error of the point forecast, scaled by sigma_i |
+| `wis` | Weighted interval score over all levels and the point forecast, a quantile-based approximation of CRPS |
+| `native_*` | The same for the uncorrected native band |
+
+#### Settings and defaults
+
+`calibrate_intervals` takes the data and the tables as arguments (`train_data`, `evaluation_output`, `scoring_output`,
+`group_id`, `date_col`, `target`, `freq`), plus `output_prefix`, `models`, `run_ids` and `use_case`. Everything about the
+calibration goes in `settings`, the calibration block: the same keys as the `prediction_intervals` block of
+`run_forecast`, with `enabled` implied.
+
+| `settings` key | Default | Meaning |
+|---|---|---|
+| `levels` / `quantiles` | `[80, 95]` | The calibrated levels. `quantiles` (central pairs, e.g. `[0.1, 0.5, 0.9]`) replaces `levels` |
+| `method` / `method_by_model` | `auto` | `auto`: CQR on native bands where available, conformal otherwise; or `conformal`, `native` (the band as is), `cqr`. `method_by_model` maps a model to its method |
+| `pool` | `marginal` | `group` pools per `group_col`; `marginal` pools all series in one pool. Applies to the CQR corrections and the conformal scores |
+| `group_col` | `None` | With `pool="group"`: a column of train_data, a list of columns, or `"auto"` for MMF's ABC x XYZ classes. Given without `pool="group"`, or `pool="group"` without it, is an error |
+| `coverage.shrinkage_kappa` | `10` | Strength of the per-series shrinkage toward the pool (conformal tails; CQR corrections with `cqr_pool: series`) |
+| `output_format` | `quantile_map` | Columns of `_scoring_output_intervals`: `quantile_map`, `lo_hi` or `both` |
+| `cqr_pool` | `marginal` | The internal name of `pool`, which also accepts `series` (shrinks the CQR corrections toward the pool). Give `pool` or `cqr_pool`, not both |
+| `coverage` | see `calibration_config` | Advanced: `target`, `group_col` (the internal name of `group_col`), `min_scores_per_group`, `pool_horizon`, `shrinkage_kappa` |
+| `cqr_score`, `cqr_tail_split`, `score`, `clip_lower` | see `calibration_config` | Advanced options of the CQR scores, the tail split, the conformal score and the lower clipping |
+
+`use_case` (an argument, not a setting) calibrates only the rows of one use case, when the forecast tables are shared by
+several (the output tables have no use_case column: give each use case its own `output_prefix`).
+
+The pooling keys are checked together in `calibration_config`: `pool="group"` needs `group_col`, and `group_col` needs
+`pool="group"`. A setting given under both names is an error.
+
+**Why these defaults.** On 2,000 series of M5 and of M4 monthly with 3 backtest windows and the last horizon held out
+(`tests/validation/pi_calibration_coverage.py` and `pi_scale_candidates.py`, every model calibrated with conformal
+intervals), the `series` target over one pool reached
+0.76-0.80 held-out coverage at 80% and 0.93-0.95 at 95% for every model, within about half a point of ABC x XYZ pools,
+while `series_scale` under-covered M4 monthly (0.70-0.73 and 0.84-0.86). ABC x XYZ pools (`pool="group",
+group_col="auto"`) were then compared with one pool on 11 datasets (`tests/validation/POOLING_VALIDATION.md`, 3 samples
+of series and 3 or 6 windows). On intermittent demand (M5, Car Parts, Online Retail) they lower the coverage gap of the
+worst-covered decile of series scale by 1-27 points and WIS by 1-6%, mostly for models without native intervals, at
+the same marginal coverage. They change little on smooth volumes (Hospital, London smart meters, Tourism, Electricity),
+and lose 1-10 points of coverage on rates and prices (Traffic occupancy, EPF electricity prices). So one pool stays the
+default, and ABC x XYZ is recommended for intermittent demand only.
+
+#### Scaling
+
+Nothing that grows with the number of series is collected to the driver. The pooled conformal quantiles are exact
+order statistics computed with `row_number()` over (fold, pool, step), and the leave-one-window-out folds are computed
+in one pass; the driver only receives pool statistics (pools x steps), the adaptive CQR miss rates and the per-level
+fallback corrections. On serverless, where DataFrames cannot be cached, intermediate results are written to temporary
+tables `<prefix>_pi_tmp_*`, dropped at the end. 1M series x 2 models took 7.8 minutes on 4 x i3.2xlarge
+(`tests/validation/pi_scale_calibration.py`).
 
 ## Hierarchical Reconciliation
 

@@ -11,6 +11,7 @@ from omegaconf.basecontainer import BaseContainer
 from pyspark.sql import SparkSession, DataFrame
 from mmf_sa.Forecaster import Forecaster
 from mmf_sa.reconciliation import run_reconciliation_multilevel
+from mmf_sa.intervals.calibrator import calibrate_intervals
 
 
 def _configure_logging():
@@ -58,6 +59,7 @@ def run_forecast(
     experiment_path: str = None,
     run_id: str = None,
     conf: Union[str, Dict[str, Any], OmegaConf] = None,
+    prediction_intervals: Dict[str, Any] = None,
 ) -> str:
 
     """
@@ -97,6 +99,7 @@ def run_forecast(
         experiment_path (str): A string specifying the experiment path.
         run_id (str): A string specifying the run id. If not provided a random string is generated and assigned to each run.
         conf (Union[str, Dict[str, Any], OmegaConf]): A configuration object.
+        prediction_intervals (Dict[str, Any]): Prediction-interval settings, merged over the `prediction_intervals` block of the configuration (see the "Prediction Intervals" section of the README). E.g. {"enabled": True, "levels": [80, 95]}. Default is None, which keeps the configuration as is (disabled in the shipped configurations).
 
     Returns:
     Dict[str, Union[int, str]]: A dictionary with an integer and a string as values.
@@ -195,6 +198,10 @@ def run_forecast(
         _conf["dynamic_historical_categorical"] = dynamic_historical_categorical
     if run_id is not None:
         _conf["run_id"] = run_id
+    if prediction_intervals is not None:
+        _conf["prediction_intervals"] = OmegaConf.merge(
+            _conf.get("prediction_intervals") or OmegaConf.create(), OmegaConf.create(prediction_intervals)
+        )
 
     f = Forecaster(
         conf=_conf,
@@ -208,4 +215,4 @@ def run_forecast(
     return run_id
 
 
-__all__ = ["run_forecast", "run_reconciliation_multilevel", "Forecaster"]
+__all__ = ["run_forecast", "calibrate_intervals", "run_reconciliation_multilevel", "Forecaster"]

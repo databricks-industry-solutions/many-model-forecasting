@@ -15,6 +15,13 @@ import os
 from .unit.fixtures import spark_session
 
 
+@pytest.fixture(autouse=True)
+def fresh_model_warnings():
+    """Model warnings are logged once per process (abstract_model.warn_once): each test starts with none logged."""
+    from mmf_sa.models import abstract_model
+    abstract_model._warned.clear()
+
+
 @pytest.fixture
 def sample_time_series_data():
     """Create sample time series data for testing."""

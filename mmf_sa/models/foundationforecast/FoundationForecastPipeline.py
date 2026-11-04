@@ -1,5 +1,6 @@
 import gc
 import logging
+import math
 from typing import Dict, Tuple
 
 import numpy as np
@@ -7,19 +8,14 @@ import pandas as pd
 import mlflow
 from mlflow.models.signature import ModelSignature, infer_signature
 from mlflow.types import ColSpec, Schema
-from sktime.performance_metrics.forecasting import (
-    MeanAbsoluteError,
-    MeanSquaredError,
-    MeanAbsolutePercentageError,
-)
 
-from mmf_sa.models.abstract_model import ForecastingRegressor, MODEL_PIP_REQUIREMENTS
+from mmf_sa.intervals.quantiles import QUANTILE_COLUMN_PREFIX, quantile_key
+from mmf_sa.models.abstract_model import ForecastingRegressor, MODEL_PIP_REQUIREMENTS, warn_once as _warn_once
 from mmf_sa.models.foundationforecast._runtime import ensure_runtime
 from mmf_sa.exceptions import (
     DataPreparationError,
     MissingFeatureError,
     ModelPredictionError,
-    UnsupportedMetricError,
 )
 
 _logger = logging.getLogger(__name__)
@@ -49,14 +45,24 @@ COVARIATE_PARAMS = (
 FUTURE_COVARIATE_PARAMS = ("dynamic_future_numerical", "dynamic_future_categorical")
 
 _FF_ALIAS = "ff_forecast"
-_warned = set()
 _current_checkpoint = None
 
 
-def _warn_once(key: str, message: str) -> None:
-    if key not in _warned:
-        _warned.add(key)
-        _logger.warning(message)
+def ff_level(q: float) -> float:
+    """The level requested from foundationforecast for quantile q: q rounded outward (away from the median) to 3
+    decimals, within [0.001, 0.999], the levels foundationforecast accepts."""
+    milli = (math.floor if q < 0.5 else math.ceil)(round(q * 1000, 6))
+    return min(max(milli, 1), 999) / 1000
+
+
+def ff_quantile_column(q: float) -> str:
+    """Output column foundationforecast uses for quantile ``q``, e.g. ``ff_forecast-q-2.5`` for 0.025.
+
+    Mirrors foundationforecast.core.quantiles.quantile_column_name, which this module does not import
+    so that it loads without the library.
+    """
+    whole, frac = divmod(round(float(q) * 1000), 10)
+    return f"{_FF_ALIAS}-q-{whole}" if frac == 0 else f"{_FF_ALIAS}-q-{whole}.{frac}"
 
 
 def _step_offset(freq: str):
@@ -181,13 +187,15 @@ def build_horizon(
 
 
 def forecast_series(
-    ff_model, df: pd.DataFrame, prediction_length: int, freq: str, X_df: pd.DataFrame = None
-) -> Dict[str, Tuple[np.ndarray, np.ndarray]]:
+    ff_model, df: pd.DataFrame, prediction_length: int, freq: str, X_df: pd.DataFrame = None, quantiles=None,
+) -> Dict[str, Tuple[np.ndarray, np.ndarray, Dict[float, np.ndarray]]]:
     """Forecast a long ``unique_id, ds, y`` frame, plus covariate columns when ``X_df`` is given.
 
     ``X_df`` holds ``unique_id, ds`` and the covariate values for the forecast horizon.
-    Returns ``{unique_id: (dates, values)}``. Dates are rebuilt from each series'
-    last observation with MMF's step offset, because pandas' "W" alias anchors
+    ``quantiles`` (levels in (0, 1)) asks foundationforecast for native quantiles.
+    Returns ``{unique_id: (dates, values, quantile_values)}``, where ``quantile_values`` maps each
+    level the library returned to its values (empty without ``quantiles``). Dates are rebuilt from
+    each series' last observation with MMF's step offset, because pandas' "W" alias anchors
     foundationforecast's future dates to Sundays.
     """
     kwargs = {}
@@ -197,10 +205,18 @@ def forecast_series(
         # Chronos-2 rejects horizon timestamps that differ from the ones it derives from freq.
         if freq == "W":
             ff_freq = _weekly_alias(df)
+    if quantiles:
+        kwargs["quantiles"] = list(quantiles)
     fcst = ff_model.forecast(df, h=prediction_length, freq=ff_freq, **kwargs)
     fcst = fcst.sort_values(["unique_id", "ds"], kind="stable")
     values = {
         uid: grp[_FF_ALIAS].to_numpy(dtype=np.float64)
+        for uid, grp in fcst.groupby("unique_id", sort=False)
+    }
+    # The library names quantile columns by level; levels it did not return are left out.
+    columns = {level: ff_quantile_column(level) for level in quantiles or () if ff_quantile_column(level) in fcst}
+    native = {
+        uid: {level: grp[col].to_numpy(dtype=np.float64) for level, col in columns.items()}
         for uid, grp in fcst.groupby("unique_id", sort=False)
     }
     offset = _step_offset(freq)
@@ -212,11 +228,18 @@ def forecast_series(
                 f"foundationforecast returned {0 if forecast is None else len(forecast)} "
                 f"forecast steps for series {uid!r}; expected {prediction_length}."
             )
+        quantile_values = native.get(uid, {})
+        for level, quantile in quantile_values.items():
+            if len(quantile) != prediction_length:
+                raise ModelPredictionError(
+                    f"foundationforecast returned {len(quantile)} steps for quantile {level} of series {uid!r}; "
+                    f"expected {prediction_length}."
+                )
         dates = np.array(
             [(last + offset * step).to_datetime64() for step in range(1, prediction_length + 1)],
             dtype="datetime64[ns]",
         )
-        out[uid] = (dates, forecast)
+        out[uid] = (dates, forecast, quantile_values)
     return out
 
 
@@ -234,6 +257,8 @@ class FoundationForecastForecaster(ForecastingRegressor):
     supports_future_covariates: bool = False
     # Chronos-2 encodes non-numeric covariates itself; the other models cast them to float32.
     accepts_categorical_strings: bool = False
+    # Every adapter returns quantiles; native_quantile_range is set per family below (None: any level).
+    native_quantiles_supported = True
 
     def __init__(self, params):
         super().__init__(params)
@@ -382,15 +407,46 @@ class FoundationForecastForecaster(ForecastingRegressor):
             else:
                 X_df = self._horizon_frame(pdf, val_df)
 
+        levels = self._native_levels()
         series = forecast_series(
-            self._get_ff_model(), pdf, self.params["prediction_length"], self.freq, X_df=X_df
+            self._get_ff_model(), pdf, self.params["prediction_length"], self.freq, X_df=X_df,
+            quantiles=sorted(set(levels.values())),
         )
-        forecast_df = pd.DataFrame({
+        data = {
             self.params.group_id: [original_ids[uid] for uid in series],
-            self.params.date_col: [dates for dates, _ in series.values()],
-            self.params.target: [values for _, values in series.values()],
-        })
+            self.params.date_col: [dates for dates, _, _ in series.values()],
+            self.params.target: [values for _, values, _ in series.values()],
+        }
+        returned = [level for level, requested in levels.items()
+                    if all(requested in qs for _, _, qs in series.values())]
+        if len(returned) < len(levels):
+            _warn_once(
+                f"native_quantiles_missing:{self._name()}",
+                f"{self._name()}: foundationforecast did not return the quantiles "
+                f"{sorted(set(levels) - set(returned))}; their columns are left out, so the interval levels that "
+                "need them are NULL.",
+            )
+        for level in returned:
+            data[QUANTILE_COLUMN_PREFIX + quantile_key(level)] = [qs[levels[level]] for _, _, qs in series.values()]
+        forecast_df = pd.DataFrame(data)
         return forecast_df, self.model
+
+    def _native_levels(self) -> dict:
+        """
+        Quantile levels for native intervals (native_levels), mapped to the level requested from foundationforecast
+        for each, or {} when none are needed.
+        """
+        # foundationforecast accepts levels with at most 3 decimals and raises otherwise (e.g. 0.0125 for a 97.5%
+        # interval): such levels are rounded outward, so the band is a little wider than its label.
+        levels = {level: ff_level(level) for level in self.native_levels()}
+        rounded = [level for level, ff in levels.items() if ff != level]
+        if rounded:
+            _warn_once(
+                f"native_quantiles_precision:{self._name()}",
+                f"{self._name()}: foundationforecast only accepts quantile levels with at most 3 decimals, so "
+                f"{rounded} are requested as {[levels[level] for level in rounded]}.",
+            )
+        return levels
 
     def forecast(self, df: pd.DataFrame, spark=None):
         observed = df[self.params.target].notnull()
@@ -400,37 +456,7 @@ class FoundationForecastForecaster(ForecastingRegressor):
         self, hist_df: pd.DataFrame, val_df: pd.DataFrame, curr_date, spark=None
     ) -> list:
         pred_df, _ = self.predict(hist_df, val_df, curr_date, spark)
-        metric_name = self.params["metric"]
-        metric_classes = {
-            "smape": MeanAbsolutePercentageError(symmetric=True),
-            "mape": MeanAbsolutePercentageError(symmetric=False),
-            "mae": MeanAbsoluteError(),
-            "mse": MeanSquaredError(square_root=False),
-            "rmse": MeanSquaredError(square_root=True),
-        }
-        if metric_name not in metric_classes:
-            raise UnsupportedMetricError(f"Metric {metric_name} not supported!")
-        metric_function = metric_classes[metric_name]
-
-        group_col = self.params["group_id"]
-        target_col = self.params["target"]
-        actuals_map = {
-            k: np.asarray(v) for k, v in val_df.groupby(group_col, sort=False)[target_col]
-        }
-        forecasts_map = dict(zip(pred_df[group_col].to_numpy(), pred_df[target_col].to_numpy()))
-
-        metrics = []
-        for key, forecast in forecasts_map.items():
-            try:
-                actual = actuals_map[key]
-                forecast = np.asarray(forecast)
-                metric_value = metric_function(actual, forecast)
-                metrics.append(
-                    (key, curr_date, metric_name, metric_value, forecast, actual, b"")
-                )
-            except Exception as err:
-                _logger.warning(f"Failed to calculate metric for key {key}: {err}")
-        return metrics
+        return self.series_metrics(pred_df, val_df, curr_date)
 
     def register(self, registered_model_name: str, input_example: pd.DataFrame = None):
         """Log and register the model.
@@ -554,8 +580,8 @@ class FoundationForecastMLflowModel(mlflow.pyfunc.PythonModel):
         series = forecast_series(self._model, df, self.prediction_length, self.freq, X_df=X_df)
         return pd.DataFrame({
             "unique_id": np.repeat(list(series), self.prediction_length),
-            "ds": np.concatenate([dates for dates, _ in series.values()]),
-            "y": np.concatenate([values for _, values in series.values()]),
+            "ds": np.concatenate([dates for dates, _, _ in series.values()]),
+            "y": np.concatenate([values for _, values, _ in series.values()]),
         })
 
 
@@ -564,17 +590,21 @@ class FFChronosForecaster(FoundationForecastForecaster):
     hparams = ("batch_size", "dtype")
     supports_future_covariates = True
     accepts_categorical_strings = True
+    # The quantiles of the chronos-2 and chronos-2-small checkpoints (chronos_config.quantiles).
+    native_quantile_range = (0.01, 0.99)
 
 
 class FFTimesFMForecaster(FoundationForecastForecaster):
     ff_class = "TimesFM"
     hparams = ("context_length", "batch_size")
+    native_quantile_range = (0.1, 0.9)
 
 
 class FFTiRexForecaster(FoundationForecastForecaster):
     ff_class = "TiRex"
     hparams = ("batch_size",)
     supports_future_covariates = True
+    native_quantile_range = (0.1, 0.9)
 
 
 class FFTotoForecaster(FoundationForecastForecaster):
@@ -584,21 +614,27 @@ class FFTotoForecaster(FoundationForecastForecaster):
 
 class FFToto2Forecaster(FFTotoForecaster):
     hparams = FFTotoForecaster.hparams + ("decode_block_size",)
+    # Toto 2.0 predicts the knots 0.1 to 0.9. Toto 1.0 (FFToto) takes sample quantiles at any level.
+    native_quantile_range = (0.1, 0.9)
 
 
 class FFFlowStateForecaster(FoundationForecastForecaster):
     ff_class = "FlowState"
     hparams = ("context_length", "batch_size", "scale_factor")
+    # The quantiles of the flowstate checkpoint (config.quantiles).
+    native_quantile_range = (0.1, 0.9)
 
 
 class FFPatchTSTFMForecaster(FoundationForecastForecaster):
     ff_class = "PatchTSTFM"
     hparams = ("context_length", "batch_size")
+    native_quantile_range = (0.01, 0.99)
 
 
 class FFTafsutForecaster(FoundationForecastForecaster):
     ff_class = "Tafsut"
     hparams = ("context_length", "batch_size")
+    native_quantile_range = (0.1, 0.9)
 
 
 class FFT0Forecaster(FoundationForecastForecaster):
@@ -613,6 +649,8 @@ class FFT0Forecaster(FoundationForecastForecaster):
         "cross_inference",
     )
     supports_future_covariates = True
+    # t0-beta and t0-gamma predict 0.01 to 0.99; t0-alpha (0.1 to 0.9) is not exposed by MMF.
+    native_quantile_range = (0.01, 0.99)
 
 
 class FFTimestralForecaster(FoundationForecastForecaster):
@@ -664,6 +702,7 @@ class FFTiRex2(FFTiRexForecaster):
 
 class FFToto(FFTotoForecaster):
     hparams = FFTotoForecaster.hparams + ("num_samples", "samples_per_batch")
+    samples_hparam = "num_samples"
 
     def __init__(self, params):
         super().__init__(params)

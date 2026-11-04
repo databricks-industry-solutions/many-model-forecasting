@@ -1,0 +1,1434 @@
+{
+    "dataset": "m5",
+    "series": 2000,
+    "h": 28,
+    "windows": 3,
+    "run_id": "b56d7ace-456e-4110-bc98-0bd21408192a",
+    "timings": {
+        "run_forecast": 376.0,
+        "calibrate_default": 275.0,
+        "calibrate_abc_xyz": 242.7,
+        "calibrate_series_scale": 220.0
+    },
+    "calibration": {
+        "default": {
+            "StatsForecastAutoETS": {
+                "methods": {
+                    "80": "cqr/asymmetric/marginal",
+                    "95": "cqr/asymmetric/marginal"
+                },
+                "coverage": {
+                    "coverage_80": 0.8005,
+                    "coverage_95": 0.9498,
+                    "native_coverage_80": 0.8731,
+                    "native_coverage_95": 0.9432
+                },
+                "error": null
+            },
+            "StatsForecastBaselineSeasonalNaive": {
+                "methods": {
+                    "80": "cqr/asymmetric/marginal",
+                    "95": "cqr/asymmetric/marginal"
+                },
+                "coverage": {
+                    "coverage_80": 0.8025,
+                    "coverage_95": 0.9504,
+                    "native_coverage_80": 0.9166,
+                    "native_coverage_95": 0.9715
+                },
+                "error": null
+            },
+            "StatsForecastCrostonSBA": {
+                "methods": {
+                    "80": "conformal/signed_normalized/series",
+                    "95": "conformal/signed_normalized/series"
+                },
+                "coverage": {
+                    "coverage_80": 0.8046,
+                    "coverage_95": 0.9543
+                },
+                "error": null
+            }
+        },
+        "abc_xyz": {
+            "StatsForecastAutoETS": {
+                "methods": {
+                    "80": "cqr/asymmetric/group",
+                    "95": "cqr/asymmetric/group"
+                },
+                "coverage": {
+                    "coverage_80": 0.8088,
+                    "coverage_95": 0.9507,
+                    "native_coverage_80": 0.8731,
+                    "native_coverage_95": 0.9432
+                },
+                "error": null
+            },
+            "StatsForecastBaselineSeasonalNaive": {
+                "methods": {
+                    "80": "cqr/asymmetric/group",
+                    "95": "cqr/asymmetric/group"
+                },
+                "coverage": {
+                    "coverage_80": 0.8139,
+                    "coverage_95": 0.9514,
+                    "native_coverage_80": 0.9166,
+                    "native_coverage_95": 0.9715
+                },
+                "error": null
+            },
+            "StatsForecastCrostonSBA": {
+                "methods": {
+                    "80": "conformal/signed_normalized/series",
+                    "95": "conformal/signed_normalized/series"
+                },
+                "coverage": {
+                    "coverage_80": 0.8064,
+                    "coverage_95": 0.9557
+                },
+                "error": null
+            }
+        },
+        "series_scale": {
+            "StatsForecastAutoETS": {
+                "methods": {
+                    "80": "cqr/asymmetric/marginal",
+                    "95": "cqr/asymmetric/marginal"
+                },
+                "coverage": {
+                    "coverage_80": 0.8005,
+                    "coverage_95": 0.9498,
+                    "native_coverage_80": 0.8731,
+                    "native_coverage_95": 0.9432
+                },
+                "error": null
+            },
+            "StatsForecastBaselineSeasonalNaive": {
+                "methods": {
+                    "80": "cqr/asymmetric/marginal",
+                    "95": "cqr/asymmetric/marginal"
+                },
+                "coverage": {
+                    "coverage_80": 0.8025,
+                    "coverage_95": 0.9504,
+                    "native_coverage_80": 0.9166,
+                    "native_coverage_95": 0.9715
+                },
+                "error": null
+            },
+            "StatsForecastCrostonSBA": {
+                "methods": {
+                    "80": "conformal/signed_normalized/series_scale",
+                    "95": "conformal/signed_normalized/series_scale"
+                },
+                "coverage": {
+                    "coverage_80": 0.7946,
+                    "coverage_95": 0.9423
+                },
+                "error": null
+            }
+        }
+    },
+    "heldout": {
+        "native": {
+            "80": {
+                "StatsForecastAutoETS": {
+                    "series": 1999,
+                    "overall": {
+                        "coverage": 0.8675,
+                        "msis": 8.1052,
+                        "width": 4.6823
+                    },
+                    "coverage_by_sigma_decile": {
+                        "1": 0.882,
+                        "2": 0.861,
+                        "3": 0.861,
+                        "4": 0.884,
+                        "5": 0.865,
+                        "6": 0.853,
+                        "7": 0.869,
+                        "8": 0.858,
+                        "9": 0.858,
+                        "10": 0.883
+                    },
+                    "coverage_by_abc_xyz": {
+                        "AX": [
+                            0.859,
+                            533
+                        ],
+                        "AY": [
+                            0.895,
+                            60
+                        ],
+                        "AZ": [
+                            0.875,
+                            10
+                        ],
+                        "BX": [
+                            0.857,
+                            128
+                        ],
+                        "BY": [
+                            0.868,
+                            473
+                        ],
+                        "BZ": [
+                            0.871,
+                            72
+                        ],
+                        "CX": [
+                            0.893,
+                            6
+                        ],
+                        "CY": [
+                            0.883,
+                            133
+                        ],
+                        "CZ": [
+                            0.87,
+                            584
+                        ]
+                    }
+                },
+                "StatsForecastBaselineSeasonalNaive": {
+                    "series": 1999,
+                    "overall": {
+                        "coverage": 0.9129,
+                        "msis": 12.6415,
+                        "width": 9.4279
+                    },
+                    "coverage_by_sigma_decile": {
+                        "1": 0.892,
+                        "2": 0.903,
+                        "3": 0.898,
+                        "4": 0.921,
+                        "5": 0.911,
+                        "6": 0.908,
+                        "7": 0.916,
+                        "8": 0.924,
+                        "9": 0.919,
+                        "10": 0.937
+                    },
+                    "coverage_by_abc_xyz": {
+                        "AX": [
+                            0.928,
+                            533
+                        ],
+                        "AY": [
+                            0.927,
+                            60
+                        ],
+                        "AZ": [
+                            0.929,
+                            10
+                        ],
+                        "BX": [
+                            0.906,
+                            128
+                        ],
+                        "BY": [
+                            0.914,
+                            473
+                        ],
+                        "BZ": [
+                            0.902,
+                            72
+                        ],
+                        "CX": [
+                            0.935,
+                            6
+                        ],
+                        "CY": [
+                            0.911,
+                            133
+                        ],
+                        "CZ": [
+                            0.899,
+                            584
+                        ]
+                    }
+                }
+            },
+            "95": {
+                "StatsForecastAutoETS": {
+                    "series": 1999,
+                    "overall": {
+                        "coverage": 0.9416,
+                        "msis": 15.4928,
+                        "width": 7.1609
+                    },
+                    "coverage_by_sigma_decile": {
+                        "1": 0.912,
+                        "2": 0.931,
+                        "3": 0.948,
+                        "4": 0.935,
+                        "5": 0.937,
+                        "6": 0.938,
+                        "7": 0.945,
+                        "8": 0.95,
+                        "9": 0.954,
+                        "10": 0.967
+                    },
+                    "coverage_by_abc_xyz": {
+                        "AX": [
+                            0.956,
+                            533
+                        ],
+                        "AY": [
+                            0.959,
+                            60
+                        ],
+                        "AZ": [
+                            0.95,
+                            10
+                        ],
+                        "BX": [
+                            0.947,
+                            128
+                        ],
+                        "BY": [
+                            0.937,
+                            473
+                        ],
+                        "BZ": [
+                            0.943,
+                            72
+                        ],
+                        "CX": [
+                            0.94,
+                            6
+                        ],
+                        "CY": [
+                            0.945,
+                            133
+                        ],
+                        "CZ": [
+                            0.928,
+                            584
+                        ]
+                    }
+                },
+                "StatsForecastBaselineSeasonalNaive": {
+                    "series": 1999,
+                    "overall": {
+                        "coverage": 0.9709,
+                        "msis": 21.3631,
+                        "width": 14.4188
+                    },
+                    "coverage_by_sigma_decile": {
+                        "1": 0.953,
+                        "2": 0.973,
+                        "3": 0.965,
+                        "4": 0.969,
+                        "5": 0.967,
+                        "6": 0.967,
+                        "7": 0.976,
+                        "8": 0.979,
+                        "9": 0.976,
+                        "10": 0.983
+                    },
+                    "coverage_by_abc_xyz": {
+                        "AX": [
+                            0.981,
+                            533
+                        ],
+                        "AY": [
+                            0.969,
+                            60
+                        ],
+                        "AZ": [
+                            0.975,
+                            10
+                        ],
+                        "BX": [
+                            0.969,
+                            128
+                        ],
+                        "BY": [
+                            0.971,
+                            473
+                        ],
+                        "BZ": [
+                            0.966,
+                            72
+                        ],
+                        "CX": [
+                            0.988,
+                            6
+                        ],
+                        "CY": [
+                            0.969,
+                            133
+                        ],
+                        "CZ": [
+                            0.963,
+                            584
+                        ]
+                    }
+                }
+            }
+        },
+        "default": {
+            "80": {
+                "StatsForecastAutoETS": {
+                    "series": 1999,
+                    "overall": {
+                        "coverage": 0.7937,
+                        "msis": 7.1258,
+                        "width": 2.7677
+                    },
+                    "coverage_by_sigma_decile": {
+                        "1": 0.879,
+                        "2": 0.846,
+                        "3": 0.814,
+                        "4": 0.781,
+                        "5": 0.776,
+                        "6": 0.772,
+                        "7": 0.776,
+                        "8": 0.761,
+                        "9": 0.752,
+                        "10": 0.779
+                    },
+                    "coverage_by_abc_xyz": {
+                        "AX": [
+                            0.749,
+                            533
+                        ],
+                        "AY": [
+                            0.846,
+                            60
+                        ],
+                        "AZ": [
+                            0.836,
+                            10
+                        ],
+                        "BX": [
+                            0.758,
+                            128
+                        ],
+                        "BY": [
+                            0.776,
+                            473
+                        ],
+                        "BZ": [
+                            0.826,
+                            72
+                        ],
+                        "CX": [
+                            0.821,
+                            6
+                        ],
+                        "CY": [
+                            0.785,
+                            133
+                        ],
+                        "CZ": [
+                            0.849,
+                            584
+                        ]
+                    }
+                },
+                "StatsForecastBaselineSeasonalNaive": {
+                    "series": 1999,
+                    "overall": {
+                        "coverage": 0.7916,
+                        "msis": 8.7022,
+                        "width": 3.9957
+                    },
+                    "coverage_by_sigma_decile": {
+                        "1": 0.869,
+                        "2": 0.84,
+                        "3": 0.82,
+                        "4": 0.799,
+                        "5": 0.787,
+                        "6": 0.771,
+                        "7": 0.781,
+                        "8": 0.76,
+                        "9": 0.739,
+                        "10": 0.749
+                    },
+                    "coverage_by_abc_xyz": {
+                        "AX": [
+                            0.736,
+                            533
+                        ],
+                        "AY": [
+                            0.843,
+                            60
+                        ],
+                        "AZ": [
+                            0.879,
+                            10
+                        ],
+                        "BX": [
+                            0.74,
+                            128
+                        ],
+                        "BY": [
+                            0.785,
+                            473
+                        ],
+                        "BZ": [
+                            0.847,
+                            72
+                        ],
+                        "CX": [
+                            0.768,
+                            6
+                        ],
+                        "CY": [
+                            0.788,
+                            133
+                        ],
+                        "CZ": [
+                            0.846,
+                            584
+                        ]
+                    }
+                },
+                "StatsForecastCrostonSBA": {
+                    "series": 1999,
+                    "overall": {
+                        "coverage": 0.7966,
+                        "msis": 8.4542,
+                        "width": 2.7786
+                    },
+                    "coverage_by_sigma_decile": {
+                        "1": 0.753,
+                        "2": 0.752,
+                        "3": 0.763,
+                        "4": 0.791,
+                        "5": 0.792,
+                        "6": 0.792,
+                        "7": 0.822,
+                        "8": 0.833,
+                        "9": 0.83,
+                        "10": 0.838
+                    },
+                    "coverage_by_abc_xyz": {
+                        "AX": [
+                            0.832,
+                            533
+                        ],
+                        "AY": [
+                            0.791,
+                            60
+                        ],
+                        "AZ": [
+                            0.807,
+                            10
+                        ],
+                        "BX": [
+                            0.842,
+                            128
+                        ],
+                        "BY": [
+                            0.794,
+                            473
+                        ],
+                        "BZ": [
+                            0.732,
+                            72
+                        ],
+                        "CX": [
+                            0.935,
+                            6
+                        ],
+                        "CY": [
+                            0.814,
+                            133
+                        ],
+                        "CZ": [
+                            0.759,
+                            584
+                        ]
+                    }
+                }
+            },
+            "95": {
+                "StatsForecastAutoETS": {
+                    "series": 1999,
+                    "overall": {
+                        "coverage": 0.9486,
+                        "msis": 12.8896,
+                        "width": 4.9623
+                    },
+                    "coverage_by_sigma_decile": {
+                        "1": 0.916,
+                        "2": 0.944,
+                        "3": 0.952,
+                        "4": 0.943,
+                        "5": 0.944,
+                        "6": 0.943,
+                        "7": 0.953,
+                        "8": 0.958,
+                        "9": 0.961,
+                        "10": 0.971
+                    },
+                    "coverage_by_abc_xyz": {
+                        "AX": [
+                            0.964,
+                            533
+                        ],
+                        "AY": [
+                            0.964,
+                            60
+                        ],
+                        "AZ": [
+                            0.954,
+                            10
+                        ],
+                        "BX": [
+                            0.954,
+                            128
+                        ],
+                        "BY": [
+                            0.945,
+                            473
+                        ],
+                        "BZ": [
+                            0.946,
+                            72
+                        ],
+                        "CX": [
+                            0.964,
+                            6
+                        ],
+                        "CY": [
+                            0.949,
+                            133
+                        ],
+                        "CZ": [
+                            0.935,
+                            584
+                        ]
+                    }
+                },
+                "StatsForecastBaselineSeasonalNaive": {
+                    "series": 1999,
+                    "overall": {
+                        "coverage": 0.9484,
+                        "msis": 14.9219,
+                        "width": 6.7666
+                    },
+                    "coverage_by_sigma_decile": {
+                        "1": 0.948,
+                        "2": 0.965,
+                        "3": 0.954,
+                        "4": 0.95,
+                        "5": 0.944,
+                        "6": 0.937,
+                        "7": 0.946,
+                        "8": 0.947,
+                        "9": 0.942,
+                        "10": 0.949
+                    },
+                    "coverage_by_abc_xyz": {
+                        "AX": [
+                            0.945,
+                            533
+                        ],
+                        "AY": [
+                            0.952,
+                            60
+                        ],
+                        "AZ": [
+                            0.961,
+                            10
+                        ],
+                        "BX": [
+                            0.933,
+                            128
+                        ],
+                        "BY": [
+                            0.947,
+                            473
+                        ],
+                        "BZ": [
+                            0.951,
+                            72
+                        ],
+                        "CX": [
+                            0.958,
+                            6
+                        ],
+                        "CY": [
+                            0.948,
+                            133
+                        ],
+                        "CZ": [
+                            0.955,
+                            584
+                        ]
+                    }
+                },
+                "StatsForecastCrostonSBA": {
+                    "series": 1999,
+                    "overall": {
+                        "coverage": 0.9522,
+                        "msis": 18.3803,
+                        "width": 5.5794
+                    },
+                    "coverage_by_sigma_decile": {
+                        "1": 0.853,
+                        "2": 0.934,
+                        "3": 0.958,
+                        "4": 0.954,
+                        "5": 0.955,
+                        "6": 0.952,
+                        "7": 0.983,
+                        "8": 0.973,
+                        "9": 0.986,
+                        "10": 0.974
+                    },
+                    "coverage_by_abc_xyz": {
+                        "AX": [
+                            0.983,
+                            533
+                        ],
+                        "AY": [
+                            0.938,
+                            60
+                        ],
+                        "AZ": [
+                            0.886,
+                            10
+                        ],
+                        "BX": [
+                            0.994,
+                            128
+                        ],
+                        "BY": [
+                            0.959,
+                            473
+                        ],
+                        "BZ": [
+                            0.892,
+                            72
+                        ],
+                        "CX": [
+                            0.994,
+                            6
+                        ],
+                        "CY": [
+                            0.978,
+                            133
+                        ],
+                        "CZ": [
+                            0.914,
+                            584
+                        ]
+                    }
+                }
+            }
+        },
+        "abc_xyz": {
+            "80": {
+                "StatsForecastAutoETS": {
+                    "series": 1999,
+                    "overall": {
+                        "coverage": 0.8005,
+                        "msis": 7.2109,
+                        "width": 2.5268
+                    },
+                    "coverage_by_sigma_decile": {
+                        "1": 0.873,
+                        "2": 0.831,
+                        "3": 0.797,
+                        "4": 0.789,
+                        "5": 0.783,
+                        "6": 0.781,
+                        "7": 0.792,
+                        "8": 0.777,
+                        "9": 0.773,
+                        "10": 0.808
+                    },
+                    "coverage_by_abc_xyz": {
+                        "AX": [
+                            0.78,
+                            533
+                        ],
+                        "AY": [
+                            0.812,
+                            60
+                        ],
+                        "AZ": [
+                            0.8,
+                            10
+                        ],
+                        "BX": [
+                            0.789,
+                            128
+                        ],
+                        "BY": [
+                            0.786,
+                            473
+                        ],
+                        "BZ": [
+                            0.788,
+                            72
+                        ],
+                        "CX": [
+                            0.762,
+                            6
+                        ],
+                        "CY": [
+                            0.824,
+                            133
+                        ],
+                        "CZ": [
+                            0.829,
+                            584
+                        ]
+                    }
+                },
+                "StatsForecastBaselineSeasonalNaive": {
+                    "series": 1999,
+                    "overall": {
+                        "coverage": 0.8042,
+                        "msis": 8.6773,
+                        "width": 3.6287
+                    },
+                    "coverage_by_sigma_decile": {
+                        "1": 0.86,
+                        "2": 0.819,
+                        "3": 0.797,
+                        "4": 0.789,
+                        "5": 0.781,
+                        "6": 0.775,
+                        "7": 0.804,
+                        "8": 0.807,
+                        "9": 0.795,
+                        "10": 0.815
+                    },
+                    "coverage_by_abc_xyz": {
+                        "AX": [
+                            0.806,
+                            533
+                        ],
+                        "AY": [
+                            0.818,
+                            60
+                        ],
+                        "AZ": [
+                            0.871,
+                            10
+                        ],
+                        "BX": [
+                            0.787,
+                            128
+                        ],
+                        "BY": [
+                            0.783,
+                            473
+                        ],
+                        "BZ": [
+                            0.795,
+                            72
+                        ],
+                        "CX": [
+                            0.78,
+                            6
+                        ],
+                        "CY": [
+                            0.799,
+                            133
+                        ],
+                        "CZ": [
+                            0.824,
+                            584
+                        ]
+                    }
+                },
+                "StatsForecastCrostonSBA": {
+                    "series": 1999,
+                    "overall": {
+                        "coverage": 0.7944,
+                        "msis": 8.3778,
+                        "width": 2.9068
+                    },
+                    "coverage_by_sigma_decile": {
+                        "1": 0.735,
+                        "2": 0.761,
+                        "3": 0.792,
+                        "4": 0.798,
+                        "5": 0.799,
+                        "6": 0.781,
+                        "7": 0.799,
+                        "8": 0.828,
+                        "9": 0.824,
+                        "10": 0.826
+                    },
+                    "coverage_by_abc_xyz": {
+                        "AX": [
+                            0.818,
+                            533
+                        ],
+                        "AY": [
+                            0.836,
+                            60
+                        ],
+                        "AZ": [
+                            0.821,
+                            10
+                        ],
+                        "BX": [
+                            0.782,
+                            128
+                        ],
+                        "BY": [
+                            0.791,
+                            473
+                        ],
+                        "BZ": [
+                            0.808,
+                            72
+                        ],
+                        "CX": [
+                            0.946,
+                            6
+                        ],
+                        "CY": [
+                            0.807,
+                            133
+                        ],
+                        "CZ": [
+                            0.768,
+                            584
+                        ]
+                    }
+                }
+            },
+            "95": {
+                "StatsForecastAutoETS": {
+                    "series": 1999,
+                    "overall": {
+                        "coverage": 0.9488,
+                        "msis": 12.7711,
+                        "width": 5.0467
+                    },
+                    "coverage_by_sigma_decile": {
+                        "1": 0.925,
+                        "2": 0.958,
+                        "3": 0.959,
+                        "4": 0.949,
+                        "5": 0.948,
+                        "6": 0.943,
+                        "7": 0.95,
+                        "8": 0.944,
+                        "9": 0.949,
+                        "10": 0.963
+                    },
+                    "coverage_by_abc_xyz": {
+                        "AX": [
+                            0.95,
+                            533
+                        ],
+                        "AY": [
+                            0.96,
+                            60
+                        ],
+                        "AZ": [
+                            0.961,
+                            10
+                        ],
+                        "BX": [
+                            0.95,
+                            128
+                        ],
+                        "BY": [
+                            0.946,
+                            473
+                        ],
+                        "BZ": [
+                            0.95,
+                            72
+                        ],
+                        "CX": [
+                            0.946,
+                            6
+                        ],
+                        "CY": [
+                            0.953,
+                            133
+                        ],
+                        "CZ": [
+                            0.947,
+                            584
+                        ]
+                    }
+                },
+                "StatsForecastBaselineSeasonalNaive": {
+                    "series": 1999,
+                    "overall": {
+                        "coverage": 0.9492,
+                        "msis": 14.8948,
+                        "width": 6.6534
+                    },
+                    "coverage_by_sigma_decile": {
+                        "1": 0.945,
+                        "2": 0.959,
+                        "3": 0.946,
+                        "4": 0.949,
+                        "5": 0.943,
+                        "6": 0.933,
+                        "7": 0.95,
+                        "8": 0.954,
+                        "9": 0.953,
+                        "10": 0.96
+                    },
+                    "coverage_by_abc_xyz": {
+                        "AX": [
+                            0.955,
+                            533
+                        ],
+                        "AY": [
+                            0.957,
+                            60
+                        ],
+                        "AZ": [
+                            0.975,
+                            10
+                        ],
+                        "BX": [
+                            0.943,
+                            128
+                        ],
+                        "BY": [
+                            0.944,
+                            473
+                        ],
+                        "BZ": [
+                            0.949,
+                            72
+                        ],
+                        "CX": [
+                            0.976,
+                            6
+                        ],
+                        "CY": [
+                            0.948,
+                            133
+                        ],
+                        "CZ": [
+                            0.948,
+                            584
+                        ]
+                    }
+                },
+                "StatsForecastCrostonSBA": {
+                    "series": 1999,
+                    "overall": {
+                        "coverage": 0.9528,
+                        "msis": 17.3665,
+                        "width": 5.7586
+                    },
+                    "coverage_by_sigma_decile": {
+                        "1": 0.904,
+                        "2": 0.978,
+                        "3": 0.964,
+                        "4": 0.95,
+                        "5": 0.953,
+                        "6": 0.945,
+                        "7": 0.958,
+                        "8": 0.953,
+                        "9": 0.964,
+                        "10": 0.959
+                    },
+                    "coverage_by_abc_xyz": {
+                        "AX": [
+                            0.955,
+                            533
+                        ],
+                        "AY": [
+                            0.976,
+                            60
+                        ],
+                        "AZ": [
+                            0.939,
+                            10
+                        ],
+                        "BX": [
+                            0.96,
+                            128
+                        ],
+                        "BY": [
+                            0.945,
+                            473
+                        ],
+                        "BZ": [
+                            0.946,
+                            72
+                        ],
+                        "CX": [
+                            0.988,
+                            6
+                        ],
+                        "CY": [
+                            0.949,
+                            133
+                        ],
+                        "CZ": [
+                            0.955,
+                            584
+                        ]
+                    }
+                }
+            }
+        },
+        "series_scale": {
+            "80": {
+                "StatsForecastAutoETS": {
+                    "series": 1999,
+                    "overall": {
+                        "coverage": 0.7937,
+                        "msis": 7.1258,
+                        "width": 2.7677
+                    },
+                    "coverage_by_sigma_decile": {
+                        "1": 0.879,
+                        "2": 0.846,
+                        "3": 0.814,
+                        "4": 0.781,
+                        "5": 0.776,
+                        "6": 0.772,
+                        "7": 0.776,
+                        "8": 0.761,
+                        "9": 0.752,
+                        "10": 0.779
+                    },
+                    "coverage_by_abc_xyz": {
+                        "AX": [
+                            0.749,
+                            533
+                        ],
+                        "AY": [
+                            0.846,
+                            60
+                        ],
+                        "AZ": [
+                            0.836,
+                            10
+                        ],
+                        "BX": [
+                            0.758,
+                            128
+                        ],
+                        "BY": [
+                            0.776,
+                            473
+                        ],
+                        "BZ": [
+                            0.826,
+                            72
+                        ],
+                        "CX": [
+                            0.821,
+                            6
+                        ],
+                        "CY": [
+                            0.785,
+                            133
+                        ],
+                        "CZ": [
+                            0.849,
+                            584
+                        ]
+                    }
+                },
+                "StatsForecastBaselineSeasonalNaive": {
+                    "series": 1999,
+                    "overall": {
+                        "coverage": 0.7916,
+                        "msis": 8.7022,
+                        "width": 3.9957
+                    },
+                    "coverage_by_sigma_decile": {
+                        "1": 0.869,
+                        "2": 0.84,
+                        "3": 0.82,
+                        "4": 0.799,
+                        "5": 0.787,
+                        "6": 0.771,
+                        "7": 0.781,
+                        "8": 0.76,
+                        "9": 0.739,
+                        "10": 0.749
+                    },
+                    "coverage_by_abc_xyz": {
+                        "AX": [
+                            0.736,
+                            533
+                        ],
+                        "AY": [
+                            0.843,
+                            60
+                        ],
+                        "AZ": [
+                            0.879,
+                            10
+                        ],
+                        "BX": [
+                            0.74,
+                            128
+                        ],
+                        "BY": [
+                            0.785,
+                            473
+                        ],
+                        "BZ": [
+                            0.847,
+                            72
+                        ],
+                        "CX": [
+                            0.768,
+                            6
+                        ],
+                        "CY": [
+                            0.788,
+                            133
+                        ],
+                        "CZ": [
+                            0.846,
+                            584
+                        ]
+                    }
+                },
+                "StatsForecastCrostonSBA": {
+                    "series": 1999,
+                    "overall": {
+                        "coverage": 0.8018,
+                        "msis": 7.4978,
+                        "width": 3.0898
+                    },
+                    "coverage_by_sigma_decile": {
+                        "1": 0.866,
+                        "2": 0.849,
+                        "3": 0.859,
+                        "4": 0.843,
+                        "5": 0.82,
+                        "6": 0.779,
+                        "7": 0.757,
+                        "8": 0.746,
+                        "9": 0.739,
+                        "10": 0.76
+                    },
+                    "coverage_by_abc_xyz": {
+                        "AX": [
+                            0.738,
+                            533
+                        ],
+                        "AY": [
+                            0.764,
+                            60
+                        ],
+                        "AZ": [
+                            0.836,
+                            10
+                        ],
+                        "BX": [
+                            0.757,
+                            128
+                        ],
+                        "BY": [
+                            0.801,
+                            473
+                        ],
+                        "BZ": [
+                            0.792,
+                            72
+                        ],
+                        "CX": [
+                            0.929,
+                            6
+                        ],
+                        "CY": [
+                            0.883,
+                            133
+                        ],
+                        "CZ": [
+                            0.855,
+                            584
+                        ]
+                    }
+                }
+            },
+            "95": {
+                "StatsForecastAutoETS": {
+                    "series": 1999,
+                    "overall": {
+                        "coverage": 0.9486,
+                        "msis": 12.8896,
+                        "width": 4.9623
+                    },
+                    "coverage_by_sigma_decile": {
+                        "1": 0.916,
+                        "2": 0.944,
+                        "3": 0.952,
+                        "4": 0.943,
+                        "5": 0.944,
+                        "6": 0.943,
+                        "7": 0.953,
+                        "8": 0.958,
+                        "9": 0.961,
+                        "10": 0.971
+                    },
+                    "coverage_by_abc_xyz": {
+                        "AX": [
+                            0.964,
+                            533
+                        ],
+                        "AY": [
+                            0.964,
+                            60
+                        ],
+                        "AZ": [
+                            0.954,
+                            10
+                        ],
+                        "BX": [
+                            0.954,
+                            128
+                        ],
+                        "BY": [
+                            0.945,
+                            473
+                        ],
+                        "BZ": [
+                            0.946,
+                            72
+                        ],
+                        "CX": [
+                            0.964,
+                            6
+                        ],
+                        "CY": [
+                            0.949,
+                            133
+                        ],
+                        "CZ": [
+                            0.935,
+                            584
+                        ]
+                    }
+                },
+                "StatsForecastBaselineSeasonalNaive": {
+                    "series": 1999,
+                    "overall": {
+                        "coverage": 0.9484,
+                        "msis": 14.9219,
+                        "width": 6.7666
+                    },
+                    "coverage_by_sigma_decile": {
+                        "1": 0.948,
+                        "2": 0.965,
+                        "3": 0.954,
+                        "4": 0.95,
+                        "5": 0.944,
+                        "6": 0.937,
+                        "7": 0.946,
+                        "8": 0.947,
+                        "9": 0.942,
+                        "10": 0.949
+                    },
+                    "coverage_by_abc_xyz": {
+                        "AX": [
+                            0.945,
+                            533
+                        ],
+                        "AY": [
+                            0.952,
+                            60
+                        ],
+                        "AZ": [
+                            0.961,
+                            10
+                        ],
+                        "BX": [
+                            0.933,
+                            128
+                        ],
+                        "BY": [
+                            0.947,
+                            473
+                        ],
+                        "BZ": [
+                            0.951,
+                            72
+                        ],
+                        "CX": [
+                            0.958,
+                            6
+                        ],
+                        "CY": [
+                            0.948,
+                            133
+                        ],
+                        "CZ": [
+                            0.955,
+                            584
+                        ]
+                    }
+                },
+                "StatsForecastCrostonSBA": {
+                    "series": 1999,
+                    "overall": {
+                        "coverage": 0.9407,
+                        "msis": 13.3238,
+                        "width": 5.4714
+                    },
+                    "coverage_by_sigma_decile": {
+                        "1": 0.909,
+                        "2": 0.948,
+                        "3": 0.962,
+                        "4": 0.967,
+                        "5": 0.951,
+                        "6": 0.955,
+                        "7": 0.949,
+                        "8": 0.936,
+                        "9": 0.917,
+                        "10": 0.914
+                    },
+                    "coverage_by_abc_xyz": {
+                        "AX": [
+                            0.92,
+                            533
+                        ],
+                        "AY": [
+                            0.927,
+                            60
+                        ],
+                        "AZ": [
+                            0.936,
+                            10
+                        ],
+                        "BX": [
+                            0.964,
+                            128
+                        ],
+                        "BY": [
+                            0.958,
+                            473
+                        ],
+                        "BZ": [
+                            0.926,
+                            72
+                        ],
+                        "CX": [
+                            0.988,
+                            6
+                        ],
+                        "CY": [
+                            0.974,
+                            133
+                        ],
+                        "CZ": [
+                            0.935,
+                            584
+                        ]
+                    }
+                }
+            }
+        }
+    }
+}

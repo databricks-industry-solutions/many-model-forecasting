@@ -39,18 +39,11 @@ from mlforecast.lag_transforms import (
     RollingStd,
 )
 from mlforecast.target_transforms import Differences, LocalStandardScaler
-from sktime.performance_metrics.forecasting import (
-    MeanAbsoluteError,
-    MeanAbsolutePercentageError,
-    MeanSquaredError,
-)
 
 from mmf_sa.exceptions import (
     ConfigurationError,
-    DataPreparationError,
     MissingFeatureError,
     ModelPredictionError,
-    UnsupportedMetricError,
 )
 from mmf_sa.models.abstract_model import MODEL_PIP_REQUIREMENTS, ForecastingRegressor
 
@@ -492,55 +485,8 @@ class MLForecastBase(ForecastingRegressor):
         curr_date,
         spark=None,
     ) -> list:
-        """Per-key metric calculation, shaped like ``NeuralFcForecaster``."""
         pred_df, _ = self.predict(hist_df, val_df)
-        keys = pred_df[self.params["group_id"]].unique()
-        metric_name = self.params["metric"]
-        metric_classes = {
-            "smape": MeanAbsolutePercentageError(symmetric=True),
-            "mape": MeanAbsolutePercentageError(symmetric=False),
-            "mae": MeanAbsoluteError(),
-            "mse": MeanSquaredError(square_root=False),
-            "rmse": MeanSquaredError(square_root=True),
-        }
-        if metric_name not in metric_classes:
-            raise UnsupportedMetricError(f"Metric {metric_name} not supported!")
-        metric_function = metric_classes[metric_name]
-
-        group_col = self.params["group_id"]
-        target_col = self.params["target"]
-        prediction_length = int(self.params["prediction_length"])
-        actuals_map = {
-            k: v.to_numpy()
-            for k, v in val_df.groupby(group_col, sort=False)[target_col]
-        }
-        forecasts_map = {
-            k: v.iloc[-prediction_length:].to_numpy()
-            for k, v in pred_df.groupby(group_col, sort=False)[target_col]
-        }
-
-        metrics = []
-        for key in keys:
-            try:
-                actual = actuals_map[key]
-                forecast = forecasts_map[key]
-                metric_value = metric_function(actual, forecast)
-                metrics.append(
-                    (
-                        key,
-                        curr_date,
-                        metric_name,
-                        metric_value,
-                        forecast,
-                        actual,
-                        b"",
-                    )
-                )
-            except (ModelPredictionError, DataPreparationError) as err:
-                _logger.warning(f"Failed to calculate metric for key {key}: {err}")
-            except Exception as err:  # pragma: no cover — defensive
-                _logger.warning(f"Unexpected error calculating metric for key {key}: {err}")
-        return metrics
+        return self.series_metrics(pred_df, val_df, curr_date, long_format=True)
 
     # -- MLflow registration --
 
