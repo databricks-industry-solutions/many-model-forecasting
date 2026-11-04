@@ -284,3 +284,100 @@ worst-group gap by 3 points or more beyond the bootstrap noise, with marginal co
 CrostonSBA aside, where it rises toward over-coverage) and WIS lower. It is not met on all volume datasets and loses on
 Traffic and EPF, so it does not become a default. The docs and Skill 4 Step 3f now recommend `pool="group",
 group_col="auto"` for intermittent demand data, and never for targets that are not volumes; one pool stays the default.
+
+cat <<'EOF'
+
+## Held-out coverage of the calibrated intervals, per dataset
+
+The default calibration (one pool) against the native bands, on the held-out last horizon of each series, with the
+same runs as the pooling study: mean over the runs (seeds 7, 11 and 23 at 3 windows, and seed 7 at 6 windows; Car
+Parts has no 6-window run), up to 2,000 series per dataset. CQR corrects the native bands of the models that have
+them; the models without native intervals get conformal intervals. MSIS is scaled by each series' seasonal-naive
+error and averaged over series (Web Traffic AutoETS has a few exploding forecasts, so its mean MSIS is not
+meaningful). Produced from `results/pi_pooling_*.json`.
+
+EOF
+
+
+python3 /tmp/pooling_scripts/coverage_table.py
+
+cat <<'EOF'
+
+- **At 95%** the calibrated intervals cover 0.94-0.97 on 8 of the 11 datasets. They are under on Electricity
+  (0.88-0.89), on Traffic for SeasonalNaive and WindowAverage (0.89, 0.91) and on EPF for SeasonalNaive (0.91).
+- **At 80%** they cover 0.78-0.86. They over-cover on the zero-heavy datasets (Car Parts, London, Online Retail for
+  the CQR models: 0.83-0.86), where many actuals equal the clipped lower bound of 0, and under-cover on Electricity
+  (0.74-0.76) and on Traffic for SeasonalNaive (0.75).
+- **The native bands are off in both directions**: too wide on intermittent and spiky data (M5 SeasonalNaive 0.90 at
+  80%, Online Retail 0.93, Web Traffic 0.92-0.95, Traffic AutoETS 0.95), too narrow elsewhere (M4 AutoETS 0.885 at
+  95%, Electricity AutoETS 0.82, EPF SeasonalNaive 0.84). CQR brings them toward nominal and lowers MSIS (Online Retail
+  AutoETS 54 to 35, M5 SeasonalNaive 19 to 13, Traffic AutoETS 18 to 10); where the native bands are already close
+  (Hospital, EPF AutoETS) MSIS stays within 0.3.
+- **Where the held-out horizon is harder than the backtest windows**, the calibration, fitted on the backtest, cannot
+  see it: on Electricity and on Traffic every method is under nominal, and for Traffic SeasonalNaive and Electricity
+  SeasonalNaive at 80% the calibrated coverage is lower than the native one (0.892 to 0.745, 0.759 to 0.735).
+- **Conformal intervals** (models without native intervals) cover 0.78-0.84 at 80% and 0.94-0.96 at 95% on the volume
+  datasets, close to the CQR models of the same dataset, and are under on Electricity and Traffic like them.
+EOF
+
+
+## Held-out coverage of the calibrated intervals, per dataset
+
+The default calibration (one pool) against the native bands, on the held-out last horizon of each series, with the
+same runs as the pooling study: mean over the runs (seeds 7, 11 and 23 at 3 windows, and seed 7 at 6 windows; Car
+Parts has no 6-window run), up to 2,000 series per dataset. CQR corrects the native bands of the models that have
+them; the models without native intervals get conformal intervals. MSIS is scaled by each series' seasonal-naive
+error and averaged over series (Web Traffic AutoETS has a few exploding forecasts, so its mean MSIS is not
+meaningful). Produced from `results/pi_pooling_*.json`.
+
+| Dataset | Model (method) | Native 80 / 95 | Calibrated 80 / 95 | MSIS 95: native → calibrated | Runs |
+|---|---|---|---|---|---|
+| M5 | AutoETS (CQR) | 0.853 / 0.933 | 0.794 / 0.947 | 14.8 → 12.4 | 4 |
+| M5 | SeasonalNaive (CQR) | 0.903 / 0.966 | 0.792 / 0.950 | 18.9 → 13.2 | 4 |
+| M5 | CrostonSBA (conformal) | — | 0.794 / 0.950 | 16.1 | 4 |
+| Car Parts | AutoETS (CQR) | 0.920 / 0.954 | 0.851 / 0.963 | 13.9 → 10.7 | 3 |
+| Car Parts | SeasonalNaive (CQR) | 0.866 / 0.932 | 0.837 / 0.960 | 19.7 → 14.8 | 3 |
+| Car Parts | CrostonSBA (conformal) | — | 0.841 / 0.957 | 13.0 | 3 |
+| Hospital | AutoETS (CQR) | 0.830 / 0.948 | 0.802 / 0.952 | 5.2 → 5.3 | 4 |
+| Hospital | SeasonalNaive (CQR) | 0.835 / 0.949 | 0.814 / 0.958 | 6.6 → 6.7 | 4 |
+| Hospital | WindowAverage (conformal) | — | 0.801 / 0.942 | 6.4 | 4 |
+| Web Traffic | AutoETS (CQR) | 0.925 / 0.962 | 0.812 / 0.945 | n/a → n/a | 4 |
+| Web Traffic | SeasonalNaive (CQR) | 0.949 / 0.973 | 0.822 / 0.939 | 41.1 → 32.7 | 4 |
+| Web Traffic | WindowAverage (conformal) | — | 0.802 / 0.940 | 34.6 | 4 |
+| London smart meters | AutoETS (CQR) | 0.864 / 0.950 | 0.838 / 0.962 | 11.7 → 10.7 | 4 |
+| London smart meters | SeasonalNaive (CQR) | 0.903 / 0.967 | 0.855 / 0.967 | 12.5 → 11.3 | 4 |
+| London smart meters | WindowAverage (conformal) | — | 0.827 / 0.953 | 11.5 | 4 |
+| Electricity | AutoETS (CQR) | 0.700 / 0.819 | 0.743 / 0.881 | 25.4 → 22.1 | 4 |
+| Electricity | SeasonalNaive (CQR) | 0.759 / 0.848 | 0.735 / 0.883 | 22.6 → 20.7 | 4 |
+| Electricity | WindowAverage (conformal) | — | 0.757 / 0.889 | 18.8 | 4 |
+| Online Retail | AutoETS (CQR) | 0.933 / 0.961 | 0.858 / 0.954 | 54.3 → 34.8 | 4 |
+| Online Retail | SeasonalNaive (CQR) | 0.937 / 0.963 | 0.857 / 0.954 | 82.7 → 49.1 | 4 |
+| Online Retail | CrostonSBA (conformal) | — | 0.789 / 0.944 | 37.5 | 4 |
+| TourismLarge | AutoETS (CQR) | 0.875 / 0.939 | 0.815 / 0.950 | 16.9 → 13.9 | 4 |
+| TourismLarge | SeasonalNaive (CQR) | 0.842 / 0.928 | 0.783 / 0.943 | 22.1 → 17.9 | 4 |
+| TourismLarge | WindowAverage (conformal) | — | 0.781 / 0.938 | 16.8 | 4 |
+| M4 monthly | AutoETS (CQR) | 0.747 / 0.885 | 0.775 / 0.938 | 12.7 → 11.5 | 4 |
+| M4 monthly | SeasonalNaive (CQR) | 0.794 / 0.926 | 0.778 / 0.942 | 14.2 → 13.5 | 4 |
+| M4 monthly | WindowAverage (conformal) | — | 0.769 / 0.938 | 15.8 | 4 |
+| Traffic | AutoETS (CQR) | 0.947 / 0.981 | 0.858 / 0.958 | 17.7 → 10.0 | 4 |
+| Traffic | SeasonalNaive (CQR) | 0.892 / 0.945 | 0.745 / 0.886 | 13.0 → 12.6 | 4 |
+| Traffic | WindowAverage (conformal) | — | 0.785 / 0.905 | 10.1 | 4 |
+| EPF prices | AutoETS (CQR) | 0.811 / 0.926 | 0.832 / 0.939 | 9.0 → 9.3 | 4 |
+| EPF prices | SeasonalNaive (CQR) | 0.729 / 0.843 | 0.786 / 0.909 | 16.0 → 16.2 | 4 |
+| EPF prices | WindowAverage (conformal) | — | 0.822 / 0.937 | 9.8 | 4 |
+
+- **At 95%** the calibrated intervals cover 0.94-0.97 on 8 of the 11 datasets. They are under on Electricity
+  (0.88-0.89), on Traffic for SeasonalNaive and WindowAverage (0.89, 0.91) and on EPF for SeasonalNaive (0.91).
+- **At 80%** they cover 0.78-0.86. They over-cover on the zero-heavy datasets (Car Parts, London, Online Retail for
+  the CQR models: 0.83-0.86), where many actuals equal the clipped lower bound of 0, and under-cover on Electricity
+  (0.74-0.76) and on Traffic for SeasonalNaive (0.75).
+- **The native bands are off in both directions**: too wide on intermittent and spiky data (M5 SeasonalNaive 0.90 at
+  80%, Online Retail 0.93, Web Traffic 0.92-0.95, Traffic AutoETS 0.95), too narrow elsewhere (M4 AutoETS 0.885 at
+  95%, Electricity AutoETS 0.82, EPF SeasonalNaive 0.84). CQR brings them toward nominal and lowers MSIS (Online Retail
+  AutoETS 54 to 35, M5 SeasonalNaive 19 to 13, Traffic AutoETS 18 to 10); where the native bands are already close
+  (Hospital, EPF AutoETS) MSIS stays within 0.3.
+- **Where the held-out horizon is harder than the backtest windows**, the calibration, fitted on the backtest, cannot
+  see it: on Electricity and on Traffic every method is under nominal, and for Traffic SeasonalNaive and Electricity
+  SeasonalNaive at 80% the calibrated coverage is lower than the native one (0.892 to 0.745, 0.759 to 0.735).
+- **Conformal intervals** (models without native intervals) cover 0.78-0.84 at 80% and 0.94-0.96 at 95% on the volume
+  datasets, close to the CQR models of the same dataset, and are under on Electricity and Traffic like them.
