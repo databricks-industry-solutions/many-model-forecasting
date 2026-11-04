@@ -4,8 +4,8 @@ The UDF functions run directly (udf.func) with a fake chronos library, as on a S
 Tests cover:
 - Chronos-Bolt: packing of medians and quantiles across batches, NaN for the levels outside the trained range with
   one warning naming the model, and the plain path (no native_quantiles) unchanged
-- Chronos-Bolt: the point forecast equals the plain path's when the quantile outputs cross, and levels between the
-  trained quantiles are interpolated
+- Chronos-Bolt and Chronos-2: the point forecast equals the plain path's when the quantile outputs cross, and levels
+  between the trained quantiles are interpolated
 - the round trip UDF output -> _predict_distributed, which decodes the quantile columns
 - Chronos-2, with and without known-future covariates
 The fake quantile value of series s at step h and level q is s + 100 q + h, so a wrong series, step or level shows.
@@ -152,6 +152,26 @@ def test_bolt_point_forecast_is_unchanged_when_quantiles_cross(chronos):
         np.testing.assert_allclose(frame["y"].iloc[s], _expected(10 * s, 0.6), rtol=1e-6)
         np.testing.assert_array_equal(frame["__q_0.5"].iloc[s], frame["y"].iloc[s])
     assert all(c[2] == TRAINED for c in pipeline.calls if c[0] == "predict_quantiles")
+
+
+class _FakeCrossingChronos2(_FakeChronos2):
+    """Chronos-2 whose 0.5 output is above its 0.6 and 0.7 outputs."""
+
+    def _cube(self, inputs, levels, prediction_length):
+        bump = torch.tensor([25.0 if round(level, 6) == 0.5 else 0.0 for level in levels])
+        return super()._cube(inputs, levels, prediction_length) + bump[None, None, :]
+
+
+def test_chronos2_point_forecast_is_unchanged_when_quantiles_cross(chronos):
+    pipeline = _FakeCrossingChronos2()
+    chronos(pipeline)
+    (plain,) = list(_model(Chronos2).create_predict_udf(1).func(iter([_histories()])))
+    (packed,) = list(_model(Chronos2, QUANTILES).create_predict_udf(1).func(iter([_histories()])))
+    frame = decode_quantile_forecasts(pd.DataFrame({"y": list(packed)}), "y", forecast_levels(QUANTILES), H)
+    for s in range(3):
+        np.testing.assert_allclose(frame["y"].iloc[s], np.asarray(plain[s], dtype=np.float64))
+        np.testing.assert_allclose(frame["y"].iloc[s], _expected(10 * s, 0.5) + 25, rtol=1e-6)
+        np.testing.assert_array_equal(frame["__q_0.5"].iloc[s], frame["y"].iloc[s])
 
 
 def test_bolt_levels_between_trained_quantiles_are_interpolated(chronos):

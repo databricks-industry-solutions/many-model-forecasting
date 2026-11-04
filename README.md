@@ -392,7 +392,7 @@ Notes and limitations:
 - Moirai's and `FFToto`'s quantiles come from sample paths: with their default `num_samples` (10 and 32) the tails are coarse (a warning is logged under 100 samples), so raise `num_samples` for better bands. `FFToto`'s point forecast, the median of its samples, also changes slightly from run to run.
 - `SKTimeProphet` bands come from Prophet's `predict_interval`. Without `mcmc_samples` they leave out the uncertainty of the seasonality, and they come from random draws, so they vary slightly between runs.
 - The bands are not clipped: lower bounds can be negative for a non-negative target, even when the point forecast is clipped at 0 (statsforecast).
-- Requesting quantiles does not change a model's point forecast, except for `FFToto`, which samples. The Chronos models keep taking their point forecast as the median of the quantiles they were trained on, and interpolate the requested levels between those quantiles.
+- Requesting quantiles does not change a model's point forecast, except for `FFToto`, which samples. The Chronos models keep their point forecast (Chronos-Bolt the median of the quantiles it was trained on, Chronos-2 its 0.5 quantile), and interpolate the requested levels between the trained quantiles.
 
 ## Hierarchical Reconciliation
 

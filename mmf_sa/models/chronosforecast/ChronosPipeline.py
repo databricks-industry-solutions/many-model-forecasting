@@ -36,7 +36,8 @@ from mmf_sa.intervals.quantiles import (
 _logger = logging.getLogger(__name__)
 
 
-def quantile_forecasts(pipeline, inputs, prediction_length: int, quantiles, model: str = "Chronos"):
+def quantile_forecasts(pipeline, inputs, prediction_length: int, quantiles, model: str = "Chronos",
+                       median_of_trained: bool = True):
     """
     Median and native quantiles of a batch, from ChronosPipeline.predict_quantiles.
     Parameters:
@@ -45,13 +46,14 @@ def quantile_forecasts(pipeline, inputs, prediction_length: int, quantiles, mode
         prediction_length (int): Forecast horizon.
         quantiles: Requested quantile levels; the median is added if missing.
         model (str): Model name, for the warning.
+        median_of_trained (bool): Point forecast as the median of the trained quantiles (Chronos-Bolt), or as the
+            trained 0.5 quantile (Chronos-2): each family's point forecast without native_quantiles.
     Returns: (np.ndarray, np.ndarray, list): medians (n, H), quantiles (n, Q, H) and the Q levels. Levels outside
         the checkpoint's trained range are NaN: Chronos would clamp them (0.1-0.9 for Chronos-Bolt), so e.g. a
         "95%" band would really be the 80% band.
-        Only the trained quantiles are requested, which are pipeline.predict's output: the median is taken over them
-        as without native_quantiles, so that requesting quantiles does not change the point forecast when the
-        model's quantile outputs cross, and the 0.5 level is set to it. Other levels inside the range are
-        interpolated linearly between the trained ones.
+        Only the trained quantiles are requested, which are pipeline.predict's output, so that requesting quantiles
+        does not change the point forecast when the model's quantile outputs cross; the 0.5 level is set to it.
+        Other levels inside the range are interpolated linearly between the trained ones.
     """
     levels = forecast_levels(quantiles)
     trained = sorted(round(float(t), 6) for t in getattr(pipeline, "quantiles", None) or [])
@@ -69,7 +71,10 @@ def quantile_forecasts(pipeline, inputs, prediction_length: int, quantiles, mode
     warn_if_outside_range(model, levels, native_range)
     kept = in_native_range(levels, native_range)
     raw = cube(trained)
-    medians = np.median(raw, axis=1)
+    if median_of_trained or 0.5 not in trained:
+        medians = np.median(raw, axis=1)
+    else:
+        medians = raw[:, trained.index(0.5), :].copy()
     q = np.full((raw.shape[0], len(levels), raw.shape[2]), np.nan)
     for i, level in enumerate(levels):
         if level in trained:
@@ -585,7 +590,8 @@ class Chronos2Forecaster(ChronosForecaster):
         quantiles = self.params.get("native_quantiles")
         if quantiles:
             medians_q, qs, levels = quantile_forecasts(
-                pipeline, inputs, self.params["prediction_length"], quantiles, self.model_name())
+                pipeline, inputs, self.params["prediction_length"], quantiles, self.model_name(),
+                median_of_trained=False)
         else:
             forecasts = pipeline.predict(
                 inputs=inputs,
@@ -786,7 +792,8 @@ class Chronos2Forecaster(ChronosForecaster):
                             inputs.append(entry)
 
                     if quantiles:
-                        medians, qs, _ = quantile_forecasts(pipeline, inputs, prediction_length, quantiles, model_name)
+                        medians, qs, _ = quantile_forecasts(pipeline, inputs, prediction_length, quantiles, model_name,
+                                                            median_of_trained=False)
                         median.extend(encode_quantile_forecasts(medians, qs))
                         continue
                     forecasts = pipeline.predict(
