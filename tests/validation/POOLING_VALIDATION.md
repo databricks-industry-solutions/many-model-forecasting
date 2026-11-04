@@ -1,5 +1,7 @@
 # Pooling validation: does ABC x XYZ pooling help beyond M5?
 
+![The pooling configurations and their held-out results](pooling_configurations.svg)
+
 ## Question
 
 `calibrate_intervals` pools the conformal scores over all series by default (`pool="marginal"`), with each series'
