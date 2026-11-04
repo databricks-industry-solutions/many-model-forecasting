@@ -400,21 +400,30 @@ def scaled_absolute_error(y: np.ndarray, yhat: np.ndarray, sigma: np.ndarray) ->
     return (np.abs(y - yhat) / sigma[:, None, None]).mean(axis=2)
 
 
+def wis_weights(levels):
+    """
+    Weights of the weighted interval score (Bracher et al., 2021), a quantile-based approximation of CRPS:
+    wis = (w_ae * scaled_ae + sum_k w_k * msis_k) / d, with w_ae = 0.5, w_k = alpha_k / 2, alpha_k = 1 - L_k / 100
+    and d = K + 0.5 for K levels. The numpy wis_from_metrics and the Spark combined_wis (calibrator) both use them.
+    Returns: (w_ae, {level: w_k}, d).
+    """
+    return 0.5, {lv: (1 - lv / 100) / 2 for lv in levels}, len(levels) + 0.5
+
+
 def wis_from_metrics(scaled_ae: np.ndarray, msis_by_level: dict, levels) -> np.ndarray:
     """
-    Weighted interval score (Bracher et al., 2021), a quantile-based approximation of CRPS.
-    wis = (0.5 * scaled_ae + sum_k (alpha_k / 2) * msis_k) / (K + 0.5), with alpha_k = 1 - L_k / 100.
-    Exact on the scaled scale because every term is a mean over the same points.
+    The wis of wis_weights, exact on the scaled scale because every term is a mean over the same points.
     Parameters:
         scaled_ae (np.ndarray): scaled_absolute_error of the window(s), any shape.
         msis_by_level (dict): level -> msis of the same shape, for every level in levels.
         levels: The calibrated central levels in percent.
     Returns: np.ndarray of the shape of scaled_ae.
     """
-    total = 0.5 * np.asarray(scaled_ae, dtype=float)
+    w_ae, w_level, d = wis_weights(levels)
+    total = w_ae * np.asarray(scaled_ae, dtype=float)
     for lv in levels:
-        total = total + (1 - lv / 100) / 2 * msis_by_level[lv]
-    return total / (len(levels) + 0.5)
+        total = total + w_level[lv] * msis_by_level[lv]
+    return total / d
 
 
 def _native_band(native, level, n, w, h):

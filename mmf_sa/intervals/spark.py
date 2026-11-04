@@ -119,6 +119,13 @@ def _mode(sdf: DataFrame, column: str) -> int:
     return int(row[0][0])
 
 
+def mode_by(sdf: DataFrame, key: str, column: str) -> DataFrame:
+    """Most frequent value of column per key, the smallest on ties (as calibration_scoring.mode_value)."""
+    counts = sdf.groupBy(key, column).count()
+    rank = Window.partitionBy(key).orderBy(F.col("count").desc(), F.col(column).asc())
+    return counts.withColumn("_rn", F.row_number().over(rank)).filter(F.col("_rn") == 1).select(key, column)
+
+
 def _finite(c):
     return ~(F.isnan(c) | c.isNull() | (c == float("inf")) | (c == float("-inf")))
 
