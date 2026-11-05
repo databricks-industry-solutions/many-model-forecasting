@@ -96,6 +96,14 @@ models:
       season_length: 7
       decomposition_type: "multiplicative"
 
+  StatsForecastAutoTbats:
+    model_spec:
+      season_length: 7
+
+  StatsForecastAutoMfles:
+    model_spec:
+      season_length: 7
+
   MLForecastLGBM:
     features:
       lags: [1, 7, 14, 28]

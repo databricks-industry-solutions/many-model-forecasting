@@ -65,6 +65,15 @@ def test_shipped_configs_build_the_same_models_as_explicit_arguments(freq):
         assert vars(model) == vars(type(model)(**kwargs)), (freq, name)
 
 
+@pytest.mark.parametrize("freq,season_length", [("H", 24), ("D", 7), ("W", 4), ("M", 12)])
+def test_seasonal_models_use_the_frequency_season_length(freq, season_length):
+    registry = ModelRegistry(make_conf(freq))
+    for name in STATSFORECAST_MODELS:
+        spec = registry.get_model_conf(name).get("model_spec")
+        if spec is not None and "season_length" in spec:
+            assert spec.season_length == season_length, (freq, name)
+
+
 def test_auto_arima_keeps_approximation_none_from_frequency_conf():
     model = ModelRegistry(make_conf("M", ["StatsForecastAutoArima"])).get_model("StatsForecastAutoArima")
     assert model.model_spec.approximation is None
