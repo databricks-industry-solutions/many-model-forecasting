@@ -1,5 +1,7 @@
+import inspect
 import pandas as pd
 import numpy as np
+from omegaconf import OmegaConf
 from statsforecast import StatsForecast
 from statsforecast.models import (
     AutoETS,
@@ -20,7 +22,7 @@ from statsforecast.models import (
     SeasonalNaive,
 )
 from mmf_sa.models.abstract_model import ForecastingRegressor
-from mmf_sa.exceptions import MissingFeatureError, DataPreparationError
+from mmf_sa.exceptions import MissingFeatureError, DataPreparationError, ConfigurationError
 
 
 class StatsFcForecaster(ForecastingRegressor):
@@ -29,6 +31,30 @@ class StatsFcForecaster(ForecastingRegressor):
         self.params = params
         self.model_spec = None
         self.model = None
+
+    def build_model_spec(self, model_cls, **defaults):
+        """
+        Instantiates a statsforecast model with every model_spec key that its constructor accepts, so any
+        constructor argument (e.g. AutoARIMA's max_p, stepwise, ic, blambda) can be set from the config.
+        Keys are passed as given, None included: for some arguments None has a meaning of its own
+        (AutoARIMA's approximation=None decides from the series length and season length).
+        Parameters:
+            model_cls: The statsforecast model class.
+            defaults: Arguments the wrapper sets unless model_spec sets them.
+        Returns: The statsforecast model.
+        Raises: ConfigurationError if model_spec sets a key the constructor does not accept. Keys left
+            empty (None) are ignored, as the frequency configs keep AutoArima's unused level: key.
+        """
+        spec = self.params.get("model_spec")
+        spec = OmegaConf.to_container(spec, resolve=True) if OmegaConf.is_config(spec) else dict(spec or {})
+        accepted = set(inspect.signature(model_cls.__init__).parameters) - {"self"}
+        unknown = sorted(k for k, v in spec.items() if k not in accepted and v is not None)
+        if unknown:
+            raise ConfigurationError(
+                f"{self.params.get('name', model_cls.__name__)}: model_spec has keys that {model_cls.__name__} "
+                f"does not accept: {', '.join(unknown)}. Accepted keys: {', '.join(sorted(accepted))}"
+            )
+        return model_cls(**{**defaults, **{k: v for k, v in spec.items() if k in accepted}})
 
     def prepare_data(self, df: pd.DataFrame, future: bool = False) -> pd.DataFrame:
         if not future:
@@ -145,128 +171,95 @@ class StatsFcForecaster(ForecastingRegressor):
 class StatsFcBaselineWindowAverage(StatsFcForecaster):
     def __init__(self, params):
         super().__init__(params)
-        self.model_spec = WindowAverage(
-            window_size=self.params.model_spec.window_size,
-        )
+        self.model_spec = self.build_model_spec(WindowAverage)
 
 
 class StatsFcBaselineSeasonalWindowAverage(StatsFcForecaster):
     def __init__(self, params):
         super().__init__(params)
-        self.model_spec = SeasonalWindowAverage(
-            season_length=self.params.model_spec.season_length,
-            window_size=self.params.model_spec.window_size,
-        )
+        self.model_spec = self.build_model_spec(SeasonalWindowAverage)
 
 
 class StatsFcBaselineNaive(StatsFcForecaster):
     def __init__(self, params):
         super().__init__(params)
-        self.model_spec = Naive()
+        self.model_spec = self.build_model_spec(Naive)
 
 
 class StatsFcBaselineSeasonalNaive(StatsFcForecaster):
     def __init__(self, params):
         super().__init__(params)
-        self.model_spec = SeasonalNaive(
-            season_length=self.params.model_spec.season_length,
-        )
+        self.model_spec = self.build_model_spec(SeasonalNaive)
 
 
 class StatsFcAutoArima(StatsFcForecaster):
     def __init__(self, params):
         super().__init__(params)
-        self.model_spec = AutoARIMA(
-            season_length=self.params.model_spec.season_length,
-            approximation=self.params.model_spec.approximation,
-        )
+        self.model_spec = self.build_model_spec(AutoARIMA)
 
 
 class StatsFcAutoETS(StatsFcForecaster):
     def __init__(self, params):
         super().__init__(params)
-        self.model_spec = AutoETS(
-            season_length=self.params.model_spec.season_length,
-            model=self.params.model_spec.model,
-        )
+        self.model_spec = self.build_model_spec(AutoETS)
 
 
 class StatsFcAutoCES(StatsFcForecaster):
     def __init__(self, params):
         super().__init__(params)
-        self.model_spec = AutoCES(
-            season_length=self.params.model_spec.season_length,
-            model=self.params.model_spec.model,
-        )
+        self.model_spec = self.build_model_spec(AutoCES)
 
 
 class StatsFcAutoTheta(StatsFcForecaster):
     def __init__(self, params):
         super().__init__(params)
-        self.model_spec = AutoTheta(
-            season_length=self.params.model_spec.season_length,
-            decomposition_type=self.params.model_spec.decomposition_type,
-        )
+        self.model_spec = self.build_model_spec(AutoTheta)
 
 
 class StatsFcAutoTbats(StatsFcForecaster):
     def __init__(self, params):
         super().__init__(params)
-        self.model_spec = AutoTBATS(
-            season_length=self.params.model_spec.season_length,
-            use_boxcox=self.params.model_spec.use_boxcox,
-            bc_lower_bound=self.params.model_spec.bc_lower_bound,
-            bc_upper_bound=self.params.model_spec.bc_upper_bound,
-            use_trend=self.params.model_spec.use_trend,
-            use_damped_trend=self.params.model_spec.use_damped_trend,
-            use_arma_errors=self.params.model_spec.use_arma_errors,
-        )
+        self.model_spec = self.build_model_spec(AutoTBATS)
 
 
 class StatsFcAutoMfles(StatsFcForecaster):
     def __init__(self, params):
         super().__init__(params)
-        self.model_spec = AutoMFLES(
-            test_size=self.params.prediction_length,
-            season_length=self.params.model_spec.season_length,
-        )
+        self.model_spec = self.build_model_spec(AutoMFLES, test_size=self.params.prediction_length)
 
 
 class StatsFcTSB(StatsFcForecaster):
     def __init__(self, params):
         super().__init__(params)
-        self.model_spec = TSB(
-            alpha_d=self.params.model_spec.alpha_d,
-            alpha_p=self.params.model_spec.alpha_p,
-        )
+        self.model_spec = self.build_model_spec(TSB)
 
 
 class StatsFcADIDA(StatsFcForecaster):
     def __init__(self, params):
         super().__init__(params)
-        self.model_spec = ADIDA()
+        self.model_spec = self.build_model_spec(ADIDA)
 
 
 class StatsFcIMAPA(StatsFcForecaster):
     def __init__(self, params):
         super().__init__(params)
-        self.model_spec = IMAPA()
+        self.model_spec = self.build_model_spec(IMAPA)
 
 
 class StatsFcCrostonClassic(StatsFcForecaster):
     def __init__(self, params):
         super().__init__(params)
-        self.model_spec = CrostonClassic()
+        self.model_spec = self.build_model_spec(CrostonClassic)
 
 
 class StatsFcCrostonOptimized(StatsFcForecaster):
     def __init__(self, params):
         super().__init__(params)
-        self.model_spec = CrostonOptimized()
+        self.model_spec = self.build_model_spec(CrostonOptimized)
 
 
 class StatsFcCrostonSBA(StatsFcForecaster):
     def __init__(self, params):
         super().__init__(params)
-        self.model_spec = CrostonSBA()
+        self.model_spec = self.build_model_spec(CrostonSBA)
 

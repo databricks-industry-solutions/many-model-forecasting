@@ -609,6 +609,28 @@ run_forecast(
 )
 ```
 
+For StatsForecast models (`StatsForecast*`), every key in `model_spec` is passed to the statsforecast model's constructor, so any of its arguments can be set (for `AutoARIMA`: `d`, `D`, `max_p`, `max_q`, `max_P`, `max_Q`, `max_order`, `stepwise`, `nmodels`, `ic`, `allowdrift`, `allowmean`, `approximation`, ...; for `AutoETS`: `model`, `damped`, `phi`; for `AutoMFLES`: `config`, `n_windows`, `step_size`, `metric`). A key the constructor does not accept raises a `ConfigurationError`. To compare several settings of the same model, register each one under a new name in `models` and add the names to `active_models`; the backtest then selects among them like any other models:
+
+```python
+custom_conf = {
+    "models": {
+        "StatsForecastAutoArimaLowOrder": {
+            "module": "mmf_sa.models.statsforecast.StatsFcForecastingPipeline",
+            "model_class": "StatsFcAutoArima",
+            "framework": "StatsForecast",
+            "model_type": "local",
+            "model_spec": {
+                "season_length": 12,
+                "max_p": 1, "max_q": 1, "max_P": 1, "max_Q": 1,
+                "D": 1, "max_d": 1,
+                "stepwise": False,  # exhaustive search over the orders above instead of the stepwise search
+                "ic": "aic",
+            },
+        }
+    }
+}
+```
+
 **Do NOT pass `conf` by default.** Only add it when the user explicitly requests hyperparameter tuning. The auto-selected base config is correct for the vast majority of use cases.
 
 #### Covariates and model coverage (reference)
