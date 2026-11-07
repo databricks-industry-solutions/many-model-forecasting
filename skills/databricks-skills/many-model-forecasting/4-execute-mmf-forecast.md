@@ -358,14 +358,14 @@ AskUserQuestion:
 
    (a) No — point forecasts only (default)
 
-   (b) Yes, 80% and 95% native intervals, for the models that have them
+   (b) Yes, 80% and 95% intervals, for the models that have them
        → prediction_intervals = {"enabled": True, "levels": [80, 95]}
 
    (c) Yes, custom levels or quantiles
        → e.g. {"enabled": True, "levels": [90]} or {"enabled": True, "quantiles": [0.1, 0.5, 0.9]}"
 ```
 
-Tell the user clearly what they get: the models' **native** intervals, **uncalibrated**, and only for the models that have them: statsforecast AutoETS, AutoArima, AutoCES, AutoTheta, AutoTbats, Naive and SeasonalNaive; the Chronos and TimesFM models; SKTimeProphet; and the FoundationForecast FF* models. All other models (e.g. CrostonSBA, ADIDA, MLForecast, NeuralForecast) get NULL interval columns. The coverage of the native bands can be off nominal; Skill 5 measures it on the backtest. Some models only have quantiles from 10% to 90% (Chronos-Bolt, TimesFM, several FF* models): their 95% bounds are NULL. The intervals land in `scoring_output` as a `y_quantiles` map, and in `evaluation_output` as `forecast_quantiles` for each backtest window.
+Tell the user clearly what they get: intervals only for the models that have them: statsforecast AutoETS, AutoArima, AutoCES, AutoTheta, AutoTbats, Naive and SeasonalNaive; the Chronos and TimesFM models; SKTimeProphet; and the FoundationForecast FF* models. All other models (e.g. CrostonSBA, ADIDA, MLForecast, NeuralForecast) get NULL interval columns. A band can cover more or fewer actuals than its level (e.g. an 80% band covering 70%); Skill 5 measures this on the backtest. Some models only have quantiles from 10% to 90% (Chronos-Bolt, TimesFM, several FF* models): their 95% bounds are NULL. The intervals land in `scoring_output` as a `y_quantiles` map, and in `evaluation_output` as `forecast_quantiles` for each backtest window.
 
 - Option (a): set `{prediction_intervals}` to `None` in every notebook.
 - Options (b)/(c): set `{prediction_intervals}` to the Python dict literal in every notebook (local, global ML, the GPU orchestrators and the serverless GPU notebooks; the Step 3e non-forecastable notebooks use the same value). If the user wants bound columns for SQL or dashboards, add `"output_format": "both"` (adds `y_lo_80`, `y_hi_80`, ...).

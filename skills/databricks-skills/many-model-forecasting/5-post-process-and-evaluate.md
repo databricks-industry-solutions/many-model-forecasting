@@ -148,16 +148,16 @@ GROUP BY e.unique_id, e.model
 
 Step 5 uses the same WAPE formula for the summary table.
 
-### Step 2b: Coverage of the native intervals (only if prediction intervals were enabled)
+### Step 2b: Coverage of the prediction intervals (only if prediction intervals were enabled)
 
 Check whether Skill 4 enabled prediction intervals (Step 1d): `{use_case}_evaluation_output` has a
 `forecast_quantiles` column. If it does not, skip to Step 3.
 
-The intervals are the models' native bands, **not calibrated**. Measure their coverage on the backtest, which is out
-of sample (each window is forecast from the history before it): the share of backtest actuals inside each band,
-against the nominal level. Like Step 2, read each model's latest run only. The query below is for the default levels
+A band can cover more or fewer actuals than its level says. Measure its coverage on the backtest, which is out of
+sample (each window is forecast from the history before it): the share of backtest actuals inside each band, to
+compare with its level (80% for the 80% band). Like Step 2, read each model's latest run only. The query below is for the default levels
 80 and 95, whose quantile keys are `"0.1"`/`"0.9"` and `"0.025"`/`"0.975"`; for another level `L`, the keys are
-`(100 - L) / 200` and `1 - (100 - L) / 200` (e.g. `"0.05"`/`"0.95"` for 90). Models without native intervals have
+`(100 - L) / 200` and `1 - (100 - L) / 200` (e.g. `"0.05"`/`"0.95"` for 90). Models without intervals have
 NULL `forecast_quantiles` and are left out; a level the model has no quantiles for (e.g. 95% for Chronos-Bolt or
 TimesFM) shows NULL coverage. Under `separate_job`, run it again on `{use_case}_nf_evaluation_output`.
 
@@ -186,9 +186,9 @@ GROUP BY model
 ORDER BY model
 ```
 
-Report to the user, per model and level, the coverage against nominal. Tell them the bands are uncalibrated, so a gap
-from nominal is expected: bands that cover more than nominal are too wide, bands that cover less are too narrow.
-With few backtest windows, the coverage itself is noisy.
+Report to the user, per model and level, the coverage next to the level. Tell them a gap is expected: bands that
+cover more than their level are too wide, bands that cover less are too narrow. With few backtest windows, the
+coverage itself is noisy.
 
 ### Step 3: Best model selection per series (forecastable)
 
@@ -400,7 +400,7 @@ JOIN {catalog}.{schema}.{use_case}_nf_scoring_output AS s
 WHERE b.forecast_source = 'non_forecastable_pipeline'
 ```
 
-The intervals are those of the best model by the point metric: when it has no native intervals (e.g. CrostonSBA), the
+The intervals are those of the best model by the point metric: when it has no intervals (e.g. CrostonSBA), the
 series' `y_quantiles` is NULL. Report how many of the best models' series have NULL intervals.
 
 ### Step 4: Model ranking (wins count)
