@@ -163,7 +163,7 @@ run_forecast(
 - `active_models` is a list of models you want to use.
 - `experiment_path` to keep metrics under the MLFlow.
 - `use_case_name` a new column will be created under the delta Table, in case you save multiple trials under 1 table.
-- `prediction_intervals` (optional) enables and configures the native prediction intervals, e.g. `{"enabled": True, "levels": [80, 95]}`. Disabled by default. See [Prediction Intervals](#prediction-intervals).
+- `prediction_intervals` (optional) enables and configures the prediction intervals, e.g. `{"enabled": True, "levels": [80, 95]}`. Disabled by default. See [Prediction Intervals](#prediction-intervals).
 
 
 
@@ -359,7 +359,7 @@ Install [requirements-foundationforecast.txt](https://github.com/databricks-indu
 
 ## Prediction Intervals
 
-MMF can add prediction intervals (lower and upper bounds at given coverage levels) to the forecasts of the models that have native intervals. They are disabled by default; enable them with one argument:
+MMF can add prediction intervals (lower and upper bounds at given coverage levels) to the forecasts of the models that produce them. They are disabled by default; enable them with one argument:
 
 ```python
 run_forecast(
@@ -368,7 +368,7 @@ run_forecast(
 )
 ```
 
-The models with **native intervals** are statsforecast `Naive`, `SeasonalNaive`, `AutoArima`, `AutoETS`, `AutoCES`, `AutoTheta` and `AutoTbats`; the Chronos, TimesFM and Moirai models; `SKTimeProphet`; and the FoundationForecast `FF*` models. They return their quantiles in every backtest window and at scoring. The intervals are the models' own bands, **not calibrated**: their coverage can be off nominal (on a sample of M5 sales, the 80% bands of AutoETS covered 88% of the actuals, those of SKTimeProphet 86%, those of Chronos-2 79%, and Chronos-Bolt's widest band is its 80% one). Measure it on the backtest before relying on it (see the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/prediction_intervals_daily.ipynb)). Other models (e.g. CrostonSBA, MLForecast, NeuralForecast) get NULL interval columns, with one warning per model.
+The models with **prediction intervals** are statsforecast `Naive`, `SeasonalNaive`, `AutoArima`, `AutoETS`, `AutoCES`, `AutoTheta` and `AutoTbats`; the Chronos, TimesFM and Moirai models; `SKTimeProphet`; and the FoundationForecast `FF*` models. They return their quantiles in every backtest window and at scoring. The intervals are the models' own bands, and their coverage can differ from their level (on a sample of M5 sales, the 80% bands of AutoETS covered 88% of the actuals, those of SKTimeProphet 86%, those of Chronos-2 79%, and Chronos-Bolt's widest band is its 80% one). Measure it on the backtest before relying on it (see the [notebook](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/examples/daily/prediction_intervals_daily.ipynb)). Other models (e.g. CrostonSBA, MLForecast, NeuralForecast) get NULL interval columns, with one warning per model.
 
 **Outputs**
 

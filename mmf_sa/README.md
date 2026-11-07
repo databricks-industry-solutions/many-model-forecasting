@@ -359,7 +359,7 @@ def resolve_source(self, key: str) -> DataFrame:
 
 ## Prediction Intervals
 
-Prediction intervals are optional (`prediction_intervals.enabled`, off by default). They are the native, uncalibrated intervals of the models that have them. The user-facing description is in the [main README](../README.md#prediction-intervals). This section describes the code.
+Prediction intervals are optional (`prediction_intervals.enabled`, off by default). They are the intervals that the models produce themselves, for the models that have them. The user-facing description is in the [main README](../README.md#prediction-intervals). This section describes the code.
 
 ### Modules
 
