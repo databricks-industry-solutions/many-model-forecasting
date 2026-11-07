@@ -74,6 +74,7 @@ Gather these from the user (with sensible defaults):
 | `group_id` | `unique_id` | Column name for series identifier |
 | `date_col` | `ds` | Column name for timestamp |
 | `target` | `y` | Column name for target value |
+| `prediction_intervals` | `None` (disabled) | Prediction-interval settings, e.g. `{"enabled": True, "levels": [80, 95]}` — see Step 1d |
 
 ## Available model names
 
@@ -347,6 +348,28 @@ assert experiment_id is not None, "MLflow experiment_id is None after create —
 
 If this step succeeds, the experiment is registered and `Forecaster.set_mlflow_experiment` will resolve it cleanly inside every job. If it fails, **do NOT launch any job** — instead route the user back to Step 0b to pick a different `{project_folder}` or `{experiment_path}`.
 
+### ⛔ STOP GATE — Step 1d: Ask user about prediction intervals
+
+**Always ask. Do NOT proceed until the user answers.**
+
+```
+AskUserQuestion:
+  "Do you want prediction intervals (lower/upper bounds) with the forecasts?
+
+   (a) No — point forecasts only (default)
+
+   (b) Yes, 80% and 95% intervals, for the models that have them
+       → prediction_intervals = {"enabled": True, "levels": [80, 95]}
+
+   (c) Yes, custom levels or quantiles
+       → e.g. {"enabled": True, "levels": [90]} or {"enabled": True, "quantiles": [0.1, 0.5, 0.9]}"
+```
+
+Tell the user clearly what they get: intervals only for the models that have them: statsforecast AutoETS, AutoArima, AutoCES, AutoTheta, AutoTbats, Naive and SeasonalNaive; the Chronos and TimesFM models; SKTimeProphet; and the FoundationForecast FF* models. All other models (e.g. CrostonSBA, ADIDA, MLForecast, NeuralForecast) get NULL interval columns. A band can cover more or fewer actuals than its level (e.g. an 80% band covering 70%); Skill 5 measures this on the backtest. Some models only have quantiles from 10% to 90% (Chronos-Bolt, TimesFM, several FF* models): their 95% bounds are NULL. The intervals land in `scoring_output` as a `y_quantiles` map, and in `evaluation_output` as `forecast_quantiles` for each backtest window.
+
+- Option (a): set `{prediction_intervals}` to `None` in every notebook.
+- Options (b)/(c): set `{prediction_intervals}` to the Python dict literal in every notebook (local, global ML, the GPU orchestrators and the serverless GPU notebooks; the Step 3e non-forecastable notebooks use the same value). If the user wants bound columns for SQL or dashboards, add `"output_format": "both"` (adds `y_lo_80`, `y_hi_80`, ...).
+
 ### Step 2: Gather and validate parameters
 
 Confirm the input table exists:
@@ -420,6 +443,7 @@ Generate a single notebook from `mmf_local_notebook_template.ipynb` with all loc
 | `{dynamic_historical_numerical}` | Python list; past-only signals for **NeuralForecast** global models (e.g. lagged features), or `[]`. Safe to use. |
 | `{dynamic_historical_categorical}` | Python list, or `[]`. Safe to use. |
 | `{scoring_table}` | `""` unless Skill 1 created `{use_case}_scoring_data`. If scoring table exists, set it as routed in Step 0a (`{use_case}_scoring_data` or `{use_case}_scoring_data_forecastable`). Empty string means `scoring_data` = `train_table`. |
+| `{prediction_intervals}` | `None`, or the Python dict literal chosen in Step 1d, e.g. `{"enabled": True, "levels": [80, 95]}` |
 
 Use the template from:
 - [mmf_local_notebook_template.ipynb](mmf_local_notebook_template.ipynb) → save locally as `notebooks/{use_case}/run_local.ipynb`
@@ -448,6 +472,7 @@ Identical to the local notebook placeholders, with `{active_models}` filtered to
 | `{dynamic_future_numerical}`, `{dynamic_future_categorical}` | **Populate these when Skill 1 created `{use_case}_scoring_data`** — `global_ml` has the most thoroughly validated `dynamic_future_*` support of any class |
 | `{dynamic_historical_numerical}`, `{dynamic_historical_categorical}` | Past-only signals; safe to use |
 | `{scoring_table}` | `""` unless Skill 1 created `{use_case}_scoring_data`. If so, set it as routed in Step 0a. |
+| `{prediction_intervals}` | Same as the local notebook (Step 1d) |
 
 Use the template from:
 - [mmf_global_ml_notebook_template.ipynb](mmf_global_ml_notebook_template.ipynb) → save locally as `notebooks/{use_case}/run_global_ml.ipynb`
@@ -504,6 +529,7 @@ For each GPU model class on a classic GPU cluster (global, foundation and/or fou
 | `{dynamic_historical_numerical}` | Past-only signals for **global** models (lag/roll features), or `[]`. Safe to use. |
 | `{dynamic_historical_categorical}` | Same — often `[]`. Safe to use. |
 | `{scoring_table}` | `""` unless Skill 1 created `{use_case}_scoring_data`. If scoring table exists, set it as routed in Step 0a. |
+| `{prediction_intervals}` | Same as the local notebook (Step 1d). The orchestrator forwards it to each `run_gpu` call as JSON. |
 
 Use the template from:
 - [mmf_gpu_orchestrator_notebook_template.ipynb](mmf_gpu_orchestrator_notebook_template.ipynb)
@@ -1261,6 +1287,30 @@ CREATE TABLE IF NOT EXISTS {catalog}.{schema}.{use_case}_scoring_output (
   {group_id} STRING, {date_col} ARRAY<TIMESTAMP>, {target} ARRAY<DOUBLE>, model STRING, run_id STRING,
   run_date TIMESTAMP, use_case STRING, model_pickle BINARY, model_uri STRING);
 ```
+
+**If prediction intervals are enabled (Step 1d), run these instead.** They add the interval columns, so that the jobs' first writes do not change the schema at the same time (`mergeSchema`), which can fail the same way. Run them once per `{use_case}` (and once for `{use_case}_nf` if `separate_job`):
+
+```sql
+CREATE TABLE IF NOT EXISTS {catalog}.{schema}.{use_case}_evaluation_output (
+  {group_id} STRING, backtest_window_start_date TIMESTAMP, metric_name STRING, metric_value DOUBLE,
+  forecast ARRAY<DOUBLE>, actual ARRAY<DOUBLE>, model_pickle BINARY,
+  forecast_quantiles MAP<STRING, ARRAY<DOUBLE>>,
+  run_id STRING, run_date TIMESTAMP, model STRING, use_case STRING, model_uri STRING);
+
+CREATE TABLE IF NOT EXISTS {catalog}.{schema}.{use_case}_scoring_output (
+  {group_id} STRING, {date_col} ARRAY<TIMESTAMP>, {target} ARRAY<DOUBLE>, model STRING, run_id STRING,
+  run_date TIMESTAMP, use_case STRING, model_pickle BINARY, model_uri STRING,
+  {target}_quantiles MAP<STRING, ARRAY<DOUBLE>>);
+```
+
+If the tables already exist without the interval columns, add them: `ALTER TABLE … ADD COLUMNS (forecast_quantiles MAP<STRING, ARRAY<DOUBLE>>)` on `evaluation_output` and `ALTER TABLE … ADD COLUMNS ({target}_quantiles MAP<STRING, ARRAY<DOUBLE>>)` on `scoring_output`. With `"output_format": "lo_hi"` or `"both"`, also add one `ARRAY<DOUBLE>` column per bound to `scoring_output`, named `{target}_lo_<L>` and `{target}_hi_<L>` (a level of 97.5 becomes `97_5`), whether the table was just created or already existed; otherwise the jobs add them at the same time. Skip any bound column the table already has. For the default levels:
+
+```sql
+ALTER TABLE {catalog}.{schema}.{use_case}_scoring_output ADD COLUMNS (
+  {target}_lo_80 ARRAY<DOUBLE>, {target}_hi_80 ARRAY<DOUBLE>, {target}_lo_95 ARRAY<DOUBLE>, {target}_hi_95 ARRAY<DOUBLE>);
+```
+
+With `"output_format": "lo_hi"`, MMF writes these columns and not `{target}_quantiles`, which then stays null. These schemas follow `mmf_sa/intervals/scoring.py` (`interval_columns`); keep them in sync if it changes.
 
 Then call `run_job` for **all jobs simultaneously**.
 

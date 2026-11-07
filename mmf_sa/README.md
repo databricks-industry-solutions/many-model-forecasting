@@ -44,6 +44,7 @@ def run_forecast(
     experiment_path: str = None,
     run_id: str = None,
     conf: Union[str, Dict[str, Any], OmegaConf] = None,
+    prediction_intervals: Dict[str, Any] = None,
 ) -> str:
 ```
 
@@ -355,6 +356,43 @@ def resolve_source(self, key: str) -> DataFrame:
 2. **Quality Checks**: Applies comprehensive data validation
 3. **Format Standardization**: Converts to required format for models
 4. **Feature Engineering**: Processes external regressors and features
+
+## Prediction Intervals
+
+Prediction intervals are optional (`prediction_intervals.enabled`, off by default). They are the intervals that the models produce themselves, for the models that have them. The user-facing description is in the [main README](../README.md#prediction-intervals). This section describes the code.
+
+### Modules
+
+| Module | Role |
+|---|---|
+| `mmf_sa/intervals/config.py` | Pure Python. The `prediction_intervals` configuration (defaults, validation) and the level helpers. |
+| `mmf_sa/intervals/quantiles.py` | The contract the models use: quantile keys and column names, the packing of the Spark UDF output, and the quantile maps written to the tables (`sorted_quantiles`: non-finite keys dropped, values sorted per step). |
+| `mmf_sa/intervals/scoring.py` | The interval columns of `scoring_output`, built from each forecast's quantile map with Spark column expressions (no Python UDF). |
+| `Forecaster.native_quantiles`, `get_model_with_native_quantiles` | Which models are asked for quantiles: those flagged `native_intervals` in `models_conf.yaml`. The others are logged once and get NULL interval columns. |
+| `Forecaster.write_scoring_output` | Replaces the quantile map of a model's forecasts with the interval columns of `output_format`, and appends to `scoring_output`. |
+
+### Data flow
+
+```
+evaluate_models   models flagged native_intervals get native_quantiles; their backtest writes
+                  forecast_quantiles (MAP<STRING, ARRAY<DOUBLE>>, sorted per step) to evaluation_output;
+                  other models write NULL
+score_models      the same quantiles at forecast time -> <target>_quantiles and/or <target>_lo_<L> /
+                  <target>_hi_<L> in scoring_output (output_format); NULL where a quantile is missing
+```
+
+### The output contract
+
+- Map keys are `quantile_key(q)`: no trailing zeros, e.g. `"0.1"`, `"0.025"`, `"0.975"`. The median `"0.5"` is always included for models with native intervals.
+- Each value is an array over the horizon, aligned with `forecast` (evaluation) or `<target>` (scoring).
+- Level `L` maps to the quantiles `(100 - L) / 200` and `1 - (100 - L) / 200`; in column names, `80` gives `_80` and `97.5` gives `_97_5`.
+- A level's two bounds are both NULL when the model did not return both of its quantiles.
+
+### Adding native intervals to a model
+
+1. Set `native_intervals: true` for the model in `models_conf.yaml`, and `native_quantiles_supported = True` on its class (a unit test checks that both agree). If the model only predicts some quantile levels, set `native_quantile_range = (min, max)`; if its quantiles come from sample paths, set `samples_hparam` to the hyperparameter holding their number.
+2. When `self.params.native_quantiles` is set, make `predict` (backtest) and `forecast` (scoring) return one column per level of `self.native_levels()`, named with `QUANTILE_COLUMN_PREFIX + quantile_key(q)` from `mmf_sa/intervals/quantiles.py` (e.g. `__q_0.975`), next to the point forecast. `native_levels()` sorts the levels, adds the median, leaves out the levels outside `native_quantile_range`, and logs once about them and about fewer than 100 sample paths; call it on the driver, so that the warnings reach the driver log. A model whose range is only known at prediction time (Chronos) returns NaN for the levels outside it. `ForecastingRegressor.forecast_quantiles` (local models) and `ForecastingRegressor.series_metrics` (global and foundation models) turn the columns into the `forecast_quantiles` map.
+3. Requesting quantiles must not change the point forecast.
 
 ## Hierarchical Reconciliation
 

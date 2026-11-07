@@ -148,6 +148,48 @@ GROUP BY e.unique_id, e.model
 
 Step 5 uses the same WAPE formula for the summary table.
 
+### Step 2b: Coverage of the prediction intervals (only if prediction intervals were enabled)
+
+Check whether Skill 4 enabled prediction intervals (Step 1d): `{use_case}_evaluation_output` has a
+`forecast_quantiles` column. If it does not, skip to Step 3.
+
+A band can cover more or fewer actuals than its level says. Measure its coverage on the backtest, which is out of
+sample (each window is forecast from the history before it): the share of backtest actuals inside each band, to
+compare with its level (80% for the 80% band). Like Step 2, read each model's latest run only. The query below is for the default levels
+80 and 95, whose quantile keys are `"0.1"`/`"0.9"` and `"0.025"`/`"0.975"`; for another level `L`, the keys are
+`(100 - L) / 200` and `1 - (100 - L) / 200` (e.g. `"0.05"`/`"0.95"` for 90). Models without intervals have
+NULL `forecast_quantiles` and are left out; a level the model has no quantiles for (e.g. 95% for Chronos-Bolt or
+TimesFM) shows NULL coverage. Under `separate_job`, run it again on `{use_case}_nf_evaluation_output`.
+
+```sql
+WITH latest AS (
+  SELECT model, run_id FROM (
+    SELECT model, run_id, ROW_NUMBER() OVER (PARTITION BY model ORDER BY run_date DESC, run_id DESC) AS rn
+    FROM (SELECT DISTINCT model, run_id, run_date FROM {catalog}.{schema}.{use_case}_evaluation_output))
+  WHERE rn = 1),
+points AS (
+  SELECT e.model, a,
+         try_element_at(e.forecast_quantiles, '0.1')[k] AS lo_80, try_element_at(e.forecast_quantiles, '0.9')[k] AS hi_80,
+         try_element_at(e.forecast_quantiles, '0.025')[k] AS lo_95, try_element_at(e.forecast_quantiles, '0.975')[k] AS hi_95
+  FROM {catalog}.{schema}.{use_case}_evaluation_output e
+  JOIN latest l ON e.model = l.model AND e.run_id = l.run_id
+  LATERAL VIEW posexplode(e.actual) p AS k, a
+  WHERE e.forecast_quantiles IS NOT NULL AND e.metric_name = '{metric}')
+SELECT model,
+       ROUND(AVG(CASE WHEN lo_80 IS NULL OR hi_80 IS NULL THEN NULL
+                      WHEN a BETWEEN lo_80 AND hi_80 THEN 1.0 ELSE 0.0 END), 3) AS coverage_80,
+       ROUND(AVG(CASE WHEN lo_95 IS NULL OR hi_95 IS NULL THEN NULL
+                      WHEN a BETWEEN lo_95 AND hi_95 THEN 1.0 ELSE 0.0 END), 3) AS coverage_95,
+       COUNT(*) AS points
+FROM points
+GROUP BY model
+ORDER BY model
+```
+
+Report to the user, per model and level, the coverage next to the level. Tell them a gap is expected: bands that
+cover more than their level are too wide, bands that cover less are too narrow. With few backtest windows, the
+coverage itself is noisy.
+
 ### Step 3: Best model selection per series (forecastable)
 
 Select the best-performing model for each forecastable time series based on the primary metric:
@@ -322,6 +364,45 @@ FROM {catalog}.{schema}.{use_case}_best_models
 GROUP BY forecast_source
 ```
 
+### Step 3b: Keep the intervals of the best models (only if prediction intervals were enabled)
+
+Keep the intervals of the selected model for each series. The columns depend on Skill 4's `output_format`:
+`y_quantiles` (default), and/or `y_lo_<L>` / `y_hi_<L>`. Under `separate_job`, the non-forecastable winners'
+forecasts are in `{use_case}_nf_scoring_output` (Step 3a), so read both; with `include` every series is in the main
+tables, and with `fallback` the non-forecastable series have no intervals.
+
+With `include` or `fallback`, or if the non-forecastable jobs ran without intervals (`{use_case}_nf_scoring_output`
+then has no `y_quantiles`):
+
+```sql
+CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_best_models_intervals AS
+SELECT b.unique_id, b.model, b.run_id, s.ds, s.y, s.y_quantiles
+FROM {catalog}.{schema}.{use_case}_best_models AS b
+JOIN {catalog}.{schema}.{use_case}_scoring_output AS s
+  ON b.unique_id = s.unique_id AND b.model = s.model AND b.run_id = s.run_id
+WHERE b.forecast_source = 'main_pipeline'
+```
+
+With `separate_job` and intervals in the non-forecastable jobs, use this one instead (it reads both scoring tables):
+
+```sql
+CREATE OR REPLACE TABLE {catalog}.{schema}.{use_case}_best_models_intervals AS
+SELECT b.unique_id, b.model, b.run_id, s.ds, s.y, s.y_quantiles
+FROM {catalog}.{schema}.{use_case}_best_models AS b
+JOIN {catalog}.{schema}.{use_case}_scoring_output AS s
+  ON b.unique_id = s.unique_id AND b.model = s.model AND b.run_id = s.run_id
+WHERE b.forecast_source = 'main_pipeline'
+UNION ALL
+SELECT b.unique_id, b.model, b.run_id, s.ds, s.y, s.y_quantiles
+FROM {catalog}.{schema}.{use_case}_best_models AS b
+JOIN {catalog}.{schema}.{use_case}_nf_scoring_output AS s
+  ON b.unique_id = s.unique_id AND b.model = s.model AND b.run_id = s.run_id
+WHERE b.forecast_source = 'non_forecastable_pipeline'
+```
+
+The intervals are those of the best model by the point metric: when it has no intervals (e.g. CrostonSBA), the
+series' `y_quantiles` is NULL. Report how many of the best models' series have NULL intervals.
+
 ### Step 4: Model ranking (wins count)
 
 Count how many series each model won:
@@ -488,6 +569,9 @@ Save the generated notebook to the **local project directory** at:
 
 Then upload it to the Databricks workspace at `{notebook_base_path}/post_process`.
 
+The notebook re-creates `{use_case}_best_models` and `{use_case}_evaluation_summary`; it does not rebuild
+`{use_case}_best_models_intervals`, which Step 3b creates interactively only.
+
 Use the template from:
 - [mmf_post_process_notebook_template.ipynb](mmf_post_process_notebook_template.ipynb)
 
@@ -543,6 +627,8 @@ Combined table of best forecasts for all series (forecastable + non-forecastable
 | `wins_pct` | DOUBLE | Percentage of total series |
 | `avg_{metric}` | DOUBLE | Average primary metric over the series the model won; the name follows `{metric}` (e.g. `avg_smape`) |
 | `avg_wape` | DOUBLE | Average WAPE over the series the model won (NULL for fallback series) |
+
+**Table** (only if prediction intervals were enabled): `<catalog>.<schema>.{use_case}_best_models_intervals` — the best model's forecast and intervals per series (`y_quantiles`: map from quantile level to an array over the horizon).
 
 **Notebook**: `{notebook_base_path}/post_process` — reproducibility notebook that re-creates both output tables
 

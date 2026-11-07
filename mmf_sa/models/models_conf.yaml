@@ -40,12 +40,14 @@ models:
     model_class: StatsFcBaselineNaive
     framework: StatsForecast
     model_type: local
+    native_intervals: true
 
   StatsForecastBaselineSeasonalNaive:
     module: mmf_sa.models.statsforecast.StatsFcForecastingPipeline
     model_class: StatsFcBaselineSeasonalNaive
     framework: StatsForecast
     model_type: local
+    native_intervals: true
     model_spec:
       season_length: 7
 
@@ -54,6 +56,7 @@ models:
     model_class: StatsFcAutoArima
     framework: StatsForecast
     model_type: local
+    native_intervals: true
     model_spec:
       season_length: 7
       approximation: false
@@ -63,6 +66,7 @@ models:
     model_class: StatsFcAutoETS
     framework: StatsForecast
     model_type: local
+    native_intervals: true
     model_spec:
       season_length: 7
       model: "ZZZ"
@@ -72,6 +76,7 @@ models:
     model_class: StatsFcAutoCES
     framework: StatsForecast
     model_type: local
+    native_intervals: true
     model_spec:
       season_length: 7
       model: "Z"
@@ -81,6 +86,7 @@ models:
     model_class: StatsFcAutoTheta
     framework: StatsForecast
     model_type: local
+    native_intervals: true
     model_spec:
       season_length: 7
       decomposition_type: "multiplicative"
@@ -90,6 +96,7 @@ models:
     model_class: StatsFcAutoTbats
     framework: StatsForecast
     model_type: local
+    native_intervals: true
     model_spec:
       season_length: 7
       use_boxcox: true
@@ -156,6 +163,7 @@ models:
     model_class: SKTimeProphet
     framework: SKTime
     model_type: local
+    native_intervals: true
     enable_gcv: false
     model_spec:
       growth: linear
@@ -383,6 +391,7 @@ models:
     model_class: ChronosBoltTiny
     framework: Chronos
     model_type: foundation
+    native_intervals: true
     num_samples: 10
     batch_size: 16
 
@@ -391,6 +400,7 @@ models:
     model_class: ChronosBoltMini
     framework: Chronos
     model_type: foundation
+    native_intervals: true
     num_samples: 10
     batch_size: 16
 
@@ -399,6 +409,7 @@ models:
     model_class: ChronosBoltSmall
     framework: Chronos
     model_type: foundation
+    native_intervals: true
     num_samples: 10
     batch_size: 16
 
@@ -407,6 +418,7 @@ models:
     model_class: ChronosBoltBase
     framework: Chronos
     model_type: foundation
+    native_intervals: true
     num_samples: 10
     batch_size: 16
 
@@ -415,6 +427,7 @@ models:
     model_class: Chronos2
     framework: Chronos
     model_type: foundation
+    native_intervals: true
     batch_size: 16
 
   Chronos2Small:
@@ -422,6 +435,7 @@ models:
     model_class: Chronos2Small
     framework: Chronos
     model_type: foundation
+    native_intervals: true
     batch_size: 16
 
   Chronos2Synth:
@@ -429,6 +443,7 @@ models:
     model_class: Chronos2Synth
     framework: Chronos
     model_type: foundation
+    native_intervals: true
     batch_size: 16
 
   MoiraiSmall:
@@ -436,6 +451,7 @@ models:
     model_class: MoiraiSmall
     framework: Moirai
     model_type: foundation
+    native_intervals: true
     num_samples: 10
     patch_size: 32
     batch_size: 10
@@ -445,6 +461,7 @@ models:
     model_class: MoiraiBase
     framework: Moirai
     model_type: foundation
+    native_intervals: true
     num_samples: 10
     patch_size: 32
     batch_size: 10
@@ -454,6 +471,7 @@ models:
     model_class: MoiraiLarge
     framework: Moirai
     model_type: foundation
+    native_intervals: true
     num_samples: 10
     patch_size: 32
     batch_size: 10
@@ -463,6 +481,7 @@ models:
     model_class: MoiraiMoESmall
     framework: Moirai
     model_type: foundation
+    native_intervals: true
     num_samples: 10
     patch_size: 32
     batch_size: 10
@@ -472,6 +491,7 @@ models:
     model_class: MoiraiMoEBase
     framework: Moirai
     model_type: foundation
+    native_intervals: true
     num_samples: 10
     patch_size: 32
     batch_size: 10
@@ -481,6 +501,7 @@ models:
     model_class: MoiraiMoELarge
     framework: Moirai
     model_type: foundation
+    native_intervals: true
     num_samples: 10
     patch_size: 32
     batch_size: 10
@@ -490,12 +511,14 @@ models:
     model_class: TimesFM_2_5_200m
     framework: TimesFM
     model_type: foundation
+    native_intervals: true
 
   FFChronos2:
     module: mmf_sa.models.foundationforecast.FoundationForecastPipeline
     model_class: FFChronos2
     framework: FoundationForecast
     model_type: foundation
+    native_intervals: true
     license: apache-2.0
     batch_size: 16
     dtype: float32
@@ -505,6 +528,7 @@ models:
     model_class: FFChronos2Small
     framework: FoundationForecast
     model_type: foundation
+    native_intervals: true
     license: apache-2.0
     batch_size: 16
     dtype: float32
@@ -514,6 +538,7 @@ models:
     model_class: FFTimesFM_2_5_200m
     framework: FoundationForecast
     model_type: foundation
+    native_intervals: true
     license: apache-2.0
     context_length: 512
     batch_size: 64
@@ -524,6 +549,7 @@ models:
     model_class: FFTimesFM_3_0
     framework: FoundationForecast
     model_type: foundation
+    native_intervals: true
     license: timesfm-non-commercial-license-v1.0
     context_length: 512
     batch_size: 64
@@ -533,6 +559,7 @@ models:
     model_class: FFTiRex2
     framework: FoundationForecast
     model_type: foundation
+    native_intervals: true
     license: apache-2.0
     batch_size: 16
 
@@ -541,6 +568,7 @@ models:
     model_class: FFToto
     framework: FoundationForecast
     model_type: foundation
+    native_intervals: true
     license: apache-2.0
     context_length: 4096
     batch_size: 16
@@ -552,6 +580,7 @@ models:
     model_class: FFToto2_22m
     framework: FoundationForecast
     model_type: foundation
+    native_intervals: true
     license: apache-2.0
     context_length: 4096
     batch_size: 16
@@ -562,6 +591,7 @@ models:
     model_class: FFToto2_313m
     framework: FoundationForecast
     model_type: foundation
+    native_intervals: true
     license: apache-2.0
     context_length: 4096
     batch_size: 16
@@ -572,6 +602,7 @@ models:
     model_class: FFToto2_1B
     framework: FoundationForecast
     model_type: foundation
+    native_intervals: true
     license: apache-2.0
     context_length: 4096
     batch_size: 16
@@ -582,6 +613,7 @@ models:
     model_class: FFFlowState
     framework: FoundationForecast
     model_type: foundation
+    native_intervals: true
     license: apache-2.0
     context_length: 2048
     batch_size: 1024
@@ -592,6 +624,7 @@ models:
     model_class: FFPatchTSTFM_R2
     framework: FoundationForecast
     model_type: foundation
+    native_intervals: true
     license: openmdw-1.0
     context_length: 8192
     batch_size: 2048
@@ -601,6 +634,7 @@ models:
     model_class: FFPatchTSTFM_R1
     framework: FoundationForecast
     model_type: foundation
+    native_intervals: true
     license: cc-by-nc-sa-4.0
     context_length: 8192
     batch_size: 2048
@@ -610,6 +644,7 @@ models:
     model_class: FFTafsutBase
     framework: FoundationForecast
     model_type: foundation
+    native_intervals: true
     license: mit
     context_length: 32768
     batch_size: 64
@@ -619,6 +654,7 @@ models:
     model_class: FFT0Beta
     framework: FoundationForecast
     model_type: foundation
+    native_intervals: true
     license: apache-2.0
     context_length: 4096
     batch_size: 16
@@ -633,6 +669,7 @@ models:
     model_class: FFT0Gamma
     framework: FoundationForecast
     model_type: foundation
+    native_intervals: true
     license: apache-2.0
     context_length: 4096
     batch_size: 16
@@ -649,6 +686,7 @@ models:
     model_class: FFTimestral_5M
     framework: FoundationForecast
     model_type: foundation
+    native_intervals: true
     license: mistral-modified-mit
     context_length: 32768
     batch_size: 64
@@ -660,6 +698,7 @@ models:
     model_class: FFTimestral_28M
     framework: FoundationForecast
     model_type: foundation
+    native_intervals: true
     license: mistral-modified-mit
     context_length: 32768
     batch_size: 64
@@ -671,6 +710,7 @@ models:
     model_class: FFTimestral_123M
     framework: FoundationForecast
     model_type: foundation
+    native_intervals: true
     license: mistral-modified-mit
     context_length: 32768
     batch_size: 64
@@ -682,6 +722,7 @@ models:
     model_class: FFTimestral_209M
     framework: FoundationForecast
     model_type: foundation
+    native_intervals: true
     license: mistral-modified-mit
     context_length: 32768
     batch_size: 64

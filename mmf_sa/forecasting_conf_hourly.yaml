@@ -22,6 +22,15 @@ dynamic_historical_numerical:
 
 dynamic_historical_categorical:
 
+# Prediction intervals (see the "Prediction Intervals" section of the README). Disabled by default.
+# Override with run_forecast(prediction_intervals={...}). The bands are the models' native, uncalibrated ones;
+# models without native intervals get NULL interval columns.
+prediction_intervals:
+  enabled: false
+  levels: [80, 95]            # central interval levels; or set `quantiles` instead
+  quantiles:                  # e.g. [0.1, 0.5, 0.9]; replaces `levels` when set
+  output_format: quantile_map # quantile_map | lo_hi | both
+
 active_models:
   - StatsForecastBaselineWindowAverage
   - StatsForecastBaselineSeasonalWindowAverage
