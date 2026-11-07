@@ -21,6 +21,8 @@ from statsforecast.models import (
 )
 from mmf_sa.models.abstract_model import ForecastingRegressor
 from mmf_sa.exceptions import MissingFeatureError, DataPreparationError
+from mmf_sa.intervals.config import central_levels
+from mmf_sa.intervals.quantiles import QUANTILE_COLUMN_PREFIX, quantile_key
 
 
 class StatsFcForecaster(ForecastingRegressor):
@@ -88,12 +90,16 @@ class StatsFcForecaster(ForecastingRegressor):
         _df = self.prepare_data(hist_df)
         _exogenous = self.prepare_data(val_df, future=True)
         self.fit(_df)
+        quantiles = self.params.get("native_quantiles")
+        level_kwargs = {"level": central_levels(quantiles)} if quantiles else {}
         if len(_exogenous.columns) == 2:
-            forecast_df = self.model.predict(self.params["prediction_length"])
+            forecast_df = self.model.predict(self.params["prediction_length"], **level_kwargs)
         else:
-            forecast_df = self.model.predict(self.params["prediction_length"], _exogenous)
+            forecast_df = self.model.predict(self.params["prediction_length"], _exogenous, **level_kwargs)
         target = [col for col in forecast_df.columns.to_list()
-                       if col not in ["unique_id", "ds"]][0]
+                  if col not in ["unique_id", "ds"] and "-lo-" not in col and "-hi-" not in col][0]
+        if quantiles:
+            forecast_df = self.native_quantile_columns(forecast_df, target, quantiles)
         forecast_df = forecast_df.reset_index(drop=True).rename(
             columns={
                 "unique_id": self.params.group_id,
@@ -105,10 +111,30 @@ class StatsFcForecaster(ForecastingRegressor):
         forecast_df[self.params.target] = forecast_df[self.params.target].clip(0)
         return forecast_df, self.model
 
+    @staticmethod
+    def native_quantile_columns(forecast_df: pd.DataFrame, target: str, quantiles) -> pd.DataFrame:
+        """
+        Replaces statsforecast's <model>-lo-<level> / <model>-hi-<level> columns with one
+        QUANTILE_COLUMN_PREFIX column per requested quantile. The median is the point forecast.
+        Quantiles are the model's raw band: unlike the point forecast, they are not clipped at 0, so lower
+        bounds can be negative for a non-negative target.
+        """
+        out = forecast_df[[c for c in forecast_df.columns if "-lo-" not in c and "-hi-" not in c]].copy()
+        for q in quantiles:
+            if q == 0.5:
+                values = forecast_df[target]
+            else:
+                (level,) = central_levels([q])
+                values = forecast_df[f"{target}-{'lo' if q < 0.5 else 'hi'}-{level}"]
+            out[QUANTILE_COLUMN_PREFIX + quantile_key(q)] = values.to_numpy(dtype=float)
+        return out
+
     def forecast(self, df: pd.DataFrame, spark=None):
         _df = df[df[self.params.target].notnull()]
         _df = self.prepare_data(_df)
         self.fit(_df)
+        quantiles = self.params.get("native_quantiles")
+        level_kwargs = {"level": central_levels(quantiles)} if quantiles else {}
         if 'dynamic_future_numerical' in self.params.keys() or 'dynamic_future_categorical' in self.params.keys():
             _last_date = _df["ds"].max()
             _future_df = df[
@@ -118,7 +144,8 @@ class StatsFcForecaster(ForecastingRegressor):
             ]
             _future_exogenous = self.prepare_data(_future_df, future=True)
             try:
-                forecast_df = self.model.predict(self.params["prediction_length"], _future_exogenous)
+                forecast_df = self.model.predict(self.params["prediction_length"], _future_exogenous,
+                                                 **level_kwargs)
             except Exception as e:
                 print(
                     f"Removing group_id {df[self.params.group_id][0]} as future exogenous "
@@ -127,9 +154,12 @@ class StatsFcForecaster(ForecastingRegressor):
                     columns=[self.params.date_col, self.params.target]
                 )
         else:
-            forecast_df = self.model.predict(self.params["prediction_length"])
+            forecast_df = self.model.predict(self.params["prediction_length"], **level_kwargs)
 
-        target = [col for col in forecast_df.columns.to_list() if col not in ["unique_id", "ds"]][0]
+        target = [col for col in forecast_df.columns.to_list()
+                  if col not in ["unique_id", "ds"] and "-lo-" not in col and "-hi-" not in col][0]
+        if quantiles:
+            forecast_df = self.native_quantile_columns(forecast_df, target, quantiles)
         forecast_df = forecast_df.reset_index(drop=True).rename(
             columns={
                 "unique_id": self.params.group_id,
@@ -160,12 +190,16 @@ class StatsFcBaselineSeasonalWindowAverage(StatsFcForecaster):
 
 
 class StatsFcBaselineNaive(StatsFcForecaster):
+    native_quantiles_supported = True
+
     def __init__(self, params):
         super().__init__(params)
         self.model_spec = Naive()
 
 
 class StatsFcBaselineSeasonalNaive(StatsFcForecaster):
+    native_quantiles_supported = True
+
     def __init__(self, params):
         super().__init__(params)
         self.model_spec = SeasonalNaive(
@@ -174,6 +208,8 @@ class StatsFcBaselineSeasonalNaive(StatsFcForecaster):
 
 
 class StatsFcAutoArima(StatsFcForecaster):
+    native_quantiles_supported = True
+
     def __init__(self, params):
         super().__init__(params)
         self.model_spec = AutoARIMA(
@@ -183,6 +219,8 @@ class StatsFcAutoArima(StatsFcForecaster):
 
 
 class StatsFcAutoETS(StatsFcForecaster):
+    native_quantiles_supported = True
+
     def __init__(self, params):
         super().__init__(params)
         self.model_spec = AutoETS(
@@ -192,6 +230,8 @@ class StatsFcAutoETS(StatsFcForecaster):
 
 
 class StatsFcAutoCES(StatsFcForecaster):
+    native_quantiles_supported = True
+
     def __init__(self, params):
         super().__init__(params)
         self.model_spec = AutoCES(
@@ -201,6 +241,8 @@ class StatsFcAutoCES(StatsFcForecaster):
 
 
 class StatsFcAutoTheta(StatsFcForecaster):
+    native_quantiles_supported = True
+
     def __init__(self, params):
         super().__init__(params)
         self.model_spec = AutoTheta(
@@ -210,6 +252,8 @@ class StatsFcAutoTheta(StatsFcForecaster):
 
 
 class StatsFcAutoTbats(StatsFcForecaster):
+    native_quantiles_supported = True
+
     def __init__(self, params):
         super().__init__(params)
         self.model_spec = AutoTBATS(

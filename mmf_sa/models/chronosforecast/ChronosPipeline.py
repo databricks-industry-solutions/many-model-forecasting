@@ -19,18 +19,92 @@ from sktime.performance_metrics.forecasting import (
 from typing import Iterator, Tuple
 from pyspark.sql.functions import pandas_udf
 from pyspark.sql import DataFrame
-from mmf_sa.models.abstract_model import ForecastingRegressor, MODEL_PIP_REQUIREMENTS, collect_sorted
+from mmf_sa.models.abstract_model import (
+    ForecastingRegressor, MODEL_PIP_REQUIREMENTS, collect_sorted, in_native_range, warn_once, warn_if_outside_range,
+)
 from mmf_sa.exceptions import (
     MissingFeatureError,
     UnsupportedMetricError,
     ModelPredictionError,
     DataPreparationError,
 )
+from mmf_sa.intervals.quantiles import (
+    QUANTILE_COLUMN_PREFIX, decode_quantile_forecasts, encode_quantile_forecasts, forecast_levels, quantile_columns,
+    quantile_key, quantile_maps,
+)
 
 _logger = logging.getLogger(__name__)
 
 
+def quantile_forecasts(pipeline, inputs, prediction_length: int, quantiles, model: str = "Chronos",
+                       median_of_trained: bool = True):
+    """
+    Median and native quantiles of a batch, from ChronosPipeline.predict_quantiles.
+    Parameters:
+        pipeline: A Chronos-Bolt or Chronos-2 pipeline.
+        inputs: Contexts as accepted by pipeline.predict.
+        prediction_length (int): Forecast horizon.
+        quantiles: Requested quantile levels; the median is added if missing.
+        model (str): Model name, for the warning.
+        median_of_trained (bool): Point forecast as the median of the trained quantiles (Chronos-Bolt), or as the
+            trained 0.5 quantile (Chronos-2): each family's point forecast without native_quantiles.
+    Returns: (np.ndarray, np.ndarray, list): medians (n, H), quantiles (n, Q, H) and the Q levels. Levels outside
+        the checkpoint's trained range are NaN: Chronos would clamp them (0.1-0.9 for Chronos-Bolt), so e.g. a
+        "95%" band would really be the 80% band.
+        Only the trained quantiles are requested, which are pipeline.predict's output, so that requesting quantiles
+        does not change the point forecast when the model's quantile outputs cross; the 0.5 level is set to it.
+        Other levels inside the range are interpolated linearly between the trained ones.
+    """
+    levels = forecast_levels(quantiles)
+    trained = sorted(round(float(t), 6) for t in getattr(pipeline, "quantiles", None) or [])
+
+    def cube(query):
+        q, _ = pipeline.predict_quantiles(inputs, prediction_length=prediction_length, quantile_levels=query)
+        if isinstance(q, list):  # Chronos-2: one (n_variates, H, Q) tensor per series
+            q = torch.stack([x[0] for x in q])
+        return q.to(torch.float32).cpu().numpy().transpose(0, 2, 1).astype(np.float64)  # (n, Q, H)
+
+    if not trained:
+        q = cube(levels)
+        return q[:, levels.index(0.5), :], q, levels
+    native_range = (min(trained), max(trained))
+    warn_if_outside_range(model, levels, native_range)
+    kept = in_native_range(levels, native_range)
+    raw = cube(trained)
+    if median_of_trained or 0.5 not in trained:
+        medians = np.median(raw, axis=1)
+    else:
+        medians = raw[:, trained.index(0.5), :].copy()
+    q = np.full((raw.shape[0], len(levels), raw.shape[2]), np.nan)
+    for i, level in enumerate(levels):
+        if level in trained:
+            q[:, i, :] = raw[:, trained.index(level), :]
+        elif level in kept:
+            j = int(np.searchsorted(trained, level)) - 1
+            w = (level - trained[j]) / (trained[j + 1] - trained[j])
+            q[:, i, :] = (1 - w) * raw[:, j, :] + w * raw[:, j + 1, :]
+    q[:, levels.index(0.5), :] = medians
+    return medians, q, levels
+
+
+def warn_unavailable_levels(forecast_df: pd.DataFrame, model: str) -> None:
+    """
+    Warns once, on the driver, about the quantile columns that a distributed predict left NaN (levels outside the
+    checkpoint's trained range): the warning of quantile_forecasts is only logged on the workers.
+    """
+    missing = [key for key, c in quantile_columns(forecast_df).items()
+               if len(forecast_df) and not any(np.isfinite(np.asarray(v, dtype=float)).any() for v in forecast_df[c])]
+    if missing:
+        warn_once(f"native_quantiles_unavailable:{model}:{tuple(missing)}",
+                  f"{model}: quantiles {sorted(missing, key=float)} are outside the trained range of the checkpoint, "
+                  "so the interval levels that need them are NULL.")
+
+
 class ChronosForecaster(ForecastingRegressor):
+    # The native range is read from the loaded checkpoint (pipeline.quantiles), in quantile_forecasts; levels outside
+    # it are NaN, and left out of the quantile maps.
+    native_quantiles_supported = True
+
     def __init__(self, params):
         super().__init__(params)
         self.params = params
@@ -104,6 +178,10 @@ class ChronosForecaster(ForecastingRegressor):
                 horizon_timestamps_udf(hist_sdf.ds).alias("ds"),
                 forecast_udf(hist_sdf.y).alias("y"))
         ).toPandas()
+        if self.params.get("native_quantiles"):
+            forecast_df = decode_quantile_forecasts(
+                forecast_df, "y", forecast_levels(self.params["native_quantiles"]), self.params["prediction_length"])
+            warn_unavailable_levels(forecast_df, self.model_name())
         forecast_df = forecast_df.reset_index(drop=False).rename(
             columns={
                 "unique_id": self.params.group_id,
@@ -147,9 +225,17 @@ class ChronosForecaster(ForecastingRegressor):
             contexts.append(torch.tensor(group[target_col].to_numpy(), dtype=torch.float32))
             last_dates.append(group[date_col].max())
 
+        quantiles = self.params.get("native_quantiles")
+        levels = self.native_levels()
         forecasts_median = []
+        forecasts_quantiles = []
         for i in range(0, len(contexts), batch_size):
             batch = contexts[i:i + batch_size]
+            if quantiles:
+                medians, qs, _ = quantile_forecasts(pipeline, batch, prediction_length, quantiles, self.model_name())
+                forecasts_median.extend(list(medians))
+                forecasts_quantiles.extend(list(qs))
+                continue
             forecasts = pipeline.predict(
                 inputs=batch,
                 prediction_length=prediction_length,
@@ -178,6 +264,9 @@ class ChronosForecaster(ForecastingRegressor):
                 "y": self.params.target,
             }
         )
+        if quantiles:
+            for i, level in enumerate(levels):
+                forecast_df[QUANTILE_COLUMN_PREFIX + quantile_key(level)] = [q[i] for q in forecasts_quantiles]
         return forecast_df, self.model
 
     def forecast(self, df: pd.DataFrame, spark=None):
@@ -187,65 +276,14 @@ class ChronosForecaster(ForecastingRegressor):
     def calculate_metrics(
         self, hist_df: pd.DataFrame, val_df: pd.DataFrame, curr_date, spark=None
     ) -> list:
-        pred_df, model_pretrained = self.predict(hist_df, val_df, curr_date, spark)
-        keys = pred_df[self.params["group_id"]].unique()
-        metrics = []
-        metric_name = self.params["metric"]
-
-        # Metric class instantiated once (outside the loop).
-        metric_classes = {
-            "smape": MeanAbsolutePercentageError(symmetric=True),
-            "mape": MeanAbsolutePercentageError(symmetric=False),
-            "mae": MeanAbsoluteError(),
-            "mse": MeanSquaredError(square_root=False),
-            "rmse": MeanSquaredError(square_root=True),
-        }
-        if metric_name not in metric_classes:
-            raise UnsupportedMetricError(f"Metric {metric_name} not supported!")
-        metric_function = metric_classes[metric_name]
-
-        # Build per-key lookups in a single pass (O(n)) instead of repeating
-        # boolean-mask filters per key (O(n^2)).
-        group_col = self.params["group_id"]
-        target_col = self.params["target"]
-        actuals_map = {
-            k: np.asarray(v)
-            for k, v in val_df.groupby(group_col, sort=False)[target_col]
-        }
-        # pred_df has one row per key whose `target_col` cell is an array-like
-        # (list/ndarray) of horizon values. Build a key→forecast dict directly.
-        forecasts_map = dict(
-            zip(
-                pred_df[group_col].to_numpy(),
-                pred_df[target_col].to_numpy(),
-            )
-        )
-
-        for key in keys:
-            try:
-                actual = actuals_map[key]
-                forecast = np.asarray(forecasts_map[key])
-                metric_value = metric_function(actual, forecast)
-                metrics.append(
-                    (
-                        key,
-                        curr_date,
-                        metric_name,
-                        metric_value,
-                        forecast,
-                        actual,
-                        b"",
-                    )
-                )
-            except (ModelPredictionError, DataPreparationError) as err:
-                _logger.warning(f"Failed to calculate metric for key {key}: {err}")
-            except Exception as err:
-                _logger.warning(f"Unexpected error calculating metric for key {key}: {err}")
-        return metrics
+        pred_df, _ = self.predict(hist_df, val_df, curr_date, spark)
+        return self.series_metrics(pred_df, val_df, curr_date)
 
     def create_predict_udf(self, device_count):
         repo = self.repo
         num_devices = device_count
+        quantiles = [float(q) for q in self.params.get("native_quantiles") or []]
+        model_name = self.model_name()
 
         @pandas_udf('array<double>')
         def predict_udf(bulk_iterator: Iterator[pd.Series]) -> Iterator[pd.Series]:
@@ -275,6 +313,11 @@ class ChronosForecaster(ForecastingRegressor):
                 for i in range(0, len(bulk), self.params["batch_size"]):
                     batch = bulk[i:i+self.params["batch_size"]]
                     contexts = [torch.tensor(list(series)) for series in batch]
+                    if quantiles:
+                        medians, qs, _ = quantile_forecasts(
+                            pipeline, contexts, self.params["prediction_length"], quantiles, model_name)
+                        median.extend(encode_quantile_forecasts(medians, qs))
+                        continue
                     forecasts = pipeline.predict(
                         inputs=contexts,
                         prediction_length=self.params["prediction_length"],
@@ -477,6 +520,10 @@ class Chronos2Forecaster(ChronosForecaster):
                 forecast_udf(*udf_columns).alias("y"),
             )
         ).toPandas()
+        if self.params.get("native_quantiles"):
+            forecast_df = decode_quantile_forecasts(
+                forecast_df, "y", forecast_levels(self.params["native_quantiles"]), self.params["prediction_length"])
+            warn_unavailable_levels(forecast_df, self.model_name())
 
         forecast_df = forecast_df.reset_index(drop=False).rename(
             columns={
@@ -540,10 +587,16 @@ class Chronos2Forecaster(ChronosForecaster):
                 entry["future_covariates"] = future_covariates
             inputs.append(entry)
 
-        forecasts = pipeline.predict(
-            inputs=inputs,
-            prediction_length=self.params["prediction_length"],
-        )
+        quantiles = self.params.get("native_quantiles")
+        if quantiles:
+            medians_q, qs, levels = quantile_forecasts(
+                pipeline, inputs, self.params["prediction_length"], quantiles, self.model_name(),
+                median_of_trained=False)
+        else:
+            forecasts = pipeline.predict(
+                inputs=inputs,
+                prediction_length=self.params["prediction_length"],
+            )
 
         from utilsforecast.processing import make_future_dataframe
         timestamps = make_future_dataframe(
@@ -557,15 +610,21 @@ class Chronos2Forecaster(ChronosForecaster):
             for _, group in timestamps.groupby("unique_id")
         ]
 
-        medians = []
-        for forecast in forecasts:
-            medians.append(forecast[0, quantile_idx, :].numpy().astype(np.float64))
+        if quantiles:
+            medians = list(medians_q)
+        else:
+            medians = []
+            for forecast in forecasts:
+                medians.append(forecast[0, quantile_idx, :].numpy().astype(np.float64))
 
         forecast_df = pd.DataFrame({
             self.params.group_id: unique_ids,
             self.params.date_col: timestamps,
             self.params.target: medians,
         })
+        if quantiles:
+            for i, level in enumerate(levels):
+                forecast_df[QUANTILE_COLUMN_PREFIX + quantile_key(level)] = list(qs[:, i, :])
         return forecast_df, None
 
     def forecast(self, df: pd.DataFrame, spark=None):
@@ -617,6 +676,7 @@ class Chronos2Forecaster(ChronosForecaster):
                 pred_df[target_col].to_numpy(),
             )
         )
+        quantiles_map = quantile_maps(pred_df, group_col)
 
         for key in keys:
             try:
@@ -632,6 +692,7 @@ class Chronos2Forecaster(ChronosForecaster):
                         forecast,
                         actual,
                         b"",
+                        quantiles_map.get(key),
                     )
                 )
             except (ModelPredictionError, DataPreparationError) as err:
@@ -659,6 +720,8 @@ class Chronos2Forecaster(ChronosForecaster):
         num_devices = device_count
         _col_map = list(col_map) if col_map else []
         _has_covariates = len(_col_map) > 0
+        quantiles = [float(q) for q in self.params.get("native_quantiles") or []]
+        model_name = self.model_name()
 
         @pandas_udf('array<double>')
         def predict_udf(
@@ -694,14 +757,10 @@ class Chronos2Forecaster(ChronosForecaster):
                     end = min(i + batch_size, n)
 
                     if not _has_covariates:
-                        contexts = [
+                        inputs = [
                             torch.tensor(list(y_batch.iloc[j]))
                             for j in range(i, end)
                         ]
-                        forecasts = pipeline.predict(
-                            inputs=contexts,
-                            prediction_length=prediction_length,
-                        )
                     else:
                         inputs = []
                         for j in range(i, end):
@@ -732,10 +791,15 @@ class Chronos2Forecaster(ChronosForecaster):
                                 entry["future_covariates"] = future_cov
                             inputs.append(entry)
 
-                        forecasts = pipeline.predict(
-                            inputs=inputs,
-                            prediction_length=prediction_length,
-                        )
+                    if quantiles:
+                        medians, qs, _ = quantile_forecasts(pipeline, inputs, prediction_length, quantiles, model_name,
+                                                            median_of_trained=False)
+                        median.extend(encode_quantile_forecasts(medians, qs))
+                        continue
+                    forecasts = pipeline.predict(
+                        inputs=inputs,
+                        prediction_length=prediction_length,
+                    )
 
                     for forecast in forecasts:
                         median.append(

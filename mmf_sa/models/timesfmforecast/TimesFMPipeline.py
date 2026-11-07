@@ -5,22 +5,49 @@ import torch
 import mlflow
 from mlflow.types import Schema, TensorSpec
 from mlflow.models.signature import ModelSignature
-from sktime.performance_metrics.forecasting import (
-    MeanAbsoluteError,
-    MeanSquaredError,
-    MeanAbsolutePercentageError,
-)
 from typing import Iterator, Tuple
 from pyspark.sql.functions import pandas_udf
 from pyspark.sql import DataFrame
 from utilsforecast.processing import make_future_dataframe
 from mmf_sa.models.abstract_model import ForecastingRegressor, MODEL_PIP_REQUIREMENTS, collect_sorted
-from mmf_sa.exceptions import MissingFeatureError, UnsupportedMetricError, ModelPredictionError, DataPreparationError
+from mmf_sa.exceptions import MissingFeatureError
+from mmf_sa.intervals.quantiles import (
+    QUANTILE_COLUMN_PREFIX, decode_quantile_forecasts, encode_quantile_forecasts, quantile_key,
+)
 
 _logger = logging.getLogger(__name__)
 
+# Quantile levels of TimesFM 2.5's quantile forecast, after the mean (index 0). The point forecast is the
+# 0.5 level (index 5), so the median column equals the point forecast.
+TIMESFM_QUANTILE_LEVELS = (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9)
+
+
+def quantile_forecasts(quantile_output, levels):
+    """
+    Native quantiles of one series from a TimesFM 2.5 quantile forecast.
+    Parameters:
+        quantile_output: Quantile forecast of one series, (H, 1 + len(TIMESFM_QUANTILE_LEVELS)), mean first.
+        levels: Requested quantile levels, sorted (see native_levels).
+    Returns: np.ndarray: quantiles (len(levels), H). Levels between two deciles are interpolated linearly,
+        native_levels leaves out the levels outside [0.1, 0.9].
+    """
+    deciles = np.asarray(TIMESFM_QUANTILE_LEVELS)
+    # Weights of each requested level on the deciles (np.interp clamps to the outer deciles).
+    weights = np.zeros((len(levels), len(deciles)))
+    for i, level in enumerate(levels):
+        pos = np.interp(level, deciles, np.arange(len(deciles)))
+        lo = min(int(np.floor(pos)), len(deciles) - 2)
+        weights[i, lo] = lo + 1 - pos
+        weights[i, lo + 1] = pos - lo
+    values = np.asarray(quantile_output, dtype=np.float64)[:, 1:]  # drop the mean
+    return (values @ weights.T).T
+
 
 class TimesFMForecaster(ForecastingRegressor):
+    # TimesFM only provides the deciles: levels outside them (e.g. the 95% band) are left out, not clamped.
+    native_quantiles_supported = True
+    native_quantile_range = (TIMESFM_QUANTILE_LEVELS[0], TIMESFM_QUANTILE_LEVELS[-1])
+
     def __init__(self, params):
         super().__init__(params)
         self.params = params
@@ -208,6 +235,7 @@ class TimesFMForecaster(ForecastingRegressor):
         num_devices = device_count
         _col_map = list(col_map) if col_map else []
         _has_covariates = len(_col_map) > 0
+        _levels = self.native_levels()
 
         @pandas_udf('array<double>')
         def predict_udf(
@@ -258,7 +286,7 @@ class TimesFMForecaster(ForecastingRegressor):
                 ]
 
                 if not _has_covariates:
-                    forecasts, _ = model.forecast(
+                    forecasts, quantile_outputs = model.forecast(
                         horizon=prediction_length,
                         inputs=inputs,
                     )
@@ -288,7 +316,7 @@ class TimesFMForecaster(ForecastingRegressor):
                                 str(s) for s in col_batch
                             ]
 
-                    forecasts, _ = model.forecast_with_covariates(
+                    forecasts, quantile_outputs = model.forecast_with_covariates(
                         inputs=inputs,
                         dynamic_numerical_covariates=dyn_num_dict,
                         dynamic_categorical_covariates=dyn_cat_dict,
@@ -300,9 +328,11 @@ class TimesFMForecaster(ForecastingRegressor):
                         normalize_xreg_target_per_input=True,
                     )
 
-                yield pd.Series(
-                    [arr.astype(np.float64) for arr in forecasts]
-                )
+                points = [arr.astype(np.float64) for arr in forecasts]
+                if _levels:
+                    quantiles = [quantile_forecasts(q, _levels) for q in quantile_outputs]
+                    points = encode_quantile_forecasts(points, quantiles)
+                yield pd.Series(points)
 
         return predict_udf
 
@@ -367,6 +397,10 @@ class TimesFMForecaster(ForecastingRegressor):
             )
         ).toPandas()
 
+        if self.params.get("native_quantiles"):
+            # The UDF packs the levels of native_levels (inside the deciles), not every requested one.
+            forecast_df = decode_quantile_forecasts(
+                forecast_df, "y", self.native_levels(), self.params["prediction_length"])
         forecast_df = forecast_df.reset_index(drop=False).rename(
             columns={
                 "unique_id": self.params.group_id,
@@ -409,7 +443,7 @@ class TimesFMForecaster(ForecastingRegressor):
             and not dynamic_categorical_covariates \
             and not static_numerical_covariates \
             and not static_categorical_covariates:
-            forecasts, _ = model.forecast(
+            forecasts, quantile_outputs = model.forecast(
                 horizon=self.params.prediction_length,
                 inputs=forecast_input,
             )
@@ -423,7 +457,7 @@ class TimesFMForecaster(ForecastingRegressor):
                 return_backcast=True,
             )
             model.compile(xreg_config)
-            forecasts, _ = model.forecast_with_covariates(
+            forecasts, quantile_outputs = model.forecast_with_covariates(
                 inputs=forecast_input,
                 dynamic_numerical_covariates=dynamic_numerical_covariates,
                 dynamic_categorical_covariates=dynamic_categorical_covariates,
@@ -443,11 +477,17 @@ class TimesFMForecaster(ForecastingRegressor):
             freq=self.params.freq,
         )
         timestamps = [group['ds'].values for _, group in timestamps.groupby('unique_id')]
-        forecast_df = pd.DataFrame({
+        columns = {
             self.params.group_id: unique_ids,
             self.params.date_col: timestamps,
             self.params.target: [arr.astype(np.float64) for arr in forecasts],
-        })
+        }
+        levels = self.native_levels()
+        if levels:
+            quantiles = [quantile_forecasts(q, levels) for q in quantile_outputs]
+            for i, level in enumerate(levels):
+                columns[QUANTILE_COLUMN_PREFIX + quantile_key(level)] = [q[i] for q in quantiles]
+        forecast_df = pd.DataFrame(columns)
 
         # Todo
         # forecast_df[self.params.target] = forecast_df[self.params.target].clip(0.01)
@@ -467,61 +507,8 @@ class TimesFMForecaster(ForecastingRegressor):
     def calculate_metrics(
         self, hist_df: pd.DataFrame, val_df: pd.DataFrame, curr_date, spark=None
     ) -> list:
-        pred_df, model_pretrained = self.predict(hist_df, val_df, spark=spark)
-        keys = pred_df[self.params["group_id"]].unique()
-        metrics = []
-        metric_name = self.params["metric"]
-
-        # Metric class instantiated once (outside the loop).
-        metric_classes = {
-            "smape": MeanAbsolutePercentageError(symmetric=True),
-            "mape": MeanAbsolutePercentageError(symmetric=False),
-            "mae": MeanAbsoluteError(),
-            "mse": MeanSquaredError(square_root=False),
-            "rmse": MeanSquaredError(square_root=True),
-        }
-        if metric_name not in metric_classes:
-            raise UnsupportedMetricError(f"Metric {metric_name} not supported!")
-        metric_function = metric_classes[metric_name]
-
-        # Build per-key lookups in a single pass (O(n)) instead of repeating
-        # boolean-mask filters per key (O(n^2)).
-        group_col = self.params["group_id"]
-        target_col = self.params["target"]
-        actuals_map = {
-            k: np.asarray(v, dtype=float)
-            for k, v in val_df.groupby(group_col, sort=False)[target_col]
-        }
-        # pred_df has one row per key whose `target_col` cell is an array-like
-        # (list/ndarray) of horizon values. Build a key→forecast dict directly.
-        forecasts_map = dict(
-            zip(
-                pred_df[group_col].to_numpy(),
-                pred_df[target_col].to_numpy(),
-            )
-        )
-
-        for key in keys:
-            try:
-                actual = actuals_map[key]
-                forecast = np.asarray(forecasts_map[key], dtype=float)
-                metric_value = metric_function(actual, forecast)
-                metrics.append(
-                    (
-                        key,
-                        curr_date,
-                        metric_name,
-                        metric_value,
-                        forecast,
-                        actual,
-                        b"",
-                    )
-                )
-            except (ModelPredictionError, DataPreparationError) as err:
-                _logger.warning(f"Failed to calculate metric for key {key}: {err}")
-            except Exception as err:
-                _logger.warning(f"Unexpected error calculating metric for key {key}: {err}")
-        return metrics
+        pred_df, _ = self.predict(hist_df, val_df, spark=spark)
+        return self.series_metrics(pred_df, val_df, curr_date)
 
 
 class TimesFM_2_5_200m(TimesFMForecaster):

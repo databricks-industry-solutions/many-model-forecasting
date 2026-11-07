@@ -2,6 +2,7 @@ import os
 import functools
 import logging
 import pathlib
+import posixpath
 from datetime import datetime
 import uuid
 import yaml
@@ -24,11 +25,15 @@ from pyspark.sql.types import (
     BinaryType,
     ArrayType,
     IntegerType,
+    LongType,
 )
-from pyspark.sql.functions import lit, avg, min, max, col, posexplode, to_date, countDistinct
-from mmf_sa.models.abstract_model import ForecastingRegressor, collect_sorted
+from pyspark.sql.functions import lit, col, posexplode, to_date, countDistinct
+from mmf_sa.models.abstract_model import ForecastingRegressor, collect_sorted, warn_once
 from mmf_sa.models import ModelRegistry
 from mmf_sa.data_quality_checks import DataQualityChecks
+from mmf_sa.intervals.config import interval_levels, requested_quantiles, resolve_prediction_intervals_conf
+from mmf_sa.intervals.quantiles import quantile_columns, quantile_maps
+from mmf_sa.intervals.scoring import QUANTILE_MAP_TYPE, QUANTILES_FIELD, add_interval_columns
 from mmf_sa.exceptions import (
     ConfigurationError,
     ExperimentError,
@@ -43,6 +48,28 @@ from mmf_sa.exceptions import (
 _logger = logging.getLogger(__name__)
 os.environ['NIXTLA_ID_AS_COL'] = '1'
 mlflow.set_registry_uri("databricks-uc")
+
+
+def ensure_workspace_parent_dir(path: str) -> None:
+    """
+    Creates the workspace folder that will hold an MLflow experiment, e.g. /Users/me/mmf for /Users/me/mmf/exp.
+    Uses the Workspace API (databricks-sdk, a dependency of mlflow), which works on classic and serverless compute;
+    os.makedirs on /Workspace does not create workspace folders on serverless. Falls back to os.makedirs.
+    """
+    parent = posixpath.dirname(path[len("/Workspace"):] if path.startswith("/Workspace/") else path)
+    if parent in ("", "/"):
+        return
+    try:
+        from databricks.sdk import WorkspaceClient
+        WorkspaceClient().workspace.mkdirs(parent)
+        return
+    except Exception as err:
+        _logger.debug(f"Could not create {parent} with the Workspace API ({err}); trying /Workspace{parent}.")
+    try:
+        os.makedirs(f"/Workspace{parent}", exist_ok=True)
+    except OSError as err:
+        _logger.warning(f"Could not create the experiment folder {parent} ({err}); mlflow.set_experiment may fail "
+                        "if it does not exist.")
 
 
 class Forecaster:
@@ -68,6 +95,8 @@ class Forecaster:
         else:
             self.run_id = str(uuid.uuid4())
         self.data_conf = data_conf
+        self.conf["prediction_intervals"] = resolve_prediction_intervals_conf(
+            self.conf.get("prediction_intervals"))
         self.model_registry = ModelRegistry(self.conf)
         self.spark = spark
         self.serverless = bool(self.conf.get("serverless", False))
@@ -97,9 +126,7 @@ class Forecaster:
         Parameters: self (Forecaster): A Forecaster object.
         Returns: experiment_id (str): A string specifying the experiment id.
         """
-        parent_dir = os.path.dirname(f'/Workspace{self.conf["experiment_path"]}')
-        if not os.path.exists(parent_dir):
-            os.makedirs(parent_dir)
+        ensure_workspace_parent_dir(self.conf["experiment_path"])
         mlflow.set_experiment(self.conf["experiment_path"])
         experiment_id = (
             MlflowClient()
@@ -114,14 +141,34 @@ class Forecaster:
         Parameters: self (Forecaster): A Forecaster object. key (str): A string specifying the key.
         Returns: DataFrame: A Spark DataFrame object.
         """
-        if self.data_conf:
-            df_val = self.data_conf.get(key)
-            if df_val is not None and isinstance(df_val, pd.DataFrame):
-                return self.spark.createDataFrame(df_val)
-            elif df_val is not None and isinstance(df_val, DataFrame):
-                return df_val
-        else:
-            return self.spark.read.table(self.conf[key])
+        # A source is a DataFrame in data_conf, or a table name in conf; the two kinds can be mixed
+        # (e.g. train_data as a DataFrame and scoring_data as a table).
+        df_val = (self.data_conf or {}).get(key)
+        if isinstance(df_val, pd.DataFrame):
+            return self.spark.createDataFrame(df_val)
+        if isinstance(df_val, DataFrame):
+            return df_val
+        return self.spark.read.table(self.conf[key])
+
+    def data_source(self, key: str):
+        """The DataFrame (data_conf) or table name (conf) given for a data source, or None."""
+        value = (self.data_conf or {}).get(key)
+        return value if value is not None else self.conf.get(key)
+
+    def has_separate_scoring_data(self) -> bool:
+        """Whether scoring_data is given and is not the training data itself (same table or same DataFrame)."""
+        scoring, train = self.data_source("scoring_data"), self.data_source("train_data")
+        if scoring is None:
+            return False
+        if isinstance(scoring, str) and isinstance(train, str):
+            return scoring != train
+        if scoring is train:
+            return False
+        if isinstance(scoring, DataFrame) and isinstance(train, DataFrame):
+            return not scoring.sameSemantics(train)
+        if isinstance(scoring, pd.DataFrame) and isinstance(train, pd.DataFrame):
+            return not scoring.equals(train)
+        return True
 
     def prepare_data_for_global_model(self, mode: str = None):
         """
@@ -138,9 +185,7 @@ class Forecaster:
         src_df, removed = DataQualityChecks(src_df, self.conf, self.spark).run()
 
         # This block runs when preparing data for scoring
-        if (mode == "scoring") \
-                and (self.conf["scoring_data"]) \
-                and (self.conf["scoring_data"] != self.conf["train_data"]):
+        if (mode == "scoring") and self.has_separate_scoring_data():
             score_df = self.resolve_source("scoring_data")
             score_df = score_df.where(~col(self.conf["group_id"]).isin(removed))
             src_df = src_df.unionByName(score_df, allowMissingColumns=True)
@@ -193,6 +238,40 @@ class Forecaster:
             self.score_models(failed_models)
         print("Finished evaluate_score")
         return self.run_id
+
+    @property
+    def intervals_enabled(self) -> bool:
+        return bool(self.conf.prediction_intervals.enabled)
+
+    def native_quantiles(self, model_conf) -> list:
+        """
+        Quantile levels a model must return (native intervals), or None when intervals are disabled or the model
+        has none; such a model gets NULL interval columns, which is logged once.
+        """
+        if not self.intervals_enabled:
+            return None
+        if not model_conf.get("native_intervals", False):
+            warn_once(f"no_native_intervals:{model_conf['name']}",
+                      f"{model_conf['name']} has no native prediction intervals; its interval columns are NULL.")
+            return None
+        return requested_quantiles(self.conf.prediction_intervals)
+
+    def get_model_with_native_quantiles(self, model_conf) -> ForecastingRegressor:
+        """Instantiates a model for evaluation or scoring, passing it native_quantiles when it must return them."""
+        quantiles = self.native_quantiles(model_conf)
+        override = OmegaConf.create({"native_quantiles": quantiles}) if quantiles else None
+        return self.model_registry.get_model(model_conf["name"], override_conf=override)
+
+    def evaluation_quantile_fields(self) -> list:
+        """The forecast_quantiles field of evaluation rows, present only when intervals are enabled."""
+        return [StructField(QUANTILES_FIELD, QUANTILE_MAP_TYPE)] if self.intervals_enabled else []
+
+    def evaluation_writer(self, sdf: DataFrame):
+        """Append writer for evaluation_output. With intervals enabled, existing tables gain forecast_quantiles."""
+        writer = sdf.write.mode("append")
+        if self.intervals_enabled:
+            writer = writer.option("mergeSchema", "true")
+        return writer
 
     def evaluate_models(self) -> set:
         """
@@ -258,13 +337,15 @@ class Forecaster:
                     StructField("actual", ArrayType(DoubleType())),
                     StructField("model_pickle", BinaryType()),
                 ]
+                + self.evaluation_quantile_fields()
             )
 
-            model = self.model_registry.get_model(model_conf["name"])
+            model = self.get_model_with_native_quantiles(model_conf)
 
             # Use Pandas UDF to forecast individual group
             evaluate_one_local_model_fn = functools.partial(
-                Forecaster.evaluate_one_local_model, model=model
+                Forecaster.evaluate_one_local_model, model=model,
+                with_quantiles=self.intervals_enabled,
             )
 
             res_sdf = (
@@ -274,16 +355,14 @@ class Forecaster:
         
             # Write evaluation result to a delta table
             if self.conf.get("evaluation_output", None) is not None:
-                (
+                self.evaluation_writer(
                     res_sdf.withColumn(self.conf["group_id"], col(self.conf["group_id"]).cast(StringType()))
                     .withColumn("run_id", lit(self.run_id))
                     .withColumn("run_date", lit(self.run_date))
                     .withColumn("model", lit(model_conf["name"]))
                     .withColumn("use_case", lit(self.conf["use_case_name"]))
                     .withColumn("model_uri", lit(""))
-                    .write.mode("append")
-                    .saveAsTable(self.conf.get("evaluation_output"))
-                )
+                ).saveAsTable(self.conf.get("evaluation_output"))
 
             # Compute aggregated metrics
             res_df = (
@@ -304,7 +383,7 @@ class Forecaster:
 
     @staticmethod
     def evaluate_one_local_model(
-        pdf: pd.DataFrame, model: ForecastingRegressor
+        pdf: pd.DataFrame, model: ForecastingRegressor, with_quantiles: bool = False
     ) -> pd.DataFrame:
         """
         A static method that evaluates a single local model using the provided pandas DataFrame and model.
@@ -312,6 +391,7 @@ class Forecaster:
         Parameters:
             pdf (pd.DataFrame): A pandas DataFrame.
             model (ForecastingRegressor): A ForecastingRegressor object.
+            with_quantiles (bool): Whether to return the forecast_quantiles column (prediction intervals enabled).
         Returns: metrics_df (pd.DataFrame): A pandas DataFrame.
         """
         pdf[model.params["date_col"]] = pd.to_datetime(pdf[model.params["date_col"]])
@@ -337,12 +417,14 @@ class Forecaster:
                 "forecast",
                 "actual",
                 "model_pickle",
-            ]
+            ] + (["forecast_quantiles"] if with_quantiles else [])
         )
         try:
             pdf = pdf.fillna(0)
             pdf[model.params["target"]] = pdf[model.params["target"]].clip(0)
             metrics_df = model.backtest(pdf, start=split_date, group_id=group_id)
+            if not with_quantiles:
+                metrics_df = metrics_df.drop(columns="forecast_quantiles")
             return metrics_df
         except (ModelError, EvaluationError, DataError) as err:
             _logger.error(
@@ -441,24 +523,28 @@ class Forecaster:
                 StructField("actual", ArrayType(DoubleType())),
                 StructField("model_pickle", BinaryType()),
             ]
+            + self.evaluation_quantile_fields()
         )
         # Covert to Python-native types before converting to pyspark dataframe
         res_pdf['forecast'] = res_pdf['forecast'].apply(lambda x: [float(i) for i in x])
         res_pdf['actual'] = res_pdf['actual'].apply(lambda x: [float(i) for i in x])
+        if self.intervals_enabled:
+            res_pdf['forecast_quantiles'] = res_pdf['forecast_quantiles'].apply(
+                lambda m: None if m is None else {k: [float(i) for i in v] for k, v in m.items()})
+        else:
+            res_pdf = res_pdf.drop(columns="forecast_quantiles")
         res_sdf = self.spark.createDataFrame(res_pdf, schema)
         # Write evaluation results to a delta table
         if write:
             if self.conf.get("evaluation_output", None):
-                (
+                self.evaluation_writer(
                     res_sdf.withColumn(self.conf["group_id"], col(self.conf["group_id"]).cast(StringType()))
                     .withColumn("run_id", lit(self.run_id))
                     .withColumn("run_date", lit(self.run_date))
                     .withColumn("model", lit(model.params.name))
                     .withColumn("use_case", lit(self.conf["use_case_name"]))
                     .withColumn("model_uri", lit(model_uri))
-                    .write.mode("append")
-                    .saveAsTable(self.conf.get("evaluation_output"))
-                )
+                ).saveAsTable(self.conf.get("evaluation_output"))
         # Compute aggregated metrics
         res_df = (
             res_sdf.groupby(["metric_name"])
@@ -491,8 +577,7 @@ class Forecaster:
                 "or run Moirai on a classic GPU cluster."
             )
         with mlflow.start_run(experiment_id=self.experiment_id) as run:
-            model_name = model_conf["name"]
-            model = self.model_registry.get_model(model_name)
+            model = self.get_model_with_native_quantiles(model_conf)
             hist_df, removed = self.prepare_data_for_global_model("evaluating")  # Reuse the same as global
             train_df, val_df = self.split_df_train_val(hist_df)
             input_example = train_df[train_df[self.conf['group_id']] == train_df[self.conf['group_id']] \
@@ -556,9 +641,7 @@ class Forecaster:
         src_df, removed = DataQualityChecks(src_df, self.conf, self.spark).run()
         # Check if external regressors are provided and if the framework is statsforecast.
         # External regressors are supported only with statsforecast models.
-        if (self.conf["scoring_data"])\
-                and (self.conf["train_data"] != self.conf["scoring_data"])\
-                and (model_conf["framework"] == "StatsForecast"):
+        if self.has_separate_scoring_data() and (model_conf["framework"] == "StatsForecast"):
             score_df = self.resolve_source("scoring_data")
             score_df = score_df.where(~col(self.conf["group_id"]).isin(removed))
             src_df = src_df.unionByName(score_df, allowMissingColumns=True)
@@ -573,31 +656,31 @@ class Forecaster:
                 StructField(self.conf["target"], ArrayType(DoubleType())),
                 StructField("model_pickle", BinaryType()),
             ]
+            + self.evaluation_quantile_fields()
         )
-        model = self.model_registry.get_model(model_conf["name"])
+        model = self.get_model_with_native_quantiles(model_conf)
 
         # Use Pandas UDF to distribute scoring
-        score_one_local_model_fn = functools.partial(Forecaster.score_one_local_model, model=model)
+        score_one_local_model_fn = functools.partial(
+            Forecaster.score_one_local_model, model=model, with_quantiles=self.intervals_enabled)
         res_sdf = (
             src_df.groupby(self.conf["group_id"])
             .applyInPandas(score_one_local_model_fn, schema=output_schema)
         )
 
         # Write the results to a delta table
-        (
+        self.write_scoring_output(
             res_sdf.withColumn(self.conf["group_id"], col(self.conf["group_id"]).cast(StringType()))
             .withColumn("run_id", lit(self.run_id))
             .withColumn("run_date", lit(self.run_date))
             .withColumn("use_case", lit(self.conf["use_case_name"]))
             .withColumn("model", lit(model_conf["name"]))
             .withColumn("model_uri", lit(""))
-            .write.mode("append")
-            .saveAsTable(self.conf["scoring_output"])
         )
 
     @staticmethod
     def score_one_local_model(
-        pdf: pd.DataFrame, model: ForecastingRegressor
+        pdf: pd.DataFrame, model: ForecastingRegressor, with_quantiles: bool = False
     ) -> pd.DataFrame:
         """
         A static method that scores a single local model using the provided pandas DataFrame and model.
@@ -606,6 +689,7 @@ class Forecaster:
         Parameters:
             pdf (pd.DataFrame): A pandas DataFrame.
             model (ForecastingRegressor): A ForecastingRegressor object.
+            with_quantiles (bool): Whether to return the forecast_quantiles column (prediction intervals enabled).
         Returns: res_df (pd.DataFrame): A pandas DataFrame.
         """
         pdf[model.params["date_col"]] = pd.to_datetime(pdf[model.params["date_col"]])
@@ -618,26 +702,28 @@ class Forecaster:
                 res_df[model.params["date_col"]].to_numpy(),
                 res_df[model.params["target"]].to_numpy(),
                 cloudpickle.dumps(model_fitted)]
+            if with_quantiles:
+                data.append(ForecastingRegressor.forecast_quantiles(res_df))
         except (ModelError, ScoringError, DataError) as err:
             _logger.error(
                 f"Error scoring group {group_id} using model {repr(model)}: {err}",
                 exc_info=err,
                 stack_info=True,
             )
-            data = [group_id, None, None, None]
+            data = [group_id, None, None, None] + ([None] if with_quantiles else [])
         except Exception as err:
             _logger.error(
                 f"Unexpected error scoring group {group_id} using model {repr(model)}: {err}",
                 exc_info=err,
                 stack_info=True,
             )
-            data = [group_id, None, None, None]
+            data = [group_id, None, None, None] + ([None] if with_quantiles else [])
         res_df = pd.DataFrame(
             columns=[
                 model.params["group_id"],
                 model.params["date_col"],
                 model.params["target"],
-                "model_pickle"], data=[data]
+                "model_pickle"] + (["forecast_quantiles"] if with_quantiles else []), data=[data]
         )
         return res_df
 
@@ -661,7 +747,7 @@ class Forecaster:
             self.conf["date_col"],
             sdf[self.conf["date_col"]].cast(ArrayType(TimestampType())),
         )
-        (
+        self.write_scoring_output(
             sdf.withColumn(self.conf["group_id"], col(self.conf["group_id"]).cast(StringType()))
             .withColumn("model", lit(model_conf["name"]))
             .withColumn("run_id", lit(self.run_id))
@@ -669,8 +755,6 @@ class Forecaster:
             .withColumn("use_case", lit(self.conf["use_case_name"]))
             .withColumn("model_pickle", lit(b""))
             .withColumn("model_uri", lit(model_uri))
-            .write.mode("append")
-            .saveAsTable(self.conf["scoring_output"])
         )
 
     def score_foundation_model(self, model_conf):
@@ -687,12 +771,19 @@ class Forecaster:
                 "or run Moirai on a classic GPU cluster."
             )
         print(f"Running scoring for {model_conf['name']}...")
-        model_name = model_conf["name"]
         _, model_uri = self.get_model_for_scoring(model_conf)
-        model = self.model_registry.get_model(model_name)
+        model = self.get_model_with_native_quantiles(model_conf)
         score_df, removed = self.prepare_data_for_global_model("scoring")
         forecast_spark = None if self.serverless else self.spark
         prediction_df, model_pretrained = model.forecast(score_df, spark=forecast_spark)
+        q_cols = list(quantile_columns(prediction_df).values())
+        if self.intervals_enabled:
+            maps = quantile_maps(prediction_df, self.conf["group_id"])
+            prediction_df = prediction_df.drop(columns=q_cols)
+            prediction_df["forecast_quantiles"] = [maps.get(k) for k in prediction_df[self.conf["group_id"]]]
+            prediction_df[self.conf["group_id"]] = prediction_df[self.conf["group_id"]].astype(str)
+        elif q_cols:
+            prediction_df = prediction_df.drop(columns=q_cols)
         # Driver-only single-GPU predict paths build ds arrays as numpy
         # datetime64[ns]; Spark Connect (serverless) Arrow rejects nanosecond
         # timestamps. Coerce to microsecond precision before createDataFrame.
@@ -704,14 +795,17 @@ class Forecaster:
                 prediction_df[date_col] = prediction_df[date_col].apply(
                     lambda arr: np.asarray(arr, dtype="datetime64[us]")
                 )
-        sdf = self.spark.createDataFrame(prediction_df).drop('index')
+        sdf = self.spark.createDataFrame(
+            prediction_df,
+            schema=self.foundation_scoring_schema(prediction_df) if self.intervals_enabled else None,
+        ).drop('index')
         # Normalize the date column to TIMESTAMP (LTZ) so the schema matches the
         # table created by score_local_model (which uses ArrayType(TimestampType())).
         # No-op on classic compute (already LTZ); applies NTZ -> LTZ on Spark Connect,
         # where Arrow inference of object-dtype columns containing numpy datetime64
         # arrays produces array<timestamp_ntz> and would otherwise fail Delta merge.
         sdf = sdf.withColumn(date_col, sdf[date_col].cast(ArrayType(TimestampType())))
-        (
+        self.write_scoring_output(
             sdf.withColumn(self.conf["group_id"], col(self.conf["group_id"]).cast(StringType()))
             .withColumn("model", lit(model_conf["name"]))
             .withColumn("run_id", lit(self.run_id))
@@ -719,9 +813,38 @@ class Forecaster:
             .withColumn("use_case", lit(self.conf["use_case_name"]))
             .withColumn("model_pickle", lit(b""))
             .withColumn("model_uri", lit(model_uri))
-            .write.mode("append")
+        )
+
+    def write_scoring_output(self, sdf: DataFrame):
+        """
+        Appends one model's forecasts to scoring_output. With prediction intervals enabled, the model's native
+        quantile map (forecast_quantiles, if any) is replaced by the interval columns of output_format.
+        """
+        if not self.intervals_enabled:
+            sdf.write.mode("append").saveAsTable(self.conf["scoring_output"])
+            return
+        pi = self.conf.prediction_intervals
+        (
+            add_interval_columns(sdf, self.conf["target"], interval_levels(pi), pi.output_format)
+            .write.mode("append").option("mergeSchema", "true")
             .saveAsTable(self.conf["scoring_output"])
         )
+
+    def foundation_scoring_schema(self, prediction_df: pd.DataFrame) -> StructType:
+        """Explicit schema of a foundation model's predictions with forecast_quantiles (map inference is unreliable)."""
+        fields = []
+        for c in prediction_df.columns:
+            if c == QUANTILES_FIELD:
+                fields.append(StructField(c, QUANTILE_MAP_TYPE))
+            elif c == self.conf["date_col"]:
+                fields.append(StructField(c, ArrayType(TimestampType())))
+            elif c == self.conf["target"]:
+                fields.append(StructField(c, ArrayType(DoubleType())))
+            elif c == "index":
+                fields.append(StructField(c, LongType()))
+            else:
+                fields.append(StructField(c, StringType()))
+        return StructType(fields)
 
     def get_model_for_scoring(self, model_conf):
         """

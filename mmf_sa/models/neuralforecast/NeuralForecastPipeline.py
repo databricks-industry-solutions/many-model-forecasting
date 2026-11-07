@@ -4,11 +4,6 @@ import logging
 import mlflow
 from mlflow.models import ModelSignature, infer_signature
 from mlflow.types.schema import Schema, ColSpec
-from sktime.performance_metrics.forecasting import (
-    MeanAbsoluteError,
-    MeanSquaredError,
-    MeanAbsolutePercentageError,
-)
 from neuralforecast import NeuralForecast
 from mmf_sa.models.abstract_model import ForecastingRegressor, MODEL_PIP_REQUIREMENTS
 from neuralforecast.auto import (
@@ -28,9 +23,7 @@ from neuralforecast.losses.pytorch import (
 )
 from mmf_sa.exceptions import (
     MissingFeatureError,
-    UnsupportedMetricError,
-    ModelPredictionError,
-    DataPreparationError
+    UnsupportedMetricError
 )
 
 _logger = logging.getLogger(__name__)
@@ -405,61 +398,8 @@ class NeuralFcForecaster(ForecastingRegressor):
     def calculate_metrics(
         self, hist_df: pd.DataFrame, val_df: pd.DataFrame, curr_date, spark=None
     ) -> list:
-        pred_df, model_fitted = self.predict(hist_df, val_df)
-        keys = pred_df[self.params["group_id"]].unique()
-        metrics = []
-        metric_name = self.params["metric"]
-
-        # Metric class instantiated once (outside the loop).
-        metric_classes = {
-            "smape": MeanAbsolutePercentageError(symmetric=True),
-            "mape": MeanAbsolutePercentageError(symmetric=False),
-            "mae": MeanAbsoluteError(),
-            "mse": MeanSquaredError(square_root=False),
-            "rmse": MeanSquaredError(square_root=True),
-        }
-        if metric_name not in metric_classes:
-            raise UnsupportedMetricError(f"Metric {metric_name} not supported!")
-        metric_function = metric_classes[metric_name]
-
-        # Build per-key lookups in a single pass (O(n)) instead of repeating
-        # boolean-mask filters per key (O(n^2)).  pred_df is long-format
-        # (one row per forecast timestep per key), so we keep the last
-        # ``prediction_length`` rows per group, matching the previous
-        # ``.iloc[-prediction_length:]`` slice.
-        group_col = self.params["group_id"]
-        target_col = self.params["target"]
-        prediction_length = self.params["prediction_length"]
-        actuals_map = {
-            k: v.to_numpy()
-            for k, v in val_df.groupby(group_col, sort=False)[target_col]
-        }
-        forecasts_map = {
-            k: v.iloc[-prediction_length:].to_numpy()
-            for k, v in pred_df.groupby(group_col, sort=False)[target_col]
-        }
-
-        for key in keys:
-            try:
-                actual = actuals_map[key]
-                forecast = forecasts_map[key]
-                metric_value = metric_function(actual, forecast)
-                metrics.append(
-                    (
-                        key,
-                        curr_date,
-                        metric_name,
-                        metric_value,
-                        forecast,
-                        actual,
-                        b"",
-                    )
-                )
-            except (ModelPredictionError, DataPreparationError) as err:
-                _logger.warning(f"Failed to calculate metric for key {key}: {err}")
-            except Exception as err:
-                _logger.warning(f"Unexpected error calculating metric for key {key}: {err}")
-        return metrics
+        pred_df, _ = self.predict(hist_df, val_df)
+        return self.series_metrics(pred_df, val_df, curr_date, long_format=True)
 
 
 def get_loss_function(loss):

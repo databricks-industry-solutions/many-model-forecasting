@@ -1,8 +1,9 @@
+import logging
 from abc import abstractmethod
 import numpy as np
 import pandas as pd
 import cloudpickle
-from typing import Dict, List, Union
+from typing import Any, Dict, List, NamedTuple, Optional, Tuple, Union
 from pyspark.sql import DataFrame
 from pyspark.sql.functions import array_sort, collect_list, struct
 from sklearn.base import BaseEstimator, RegressorMixin
@@ -12,8 +13,81 @@ from sktime.performance_metrics.forecasting import (
     MeanAbsolutePercentageError,
 )
 import mlflow
-from mmf_sa.exceptions import UnsupportedMetricError
+from mmf_sa.exceptions import DataPreparationError, ModelPredictionError, UnsupportedMetricError
+from mmf_sa.intervals.quantiles import (
+    MIN_SAMPLES_FOR_QUANTILES, forecast_levels, quantile_columns, quantile_maps, sorted_quantiles,
+)
 mlflow.set_registry_uri("databricks-uc")
+
+_logger = logging.getLogger(__name__)
+_warned = set()
+
+
+def warn_once(key: str, message: str) -> None:
+    """Logs a warning once per process: predict runs per backtest window and per batch."""
+    if key not in _warned:
+        _warned.add(key)
+        _logger.warning(message)
+
+
+def in_native_range(levels, native_range) -> list:
+    """The quantile levels inside a model's native range (inclusive), in their order."""
+    q_min, q_max = native_range
+    return [q for q in levels if q_min - 1e-9 <= q <= q_max + 1e-9]
+
+
+def warn_if_outside_range(model: str, levels, native_range) -> None:
+    """
+    Warns once when quantile levels fall outside the range a model predicts. Such levels are left out (their interval
+    columns are NULL) rather than clamped to the edges, which would label e.g. an 80% band as a 95% band.
+    """
+    outside = sorted(set(levels) - set(in_native_range(levels, native_range)))
+    if outside:
+        q_min, q_max = native_range
+        warn_once(
+            f"native_quantiles_outside_range:{model}:{tuple(outside)}:{tuple(native_range)}",
+            f"{model}: quantiles {outside} are outside the native range [{q_min}, {q_max}] of this model, so the "
+            "interval levels that need them are NULL.",
+        )
+
+
+def warn_if_few_samples(model: str, num_samples, hparam: str = "num_samples") -> None:
+    """Warns once when a model's native quantiles come from fewer sample paths than MIN_SAMPLES_FOR_QUANTILES."""
+    if num_samples is not None and num_samples < MIN_SAMPLES_FOR_QUANTILES:
+        warn_once(
+            f"native_quantiles_samples:{model}",
+            f"{model}: native quantiles are estimated from {num_samples} sample paths, so the tails "
+            f"(e.g. 2.5% and 97.5%) are poorly estimated. Set {hparam} to at least "
+            f"{MIN_SAMPLES_FOR_QUANTILES} for reliable prediction intervals.",
+        )
+
+# Backtest metrics, by the name used in the `metric` parameter.
+METRICS = {
+    "smape": lambda: MeanAbsolutePercentageError(symmetric=True),
+    "mape": lambda: MeanAbsolutePercentageError(symmetric=False),
+    "mae": lambda: MeanAbsoluteError(),
+    "mse": lambda: MeanSquaredError(square_root=False),
+    "rmse": lambda: MeanSquaredError(square_root=True),
+}
+
+
+def metric_function(metric_name: str):
+    """The sktime metric for a `metric` parameter value; raises UnsupportedMetricError for unknown names."""
+    if metric_name not in METRICS:
+        raise UnsupportedMetricError(f"Metric {metric_name} not supported!")
+    return METRICS[metric_name]()
+
+
+class EvaluationRow(NamedTuple):
+    """One series' backtest result for one window: a row of evaluation_output (before run metadata)."""
+    key: Any
+    backtest_window_start_date: Any
+    metric_name: str
+    metric_value: float
+    forecast: np.ndarray
+    actual: np.ndarray
+    model_pickle: bytes = b""
+    forecast_quantiles: Optional[Dict[str, Any]] = None
 
 MMF_PACKAGE = "git+https://github.com/databricks-industry-solutions/many-model-forecasting.git"
 
@@ -90,6 +164,15 @@ def collect_sorted(sdf: DataFrame, group_col: str, order_col: str, value_cols: L
 
 
 class ForecastingRegressor(BaseEstimator, RegressorMixin):
+    # Native quantiles (prediction intervals). Models that return their own quantiles when params.native_quantiles
+    # is set declare it here; models_conf.yaml flags them native_intervals, and a test checks that both agree.
+    native_quantiles_supported: bool = False
+    # (min, max) quantile levels the model predicts; levels outside are left out (NULL intervals). None when any
+    # level works, or when the range is only known once the model is loaded (Chronos reads it from the checkpoint).
+    native_quantile_range: Optional[Tuple[float, float]] = None
+    # Hyperparameter holding the number of sample paths, for models whose quantiles come from samples.
+    samples_hparam: Optional[str] = None
+
     def __init__(self, params):
         self.params = params
         self.freq = params["freq"].upper()[0]
@@ -107,6 +190,33 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
             pd.DateOffset(hours=params["prediction_length"]) if self.freq == "H" else
             None
         )
+
+    def model_name(self) -> str:
+        return self.params.get("name", type(self).__name__)
+
+    def native_levels(self) -> list:
+        """
+        Quantile levels the model must return for native intervals: params.native_quantiles sorted, with the
+        median (forecast_levels), without the levels outside native_quantile_range, or [] when none are requested
+        or the model cannot return them.
+        Logs, once per process, the levels left out and that the levels come from few sample paths.
+        """
+        requested = self.params.get("native_quantiles")
+        if not requested:
+            return []
+        name = self.model_name()
+        if not self.native_quantiles_supported:
+            warn_once(f"native_quantiles_unsupported:{name}",
+                      f"{name} cannot return quantiles; native_quantiles is ignored and its interval columns "
+                      "are NULL.")
+            return []
+        levels = forecast_levels(requested)
+        if self.native_quantile_range is not None:
+            warn_if_outside_range(name, levels, self.native_quantile_range)
+            levels = in_native_range(levels, self.native_quantile_range)
+        if self.samples_hparam:
+            warn_if_few_samples(name, self.params.get(self.samples_hparam), self.samples_hparam)
+        return levels
 
     @abstractmethod
     def prepare_data(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -175,35 +285,65 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
             metrics = self.calculate_metrics(_df, actuals_df, curr_date, spark)
 
             if isinstance(metrics, dict):
-                evaluation_results = [
-                    (
-                        group_id,
-                        metrics["curr_date"],
-                        metrics["metric_name"],
-                        metrics["metric_value"],
-                        metrics["forecast"],
-                        metrics["actual"],
-                        metrics["model_pickle"],
-                    )
-                ]
-                results.extend(evaluation_results)
+                results.append(EvaluationRow(
+                    group_id,
+                    metrics["curr_date"],
+                    metrics["metric_name"],
+                    metrics["metric_value"],
+                    metrics["forecast"],
+                    metrics["actual"],
+                    metrics["model_pickle"],
+                    metrics.get("forecast_quantiles"),
+                ))
             elif isinstance(metrics, list):
-                results.extend(metrics)
+                # Plain tuples are accepted too: model_pickle and forecast_quantiles default to b"" and None.
+                results.extend(EvaluationRow(*m) for m in metrics)
 
             curr_date += stride_offset
 
-        res_df = pd.DataFrame(
-            results,
-            columns=[self.params["group_id"],
-                     "backtest_window_start_date",
-                     "metric_name",
-                     "metric_value",
-                     "forecast",
-                     "actual",
-                     "model_pickle"],
-        )
+        res_df = pd.DataFrame(results, columns=[self.params["group_id"], *EvaluationRow._fields[1:]])
 
         return res_df
+
+    def series_metrics(
+            self, pred_df: pd.DataFrame, val_df: pd.DataFrame, curr_date, long_format: bool = False
+    ) -> List[EvaluationRow]:
+        """
+        Backtest rows of a multi-series forecast, one per series of pred_df: the shared body of the
+        calculate_metrics of global and foundation models.
+        Parameters:
+            pred_df (pd.DataFrame): The forecasts. One row per series whose target cell holds the horizon array
+                (with native quantile columns, if any), or with long_format one row per series and step, of which
+                the last prediction_length rows of each series are used.
+            val_df (pd.DataFrame): The actuals, one row per series and step.
+            curr_date: The start of the backtest window.
+        Returns: List[EvaluationRow]. Series whose metric cannot be computed are logged and skipped.
+        """
+        metric_name = self.params["metric"]
+        metric = metric_function(metric_name)
+        group_col = self.params["group_id"]
+        target_col = self.params["target"]
+        actuals = {k: np.asarray(v, dtype=float) for k, v in val_df.groupby(group_col, sort=False)[target_col]}
+        if long_format:
+            prediction_length = int(self.params["prediction_length"])
+            forecasts = {k: v.iloc[-prediction_length:].to_numpy()
+                         for k, v in pred_df.groupby(group_col, sort=False)[target_col]}
+            quantiles = {}
+        else:
+            forecasts = dict(zip(pred_df[group_col].to_numpy(), pred_df[target_col].to_numpy()))
+            quantiles = quantile_maps(pred_df, group_col)
+        rows = []
+        for key in pred_df[group_col].unique():
+            try:
+                actual = actuals[key]
+                forecast = np.asarray(forecasts[key], dtype=float)
+                rows.append(EvaluationRow(key, curr_date, metric_name, metric(actual, forecast), forecast, actual,
+                                          b"", quantiles.get(key)))
+            except (ModelPredictionError, DataPreparationError) as err:
+                _logger.warning(f"Failed to calculate metric for key {key}: {err}")
+            except Exception as err:
+                _logger.warning(f"Unexpected error calculating metric for key {key}: {err}")
+        return rows
 
     def calculate_metrics(
             self, hist_df: pd.DataFrame, val_df: pd.DataFrame, curr_date, spark=None
@@ -219,27 +359,10 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
         Returns: metrics (Dict[str, Union[str, float, bytes]]): A dictionary specifying the metrics.
         """
         pred_df, model_fitted = self.predict(hist_df, val_df)
-        
+
         actual = val_df[self.params["target"]].to_numpy()
         forecast = pred_df[self.params["target"]].to_numpy()
-
-        if self.params["metric"] == "smape":
-            smape = MeanAbsolutePercentageError(symmetric=True)
-            metric_value = smape(actual, forecast)
-        elif self.params["metric"] == "mape":
-            mape = MeanAbsolutePercentageError(symmetric=False)
-            metric_value = mape(actual, forecast)
-        elif self.params["metric"] == "mae":
-            mae = MeanAbsoluteError()
-            metric_value = mae(actual, forecast)
-        elif self.params["metric"] == "mse":
-            mse = MeanSquaredError(square_root=False)
-            metric_value = mse(actual, forecast)
-        elif self.params["metric"] == "rmse":
-            rmse = MeanSquaredError(square_root=True)
-            metric_value = rmse(actual, forecast)
-        else:
-            raise UnsupportedMetricError(f"Metric {self.params['metric']} not supported!")
+        metric_value = metric_function(self.params["metric"])(actual, forecast)
 
         return {
             "curr_date": curr_date,
@@ -247,4 +370,16 @@ class ForecastingRegressor(BaseEstimator, RegressorMixin):
             "metric_value": metric_value,
             "forecast": pred_df[self.params["target"]].to_numpy("float"),
             "actual": val_df[self.params["target"]].to_numpy(),
-            "model_pickle": cloudpickle.dumps(model_fitted)}
+            "model_pickle": cloudpickle.dumps(model_fitted),
+            "forecast_quantiles": self.forecast_quantiles(pred_df)}
+
+    @staticmethod
+    def forecast_quantiles(pred_df: pd.DataFrame):
+        """
+        Native quantiles of a one-series forecast frame, from its QUANTILE_COLUMN_PREFIX columns (sorted_quantiles).
+        Returns: dict of quantile key -> array of length prediction_length, or None without usable quantiles.
+        """
+        cols = quantile_columns(pred_df)
+        if not cols:
+            return None
+        return sorted_quantiles({key: pred_df[c].to_numpy() for key, c in cols.items()})
