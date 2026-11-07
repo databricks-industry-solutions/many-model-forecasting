@@ -397,7 +397,7 @@ Notes and limitations:
 
 ### Calibrated intervals
 
-`calibrate_intervals` turns the native bands into calibrated ones, and gives intervals to the models that have none, from the tables `run_forecast` wrote. Run it after the forecast jobs, on CPU compute: it does not use the models.
+`calibrate_intervals` turns the models' own bands into calibrated ones, and gives intervals to the models that have none, from the tables `run_forecast` wrote. Run it after the forecast jobs, on CPU compute: it does not use the models.
 
 ```python
 from mmf_sa import calibrate_intervals
@@ -405,13 +405,13 @@ from mmf_sa import calibrate_intervals
 calibrate_intervals(
     spark=spark,
     train_data="cat.sch.uc_train_data",
-    evaluation_output="cat.sch.uc_evaluation_output",   # backtest rows with the native quantiles
-    scoring_output="cat.sch.uc_scoring_output",         # forecasts with their native maps
+    evaluation_output="cat.sch.uc_evaluation_output",   # backtest rows with the models' quantiles
+    scoring_output="cat.sch.uc_scoring_output",         # forecasts with their quantile maps
     freq="D", settings={"levels": [80, 95], "output_format": "both"},
 )
 ```
 
-- Models with native intervals get their bands corrected by conformalized quantile regression (CQR), so that they reach the requested coverage on the backtest. The other models, and the levels a model has no native quantiles for (e.g. 95% for Chronos-Bolt), get conformal intervals from their backtest errors.
+- Models with prediction intervals get their bands corrected by conformalized quantile regression (CQR), so that they reach the requested coverage on the backtest. The other models, and the levels a model has no quantiles for (e.g. 95% for Chronos-Bolt), get conformal intervals from their backtest errors.
 - The CQR corrections are pooled over all series, per horizon step (one pool, without per-series shrinkage). The conformal intervals pool their scores the same way, and shrink each series' own tail toward that pool. `settings={"pool": "group", "group_col": ...}` pools per group instead (a column of the training data, or `"auto"` for MMF's ABC x XYZ volume and volatility classes). ABC x XYZ is recommended for intermittent sales and demand data: on M5, Car Parts and Online Retail it lowers the coverage gap of the worst-covered series and the interval score, mostly for models without native intervals. Do not use it for rates or prices, where it loses coverage.
 - It writes `<prefix>_scoring_output_intervals` (the calibrated interval columns), `<prefix>_evaluation_output_calibration` (the corrections) and `<prefix>_evaluation_output_interval_metrics` (out-of-sample coverage, miss rates, MSIS and WIS per series and backtest window), with `<prefix>` the evaluation table's name without `_evaluation_output`. The forecast tables are not modified, so recalibrating never reruns the models.
 - It calibrates each model's latest run; pass `models` or `run_ids` to choose, and `use_case` when the tables are shared by several use cases. More backtest windows give more accurate per-series intervals: 3 work with the defaults.

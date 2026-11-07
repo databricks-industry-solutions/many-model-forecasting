@@ -401,7 +401,7 @@ score_models      the same quantiles at forecast time -> <target>_quantiles and/
 
 ### Calibrated intervals (`calibrate_intervals`)
 
-The native bands above are the models' own, and their coverage can be far from nominal (Chronos-Bolt's 95% band does
+The bands above are the models' own, and their coverage can differ from their level (Chronos-Bolt's 95% band does
 not exist; on M5, AutoETS's 80% band covers 87-88% and SeasonalNaive's 91%). `mmf_sa.calibrate_intervals` calibrates them, and builds
 intervals for the models that have none. It reads only the tables that `run_forecast` writes, and runs as its own job
 on CPU compute after the forecast jobs (Skill 4's orchestrating job), so the GPU jobs only forecast and recalibrating

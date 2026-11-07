@@ -215,12 +215,12 @@ If it returns rows, tell the user and offer to run `{use_case}_calibrate_interva
 rerun the models) before reporting.
 
 **Then report the metrics of each model's latest calibration.** They are **out of sample**: each backtest window is
-scored with intervals calibrated on the other windows. Compare `coverage_<L>` with the nominal level `L/100`, and with
-the raw native coverage of Step 2b (`native_coverage_<L>` here). `miss_lo_<L>` and `miss_hi_<L>` are the shares of
+scored with intervals calibrated on the other windows. Compare `coverage_<L>` with the level `L/100`, and with
+the coverage of the models' own bands from Step 2b (`native_coverage_<L>` here). `miss_lo_<L>` and `miss_hi_<L>` are the shares of
 actuals below the lower and above the upper bound (`coverage + miss_lo + miss_hi = 1`): when coverage falls short,
 the larger one shows which tail misses. `msis_<L>` is the interval score scaled by the series' seasonal-naive error,
 and `wis` the weighted interval score over all levels; lower is better at equal coverage, so compare models on `wis`.
-`native_wis` exists only when a model has native quantiles for every level. Under `separate_job`, run the queries
+`native_wis` exists only when a model has quantiles for every level. Under `separate_job`, run the queries
 again on the `{use_case}_nf_*` tables.
 
 ```sql
@@ -239,8 +239,8 @@ GROUP BY m.model, m.metric_name
 ORDER BY m.model, m.metric_name
 ```
 
-And the method used for each model and level (CQR on the native bands, or conformal from the backtest errors for
-models, or levels, without native quantiles):
+And the method used for each model and level (CQR on the models' own bands, or conformal from the backtest errors for
+models, or levels, without quantiles):
 
 ```sql
 WITH latest AS (
@@ -258,8 +258,8 @@ GROUP BY c.model, c.level, c.method, c.score, c.coverage_target
 ORDER BY c.model, c.level
 ```
 
-Report to the user, per model and level: the calibrated coverage against nominal and against the raw coverage of
-Step 2b, the method, and the models ranked by `wis`. A model 5 or more points below nominal usually has too few
+Report to the user, per model and level: the calibrated coverage next to the level and to the coverage of
+Step 2b, the method, and the models ranked by `wis`. A model 5 or more points below its level usually has too few
 backtest windows (suggest Step 1b option (b) or (c) of Skill 4); a few points off on its own is expected noise.
 Report coverage per group (`pool_key` of the calibration table) only if the calibration pooled by group
 (`pool="group"`).
@@ -442,7 +442,7 @@ GROUP BY forecast_source
 
 **With calibrated intervals (Step 2c ran),** keep the calibrated intervals of the selected model for each series, from
 `{use_case}_scoring_output_intervals` (each model's latest calibration of the selected run). Every model has them,
-including models without native intervals. Select the interval columns of Skill 4's `output_format` (`y_quantiles`
+including models without prediction intervals. Select the interval columns of Skill 4's `output_format` (`y_quantiles`
 by default, and/or `y_lo_<L>` / `y_hi_<L>`):
 
 ```sql
@@ -460,7 +460,7 @@ Under `separate_job`, add `UNION ALL` the same `SELECT` on `{use_case}_nf_scorin
 `b.forecast_source = 'non_forecastable_pipeline'`. Report how many of the best models' series have no calibrated
 intervals: their model's calibration failed, or is not current (Step 2c).
 
-**With native intervals only,** keep the native intervals of the selected model for each series. The columns depend on Skill 4's `output_format`:
+**Without calibration,** keep the intervals of the selected model for each series. The columns depend on Skill 4's `output_format`:
 `y_quantiles` (default), and/or `y_lo_<L>` / `y_hi_<L>`. Under `separate_job`, the non-forecastable winners'
 forecasts are in `{use_case}_nf_scoring_output` (Step 3a), so read both; with `include` every series is in the main
 tables, and with `fallback` the non-forecastable series have no intervals.
@@ -686,7 +686,7 @@ AskUserQuestion:
    • Overall avg {metric}: {overall_avg} (forecastable series only)
    • Best models table: {catalog}.{schema}.{use_case}_best_models
    • Evaluation summary: {catalog}.{schema}.{use_case}_evaluation_summary
-   {if prediction intervals: • Intervals of the best models: {catalog}.{schema}.{use_case}_best_models_intervals ({calibrated or native}; coverage {coverage summary from Step 2c or 2b})}
+   {if prediction intervals: • Intervals of the best models: {catalog}.{schema}.{use_case}_best_models_intervals ({calibrated or the models' own}; coverage {coverage summary from Step 2c or 2b})}
    • Reproducibility notebook: {notebook_base_path}/post_process
 
    What would you like to do next?
@@ -723,7 +723,7 @@ Combined table of best forecasts for all series (forecastable + non-forecastable
 | `avg_{metric}` | DOUBLE | Average primary metric over the series the model won; the name follows `{metric}` (e.g. `avg_smape`) |
 | `avg_wape` | DOUBLE | Average WAPE over the series the model won (NULL for fallback series) |
 
-**Table** (only if prediction intervals were enabled): `<catalog>.<schema>.{use_case}_best_models_intervals` — the best model's forecast and intervals per series (`y_quantiles`: map from quantile level to an array over the horizon). They are the calibrated intervals of `{use_case}_scoring_output_intervals` when the calibration job ran, and the native ones of `{use_case}_scoring_output` otherwise.
+**Table** (only if prediction intervals were enabled): `<catalog>.<schema>.{use_case}_best_models_intervals` — the best model's forecast and intervals per series (`y_quantiles`: map from quantile level to an array over the horizon). They are the calibrated intervals of `{use_case}_scoring_output_intervals` when the calibration job ran, and the models' own ones of `{use_case}_scoring_output` otherwise.
 
 **Notebook**: `{notebook_base_path}/post_process` — reproducibility notebook that re-creates both output tables
 
