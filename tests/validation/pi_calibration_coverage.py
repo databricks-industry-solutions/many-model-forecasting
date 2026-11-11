@@ -10,7 +10,14 @@
 # MAGIC * `default`: one marginal pool per horizon step, each series' tail quantiles shrunk toward it;
 # MAGIC * `abc_xyz`: the same, pooled per ABC x XYZ class (`pool="group", group_col="auto"`);
 # MAGIC * `sb_class`: pooled per Syntetos-Boylan class (smooth, erratic, intermittent, lumpy);
-# MAGIC * `keys`: pooled per the dataset's natural keys, for datasets that have them.
+# MAGIC * `keys`: pooled per the dataset's natural keys, for datasets that have them;
+# MAGIC * `ff_error`, `ff_dist` (and `_w2`, with the last 2 windows only): FoundationForecast's `ConformalIntervals`
+# MAGIC   (`conformal_error`, `conformal_distribution`), rebuilt in numpy from the same backtest: each series' own absolute
+# MAGIC   errors per horizon step, `np.quantile` without finite-sample correction, symmetric around the point forecast,
+# MAGIC   no clipping. A baseline without pooling, for comparison.
+# MAGIC
+# MAGIC With `reuse` set, the forecasts and calibrations of an earlier run with the same dataset, windows and seed are
+# MAGIC read from their tables instead of being recomputed.
 # MAGIC
 # MAGIC For each model and level: held-out coverage, MSIS (scaled by each series' seasonal-naive error), width and WIS;
 # MAGIC per grouping (ABC x XYZ class, series-scale decile, Syntetos-Boylan class, natural keys), the worst-group shortfall
@@ -28,6 +35,7 @@ dbutils.widgets.text("seed", "7")
 dbutils.widgets.text("bootstrap", "1000")
 dbutils.widgets.text("catalog", "main")
 dbutils.widgets.text("schema", "mmf_pi_validation")
+dbutils.widgets.text("reuse", "false")
 with open("/tmp/pi_cov_requirements.txt", "w") as f:
     f.write("\n".join(line.strip() for line in dbutils.widgets.get("requirements").split("|") if line.strip()) + "\n")
 
@@ -53,11 +61,13 @@ import pandas as pd
 from pyspark.sql import functions as F
 
 from mmf_sa import calibrate_intervals, run_forecast
+from mmf_sa.intervals.features import backtest_cubes
 
 DATASET = dbutils.widgets.get("dataset")
 N_SERIES, W = int(dbutils.widgets.get("n_series")), int(dbutils.widgets.get("windows"))
 SEED, N_BOOT = int(dbutils.widgets.get("seed")), int(dbutils.widgets.get("bootstrap"))
 CATALOG, SCHEMA = dbutils.widgets.get("catalog"), dbutils.widgets.get("schema")
+REUSE = dbutils.widgets.get("reuse").strip().lower() == "true"
 PREFIX = f"{CATALOG}.{SCHEMA}.pi_cov_{DATASET}_w{W}_s{SEED}"
 USER = spark.sql("select current_user() as user").collect()[0]["user"]
 LEVELS = [80, 95]
@@ -330,10 +340,13 @@ print(f"{DATASET}: {train['unique_id'].nunique()} series, horizon {H}, {W} backt
 
 # COMMAND ----------
 
-for t in ("evaluation_output", "scoring_output"):
+if REUSE:
+    run_id = spark.table(f"{PREFIX}_evaluation_output").orderBy(F.col("run_date").desc()).first()["run_id"]
+    timings = {}
+for t in ("evaluation_output", "scoring_output") if not REUSE else ():
     spark.sql(f"DROP TABLE IF EXISTS {PREFIX}_{t}")
 t0 = time.time()
-run_id = run_forecast(
+run_id = run_id if REUSE else run_forecast(
     spark=spark, train_data=f"{PREFIX}_train", scoring_data=f"{PREFIX}_train",
     scoring_output=f"{PREFIX}_scoring_output", evaluation_output=f"{PREFIX}_evaluation_output",
     group_id="unique_id", date_col="ds", target="y", freq=FREQ, prediction_length=H,
@@ -342,7 +355,7 @@ run_id = run_forecast(
     experiment_path=f"/Users/{USER}/mmf_pi_cov/{DATASET}", use_case_name=f"pi_cov_{DATASET}",
     prediction_intervals={"enabled": True, "levels": LEVELS, "output_format": "both"},
 )
-timings = {"run_forecast": round(time.time() - t0, 1)}
+timings = timings if REUSE else {"run_forecast": round(time.time() - t0, 1)}
 
 # COMMAND ----------
 
@@ -356,6 +369,11 @@ if keys:
     CONFIGS["keys"] = {"pool": "group", "group_col": keys}
 calibration, merged = {}, {}
 for name, kwargs in CONFIGS.items():
+    if REUSE:
+        pools = spark.table(f"{PREFIX}_{name}_evaluation_output_calibration").select("model", "unique_id", "pool_key") \
+            .distinct().toPandas()
+        merged[name] = {m: round(float((g["pool_key"] == "__other__").mean()), 3) for m, g in pools.groupby("model")}
+        continue
     for t in ("evaluation_output_calibration", "evaluation_output_interval_metrics", "scoring_output_intervals"):
         spark.sql(f"DROP TABLE IF EXISTS {PREFIX}_{name}_{t}")
     t0 = time.time()
@@ -485,6 +503,42 @@ frames = {"native": per_series(spark.table(f"{PREFIX}_scoring_output").filter(F.
                                .select(*cols).toPandas())}
 for name in CONFIGS:
     frames[name] = per_series(spark.table(f"{PREFIX}_{name}_scoring_output_intervals").select(*cols).toPandas())
+
+
+def ff_frames():
+    """FoundationForecast's ConformalIntervals on the same backtest: per series and step, quantiles of its own
+    absolute errors (conformal_error: yhat +- q_L; conformal_distribution: quantiles of yhat +- e), np.quantile."""
+    ev = spark.table(f"{PREFIX}_evaluation_output").filter(
+        (F.col("run_id") == run_id) & (F.col("metric_name") == "smape")).select(
+        "unique_id", "model", "backtest_window_start_date", "forecast", "actual").toPandas()
+    out = {}
+    for model, rows in ev.groupby("model"):
+        cubes = backtest_cubes(rows, "unique_id")
+        keep = [i for i, u in enumerate(cubes["ids"]) if (model, u) in point.index]
+        ids = np.asarray(cubes["ids"], dtype=object)[keep]
+        e = np.abs(cubes["y"][keep] - cubes["yhat"][keep])  # (N, W, H)
+        yhat = np.stack([np.asarray(point.loc[(model, u)], dtype=float) for u in ids])
+        for n_windows in sorted({2, e.shape[1]}):
+            sub_e = e[:, -n_windows:, :]
+            tag = "" if n_windows == e.shape[1] else "_w2"
+            paths = np.concatenate([yhat[:, None, :] - sub_e, yhat[:, None, :] + sub_e], axis=1)
+            for method in ("error", "dist"):
+                bounds = {}
+                for lv in LEVELS:
+                    a = 1 - lv / 100
+                    if method == "error":
+                        q = np.quantile(sub_e, lv / 100, axis=1)
+                        bounds[lv] = (yhat - q, yhat + q)
+                    else:
+                        bounds[lv] = (np.quantile(paths, a / 2, axis=1), np.quantile(paths, 1 - a / 2, axis=1))
+                frame = pd.DataFrame({"unique_id": ids, "model": model})
+                for lv, (lo, hi) in bounds.items():
+                    frame[f"y_lo_{lv}"], frame[f"y_hi_{lv}"] = list(lo), list(hi)
+                out.setdefault(f"ff_{method}{tag}", []).append(frame)
+    return {name: per_series(pd.concat(parts, ignore_index=True)) for name, parts in out.items()}
+
+
+frames.update(ff_frames())
 rng = np.random.default_rng(SEED)
 results = {name: summarize(df) for name, df in frames.items()}
 paired = {name: bootstrap(df, frames["default"], rng) for name, df in frames.items() if name != "default"}
