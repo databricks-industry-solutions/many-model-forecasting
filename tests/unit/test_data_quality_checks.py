@@ -575,7 +575,7 @@ class TestDataQualityChecks:
         assert result_df.empty  # Should be empty due to failed checks
         assert checker.metrics.removed_groups == 1
     
-    def test_run_with_data_quality_checks_disabled(self, spark_session):
+    def test_run_with_data_quality_checks_disabled(self, spark_session, monkeypatch):
         """Test run method with data quality checks disabled."""
         sample_data = self.create_sample_data()
         conf = self.create_basic_config()
@@ -586,7 +586,7 @@ class TestDataQualityChecks:
         
         # Mock the createDataFrame method
         mock_result_df = Mock()
-        spark_session.createDataFrame = Mock(return_value=mock_result_df)
+        monkeypatch.setattr(spark_session, "createDataFrame", Mock(return_value=mock_result_df))
         
         checker = DataQualityChecks(mock_df, conf, spark_session)
         
@@ -697,7 +697,7 @@ class TestDataQualityChecks:
 class TestDataQualityChecksIntegration:
     """Integration tests for DataQualityChecks."""
     
-    def test_full_pipeline_success(self, spark_session):
+    def test_full_pipeline_success(self, spark_session, monkeypatch):
         """Test full pipeline with successful data quality checks."""
         # Create good quality data
         sample_data = pd.DataFrame({
@@ -723,7 +723,7 @@ class TestDataQualityChecksIntegration:
         
         # Mock the createDataFrame method
         mock_result_df = Mock()
-        spark_session.createDataFrame = Mock(return_value=mock_result_df)
+        monkeypatch.setattr(spark_session, "createDataFrame", Mock(return_value=mock_result_df))
         
         checker = DataQualityChecks(mock_df, conf, spark_session)
         
@@ -737,7 +737,7 @@ class TestDataQualityChecksIntegration:
         assert metrics.removed_groups == 0
         assert metrics.get_removal_rate() == 0.0
     
-    def test_full_pipeline_with_removals(self, spark_session):
+    def test_full_pipeline_with_removals(self, spark_session, monkeypatch):
         """Test full pipeline with some groups removed."""
         # Create mixed quality data - Group A good, Group B mostly negative, Group C insufficient data
         sample_data = pd.DataFrame({
@@ -763,7 +763,7 @@ class TestDataQualityChecksIntegration:
         
         # Mock the createDataFrame method to return a filtered DataFrame
         mock_result_df = Mock()
-        spark_session.createDataFrame = Mock(return_value=mock_result_df)
+        monkeypatch.setattr(spark_session, "createDataFrame", Mock(return_value=mock_result_df))
         
         checker = DataQualityChecks(mock_df, conf, spark_session)
         

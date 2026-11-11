@@ -458,8 +458,8 @@ class FoundationForecastForecaster(ForecastingRegressor):
         pred_df, _ = self.predict(hist_df, val_df, curr_date, spark)
         return self.series_metrics(pred_df, val_df, curr_date)
 
-    def register(self, registered_model_name: str, input_example: pd.DataFrame = None):
-        """Log and register the model.
+    def register(self, registered_model_name: str, input_example: pd.DataFrame = None, tags: dict = None):
+        """Log the model, and register it to UC when ``registered_model_name`` is set.
 
         ``input_example`` is training data in MMF's column names. With covariates, the
         registered input schema takes the covariate types from it, so pass real data.
@@ -492,13 +492,14 @@ class FoundationForecastForecaster(ForecastingRegressor):
                 "y": np.random.rand(len(dates)),
             })
         signature = ModelSignature(inputs=input_schema, outputs=output_schema)
-        mlflow.pyfunc.log_model(
-            "model",
+        return mlflow.pyfunc.log_model(
+            name="model",
             python_model=model,
             registered_model_name=registered_model_name,
             signature=signature,
             input_example=input_example,
             pip_requirements=MODEL_PIP_REQUIREMENTS["foundationforecast"],
+            tags=tags,
         )
 
     def _covariate_input_example(self, data: pd.DataFrame = None) -> pd.DataFrame:

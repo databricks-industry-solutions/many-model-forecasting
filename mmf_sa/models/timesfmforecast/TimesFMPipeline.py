@@ -76,17 +76,18 @@ class TimesFMForecaster(ForecastingRegressor):
             self.model.compile(forecast_config)
         return self.model
 
-    def register(self, registered_model_name: str):
+    def register(self, registered_model_name: str, tags: dict = None):
         pipeline = TimesFMModel(self.params, self.repo)
         input_schema = Schema([TensorSpec(np.dtype(np.double), (-1, -1))])
         output_schema = Schema([TensorSpec(np.dtype(np.uint8), (-1, -1))])
         signature = ModelSignature(inputs=input_schema, outputs=output_schema)
-        mlflow.pyfunc.log_model(
-            "model",
+        return mlflow.pyfunc.log_model(
+            name="model",
             python_model=pipeline,
             registered_model_name=registered_model_name,
             signature=signature,
             pip_requirements=MODEL_PIP_REQUIREMENTS["timesfm"],
+            tags=tags,
         )
 
     def create_horizon_timestamps_udf(self):

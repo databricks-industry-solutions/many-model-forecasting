@@ -490,8 +490,8 @@ class MLForecastBase(ForecastingRegressor):
 
     # -- MLflow registration --
 
-    def register(self, model, registered_model_name: str, input_example):
-        """Log this pipeline as an MLflow pyfunc and register it to UC."""
+    def register(self, model, registered_model_name: str, input_example, name: str = "model", tags: dict = None):
+        """Log this pipeline as an MLflow pyfunc; registered to UC when registered_model_name is set."""
         pipeline = MLForecastModel(model)
         input_schema = infer_signature(model_input=input_example).inputs
         output_schema = Schema(
@@ -503,14 +503,16 @@ class MLForecastBase(ForecastingRegressor):
         )
         signature = ModelSignature(inputs=input_schema, outputs=output_schema)
         model_info = mlflow.pyfunc.log_model(
-            "model",
+            name=name,
             python_model=pipeline,
             registered_model_name=registered_model_name,
             signature=signature,
             pip_requirements=MODEL_PIP_REQUIREMENTS["mlforecast"],
+            tags=tags,
         )
         mlflow.log_params(self._loggable_params())
-        print(f"Model registered: {registered_model_name}")
+        if registered_model_name:
+            print(f"Model registered: {registered_model_name}")
         return model_info
 
     def _loggable_params(self) -> Dict[str, Any]:

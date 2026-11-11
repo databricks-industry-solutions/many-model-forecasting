@@ -15,6 +15,7 @@ def base_config():
             "group_id": "unique_id",
             "freq": "D",
             "prediction_length": 10,
+            "stride": 10,
             "metric": "smape",
             "active_models": ["StatsForecastAutoArima"],
             "dynamic_future_numerical": ["feature1", "feature2"]
@@ -28,12 +29,10 @@ def test_exogenous_regressors(base_config, m4_df_exogenous):
     _df = m4_df_exogenous[m4_df_exogenous.unique_id == "D8"]
     _hist_df = _df[:-10]
     _val_df = _df[-10:]
-    res_df = model.predict(_hist_df, _val_df)
-    print(
-        model.backtest(
-            _df,
-            start=_df.ds.max() - pd.DateOffset(days=35),
-            stride=10,
-            #retrain=True
-        )
-    )
+    forecast_df, _ = model.predict(_hist_df, _val_df)
+    assert len(forecast_df) == 10
+    assert forecast_df["y"].notnull().all()
+
+    res_df = model.backtest(_df, start=_df.ds.max() - pd.DateOffset(days=35), group_id="D8")
+    assert len(res_df) == 3
+    assert res_df["metric_value"].notnull().all()

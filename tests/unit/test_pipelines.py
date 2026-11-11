@@ -12,7 +12,6 @@ def test_api_func(temp_dir, spark_session, m4_df, m4_df_exogenous):
     active_models = [
         "StatsForecastAutoArima",
         #"GluonTSDeepAR",
-        #"SKTimeLgbmDsDt",
     ]
 
     run_forecast(
@@ -26,6 +25,9 @@ def test_api_func(temp_dir, spark_session, m4_df, m4_df_exogenous):
         date_col="ds",
         target="y",
         freq="D",
+        prediction_length=10,
+        backtest_length=30,
+        stride=10,
         dynamic_future_numerical=[],
         dynamic_future_categorical=[],
         dynamic_historical_numerical=[],
@@ -61,6 +63,9 @@ def test_api_func(temp_dir, spark_session, m4_df, m4_df_exogenous):
         date_col="ds",
         target="y",
         freq="D",
+        prediction_length=10,
+        backtest_length=30,
+        stride=10,
         dynamic_future_categorical=["feature1", "feature2"],
         dynamic_historical_categorical=[],
         static_features=[],

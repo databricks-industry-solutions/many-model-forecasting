@@ -51,7 +51,7 @@ class MoiraiForecaster(ForecastingRegressor):
         self.model = None
         self.repo = None
 
-    def register(self, registered_model_name: str):
+    def register(self, registered_model_name: str, tags: dict = None):
         pipeline = MoiraiModel(
             self.repo,
             self.params["prediction_length"],
@@ -62,13 +62,14 @@ class MoiraiForecaster(ForecastingRegressor):
         output_schema = Schema([TensorSpec(np.dtype(np.uint8), (-1,))])
         signature = ModelSignature(inputs=input_schema, outputs=output_schema)
         input_example = np.random.rand(52)
-        mlflow.pyfunc.log_model(
-            "model",
+        return mlflow.pyfunc.log_model(
+            name="model",
             python_model=pipeline,
             registered_model_name=registered_model_name,
             signature=signature,
             input_example=input_example,
             pip_requirements=MODEL_PIP_REQUIREMENTS["moirai"],
+            tags=tags,
         )
 
     def create_horizon_timestamps_udf(self):

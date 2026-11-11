@@ -292,13 +292,13 @@ Local models are trained independently for each time series. During backtesting,
 
 #### Global Models
 
-Global models are trained once on all time series simultaneously (excluding the `backtest_length` region), and **the same trained model is reused across all backtest splits**. This is because training a global model is computationally intensive. For scoring, a separate final model is re-trained on the entire historical dataset and registered in Unity Catalog.
+Global models are trained once on all time series simultaneously (excluding the `backtest_length` region), and **the same trained model is reused across all backtest splits**. This is because training a global model is computationally intensive. For scoring, a separate final model is re-trained on the entire historical dataset and registered in Unity Catalog (only logged to the MLflow experiment with `register_models=False`). Both the final model and the backtest model are logged to the MLflow run.
 
 ![Backtesting for Global Models](../images/backtesting_global.jpg)
 
 #### Foundation Models
 
-Foundation models are pre-trained or fine-tuned, so **there is no training involved during evaluation or scoring — only inference**. The backtest windows are evaluated by running the foundation model's predict method on each split. The model is registered in Unity Catalog for scoring.
+Foundation models are pre-trained or fine-tuned, so **there is no training involved during evaluation or scoring — only inference**. The backtest windows are evaluated by running the foundation model's predict method on each split. The model is registered in Unity Catalog for scoring (only logged to the MLflow experiment with `register_models=False`).
 
 ![Backtesting for Foundation Models](../images/backtesting_foundation.jpg)
 

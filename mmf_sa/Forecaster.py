@@ -100,6 +100,9 @@ class Forecaster:
         self.model_registry = ModelRegistry(self.conf)
         self.spark = spark
         self.serverless = bool(self.conf.get("serverless", False))
+        self.register_models = bool(self.conf.get("register_models", True))
+        # URIs of the final models logged by this Forecaster's evaluation, by model name; scoring loads these.
+        self.logged_model_uris = {}
         if experiment_id:
             self.experiment_id = experiment_id
         elif self.conf.get("experiment_path"):
@@ -265,6 +268,21 @@ class Forecaster:
     def evaluation_quantile_fields(self) -> list:
         """The forecast_quantiles field of evaluation rows, present only when intervals are enabled."""
         return [StructField(QUANTILES_FIELD, QUANTILE_MAP_TYPE)] if self.intervals_enabled else []
+
+    def registered_model_name(self, model_conf) -> str:
+        """The UC name a model is registered under, or None when register_models is False."""
+        if not self.register_models:
+            return None
+        return f"{self.conf['model_output']}.{model_conf['name']}_{self.conf['use_case_name']}"
+
+    def logged_model_tags(self, model_conf, role: str) -> dict:
+        """Tags of a logged model. role is "final" (used for scoring) or "backtest" (produced the backtest metrics)."""
+        return {
+            "mmf_model_name": model_conf["name"],
+            "mmf_use_case": str(self.conf.get("use_case_name", "")),
+            "mmf_run_id": self.run_id,
+            "mmf_model_role": role,
+        }
 
     def evaluation_writer(self, sdf: DataFrame):
         """Append writer for evaluation_output. With intervals enabled, existing tables gain forecast_quantiles."""
@@ -455,26 +473,41 @@ class Forecaster:
             train_df, val_df = self.split_df_train_val(hist_df)
 
             # First, we train the model on the entire history (train_df, val_df).
-            # Then, we register this model as our final model in Unity Catalog.
+            # Then, we log this model as our final model, and register it in Unity Catalog if register_models is set.
             final_model = self.model_registry.get_model(model_name)
             final_model.fit(pd.concat([train_df, val_df]))
             input_example = train_df[train_df[self.conf['group_id']] == train_df[self.conf['group_id']] \
                         .unique()[0]].sort_values(by=[self.conf['date_col']])
             model_info = final_model.register(
                 model=final_model,
-                registered_model_name=f"{self.conf['model_output']}.{model_conf['name']}_{self.conf['use_case_name']}",
+                registered_model_name=self.registered_model_name(model_conf),
                 input_example=input_example,
+                tags=self.logged_model_tags(model_conf, "final"),
             )
-            # Next, we train the model only with train_df and run detailed backtesting
+            # Next, we train the model only with train_df, log it as the backtest model and run detailed backtesting
             model = self.model_registry.get_model(model_name)
             model.fit(pd.concat([train_df]))
+            backtest_model_info = model.register(
+                model=model,
+                registered_model_name=None,
+                input_example=input_example,
+                name="backtest_model",
+                tags=self.logged_model_tags(model_conf, "backtest"),
+            )
+            mlflow.set_logged_model_tags(
+                model_info.model_id, {"mmf_backtest_model_id": backtest_model_info.model_id})
+            mlflow.set_logged_model_tags(
+                backtest_model_info.model_id, {"mmf_final_model_id": model_info.model_id})
+            # The evaluation rows point to the backtest model, which produced them; scoring uses the final model.
             metrics = self.backtest_global_model(
                 model=model,
                 train_df=train_df,
                 val_df=val_df,
-                model_uri=model_info.model_uri,  # This model_uri is from the final model
+                model_uri=backtest_model_info.model_uri,
                 write=True,
+                model_id=backtest_model_info.model_id,
             )
+            self.logged_model_uris[model_name] = model_info.model_uri
             mlflow.set_tag("run_id", self.run_id)
             mlflow.set_tag("model_name", model.params["name"])
 
@@ -486,6 +519,7 @@ class Forecaster:
         model_uri: str,
         write: bool = True,
         serverless_predict: bool = False,
+        model_id: str = None,
     ):
         """
         Performs detailed backtesting of a global model using the provided model, training DataFrame,
@@ -500,6 +534,7 @@ class Forecaster:
             serverless_predict (bool, optional): When True, dispatch model.backtest with spark=None so the
                 model's driver-only predict path is used. There is no multi-GPU data parallelism across Spark workers. 
                 Required on serverless GPU compute, where Pandas UDF workers are CPU-only. Default is False.
+            model_id (str, optional): The MLflow logged model the metrics are also logged to. Default is None.
         Returns: metric_value (float): A float specifying the mean metric value.
         """
         model_spark = None if serverless_predict else self.spark
@@ -559,7 +594,7 @@ class Forecaster:
         for rec in res_df.values:
             metric_name, metric_value = rec
             if write:
-                mlflow.log_metric(metric_name, metric_value)
+                mlflow.log_metric(metric_name, metric_value, model_id=model_id)
                 print(res_df)
         return metric_value
 
@@ -582,12 +617,16 @@ class Forecaster:
             train_df, val_df = self.split_df_train_val(hist_df)
             input_example = train_df[train_df[self.conf['group_id']] == train_df[self.conf['group_id']] \
                 .unique()[0]].sort_values(by=[self.conf['date_col']])
-            registered_model_name = f"{self.conf['model_output']}.{model_conf['name']}_{self.conf['use_case_name']}"
+            registered_model_name = self.registered_model_name(model_conf)
+            tags = self.logged_model_tags(model_conf, "final")
             if model_conf["framework"] == "FoundationForecast":
-                model.register(registered_model_name=registered_model_name, input_example=input_example)
+                model_info = model.register(
+                    registered_model_name=registered_model_name, input_example=input_example, tags=tags)
             elif model_conf["framework"] in ["Chronos", "Moirai", "TimesFM"]:
-                model.register(registered_model_name=registered_model_name)
-            model_uri = f"runs:/{run.info.run_id}/model"
+                model_info = model.register(registered_model_name=registered_model_name, tags=tags)
+            else:
+                raise ModelError(f"Unsupported foundation framework: {model_conf['framework']}")
+            model_uri = model_info.model_uri
             metrics = self.backtest_global_model(  # Reuse the same as global
                 model=model,
                 train_df=train_df,
@@ -595,8 +634,10 @@ class Forecaster:
                 model_uri=model_uri,
                 write=True,
                 serverless_predict=self.serverless,
+                model_id=model_info.model_id,
             )
-            mlflow.log_metric(self.conf["metric"], metrics)
+            mlflow.log_metric(self.conf["metric"], metrics, model_id=model_info.model_id)
+            self.logged_model_uris[model_conf["name"]] = model_uri
             mlflow.set_tag("model_name", model.params["name"])
             mlflow.set_tag("run_id", self.run_id)
             mlflow.log_params(model.get_params())
@@ -848,24 +889,65 @@ class Forecaster:
 
     def get_model_for_scoring(self, model_conf):
         """
-        Gets a model for scoring using the provided model configuration.
+        Gets a model for scoring using the provided model configuration. Global and foundation models use the final
+        model logged by this Forecaster's evaluation. Without an evaluation in this Forecaster, they use the latest
+        registered version, or the latest final model logged in the experiment when register_models is False.
         Parameters:
             self (Forecaster): A Forecaster object.
             model_conf (dict): A dictionary specifying the model configuration.
         Returns: model (Model): A model object. model_uri (str): A string specifying the model URI.
         """
-        client = MlflowClient()
-        registered_name = f"{self.conf['model_output']}.{model_conf['name']}_{self.conf['use_case_name']}"
-        model_info = self.get_latest_model_info(client, registered_name)
-        model_version = model_info.version
-        model_uri = f"runs:/{model_info.run_id}/model"
-        if model_conf.get("model_type", None) == "global":
-            model = mlflow.pyfunc.load_model(f"models:/{registered_name}/{model_version}")
-            return model, model_uri
-        elif model_conf.get("model_type", None) == "foundation":
-            return None, model_uri
-        else:
+        model_type = model_conf.get("model_type", None)
+        if model_type not in ("global", "foundation"):
             return self.model_registry.get_model(model_conf["name"]), None
+        model_uri = self.logged_model_uris.get(model_conf["name"])
+        if model_uri is None:
+            model_uri = self.find_final_model_uri(model_conf)
+        self.check_final_model(model_uri)
+        if model_type == "global":
+            return mlflow.pyfunc.load_model(model_uri), model_uri
+        return None, model_uri
+
+    def find_final_model_uri(self, model_conf) -> str:
+        """URI of the final model to score with when this Forecaster has not evaluated the model."""
+        if self.register_models:
+            registered_name = self.registered_model_name(model_conf)
+            model_version = self.get_latest_model_info(MlflowClient(), registered_name)
+            if getattr(model_version, "model_id", None):
+                return f"models:/{model_version.model_id}"
+            return f"models:/{registered_name}/{model_version.version}"
+        tags = self.logged_model_tags(model_conf, "final")
+        filter_string = " AND ".join(
+            f"tags.{key} = '{tags[key]}'" for key in ("mmf_model_name", "mmf_use_case", "mmf_model_role"))
+        logged_models = mlflow.search_logged_models(
+            experiment_ids=[self.experiment_id],
+            filter_string=filter_string,
+            order_by=[{"field_name": "creation_time", "ascending": False}],
+            max_results=1,
+            output_format="list",
+        )
+        if not logged_models:
+            raise ModelRegistryError(
+                f"No final model of {model_conf['name']} for use case {tags['mmf_use_case']!r} is logged in "
+                f"experiment {self.experiment_id}; run the evaluation first.")
+        logged_model = logged_models[0]
+        _logger.warning(
+            f"Scoring {model_conf['name']} with the latest logged final model {logged_model.model_id} "
+            f"(MMF run {logged_model.tags.get('mmf_run_id')}), as this Forecaster did not evaluate it.")
+        return f"models:/{logged_model.model_id}"
+
+    @staticmethod
+    def check_final_model(model_uri: str):
+        """
+        Raises ModelRegistryError when model_uri is a logged model that is not a final model, e.g. a backtest model.
+        Registered versions and models logged before the role tag existed are accepted.
+        """
+        path = model_uri[len("models:/"):] if model_uri.startswith("models:/") else ""
+        if not path or "/" in path or "@" in path:
+            return
+        role = mlflow.get_logged_model(path).tags.get("mmf_model_role")
+        if role not in (None, "final"):
+            raise ModelRegistryError(f"{model_uri} is a {role} model; only final models are used for scoring.")
 
     @staticmethod
     def get_latest_model_info(client, registered_name):
