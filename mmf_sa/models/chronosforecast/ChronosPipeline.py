@@ -111,7 +111,7 @@ class ChronosForecaster(ForecastingRegressor):
         self.device = None
         self.model = None
 
-    def register(self, registered_model_name: str):
+    def register(self, registered_model_name: str, tags: dict = None):
         pipeline = ChronosModel(
             self.repo,
             self.params["prediction_length"],
@@ -120,13 +120,14 @@ class ChronosForecaster(ForecastingRegressor):
         output_schema = Schema([TensorSpec(np.dtype(np.uint8), (-1, -1, -1))])
         signature = ModelSignature(inputs=input_schema, outputs=output_schema)
         input_example = np.random.rand(1, 52)
-        mlflow.pyfunc.log_model(
-            "model",
+        return mlflow.pyfunc.log_model(
+            name="model",
             python_model=pipeline,
             registered_model_name=registered_model_name,
             signature=signature,
             input_example=input_example,
             pip_requirements=MODEL_PIP_REQUIREMENTS["chronos"],
+            tags=tags,
         )
 
     def create_horizon_timestamps_udf(self):
@@ -371,7 +372,7 @@ class Chronos2Forecaster(ChronosForecaster):
         super().__init__(params)
         self.params = params
 
-    def register(self, registered_model_name: str):
+    def register(self, registered_model_name: str, tags: dict = None):
         pipeline = Chronos2MLflowModel(
             self.repo,
             self.params["prediction_length"],
@@ -380,13 +381,14 @@ class Chronos2Forecaster(ChronosForecaster):
         output_schema = Schema([TensorSpec(np.dtype(np.uint8), (-1, -1, -1))])
         signature = ModelSignature(inputs=input_schema, outputs=output_schema)
         input_example = np.random.rand(1, 52)
-        mlflow.pyfunc.log_model(
-            "model",
+        return mlflow.pyfunc.log_model(
+            name="model",
             python_model=pipeline,
             registered_model_name=registered_model_name,
             signature=signature,
             input_example=input_example,
             pip_requirements=MODEL_PIP_REQUIREMENTS["chronos"],
+            tags=tags,
         )
 
     def prepare_data(self, df: pd.DataFrame, future: bool = False, spark=None) -> pd.DataFrame:

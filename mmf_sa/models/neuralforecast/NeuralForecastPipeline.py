@@ -35,7 +35,8 @@ class NeuralFcForecaster(ForecastingRegressor):
         self.params = params
         self.model = None
 
-    def register(self, model, registered_model_name: str, input_example):
+    def register(self, model, registered_model_name: str, input_example, name: str = "model", tags: dict = None):
+        """Log the model to the active MLflow run; registered to UC when registered_model_name is set."""
         pipeline = NeuralForecastModel(model)
         # Prepare model signature for model registry
         input_schema = infer_signature(model_input=input_example).inputs
@@ -49,15 +50,17 @@ class NeuralFcForecaster(ForecastingRegressor):
         )
         signature = ModelSignature(inputs=input_schema, outputs=output_schema)
         model_info = mlflow.pyfunc.log_model(
-            "model",
+            name=name,
             python_model=pipeline,
             registered_model_name=registered_model_name,
             #input_example=input_example,
             signature=signature,
             pip_requirements=MODEL_PIP_REQUIREMENTS["neuralforecast"],
+            tags=tags,
         )
         mlflow.log_params(model.get_params())
-        print(f"Model registered: {registered_model_name}")
+        if registered_model_name:
+            print(f"Model registered: {registered_model_name}")
         return model_info
 
     def prepare_data(self, df: pd.DataFrame, future: bool = False) -> pd.DataFrame:

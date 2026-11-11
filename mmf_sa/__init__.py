@@ -59,6 +59,7 @@ def run_forecast(
     run_id: str = None,
     conf: Union[str, Dict[str, Any], OmegaConf] = None,
     prediction_intervals: Dict[str, Any] = None,
+    register_models: bool = True,
 ) -> str:
 
     """
@@ -99,6 +100,7 @@ def run_forecast(
         run_id (str): A string specifying the run id. If not provided a random string is generated and assigned to each run.
         conf (Union[str, Dict[str, Any], OmegaConf]): A configuration object.
         prediction_intervals (Dict[str, Any]): Prediction-interval settings, merged over the `prediction_intervals` block of the configuration (see the "Prediction Intervals" section of the README). E.g. {"enabled": True, "levels": [80, 95]}. Default is None, which keeps the configuration as is (disabled in the shipped configurations).
+        register_models (bool): A boolean specifying whether to register the final global and foundation models in Unity Catalog under model_output. When False, the models are only logged to the MLflow experiment, model_output is not used, and scoring loads the final models from the experiment. Default is True.
 
     Returns:
     Dict[str, Union[int, str]]: A dictionary with an integer and a string as values.
@@ -183,6 +185,8 @@ def run_forecast(
         _conf["evaluation_output"] = evaluation_output
     if model_output is not None:
         _conf["model_output"] = model_output
+    if register_models is not None:
+        _conf["register_models"] = register_models
     if data_quality_check is not None:
         _conf["data_quality_check"] = data_quality_check
     if static_features is not None:
