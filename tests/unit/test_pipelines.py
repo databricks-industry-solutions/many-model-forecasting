@@ -12,7 +12,6 @@ def test_api_func(temp_dir, spark_session, m4_df, m4_df_exogenous):
     active_models = [
         "StatsForecastAutoArima",
         #"GluonTSDeepAR",
-        #"SKTimeLgbmDsDt",
     ]
 
     run_forecast(
