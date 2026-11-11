@@ -105,10 +105,11 @@ def test_global_evaluation_logs_final_and_backtest_models(monkeypatch, no_tracki
     assert backtest.register_kwargs["registered_model_name"] is None
     assert backtest.register_kwargs["name"] == "backtest_model"
     assert backtest.register_kwargs["tags"]["mmf_model_role"] == "backtest"
-    assert no_tracking["logged_model_tags"] == [("m-final", {"mmf_backtest_model_id": "m-backtest"})]
+    assert no_tracking["logged_model_tags"] == [
+        ("m-final", {"mmf_backtest_model_id": "m-backtest"}), ("m-backtest", {"mmf_final_model_id": "m-final"})]
     [bt] = backtests
     assert bt["model"] is backtest
-    assert bt["model_uri"] == "models:/m-final"
+    assert bt["model_uri"] == "models:/m-backtest"
     assert bt["model_id"] == "m-backtest"
     assert f.logged_model_uris == {"M": "models:/m-final"}
 

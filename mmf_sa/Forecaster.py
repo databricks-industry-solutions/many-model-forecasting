@@ -496,11 +496,14 @@ class Forecaster:
             )
             mlflow.set_logged_model_tags(
                 model_info.model_id, {"mmf_backtest_model_id": backtest_model_info.model_id})
+            mlflow.set_logged_model_tags(
+                backtest_model_info.model_id, {"mmf_final_model_id": model_info.model_id})
+            # The evaluation rows point to the backtest model, which produced them; scoring uses the final model.
             metrics = self.backtest_global_model(
                 model=model,
                 train_df=train_df,
                 val_df=val_df,
-                model_uri=model_info.model_uri,  # This model_uri is from the final model
+                model_uri=backtest_model_info.model_uri,
                 write=True,
                 model_id=backtest_model_info.model_id,
             )
