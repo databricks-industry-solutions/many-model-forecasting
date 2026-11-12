@@ -383,3 +383,61 @@ meaningful). Produced from `results/pi_pooling_*.json`.
   SeasonalNaive at 80% the calibrated coverage is lower than the native one (0.892 to 0.745, 0.759 to 0.735).
 - **Conformal intervals** (models without native intervals) cover 0.78-0.84 at 80% and 0.94-0.96 at 95% on the volume
   datasets, close to the CQR models of the same dataset, and are under on Electricity and Traffic like them.
+
+## Against FoundationForecast's conformal intervals
+
+foundationforecast 0.1.18 (PR TimeCopilot/foundationforecast#83) adds `ConformalIntervals` to its models:
+`forecast()` cross-validates the point forecast on `n_windows` windows (default 2), and builds each series' interval
+from its own absolute errors per horizon step with `np.quantile`, symmetric around the point forecast:
+`conformal_error` (ŷ ± the L% quantile of |e|) or `conformal_distribution` (the default: quantiles of ŷ ± e). There is
+no pooling across series, no finite-sample correction and no clipping. `pi_calibration_coverage.py` rebuilds both
+from the same backtests as the pooling study (`ff_error`, `ff_dist`, with all windows, and `_w2` with the last 2, the
+foundationforecast default) and scores them on the same held-out horizon and series (run 227981881494839, seed 7,
+results in `results/pi_ff_baseline_*.json`). Mean coverage 80 / 95 over the 3 models of each dataset; in brackets,
+the median over models of the WIS relative to the default.
+
+
+**3 windows: coverage 80 / 95 (mean over the 3 models) and WIS relative to default (median over models)**
+
+| Dataset | default | ff_error | ff_dist | ff_error_w2 | ff_dist_w2 |
+|---|---|---|---|---|---|
+| m5 | 0.795 / 0.950 | 0.698 / 0.732 (+21%) | 0.687 / 0.729 (+21%) | 0.638 / 0.661 (+24%) | 0.623 / 0.657 (+24%) |
+| car_parts | 0.843 / 0.960 | 0.813 / 0.833 (+8%) | 0.808 / 0.832 (+9%) | 0.757 / 0.778 (+16%) | 0.746 / 0.775 (+15%) |
+| hospital | 0.799 / 0.948 | 0.697 / 0.750 (+7%) | 0.675 / 0.746 (+7%) | 0.627 / 0.657 (+13%) | 0.601 / 0.652 (+14%) |
+| web_traffic | 0.809 / 0.939 | 0.686 / 0.727 (+7%) | 0.670 / 0.724 (+7%) | 0.620 / 0.646 (+9%) | 0.600 / 0.642 (+8%) |
+| london_smart_meters | 0.847 / 0.963 | 0.719 / 0.769 (+9%) | 0.698 / 0.765 (+9%) | 0.671 / 0.701 (+14%) | 0.648 / 0.696 (+14%) |
+| electricity | 0.711 / 0.857 | 0.597 / 0.651 (+6%) | 0.576 / 0.647 (+7%) | 0.555 / 0.586 (+11%) | 0.530 / 0.581 (+12%) |
+| online_retail | 0.838 / 0.953 | 0.748 / 0.778 (-21%) | 0.738 / 0.775 (-21%) | 0.706 / 0.729 (-20%) | 0.691 / 0.725 (-20%) |
+| tourism | 0.796 / 0.944 | 0.662 / 0.709 (+14%) | 0.644 / 0.706 (+13%) | 0.614 / 0.648 (+18%) | 0.593 / 0.640 (+18%) |
+| m4_monthly | 0.771 / 0.936 | 0.625 / 0.672 (+16%) | 0.607 / 0.669 (+16%) | 0.578 / 0.608 (+21%) | 0.556 / 0.603 (+21%) |
+| traffic | 0.787 / 0.911 | 0.527 / 0.572 (+22%) | 0.512 / 0.568 (+23%) | 0.490 / 0.516 (+26%) | 0.472 / 0.512 (+27%) |
+| epf_prices | 0.809 / 0.921 | 0.680 / 0.739 (+5%) | 0.658 / 0.736 (+6%) | 0.566 / 0.605 (+13%) | 0.530 / 0.598 (+14%) |
+| **mean** | 0.800 / 0.935 | 0.677 / 0.721 (+8%) | 0.661 / 0.718 (+9%) | 0.620 / 0.649 (+14%) | 0.599 / 0.644 (+14%) |
+
+**6 windows: coverage 80 / 95 (mean over the 3 models) and WIS relative to default (median over models)**
+
+| Dataset | default | ff_error | ff_dist | ff_error_w2 | ff_dist_w2 |
+|---|---|---|---|---|---|
+| m5 | 0.791 / 0.947 | 0.730 / 0.823 (+17%) | 0.696 / 0.822 (+17%) | 0.638 / 0.661 (+22%) | 0.622 / 0.657 (+22%) |
+| hospital | 0.826 / 0.959 | 0.770 / 0.870 (+4%) | 0.753 / 0.868 (+4%) | 0.627 / 0.657 (+14%) | 0.601 / 0.652 (+15%) |
+| web_traffic | 0.827 / 0.949 | 0.743 / 0.844 (+7%) | 0.730 / 0.842 (+6%) | 0.620 / 0.646 (+4%) | 0.600 / 0.642 (+4%) |
+| london_smart_meters | 0.822 / 0.956 | 0.715 / 0.838 (+10%) | 0.704 / 0.836 (+10%) | 0.671 / 0.701 (+16%) | 0.648 / 0.696 (+16%) |
+| electricity | 0.848 / 0.968 | 0.771 / 0.879 (-1%) | 0.757 / 0.877 (-2%) | 0.555 / 0.586 (+17%) | 0.530 / 0.581 (+18%) |
+| online_retail | 0.830 / 0.948 | 0.752 / 0.837 (-50%) | 0.736 / 0.835 (-50%) | 0.704 / 0.727 (-48%) | 0.690 / 0.723 (-48%) |
+| tourism | 0.786 / 0.943 | 0.677 / 0.801 (+9%) | 0.666 / 0.800 (+9%) | 0.614 / 0.648 (+17%) | 0.593 / 0.640 (+17%) |
+| m4_monthly | 0.774 / 0.939 | 0.678 / 0.776 (+6%) | 0.665 / 0.774 (+6%) | 0.582 / 0.613 (+17%) | 0.559 / 0.608 (+17%) |
+| traffic | 0.824 / 0.933 | 0.642 / 0.779 (+7%) | 0.629 / 0.776 (+7%) | 0.490 / 0.516 (+29%) | 0.472 / 0.512 (+30%) |
+| epf_prices | 0.826 / 0.952 | 0.741 / 0.857 (+4%) | 0.727 / 0.853 (+4%) | 0.566 / 0.605 (+14%) | 0.530 / 0.598 (+15%) |
+| **mean** | 0.815 / 0.949 | 0.722 / 0.831 (+6%) | 0.706 / 0.828 (+6%) | 0.607 / 0.636 (+16%) | 0.585 / 0.631 (+17%) |
+
+- **The per-series intervals under-cover on every dataset**, and more so with fewer windows. At 95%, they cover 0.64
+  on average with 2 windows (foundationforecast's default), 0.72 with 3 and 0.83 with 6; at 80%, 0.59-0.72. The
+  default covers 0.94-0.95 at 95% and 0.80-0.82 at 80% on the same series. This is what W errors per series allow:
+  a new error is below the largest of W with probability W / (W + 1), 0.67, 0.75 and 0.86.
+- **They score worse**: WIS is higher by a median of 6-9% with 3 or 6 windows and 14-17% with 2, up to 30% on
+  Traffic. `conformal_distribution` covers slightly less than `conformal_error`.
+- **Exception: Online Retail**, where their WIS is lower (by 21% at 3 windows, 50% at 6) despite 8-12 points less
+  coverage. There the default's intervals are very wide for the CQR models (at 95%, 16-57 σ against 4-6 σ): a few
+  spiky series widen the one pool for every series. ABC x XYZ pooling helps on the same dataset (above); it is the
+  limit of one pool on spiky intermittent demand. At 6 windows, Electricity is even (WIS -1 to -2%), where the
+  default over-covers (0.968 at 95%).
