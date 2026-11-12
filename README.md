@@ -395,6 +395,29 @@ Notes and limitations:
 - The bands are not clipped: lower bounds can be negative for a non-negative target, even when the point forecast is clipped at 0 (statsforecast).
 - Requesting quantiles does not change a model's point forecast, except for `FFToto`, which samples. The Chronos models keep their point forecast (Chronos-Bolt the median of the quantiles it was trained on, Chronos-2 its 0.5 quantile), and interpolate the requested levels between the trained quantiles.
 
+### Calibrated intervals
+
+`calibrate_intervals` turns the models' own bands into calibrated ones, and gives intervals to the models that have none, from the tables `run_forecast` wrote. Run it after the forecast jobs, on CPU compute: it does not use the models.
+
+```python
+from mmf_sa import calibrate_intervals
+
+calibrate_intervals(
+    spark=spark,
+    train_data="cat.sch.uc_train_data",
+    evaluation_output="cat.sch.uc_evaluation_output",   # backtest rows with the models' quantiles
+    scoring_output="cat.sch.uc_scoring_output",         # forecasts with their quantile maps
+    freq="D", settings={"levels": [80, 95], "output_format": "both"},
+)
+```
+
+- Models with prediction intervals get their bands corrected by conformalized quantile regression (CQR), so that they reach the requested coverage on the backtest. The other models, and the levels a model has no quantiles for (e.g. 95% for Chronos-Bolt), get conformal intervals from their backtest errors.
+- The CQR corrections are pooled over all series, per horizon step (one pool, without per-series shrinkage). The conformal intervals pool their scores the same way, and shrink each series' own tail toward that pool. `settings={"pool": "group", "group_col": ...}` pools per group instead (a column of the training data, or `"auto"` for MMF's ABC x XYZ volume and volatility classes). ABC x XYZ is recommended for intermittent sales and demand data: on M5, Car Parts and Online Retail it lowers the coverage gap of the worst-covered series and the interval score, mostly for models without native intervals. Do not use it for rates or prices, where it loses coverage.
+- It writes `<prefix>_scoring_output_intervals` (the calibrated interval columns), `<prefix>_evaluation_output_calibration` (the corrections) and `<prefix>_evaluation_output_interval_metrics` (out-of-sample coverage, miss rates, MSIS and WIS per series and backtest window), with `<prefix>` the evaluation table's name without `_evaluation_output`. The forecast tables are not modified, so recalibrating never reruns the models.
+- It calibrates each model's latest run; pass `models` or `run_ids` to choose, and `use_case` when the tables are shared by several use cases. More backtest windows give more accurate per-series intervals: 3 work with the defaults.
+
+The method, the settings and the validation are described in [mmf_sa/README.md](https://github.com/databricks-industry-solutions/many-model-forecasting/blob/main/mmf_sa/README.md#calibrated-intervals-calibrate_intervals).
+
 ## Hierarchical Reconciliation
 
 MMF supports hierarchical reconciliation as an optional post-forecasting step. After generating base forecasts, reconciliation adjusts them so that they are mathematically coherent across all hierarchy levels — meaning forecasts at each level are consistent with those above and below them in the hierarchy (e.g., store-level forecasts sum to the region forecast, which sums to the country forecast).

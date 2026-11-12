@@ -1,0 +1,39 @@
+{
+ "n_series": 100000,
+ "run_id": "scale-100000-1793370402",
+ "timings": {
+  "generate_train": 17.5,
+  "generate_backtest": 11.6,
+  "calibration": 245.6,
+  "scoring_StatsForecastAutoETS": 34.7,
+  "scoring_StatsForecastCrostonSBA": 33.2
+ },
+ "checks": {
+  "calibration_rows": {
+   "StatsForecastCrostonSBA": 1400000,
+   "StatsForecastAutoETS": 1400000
+  },
+  "calibration_rows_expected_per_model": 1400000,
+  "metric_rows": {
+   "StatsForecastAutoETS": 3600000,
+   "StatsForecastCrostonSBA": 1800000
+  },
+  "scoring_rows": {
+   "StatsForecastCrostonSBA": 100000,
+   "StatsForecastAutoETS": 100000
+  },
+  "scoring_null_intervals": {},
+  "methods": {
+   "StatsForecastCrostonSBA": "conformal/signed_normalized/series",
+   "StatsForecastAutoETS": "cqr/asymmetric/group"
+  },
+  "coverage": {
+   "StatsForecastAutoETS coverage_80": 0.8001,
+   "StatsForecastAutoETS coverage_95": 0.95,
+   "StatsForecastCrostonSBA coverage_80": 0.8275,
+   "StatsForecastCrostonSBA coverage_95": 0.9443
+  }
+ },
+ "workspace": "fe-sandbox-air-eu-test",
+ "job_run_id": 678116971406251
+}
